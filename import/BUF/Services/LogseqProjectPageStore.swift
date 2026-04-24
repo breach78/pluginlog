@@ -42,6 +42,7 @@ actor LogseqProjectPageStore {
     case pageNotOwned
     case projectIdentityMismatch
     case managedSectionUnavailable
+    case managedTasksChangedSinceLoad
 
     var errorDescription: String? {
       switch self {
@@ -53,6 +54,8 @@ actor LogseqProjectPageStore {
         return "기존 Logseq 페이지의 BUF 프로젝트 식별자가 요청과 일치하지 않습니다."
       case .managedSectionUnavailable:
         return "기존 페이지에 BUF 관리 섹션이 없어 관리 작업을 쓸 수 없습니다."
+      case .managedTasksChangedSinceLoad:
+        return "Logseq 관리 작업 섹션이 명령 준비 이후 변경되어 덮어쓰기를 중단했습니다."
       }
     }
   }
@@ -246,6 +249,42 @@ actor LogseqProjectPageStore {
     )
     try write(rendered, to: fileURL)
     return .created
+  }
+
+  @discardableResult
+  func updateManagedTasks(
+    in page: PageSnapshot,
+    expectedManagedTasks: [TaskRecord],
+    managedTasks: [TaskRecord]
+  ) throws -> UpsertDisposition {
+    let parsedPage = try parsePage(at: page.fileURL)
+    guard let existingProjectID = parsedPage.projectID else {
+      throw StoreError.pageNotOwned
+    }
+    guard existingProjectID == page.projectID else {
+      throw StoreError.projectIdentityMismatch
+    }
+    guard parsedPage.hasManagedTaskSection, parsedPage.externalTasks.isEmpty else {
+      throw StoreError.managedSectionUnavailable
+    }
+    guard parsedPage.managedTasks == expectedManagedTasks else {
+      throw StoreError.managedTasksChangedSinceLoad
+    }
+
+    let rendered = renderPage(
+      propertyLines: parsedPage.propertyLines,
+      existingUsesProjectReferenceTag: parsedPage.usesProjectTag && usesReferenceProjectTag(parsedPage.propertyLines),
+      identity: ProjectIdentity(
+        projectID: existingProjectID,
+        title: parsedPage.title,
+        reminderListExternalIdentifier: parsedPage.reminderListExternalIdentifier
+      ),
+      noteMarkdown: parsedPage.noteMarkdown,
+      managedTasks: managedTasks,
+      includeManagedSection: true
+    )
+    try write(rendered, to: page.fileURL)
+    return .updated
   }
 
   @discardableResult

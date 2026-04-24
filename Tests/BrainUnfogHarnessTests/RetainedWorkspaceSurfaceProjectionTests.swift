@@ -217,6 +217,40 @@ final class RetainedWorkspaceSurfaceProjectionTests: XCTestCase {
     XCTAssertEqual(result, .fallbackAllowed(.graphNotConfigured))
   }
 
+  func testResolveRetainedOnlyBlocksUnavailableRetainedLoadsWithoutFallbackData() {
+    let graphMissing = RetainedWorkspaceSurfaceProjectionBuilder.resolveRetainedOnly(
+      .fallbackAllowed(.graphNotConfigured)
+    )
+    XCTAssertEqual(graphMissing.source, .blocked(.graphNotConfigured))
+    XCTAssertTrue(graphMissing.projectSnapshots.isEmpty)
+    XCTAssertTrue(graphMissing.scheduleEntriesByProjectID.isEmpty)
+    XCTAssertTrue(graphMissing.calendarBridgeDecisionsByTaskID.isEmpty)
+
+    let loadFailed = RetainedWorkspaceSurfaceProjectionBuilder.resolveRetainedOnly(
+      .fallbackAllowed(.loadFailed("disk unavailable"))
+    )
+    XCTAssertEqual(loadFailed.source, .blocked(.loadFailed("disk unavailable")))
+    XCTAssertTrue(loadFailed.projectSnapshots.isEmpty)
+    XCTAssertTrue(loadFailed.scheduleEntriesByProjectID.isEmpty)
+    XCTAssertTrue(loadFailed.calendarBridgeDecisionsByTaskID.isEmpty)
+  }
+
+  func testRetainedOnlyBlockedReadsRequireConsumerCacheInvalidation() {
+    XCTAssertFalse(
+      RetainedWorkspaceSurfaceProjectionBuilder.shouldInvalidateConsumerCaches(for: .retained)
+    )
+    XCTAssertTrue(
+      RetainedWorkspaceSurfaceProjectionBuilder.shouldInvalidateConsumerCaches(
+        for: .blocked(.graphNotConfigured)
+      )
+    )
+    XCTAssertTrue(
+      RetainedWorkspaceSurfaceProjectionBuilder.shouldInvalidateConsumerCaches(
+        for: .legacyFallback(.graphNotConfigured)
+      )
+    )
+  }
+
   func testResolveKeepsRetainedSuccessAndBlocksIdentityFailures() {
     let projectID = UUID()
     let retainedProjection = RetainedWorkspaceSurfaceProjection(

@@ -211,6 +211,8 @@ extension ScheduleBoardView {
         workspaceScheduleProjectSnapshots = [:]
         workspaceScheduleSliceEntriesByProjectID = [:]
         retainedScheduleCalendarBridgeDecisionsByTaskID = [:]
+        retainedScheduleCalendarBridgeWriteMarkersByTaskID = [:]
+        invalidateWorkspaceScheduleProjectionCaches()
         recordWorkspaceLoadFallback(nil)
       }
       return
@@ -225,25 +227,45 @@ extension ScheduleBoardView {
     )
 
     await MainActor.run {
-      let resolvedRead = RetainedWorkspaceSurfaceProjectionBuilder.resolve(retainedResult) {
-        ReminderRuntimeProjectionReadModelService.workspaceSurfaceProjection(
-          projectIDs: requestedProjectIDs,
-          runtimeSnapshot: appState.cachedOutlinerRuntimeProjectionSnapshot
-        )
-      }
+      let resolvedRead = RetainedWorkspaceSurfaceProjectionBuilder.resolveRetainedOnly(retainedResult)
       workspaceScheduleProjectSnapshots = resolvedRead.projectSnapshots
       workspaceScheduleSliceEntriesByProjectID = resolvedRead.scheduleEntriesByProjectID
       retainedScheduleCalendarBridgeDecisionsByTaskID =
         resolvedRead.calendarBridgeDecisionsByTaskID
+      let currentTaskIDs = Set(resolvedRead.calendarBridgeDecisionsByTaskID.keys)
+      retainedScheduleCalendarBridgeWriteMarkersByTaskID =
+        retainedScheduleCalendarBridgeWriteMarkersByTaskID.filter { currentTaskIDs.contains($0.key) }
+      if RetainedWorkspaceSurfaceProjectionBuilder.shouldInvalidateConsumerCaches(
+        for: resolvedRead.source
+      ) {
+        invalidateWorkspaceScheduleProjectionCaches()
+      }
 
       switch resolvedRead.source {
-      case .retained, .legacyFallback:
+      case .retained:
+        recordWorkspaceLoadFallback(nil)
+      case .legacyFallback:
+        assertionFailure("Schedule retained-only read must not resolve legacy fallback.")
         recordWorkspaceLoadFallback(nil)
       case .blocked:
         appState.errorMessage = resolvedRead.errorMessage
         recordWorkspaceLoadFallback(nil)
       }
     }
+  }
+
+  func invalidateWorkspaceScheduleProjectionCaches() {
+    cachedScheduledTaskSourceSignature = nil
+    cachedScheduledTaskDescriptors = []
+    cachedWorkspaceScheduleTasksByID = [:]
+    cachedScheduleTaskSignature = 0
+    cachedLayoutSourceSignature = nil
+    cachedTimedEntries = []
+    cachedAllDayEntries = []
+    cachedBackgroundTimedEntries = []
+    cachedBackgroundAllDayEntries = []
+    cachedScheduleDayHeaderSections = [:]
+    cachedScheduleDayHeaderSourceSignature = nil
   }
 
   func calendarDisplayRange() -> ClosedRange<Date> {
@@ -868,38 +890,7 @@ extension ScheduleBoardView {
     actionName: String,
     registerUndo: Bool = true
   ) {
-    let previousPreview = schedulePreview(for: event)
-    let undoScope: ScheduleCalendarRecurringEditScope =
-      scope == .futureEvents && event.isRecurring ? .futureEvents : .thisEvent
     guard allowScheduleMutation("calendar-timing") else { return }
-
-    Task { @MainActor in
-      do {
-        let updatedEvent = try await appState.writeScheduleCalendarEventTiming(
-          event,
-          preview: preview,
-          scope: scope
-        )
-        guard registerUndo else { return }
-        appState.registerUndo(with: undoManager, actionName: actionName) {
-          self.applyCalendarPreview(
-            previousPreview,
-            to: updatedEvent,
-            scope: undoScope,
-            actionName: actionName,
-            registerUndo: true
-          )
-        }
-      } catch let error as ScheduleCalendarEditError {
-        handleScheduleCalendarEditError(error, context: .applyPreview)
-      } catch {
-        handleScheduleCalendarEditFailure(
-          error,
-          context: .applyPreview,
-          fallback: .saveFailed(error.localizedDescription)
-        )
-      }
-    }
   }
 
   func calendarPreviewDiffers(
@@ -947,39 +938,6 @@ extension ScheduleBoardView {
       selectedScheduleTaskID = nil
     }
     guard allowScheduleMutation("delete-task") else { return }
-
-    appState.undoCoordinator.performAsync {
-      do {
-        guard
-          let snapshot = try await appState.deleteTaskPermanentlyWithUndoSnapshot(
-            taskID,
-            context: modelContext
-          )
-        else { return }
-        appState.registerUndo(with: undoManager, actionName: actionName) {
-          self.restoreDeletedScheduleTaskFromUndo(snapshot, actionName: actionName)
-        }
-      } catch {
-        appState.errorMessage = error.localizedDescription
-      }
-    }
-  }
-
-  func restoreDeletedScheduleTaskFromUndo(
-    _ snapshot: TaskDeletionUndoSnapshot,
-    actionName: String
-  ) {
-    appState.undoCoordinator.performAsync {
-      do {
-        try await appState.restoreDeletedTaskFromUndo(snapshot, context: modelContext)
-        selectedScheduleTaskID = snapshot.task.id
-        appState.registerUndo(with: undoManager, actionName: actionName) {
-          self.deleteScheduleTask(snapshot.task.id, actionName: actionName)
-        }
-      } catch {
-        appState.errorMessage = error.localizedDescription
-      }
-    }
   }
 
   func deleteScheduleCalendarEvent(
@@ -987,66 +945,6 @@ extension ScheduleBoardView {
     scope: ScheduleCalendarRecurringEditScope
   ) {
     guard allowScheduleMutation("delete-calendar-event") else { return }
-
-    Task { @MainActor in
-      do {
-        let snapshot = try await appState.deleteScheduleCalendarEvent(event, scope: scope)
-        appState.registerUndo(with: undoManager, actionName: "일정 삭제") {
-          appState.undoCoordinator.performAsync {
-            await self.restoreDeletedScheduleCalendarEvent(snapshot)
-          }
-        }
-      } catch let error as ScheduleCalendarEditError {
-        handleScheduleCalendarEditError(error, context: .deleteEvent)
-      } catch {
-        handleScheduleCalendarEditFailure(
-          error,
-          context: .deleteEvent,
-          fallback: .removeFailed(error.localizedDescription)
-        )
-      }
-    }
-  }
-
-  func restoreDeletedScheduleCalendarEvent(_ snapshot: DeletedScheduleCalendarEventSnapshot) async {
-    do {
-      let restoredEvent = try await appState.restoreDeletedScheduleCalendarEvent(snapshot)
-      appState.registerUndo(with: undoManager, actionName: "일정 삭제") {
-        appState.undoCoordinator.performAsync {
-          await self.redeleteRestoredScheduleCalendarEvent(restoredEvent, scope: snapshot.scope)
-        }
-      }
-    } catch let error as ScheduleCalendarEditError {
-      handleScheduleCalendarEditError(error, context: .restoreDeletedEvent)
-    } catch {
-      handleScheduleCalendarEditFailure(
-        error,
-        context: .restoreDeletedEvent,
-        fallback: .saveFailed(error.localizedDescription)
-      )
-    }
-  }
-
-  func redeleteRestoredScheduleCalendarEvent(
-    _ event: ScheduleCalendarEvent,
-    scope: ScheduleCalendarRecurringEditScope
-  ) async {
-    do {
-      let redoSnapshot = try await appState.deleteScheduleCalendarEvent(event, scope: scope)
-      appState.registerUndo(with: undoManager, actionName: "일정 삭제") {
-        appState.undoCoordinator.performAsync {
-          await self.restoreDeletedScheduleCalendarEvent(redoSnapshot)
-        }
-      }
-    } catch let error as ScheduleCalendarEditError {
-      handleScheduleCalendarEditError(error, context: .redeleteRestoredEvent)
-    } catch {
-      handleScheduleCalendarEditFailure(
-        error,
-        context: .redeleteRestoredEvent,
-        fallback: .removeFailed(error.localizedDescription)
-      )
-    }
   }
 
   func suppressTaskTap(for duration: TimeInterval = 0.35) {
@@ -1075,23 +973,8 @@ extension ScheduleBoardView {
   }
 
   func postponeScheduledTaskToNextDayAllDay(taskID: UUID, projectID: UUID, from day: Date) {
-    guard let nextDay = calendar.date(byAdding: .day, value: 1, to: calendar.startOfDay(for: day))
-    else {
-      return
-    }
+    guard calendar.date(byAdding: .day, value: 1, to: calendar.startOfDay(for: day)) != nil else { return }
     guard allowScheduleMutation("postpone-task") else { return }
-
-    releaseActiveTextResponderForUndo()
-    suppressTaskTap(for: 0.2)
-    applyScheduleState(
-      taskID: taskID,
-      projectID: projectID,
-      day: nextDay,
-      timeMinutes: nil,
-      durationMinutes: nil,
-      registerUndo: true,
-      actionName: "하루 뒤로 미루기"
-    )
   }
 
   func releaseActiveTextResponderForUndo() {
@@ -1128,31 +1011,56 @@ extension ScheduleBoardView {
     guard previousDay != day || previousTime != timeMinutes || previousDuration != durationMinutes else {
       return
     }
-    guard allowScheduleMutation("task-schedule") else { return }
-
     selectedScheduleTaskID = taskID
     Task { @MainActor in
-      let didWrite = await appState.writeProjectDetailTaskSchedule(
-        day: day,
-        hasExplicitTime: timeMinutes != nil,
-        timeMinutes: timeMinutes,
-        durationMinutes: durationMinutes,
-        taskID: taskID,
-        context: modelContext
-      )
-      guard didWrite else { return }
-
-      guard registerUndo else { return }
-      appState.registerUndo(with: undoManager, actionName: actionName) {
-        self.applyScheduleState(
-          taskID: taskID,
+      do {
+        let result = try await RetainedTaskCommandService.setTaskSchedule(
+          graphRootURL: appState.logseqGraphRootURL,
           projectID: projectID,
-          day: previousDay,
-          timeMinutes: previousTime,
-          durationMinutes: previousDuration,
-          registerUndo: true,
-          actionName: actionName
+          taskID: taskID,
+          day: day,
+          timeMinutes: timeMinutes,
+          durationMinutes: durationMinutes,
+          calendar: calendar,
+          reminderProjectProvider: appState.reminderProjectProvider
         )
+        let bridgeResult: RetainedCalendarBridgeApplyResult?
+        do {
+          bridgeResult = try await RetainedCalendarEventKitBridge.apply(
+            commandResult: result,
+            graphRootURL: appState.logseqGraphRootURL
+          )
+        } catch {
+          bridgeResult = nil
+          appState.errorMessage = error.localizedDescription
+        }
+        await reloadWorkspaceScheduleProjectDetails(for: activeProjectIDs)
+        if let bridgeResult {
+          retainedScheduleCalendarBridgeDecisionsByTaskID[taskID] =
+            bridgeResult.calendarBridgeDecision
+          retainedScheduleCalendarBridgeWriteMarkersByTaskID[taskID] =
+            bridgeResult.calendarWriteMarker
+        } else {
+          retainedScheduleCalendarBridgeDecisionsByTaskID[taskID] =
+            result.calendarBridgeDecision
+          retainedScheduleCalendarBridgeWriteMarkersByTaskID[taskID] = nil
+        }
+        refreshCalendarOverlay(force: true)
+
+        guard registerUndo else { return }
+        appState.registerUndo(with: undoManager, actionName: actionName) {
+          self.applyScheduleState(
+            taskID: taskID,
+            projectID: projectID,
+            day: previousDay,
+            timeMinutes: previousTime,
+            durationMinutes: previousDuration,
+            registerUndo: true,
+            actionName: actionName
+          )
+        }
+      } catch {
+        appState.errorMessage = error.localizedDescription
       }
     }
   }
@@ -1232,33 +1140,6 @@ extension ScheduleBoardView {
       return
     }
     guard allowScheduleMutation("preparation-schedule") else { return }
-
-    selectedScheduleTaskID = taskID
-    Task { @MainActor in
-      let didWrite = await appState.writeTaskPreparationSchedule(
-        projectID: projectID,
-        taskID: taskID,
-        targetCompletedUnits: targetCompletedWorkUnits,
-        isAllDay: isAllDay,
-        timeMinutes: normalizedTime,
-        durationMinutes: normalizedDuration
-      )
-      guard didWrite else { return }
-
-      guard registerUndo else { return }
-      appState.registerUndo(with: undoManager, actionName: actionName) {
-        self.applyPreparationScheduleState(
-          taskID: taskID,
-          projectID: projectID,
-          targetCompletedWorkUnits: targetCompletedWorkUnits,
-          isAllDay: previousSchedule.isAllDay,
-          timeMinutes: previousSchedule.timeMinutes,
-          durationMinutes: previousSchedule.durationMinutes,
-          registerUndo: true,
-          actionName: actionName
-        )
-      }
-    }
   }
 
   func createScheduleTask(
@@ -1299,24 +1180,6 @@ extension ScheduleBoardView {
     durationMinutes: Int?
   ) {
     guard allowScheduleMutation("create-task") else { return }
-
-    Task { @MainActor in
-      guard
-        let createdTaskID = await appState.createTask(
-          inProjectID: projectID,
-          title: title,
-          startDate: scheduleDate(day: day, timeMinutes: timeMinutes),
-          durationMinutes: timeMinutes == nil ? nil : durationMinutes,
-          context: modelContext
-        )
-      else {
-        return
-      }
-      appState.registerUndo(with: undoManager, actionName: "할일 생성") {
-        self.deleteScheduleTask(createdTaskID, actionName: "할일 생성")
-      }
-      appState.selectedProjectID = projectID
-    }
   }
 
   func handleUnavailableScheduleQuickAdd(reason: ScheduleQuickAddFailureReason = .noAvailableProject) {
@@ -1389,31 +1252,37 @@ extension ScheduleBoardView {
     guard previousState != nextState else {
       return
     }
-    guard allowScheduleMutation("task-completion") else { return }
-
     Task { @MainActor in
-      let didWrite = await appState.saveProjectDetailTaskCompletion(
-        taskID: taskID,
-        isCompleted: nextState.isCompleted,
-        completionDate: nextState.isCompleted && nextState.isRecurring
-          ? (nextState.occurrenceDate ?? nextState.completionDate)
-          : nextState.completionDate,
-        context: modelContext
-      )
-      guard didWrite else { return }
-
-      guard registerUndo else { return }
-      appState.registerUndo(
-        with: undoManager,
-        actionName: nextState.isCompleted ? "할일 완료" : "할일 완료 취소"
-      ) {
-        self.updateScheduleTaskCompletion(
-          taskID: taskID,
+      do {
+        let result = try await RetainedTaskCommandService.setTaskCompletion(
+          graphRootURL: appState.logseqGraphRootURL,
           projectID: projectID,
-          isCompleted: previousState.isCompleted,
-          completionDate: previousState.completionDate,
-          registerUndo: true
+          taskID: taskID,
+          isCompleted: nextState.isCompleted,
+          completionDate: nextState.isCompleted && nextState.isRecurring
+            ? (nextState.occurrenceDate ?? nextState.completionDate)
+            : nextState.completionDate,
+          reminderProjectProvider: appState.reminderProjectProvider
         )
+        await reloadWorkspaceScheduleProjectDetails(for: activeProjectIDs)
+        retainedScheduleCalendarBridgeDecisionsByTaskID[taskID] = result.calendarBridgeDecision
+        retainedScheduleCalendarBridgeWriteMarkersByTaskID[taskID] = result.calendarWriteMarker
+
+        guard registerUndo else { return }
+        appState.registerUndo(
+          with: undoManager,
+          actionName: nextState.isCompleted ? "할일 완료" : "할일 완료 취소"
+        ) {
+          self.updateScheduleTaskCompletion(
+            taskID: taskID,
+            projectID: projectID,
+            isCompleted: previousState.isCompleted,
+            completionDate: previousState.completionDate,
+            registerUndo: true
+          )
+        }
+      } catch {
+        appState.errorMessage = error.localizedDescription
       }
     }
   }
@@ -1431,27 +1300,6 @@ extension ScheduleBoardView {
       return
     }
     guard allowScheduleMutation("planned-work-progress") else { return }
-
-    Task { @MainActor in
-      let didWrite = await appState.saveProjectDetailTaskPlannedWorkProgress(
-        taskID: taskID,
-        targetCompletedUnits: targetCompletedUnits,
-        completedOn: completedOn,
-        context: modelContext
-      )
-      guard didWrite else { return }
-
-      guard registerUndo else { return }
-      appState.registerUndo(with: undoManager, actionName: "예상 작업 체크") {
-        self.updateSchedulePlannedWorkProgress(
-          taskID: taskID,
-          projectID: projectID,
-          targetCompletedUnits: previousCompletedUnits,
-          completedOn: completedOn,
-          registerUndo: true
-        )
-      }
-    }
   }
 
   func scheduleDate(day: Date, timeMinutes: Int?) -> Date {

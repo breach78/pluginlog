@@ -264,3 +264,64 @@ Start with non-destructive rewiring:
 - Route project selection to Logseq page open.
 - Remove visible Journal/Compass/Archive/AI settings entry points.
 - Keep legacy runtime files until retained projection and calendar bridge are implemented.
+
+## 2026-04-24 post TASK-PACKET-006 deletion gate update
+
+Status:
+
+- Schedule/Timeline retained projection read path is cut over and retained-only.
+- Schedule/Timeline task completion and task schedule edits use retained Logseq/Reminder commands.
+- Schedule task schedule edits call the lightweight retained Calendar EventKit bridge.
+- Schedule/Timeline no longer reference SwiftData/modelContext, old Project Detail action methods, old Outliner runtime read fallback, or old Calendar owner APIs directly.
+- Source file deletion is still not approved and has not been performed.
+- SwiftData/schema/model deletion is still not approved and has not been performed.
+- `.buf`, `.buf/attachments`, and graph-local runtime data deletion is still not approved and has not been performed.
+
+Current deletion blocker:
+
+- `import/BUF/Features/Workspace/MainWorkspaceView.swift` still reads workspace project descriptors through `AppState.resolvedWorkspaceProjectDescriptors(context:)`.
+- `import/BUF/Features/Workspace/MainWorkspaceActions.swift` still contains legacy quick-add/project-create/delete/task-move/project-order/search helpers that depend on `modelContext`, `TaskItem`, `ReminderRuntimeProjectionReadModelService`, and `cachedOutlinerRuntimeProjectionSnapshot`.
+- `import/BUF/Features/Workspace/MainWorkspaceOverlays.swift` still contains the dead Project Detail inspector host and detached Project window call site.
+- `import/BUF/Features/Workspace/MainWorkspaceSearch.swift` still routes through the legacy runtime search projection.
+- `import/BUF/App/*` edit-only files still contain old runtime projection, SwiftData, Project Detail, and old Calendar owner branches required by the remaining workspace shell and sync code.
+
+Required retained concepts before destructive deletion:
+
+- Retained workspace project list projection for the sidebar/header/search shell.
+- Retained workspace search index over Logseq pages and managed tasks.
+- Retained quick-add task creation command using Logseq page + Reminder item creation.
+- Retained project/list create/delete policy, or explicit decision that project create/delete stays disabled.
+- Retained task move/reorder/project-order policy, or explicit decision that these actions stay disabled.
+- Workspace shell removal of Project Detail inspector reservation/overlay.
+
+Exact source deletion list remains the sections above:
+
+- `Calendar bridge replacement`
+- `Retained projection replacement`
+- `Project/task command replacement`
+- `Outliner source replacement`
+- `UI/source deletion targets after references are removed`
+- `Legacy SwiftData/domain models`
+
+Exact schema/model deletion list remains:
+
+- `Project`
+- `SyncMetadata`
+- `TaskItem`
+- `TaskProjectClonePlacement`
+- `OutlinerCoreStorage`
+- SwiftData container wiring in `DataStack` and retained app bootstrap after replacement.
+
+Exact runtime data deletion list remains gated on active graph path resolution:
+
+- `<active-logseq-graph>/.buf/attachments`
+- `<active-logseq-graph>/.buf/attachments/projects`
+- `<active-logseq-graph>/.buf/attachments/tasks`
+- `<active-logseq-graph>/.buf/attachments/archive`
+- old `.buf` SQLite domain database paths discovered under `<active-logseq-graph>/.buf`
+
+Stop decision:
+
+- Stop before source deletion because the retained workspace shell/search/quick-add concepts above are not yet implemented.
+- Stop before SwiftData/schema/model deletion because `MainWorkspace`, `AppState`, Journal/Compass/Outliner/ProjectWindow source files still compile against those models.
+- Stop before runtime data deletion because the active Logseq graph path has not been resolved and reported for deletion approval.

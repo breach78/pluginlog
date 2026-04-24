@@ -23,6 +23,8 @@ enum RetainedWorkspaceSurfaceProjectionBlocker: Equatable {
   case identityFailure(RetainedProjectionBuilder.Error)
   case partialProjectCoverage(missingProjectIDs: [UUID])
   case taskIdentityUnavailable(projectID: UUID, title: String)
+  case graphNotConfigured
+  case loadFailed(String)
 
   var userMessage: String {
     switch self {
@@ -32,6 +34,10 @@ enum RetainedWorkspaceSurfaceProjectionBlocker: Equatable {
       return "Retained projection is missing \(missingProjectIDs.count) requested project(s)."
     case .taskIdentityUnavailable(_, let title):
       return "Retained task cannot be shown in Schedule/Timeline without a stable task id: \(title)"
+    case .graphNotConfigured:
+      return "Logseq graph is not configured for Schedule/Timeline retained projection."
+    case .loadFailed(let message):
+      return "Retained projection load failed: \(message)"
     }
   }
 }
@@ -197,6 +203,50 @@ enum RetainedWorkspaceSurfaceProjectionBuilder {
         source: .blocked(blocker)
       )
     }
+  }
+
+  static func resolveRetainedOnly(
+    _ result: RetainedWorkspaceSurfaceProjectionLoadResult
+  ) -> RetainedWorkspaceSurfaceProjectionResolvedRead {
+    switch result {
+    case .loaded(let projection):
+      return RetainedWorkspaceSurfaceProjectionResolvedRead(
+        projectSnapshots: projection.projectSnapshots,
+        projectSummaries: projection.projectSummaries,
+        scheduleEntriesByProjectID: projection.scheduleEntriesByProjectID,
+        calendarBridgeDecisionsByTaskID: projection.calendarBridgeDecisionsByTaskID,
+        source: .retained
+      )
+    case .fallbackAllowed(.graphNotConfigured):
+      return blockedRead(.graphNotConfigured)
+    case .fallbackAllowed(.loadFailed(let message)):
+      return blockedRead(.loadFailed(message))
+    case .blocked(let blocker):
+      return blockedRead(blocker)
+    }
+  }
+
+  static func shouldInvalidateConsumerCaches(
+    for source: RetainedWorkspaceSurfaceProjectionResolvedRead.Source
+  ) -> Bool {
+    switch source {
+    case .retained:
+      return false
+    case .legacyFallback, .blocked:
+      return true
+    }
+  }
+
+  private static func blockedRead(
+    _ blocker: RetainedWorkspaceSurfaceProjectionBlocker
+  ) -> RetainedWorkspaceSurfaceProjectionResolvedRead {
+    RetainedWorkspaceSurfaceProjectionResolvedRead(
+      projectSnapshots: [:],
+      projectSummaries: [:],
+      scheduleEntriesByProjectID: [:],
+      calendarBridgeDecisionsByTaskID: [:],
+      source: .blocked(blocker)
+    )
   }
 
   private static func validateSnapshotIdentities(

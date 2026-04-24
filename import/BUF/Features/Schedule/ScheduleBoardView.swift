@@ -1,6 +1,5 @@
 import AppKit
 import Combine
-import SwiftData
 import SwiftUI
 
 // Composition root only.
@@ -559,7 +558,6 @@ struct ScheduleBoardView: View {
   }()
 
   @EnvironmentObject var appState: AppState
-  @Environment(\.modelContext) var modelContext
   @Environment(\.undoManager) var undoManager
 
   let projectIDs: [UUID]
@@ -603,6 +601,8 @@ struct ScheduleBoardView: View {
   @State var cachedBackgroundAllDayEntries: [ScheduleAllDayLayout] = []
   @State var retainedScheduleCalendarBridgeDecisionsByTaskID:
     [UUID: RetainedCalendarBridgeDecision] = [:]
+  @State var retainedScheduleCalendarBridgeWriteMarkersByTaskID:
+    [UUID: RetainedCalendarBridgeWriteMarker] = [:]
   @State var workspaceScheduleProjectSnapshots: [UUID: WorkspaceProjectRuntimeRecord] = [:]
   @State var workspaceScheduleSliceEntriesByProjectID: [UUID: [ScheduleSliceEntry]] = [:]
   @State var workspaceLoadFallback: ScheduleWorkspaceLoadFallback?

@@ -1,5 +1,4 @@
 import Foundation
-import SwiftData
 import SwiftUI
 
 enum TimelineBoardReadPath {
@@ -119,6 +118,8 @@ extension TimelineBoardView {
       workspaceTimelineProjectSummaries = [:]
       workspaceTimelineScheduleEntriesByProjectID = [:]
       retainedTimelineCalendarBridgeDecisionsByTaskID = [:]
+      retainedTimelineCalendarBridgeWriteMarkersByTaskID = [:]
+      invalidateWorkspaceTimelineProjectionCaches()
       return
     }
 
@@ -126,21 +127,33 @@ extension TimelineBoardView {
       graphRootURL: appState.logseqGraphRootURL,
       projectIDs: requestedProjectIDs
     )
-    let resolvedRead = RetainedWorkspaceSurfaceProjectionBuilder.resolve(retainedResult) {
-      ReminderRuntimeProjectionReadModelService.workspaceSurfaceProjection(
-        projectIDs: requestedProjectIDs,
-        runtimeSnapshot: appState.cachedOutlinerRuntimeProjectionSnapshot
-      )
-    }
+    let resolvedRead = RetainedWorkspaceSurfaceProjectionBuilder.resolveRetainedOnly(retainedResult)
 
     workspaceTimelineProjectSnapshots = resolvedRead.projectSnapshots
     workspaceTimelineProjectSummaries = resolvedRead.projectSummaries
     workspaceTimelineScheduleEntriesByProjectID = resolvedRead.scheduleEntriesByProjectID
     retainedTimelineCalendarBridgeDecisionsByTaskID =
       resolvedRead.calendarBridgeDecisionsByTaskID
+    let currentTaskIDs = Set(resolvedRead.calendarBridgeDecisionsByTaskID.keys)
+    retainedTimelineCalendarBridgeWriteMarkersByTaskID =
+      retainedTimelineCalendarBridgeWriteMarkersByTaskID.filter { currentTaskIDs.contains($0.key) }
+    if RetainedWorkspaceSurfaceProjectionBuilder.shouldInvalidateConsumerCaches(
+      for: resolvedRead.source
+    ) {
+      invalidateWorkspaceTimelineProjectionCaches()
+    }
     if case .blocked = resolvedRead.source {
       appState.errorMessage = resolvedRead.errorMessage
     }
+  }
+
+  func invalidateWorkspaceTimelineProjectionCaches() {
+    cachedTimelineBars = []
+    cachedTimelineRowLayouts = []
+    cachedTimelineBarsSourceSignature = nil
+    cachedTimelineBarsPresentationSignature = nil
+    cachedTimelineDayHeaderSections = [:]
+    cachedTimelineDayHeaderSourceSignature = nil
   }
 
   func refreshAnchorDateIfNeeded(referenceDate: Date = .now) {

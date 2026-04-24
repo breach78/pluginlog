@@ -1,4 +1,3 @@
-import SwiftData
 import SwiftUI
 
 // Composition root only.
@@ -59,7 +58,6 @@ struct TimelineBoardView: View {
 
   @Binding var projectListSortMode: ProjectListSortMode
   @EnvironmentObject var appState: AppState
-  @Environment(\.modelContext) var modelContext
   @Environment(\.undoManager) var undoManager
 
   let projectIDs: [UUID]
@@ -88,6 +86,8 @@ struct TimelineBoardView: View {
   @State var workspaceTimelineScheduleEntriesByProjectID: [UUID: [ScheduleSliceEntry]] = [:]
   @State var retainedTimelineCalendarBridgeDecisionsByTaskID:
     [UUID: RetainedCalendarBridgeDecision] = [:]
+  @State var retainedTimelineCalendarBridgeWriteMarkersByTaskID:
+    [UUID: RetainedCalendarBridgeWriteMarker] = [:]
   @State var cachedTimelineBars: [TimelineProjectBar] = []
   @State var cachedTimelineRowLayouts: [TimelineRowLayout] = []
   @State var cachedTimelineBarsSourceSignature: Int?
