@@ -91,6 +91,8 @@ final class LogseqPagesChangeTracker: @unchecked Sendable {
 final class LogseqPagesDirectoryWatcher: @unchecked Sendable {
   typealias ChangeHandler = @MainActor ([URL]) async -> Void
 
+  static let defaultDebounceNanoseconds: UInt64 = 3_000_000_000
+
   private let pagesRootURL: URL
   private let debounceNanoseconds: UInt64
   private let tracker: LogseqPagesChangeTracker
@@ -104,7 +106,7 @@ final class LogseqPagesDirectoryWatcher: @unchecked Sendable {
 
   init(
     pagesRootURL: URL,
-    debounceNanoseconds: UInt64 = 600_000_000,
+    debounceNanoseconds: UInt64 = LogseqPagesDirectoryWatcher.defaultDebounceNanoseconds,
     tracker: LogseqPagesChangeTracker = LogseqPagesChangeTracker(),
     handler: @escaping ChangeHandler
   ) {

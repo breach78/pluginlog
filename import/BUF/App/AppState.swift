@@ -82,9 +82,6 @@ final class AppState: ObservableObject {
   var reminderSyncRecoveryJournal: ReminderSyncRecoveryJournalStore?
   var reminderSourceObserver: ReminderSourceObserver?
   var logseqPagesDirectoryWatcher: LogseqPagesDirectoryWatcher?
-  var logseqParentCompletionCascadeTask: Task<Void, Never>?
-  var pendingLogseqParentCompletionCascadeFileURLs: Set<URL> = []
-  let logseqParentCompletionCascadeDelay: Duration = .seconds(3)
 
   let storageCoordinator: LocalStorageCoordinator
   let platformUIFoundation: PlatformUIFoundation

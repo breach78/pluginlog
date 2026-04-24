@@ -25,6 +25,10 @@ final class LogseqPagesChangeTrackerTests: XCTestCase {
     XCTAssertEqual(changedFiles.map(\.lastPathComponent), ["Project.md"])
   }
 
+  func testDefaultWatcherDebounceLeavesThreeSecondsForUndoBeforeSync() {
+    XCTAssertEqual(LogseqPagesDirectoryWatcher.defaultDebounceNanoseconds, 3_000_000_000)
+  }
+
   func testAppAuthoredMarkdownWriteDoesNotReportChangeLoop() throws {
     let pagesRoot = try makePagesRoot()
     let tracker = LogseqPagesChangeTracker()

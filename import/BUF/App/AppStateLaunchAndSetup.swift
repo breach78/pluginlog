@@ -136,9 +136,6 @@ extension AppState {
     refreshContainerRootURL()
     reminderSourceObserver?.stop()
     reminderSourceObserver = nil
-    logseqParentCompletionCascadeTask?.cancel()
-    logseqParentCompletionCascadeTask = nil
-    pendingLogseqParentCompletionCascadeFileURLs.removeAll(keepingCapacity: true)
     stopLogseqPagesDirectoryWatcher()
     modelContainer = nil
     scheduleCalendarOverlayProjection = .empty
