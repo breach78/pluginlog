@@ -87,6 +87,39 @@ final class RetainedProjectionBuilderTests: XCTestCase {
     XCTAssertTrue(snapshot.projects.isEmpty)
   }
 
+  func testBuildDerivesRuntimeIdentitiesFromReminderIdentifiers() throws {
+    let snapshot = try RetainedProjectionBuilder.build(
+      .init(
+        pages: [
+          makePageSnapshot(
+            title: "Reminder Project",
+            projectID: nil,
+            reminderListExternalIdentifier: "reminder-list-1",
+            usesProjectTag: false,
+            managedTasks: [
+              .init(
+                title: "Reminder task",
+                isCompleted: false,
+                reminderExternalIdentifier: "reminder-1"
+              )
+            ]
+          )
+        ]
+      )
+    )
+
+    let project = try XCTUnwrap(snapshot.projects.onlyValue)
+    let task = try XCTUnwrap(project.tasks.onlyValue)
+
+    XCTAssertEqual(
+      project.identity.projectID,
+      RetainedProjectionBuilder.derivedProjectID(for: "reminder-list-1")
+    )
+    XCTAssertEqual(project.identity.reminderListExternalIdentifier, "reminder-list-1")
+    XCTAssertEqual(task.identity.taskID, ReminderProjectionIdentity.taskID(for: "reminder-1"))
+    XCTAssertEqual(task.identity.reminderExternalIdentifier, "reminder-1")
+  }
+
   func testBuildFailsClosedOnDuplicateProjectIdentityValues() {
     let projectID = UUID()
 
@@ -296,7 +329,7 @@ final class RetainedProjectionBuilderTests: XCTestCase {
                 .init(
                   title: "Damaged task",
                   isCompleted: false,
-                  reminderExternalIdentifier: "reminder-1"
+                  calendarEventExternalIdentifier: "event-1"
                 )
               ]
             )
@@ -332,24 +365,6 @@ final class RetainedProjectionBuilderTests: XCTestCase {
       )
     }
 
-    XCTAssertThrowsError(
-      try RetainedProjectionBuilder.build(
-        .init(
-          pages: [
-            makePageSnapshot(
-              title: "Damaged Page",
-              projectID: nil,
-              reminderListExternalIdentifier: "reminder-list-1"
-            )
-          ]
-        )
-      )
-    ) { error in
-      XCTAssertEqual(
-        error as? RetainedProjectionBuilder.Error,
-        .damagedProjectIdentity(pageTitle: "Damaged Page")
-      )
-    }
   }
 
   private func makeGraphRoot(

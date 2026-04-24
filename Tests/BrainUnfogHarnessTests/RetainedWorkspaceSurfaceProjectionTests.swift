@@ -2,10 +2,11 @@ import XCTest
 @testable import BrainUnfogHarness
 
 final class RetainedWorkspaceSurfaceProjectionTests: XCTestCase {
-  func testBuildMapsRetainedSnapshotIntoScheduleSurfaceAndCalendarDecisions() throws {
+  func testBuildMapsRetainedSnapshotIntoScheduleSurfaceWithoutCalendarWrites() throws {
     let projectID = RetainedProjectionBuilder.derivedProjectID(for: "reminder-list-1")
     let dateOnlyTaskID = UUID()
     let timedTaskID = UUID()
+    let timedDefaultDurationTaskID = UUID()
     let day = try XCTUnwrap(Self.calendar.date(from: DateComponents(year: 2026, month: 4, day: 25)))
     let start = try XCTUnwrap(
       Self.calendar.date(from: DateComponents(year: 2026, month: 4, day: 25, hour: 14, minute: 30))
@@ -39,6 +40,14 @@ final class RetainedWorkspaceSurfaceProjectionTests: XCTestCase {
               canonicalRepeatRule: "weekly|1|",
               calendarEventExternalIdentifier: "event-1"
             ),
+            makeTask(
+              taskID: timedDefaultDurationTaskID,
+              title: "Timed default duration",
+              parsedDate: start,
+              hasExplicitTime: true,
+              durationMinutes: nil,
+              calendarEventExternalIdentifier: nil
+            ),
           ],
           usesProjectTag: true,
           isBUFOwned: true,
@@ -60,25 +69,16 @@ final class RetainedWorkspaceSurfaceProjectionTests: XCTestCase {
     XCTAssertEqual(projectSnapshot.title, "Launch")
     XCTAssertEqual(projectSnapshot.projectNoteMarkdown, "Ship notes")
     XCTAssertEqual(projectSnapshot.reminderListExternalIdentifier, "reminder-list-1")
-    XCTAssertEqual(entries.map(\.taskID), [dateOnlyTaskID, timedTaskID])
+    XCTAssertEqual(entries.map(\.taskID), [dateOnlyTaskID, timedTaskID, timedDefaultDurationTaskID])
     XCTAssertFalse(entries[0].scheduleHasExplicitTime)
     XCTAssertEqual(entries[0].dueDate, day)
     XCTAssertTrue(entries[1].scheduleHasExplicitTime)
     XCTAssertEqual(entries[1].scheduledDurationMinutes, 45)
     XCTAssertEqual(entries[1].recurrenceRuleRaw, "weekly|1|")
-    XCTAssertEqual(surface.projectSummaries[projectID]?.openRootTaskCount, 2)
+    XCTAssertEqual(surface.projectSummaries[projectID]?.openRootTaskCount, 3)
     XCTAssertEqual(surface.calendarBridgeDecisionsByTaskID[dateOnlyTaskID], .noAction)
-    XCTAssertEqual(
-      surface.calendarBridgeDecisionsByTaskID[timedTaskID],
-      .upsert(
-        RetainedCalendarBridgeUpsertRequest(
-          externalIdentifier: "event-1",
-          title: "Timed",
-          startDate: start,
-          durationMinutes: 45
-        )
-      )
-    )
+    XCTAssertEqual(surface.calendarBridgeDecisionsByTaskID[timedTaskID], .noAction)
+    XCTAssertEqual(surface.calendarBridgeDecisionsByTaskID[timedDefaultDurationTaskID], .noAction)
 
     let taskDescriptors = ScheduleProjectionService.taskDescriptors(
       projectIDs: [projectID],
@@ -93,6 +93,12 @@ final class RetainedWorkspaceSurfaceProjectionTests: XCTestCase {
       try XCTUnwrap(scheduleItems.first { $0.source == .workspaceTask(taskID: dateOnlyTaskID, projectID: projectID) })
         .isAllDay
     )
+    let defaultDurationItem = try XCTUnwrap(
+      scheduleItems.first {
+        $0.source == .workspaceTask(taskID: timedDefaultDurationTaskID, projectID: projectID)
+      }
+    )
+    XCTAssertEqual(defaultDurationItem.endDate.timeIntervalSince(defaultDurationItem.startDate), 15 * 60)
   }
 
   func testBuildBlocksPartialRequestedProjectCoverage() {
@@ -335,7 +341,7 @@ final class RetainedWorkspaceSurfaceProjectionTests: XCTestCase {
 
     XCTAssertEqual(surface.projectSnapshots[projectID]?.title, "Graph Project")
     XCTAssertEqual(surface.scheduleEntriesByProjectID[projectID]?.first?.taskID, taskID)
-    XCTAssertNotNil(surface.calendarBridgeDecisionsByTaskID[taskID])
+    XCTAssertEqual(surface.calendarBridgeDecisionsByTaskID[taskID], .noAction)
   }
 
   private static let calendar: Calendar = {

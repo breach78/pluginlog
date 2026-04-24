@@ -49,14 +49,14 @@ enum RetainedReminderImportSync {
         )
 
         return LogseqProjectPageStore.TaskRecord(
-          taskID: taskID,
+          taskID: nil,
           title: taskTitle,
           isCompleted: item.isCompleted,
           date: LogseqReminderPropertyCodec.encodeDate(
             item.dueDate,
             hasExplicitTime: item.scheduleHasExplicitTime
           ),
-          duration: item.scheduledDurationMinutes.map(String.init),
+          duration: nil,
           repeatRule: LogseqReminderPropertyCodec.encodeRepeat(item.recurrenceRuleRaw),
           reminderExternalIdentifier: taskIdentifier,
           calendarEventExternalIdentifier: nil

@@ -58,6 +58,7 @@ extension AppState {
         Task { @MainActor in
           self?.refreshCurrentDayBoundaryIfNeeded()
           self?.sweepReminderSyncEditSessionsIfNeeded()
+          self?.requestStartupSyncIfNeeded()
         }
       })
     dayBoundaryObservers.append(

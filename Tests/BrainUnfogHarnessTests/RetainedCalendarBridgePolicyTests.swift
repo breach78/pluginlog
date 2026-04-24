@@ -2,7 +2,7 @@ import XCTest
 @testable import BrainUnfogHarness
 
 final class RetainedCalendarBridgePolicyTests: XCTestCase {
-  func testExplicitTimeTaskWithDurationProducesOwnedEventUpsert() throws {
+  func testExplicitTimeTaskWithDurationDoesNotProduceCalendarEventWrite() throws {
     let startDate = try XCTUnwrap(
       Calendar(identifier: .gregorian).date(
         from: DateComponents(year: 2026, month: 4, day: 25, hour: 14, minute: 30)
@@ -22,17 +22,7 @@ final class RetainedCalendarBridgePolicyTests: XCTestCase {
 
     let decision = RetainedCalendarBridgePolicy.decision(for: task)
 
-    XCTAssertEqual(
-      decision,
-      .upsert(
-        RetainedCalendarBridgeUpsertRequest(
-          externalIdentifier: "event-1",
-          title: "Prepare launch",
-          startDate: startDate,
-          durationMinutes: 45
-        )
-      )
-    )
+    XCTAssertEqual(decision, .noAction)
   }
 
   func testDateOnlyTaskDoesNotOwnCalendarEvent() throws {
@@ -55,7 +45,7 @@ final class RetainedCalendarBridgePolicyTests: XCTestCase {
     XCTAssertEqual(decision, .noAction)
   }
 
-  func testExistingOwnedEventIsRemovedWhenTaskBecomesDateOnlyOrUnschedulable() throws {
+  func testLegacyCalendarIdentityDoesNotProduceRemovalWrite() throws {
     let day = try XCTUnwrap(
       Calendar(identifier: .gregorian).date(
         from: DateComponents(year: 2026, month: 4, day: 25)
@@ -73,7 +63,7 @@ final class RetainedCalendarBridgePolicyTests: XCTestCase {
     )
     XCTAssertEqual(
       RetainedCalendarBridgePolicy.decision(for: dateOnlyTask),
-      .removeOwnedEvent(externalIdentifier: "event-date-only")
+      .noAction
     )
 
     let noDateTask = makeTask(
@@ -87,11 +77,11 @@ final class RetainedCalendarBridgePolicyTests: XCTestCase {
     )
     XCTAssertEqual(
       RetainedCalendarBridgePolicy.decision(for: noDateTask),
-      .removeOwnedEvent(externalIdentifier: "event-no-date")
+      .noAction
     )
   }
 
-  func testAmbiguousOwnedEventIdentifierFailsClosed() throws {
+  func testAmbiguousLegacyCalendarIdentifierDoesNotProduceCalendarWrite() throws {
     let startDate = try XCTUnwrap(
       Calendar(identifier: .gregorian).date(
         from: DateComponents(year: 2026, month: 4, day: 25, hour: 14, minute: 30)
@@ -112,10 +102,10 @@ final class RetainedCalendarBridgePolicyTests: XCTestCase {
       ambiguousOwnedEventIdentifiers: ["event-1"]
     )
 
-    XCTAssertEqual(decision, .failClosed(.ambiguousOwnedEventIdentifier("event-1")))
+    XCTAssertEqual(decision, .noAction)
   }
 
-  func testExistingOwnedEventWithDamagedScheduleFailsClosed() {
+  func testLegacyCalendarIdentityWithDamagedScheduleDoesNotProduceCalendarWrite() {
     let validDate = Calendar(identifier: .gregorian).date(
       from: DateComponents(year: 2026, month: 4, day: 25, hour: 14, minute: 30)
     )
@@ -130,7 +120,7 @@ final class RetainedCalendarBridgePolicyTests: XCTestCase {
     )
     XCTAssertEqual(
       RetainedCalendarBridgePolicy.decision(for: damagedDateTask),
-      .failClosed(.invalidDate("event-broken-date"))
+      .noAction
     )
 
     let damagedDurationTask = makeTask(
@@ -144,7 +134,7 @@ final class RetainedCalendarBridgePolicyTests: XCTestCase {
     )
     XCTAssertEqual(
       RetainedCalendarBridgePolicy.decision(for: damagedDurationTask),
-      .failClosed(.invalidDuration("event-broken-duration"))
+      .noAction
     )
   }
 

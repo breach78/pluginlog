@@ -122,6 +122,7 @@ extension AppState {
     refreshContainerRootURL()
     reminderSourceObserver?.stop()
     reminderSourceObserver = nil
+    stopLogseqPagesDirectoryWatcher()
     modelContainer = nil
     scheduleCalendarOverlayProjection = .empty
     isInitialSyncRunning = false

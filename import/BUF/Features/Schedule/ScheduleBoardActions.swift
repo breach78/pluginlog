@@ -1024,27 +1024,9 @@ extension ScheduleBoardView {
           calendar: calendar,
           reminderProjectProvider: appState.reminderProjectProvider
         )
-        let bridgeResult: RetainedCalendarBridgeApplyResult?
-        do {
-          bridgeResult = try await RetainedCalendarEventKitBridge.apply(
-            commandResult: result,
-            graphRootURL: appState.logseqGraphRootURL
-          )
-        } catch {
-          bridgeResult = nil
-          appState.errorMessage = error.localizedDescription
-        }
         await reloadWorkspaceScheduleProjectDetails(for: activeProjectIDs)
-        if let bridgeResult {
-          retainedScheduleCalendarBridgeDecisionsByTaskID[taskID] =
-            bridgeResult.calendarBridgeDecision
-          retainedScheduleCalendarBridgeWriteMarkersByTaskID[taskID] =
-            bridgeResult.calendarWriteMarker
-        } else {
-          retainedScheduleCalendarBridgeDecisionsByTaskID[taskID] =
-            result.calendarBridgeDecision
-          retainedScheduleCalendarBridgeWriteMarkersByTaskID[taskID] = nil
-        }
+        retainedScheduleCalendarBridgeDecisionsByTaskID[taskID] = result.calendarBridgeDecision
+        retainedScheduleCalendarBridgeWriteMarkersByTaskID[taskID] = nil
         refreshCalendarOverlay(force: true)
 
         guard registerUndo else { return }

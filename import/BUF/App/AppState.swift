@@ -79,6 +79,7 @@ final class AppState: ObservableObject {
   var reminderSyncEditGate: ReminderSyncEditGate?
   var reminderSyncRecoveryJournal: ReminderSyncRecoveryJournalStore?
   var reminderSourceObserver: ReminderSourceObserver?
+  var logseqPagesDirectoryWatcher: LogseqPagesDirectoryWatcher?
 
   let storageCoordinator: LocalStorageCoordinator
   let platformUIFoundation: PlatformUIFoundation
@@ -195,6 +196,7 @@ final class AppState: ObservableObject {
     editorMotionReleaseTask?.cancel()
     scheduleCalendarOverlayProjectionCancellable?.cancel()
     scheduleCalendarOwnedEventInvalidationCancellable?.cancel()
+    logseqPagesDirectoryWatcher?.stop()
     editorStateChangeContinuations.values.forEach { $0.finish() }
   }
 

@@ -127,32 +127,16 @@ enum RetainedCalendarEventKitBridge {
     graphRootURL: URL?,
     eventWriter: RetainedCalendarEventWriting = EventKitRetainedCalendarEventWriter()
   ) async throws -> RetainedCalendarBridgeApplyResult {
-    switch commandResult.calendarBridgeDecision {
-    case .noAction:
-      return RetainedCalendarBridgeApplyResult(
-        projectID: commandResult.projectID,
-        taskID: commandResult.taskID,
-        calendarEventExternalIdentifier: nil,
-        calendarBridgeDecision: .noAction,
-        calendarWriteMarker: nil
-      )
-    case .failClosed(let blocker):
-      throw RetainedCalendarBridgeApplyError.calendarPolicyBlocked(blocker)
-    case .upsert(let request):
-      return try await applyUpsert(
-        request,
-        commandResult: commandResult,
-        graphRootURL: graphRootURL,
-        eventWriter: eventWriter
-      )
-    case .removeOwnedEvent(let externalIdentifier):
-      return try await applyRemoval(
-        externalIdentifier: externalIdentifier,
-        commandResult: commandResult,
-        graphRootURL: graphRootURL,
-        eventWriter: eventWriter
-      )
-    }
+    // Legacy safety seam: retained task scheduling must never write Apple Calendar events.
+    _ = graphRootURL
+    _ = eventWriter
+    return RetainedCalendarBridgeApplyResult(
+      projectID: commandResult.projectID,
+      taskID: commandResult.taskID,
+      calendarEventExternalIdentifier: nil,
+      calendarBridgeDecision: .noAction,
+      calendarWriteMarker: nil
+    )
   }
 
   private static func applyUpsert(

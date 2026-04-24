@@ -80,7 +80,7 @@ enum RetainedTaskCommandError: LocalizedError, Equatable {
     case .taskNotFound(let taskID):
       return "Retained task not found: \(taskID.uuidString)"
     case .unmanagedTask(let taskID):
-      return "Retained task is not in the managed Logseq task section: \(taskID.uuidString)"
+      return "Retained task is not in an editable Logseq task block: \(taskID.uuidString)"
     case .missingReminderExternalIdentifier(let taskID):
       return "Retained task is missing reminder_external_id:: \(taskID.uuidString)"
     case .unsafeProjectPage(let projectID):
@@ -109,10 +109,11 @@ enum RetainedTaskCommandService {
       taskID: taskID
     )
     let reminderReference = try reminderReference(for: context.task, taskID: taskID)
-    var managedTasks = context.page.managedTasks
-    managedTasks[context.managedTaskIndex].isCompleted = isCompleted
+    let updatedTasks = updatedTaskCollections(from: context) { task in
+      task.isCompleted = isCompleted
+    }
 
-    try await writeManagedTasks(managedTasks, using: context)
+    try await writeTasks(updatedTasks, using: context)
     do {
       guard try reminderProjectProvider.setTaskCompletion(
         for: reminderReference,
@@ -124,7 +125,7 @@ enum RetainedTaskCommandService {
     } catch {
       try await rollbackLogseqWrite(
         context: context,
-        expectedManagedTasks: managedTasks,
+        expectedTasks: updatedTasks,
         writeError: error
       )
     }
@@ -133,7 +134,7 @@ enum RetainedTaskCommandService {
       projectID: projectID,
       taskID: taskID,
       page: context.page,
-      managedTasks: managedTasks
+      tasks: updatedTasks
     )
   }
 
@@ -155,17 +156,18 @@ enum RetainedTaskCommandService {
     let reminderReference = try reminderReference(for: context.task, taskID: taskID)
     let dueDate = scheduledDate(day: day, timeMinutes: timeMinutes, calendar: calendar)
     let hasExplicitTime = dueDate != nil && timeMinutes != nil
-    var managedTasks = context.page.managedTasks
-    managedTasks[context.managedTaskIndex].date = LogseqReminderPropertyCodec.encodeDate(
-      dueDate,
-      hasExplicitTime: hasExplicitTime
-    )
-    managedTasks[context.managedTaskIndex].duration = normalizedDuration(
-      durationMinutes,
-      hasExplicitTime: hasExplicitTime
-    )
+    let updatedTasks = updatedTaskCollections(from: context) { task in
+      task.date = LogseqReminderPropertyCodec.encodeDate(
+        dueDate,
+        hasExplicitTime: hasExplicitTime
+      )
+      task.duration = normalizedDuration(
+        durationMinutes,
+        hasExplicitTime: hasExplicitTime
+      )
+    }
 
-    try await writeManagedTasks(managedTasks, using: context)
+    try await writeTasks(updatedTasks, using: context)
     do {
       guard try reminderProjectProvider.setTaskSchedule(
         for: reminderReference,
@@ -177,7 +179,7 @@ enum RetainedTaskCommandService {
     } catch {
       try await rollbackLogseqWrite(
         context: context,
-        expectedManagedTasks: managedTasks,
+        expectedTasks: updatedTasks,
         writeError: error
       )
     }
@@ -186,7 +188,7 @@ enum RetainedTaskCommandService {
       projectID: projectID,
       taskID: taskID,
       page: context.page,
-      managedTasks: managedTasks
+      tasks: updatedTasks
     )
   }
 
@@ -194,7 +196,17 @@ enum RetainedTaskCommandService {
     let store: LogseqProjectPageStore
     let page: LogseqProjectPageStore.PageSnapshot
     let task: RetainedTask
-    let managedTaskIndex: Int
+    let location: TaskLocation
+  }
+
+  private enum TaskLocation {
+    case managed(Int)
+    case external(Int)
+  }
+
+  private struct UpdatedTaskCollections {
+    var managedTasks: [LogseqProjectPageStore.TaskRecord]
+    var externalTasks: [LogseqProjectPageStore.TaskRecord]
   }
 
   private static func commandContext(
@@ -229,28 +241,45 @@ enum RetainedTaskCommandService {
     guard let task = project.tasks.first(where: { $0.identity.taskID == taskID }) else {
       throw RetainedTaskCommandError.taskNotFound(taskID)
     }
-    guard task.isManagedTask else {
-      throw RetainedTaskCommandError.unmanagedTask(taskID)
-    }
     guard task.identity.reminderExternalIdentifier != nil else {
       throw RetainedTaskCommandError.missingReminderExternalIdentifier(taskID)
     }
-    guard let page = pages.first(where: { $0.projectID == projectID }) else {
+    guard let page = pages.first(where: { retainedProjectID(for: $0) == projectID }) else {
       throw RetainedTaskCommandError.projectNotFound(projectID)
     }
-    guard page.canSafelyPersistProjectNote, page.hasManagedTaskSection else {
-      throw RetainedTaskCommandError.unsafeProjectPage(projectID)
-    }
-    guard let managedTaskIndex = page.managedTasks.firstIndex(where: { $0.taskID == taskID }) else {
+    guard let location = taskLocation(in: page, taskID: taskID) else {
       throw RetainedTaskCommandError.unmanagedTask(taskID)
+    }
+    switch location {
+    case .managed:
+      guard page.canSafelyPersistProjectNote, page.hasManagedTaskSection else {
+        throw RetainedTaskCommandError.unsafeProjectPage(projectID)
+      }
+    case .external:
+      guard page.reminderListExternalIdentifier != nil else {
+        throw RetainedTaskCommandError.unsafeProjectPage(projectID)
+      }
     }
 
     return CommandContext(
       store: store,
       page: page,
       task: task,
-      managedTaskIndex: managedTaskIndex
+      location: location
     )
+  }
+
+  private static func taskLocation(
+    in page: LogseqProjectPageStore.PageSnapshot,
+    taskID: UUID
+  ) -> TaskLocation? {
+    if let managedTaskIndex = page.managedTasks.firstIndex(where: { retainedTaskID(for: $0) == taskID }) {
+      return .managed(managedTaskIndex)
+    }
+    if let externalTaskIndex = page.externalTasks.firstIndex(where: { retainedTaskID(for: $0) == taskID }) {
+      return .external(externalTaskIndex)
+    }
+    return nil
   }
 
   private static func writeManagedTasks(
@@ -267,16 +296,53 @@ enum RetainedTaskCommandService {
     )
   }
 
+  private static func updatedTaskCollections(
+    from context: CommandContext,
+    mutate: (inout LogseqProjectPageStore.TaskRecord) -> Void
+  ) -> UpdatedTaskCollections {
+    var managedTasks = context.page.managedTasks
+    var externalTasks = context.page.externalTasks
+    switch context.location {
+    case .managed(let index):
+      mutate(&managedTasks[index])
+    case .external(let index):
+      mutate(&externalTasks[index])
+    }
+    return UpdatedTaskCollections(
+      managedTasks: managedTasks,
+      externalTasks: externalTasks
+    )
+  }
+
+  private static func writeTasks(
+    _ tasks: UpdatedTaskCollections,
+    using context: CommandContext
+  ) async throws {
+    switch context.location {
+    case .managed:
+      try await writeManagedTasks(tasks.managedTasks, using: context)
+    case .external(let index):
+      try await context.store.updateExternalTask(
+        in: context.page,
+        expectedExternalTasks: context.page.externalTasks,
+        taskIndex: index,
+        task: tasks.externalTasks[index]
+      )
+    }
+  }
+
   private static func rollbackLogseqWrite(
     context: CommandContext,
-    expectedManagedTasks: [LogseqProjectPageStore.TaskRecord],
+    expectedTasks: UpdatedTaskCollections,
     writeError: Error
   ) async throws -> Never {
     do {
-      try await context.store.updateManagedTasks(
-        in: context.page,
-        expectedManagedTasks: expectedManagedTasks,
-        managedTasks: context.page.managedTasks
+      try await writeTasks(
+        UpdatedTaskCollections(
+          managedTasks: context.page.managedTasks,
+          externalTasks: context.page.externalTasks
+        ),
+        using: rollbackContext(context, expectedTasks: expectedTasks)
       )
     } catch {
       throw RetainedTaskCommandError.rollbackFailed(
@@ -285,6 +351,21 @@ enum RetainedTaskCommandService {
       )
     }
     throw writeError
+  }
+
+  private static func rollbackContext(
+    _ context: CommandContext,
+    expectedTasks: UpdatedTaskCollections
+  ) -> CommandContext {
+    var page = context.page
+    page.managedTasks = expectedTasks.managedTasks
+    page.externalTasks = expectedTasks.externalTasks
+    return CommandContext(
+      store: context.store,
+      page: page,
+      task: context.task,
+      location: context.location
+    )
   }
 
   private static func reminderReference(
@@ -301,14 +382,43 @@ enum RetainedTaskCommandService {
     )
   }
 
+  private static func retainedProjectID(
+    for page: LogseqProjectPageStore.PageSnapshot
+  ) -> UUID? {
+    if let projectID = page.projectID {
+      return projectID
+    }
+    guard let reminderListExternalIdentifier = normalizedIdentifier(
+      page.reminderListExternalIdentifier
+    ) else {
+      return nil
+    }
+    return RetainedProjectionBuilder.derivedProjectID(for: reminderListExternalIdentifier)
+  }
+
+  private static func retainedTaskID(
+    for task: LogseqProjectPageStore.TaskRecord
+  ) -> UUID? {
+    if let taskID = task.taskID {
+      return taskID
+    }
+    guard let reminderExternalIdentifier = normalizedIdentifier(
+      task.reminderExternalIdentifier
+    ) else {
+      return nil
+    }
+    return ReminderProjectionIdentity.taskID(for: reminderExternalIdentifier)
+  }
+
   private static func result(
     projectID: UUID,
     taskID: UUID,
     page: LogseqProjectPageStore.PageSnapshot,
-    managedTasks: [LogseqProjectPageStore.TaskRecord]
+    tasks: UpdatedTaskCollections
   ) throws -> RetainedTaskCommandResult {
     var updatedPage = page
-    updatedPage.managedTasks = managedTasks
+    updatedPage.managedTasks = tasks.managedTasks
+    updatedPage.externalTasks = tasks.externalTasks
     let snapshot = try RetainedProjectionBuilder.build(.init(pages: [updatedPage]))
     guard let task = snapshot.tasks.first(where: { $0.identity.taskID == taskID }) else {
       throw RetainedTaskCommandError.taskNotFound(taskID)
@@ -348,5 +458,14 @@ enum RetainedTaskCommandService {
   ) -> String? {
     guard hasExplicitTime, let durationMinutes, durationMinutes > 0 else { return nil }
     return String(durationMinutes)
+  }
+
+  private static func normalizedIdentifier(_ value: String?) -> String? {
+    guard let value = value?.trimmingCharacters(in: .whitespacesAndNewlines),
+      !value.isEmpty
+    else {
+      return nil
+    }
+    return value
   }
 }

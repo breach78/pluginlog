@@ -58,11 +58,17 @@ final class RetainedReminderImportSyncTests: XCTestCase {
     )
 
     let result = try await RetainedReminderImportSync.sync(batch: batch, store: store, now: dueDate)
+    let secondResult = try await RetainedReminderImportSync.sync(batch: batch, store: store, now: dueDate)
     let pages = try await store.loadProjectPagesInScope()
     let snapshot = try RetainedProjectionBuilder.build(.init(pages: pages))
+    let pageFile = try XCTUnwrap(pages.first?.fileURL)
+    let pageMarkdown = try String(contentsOf: pageFile, encoding: .utf8)
 
     XCTAssertEqual(result.importedProjectCount, 1)
     XCTAssertEqual(result.importedTaskCount, 1)
+    XCTAssertEqual(secondResult.importedProjectCount, 1)
+    XCTAssertEqual(secondResult.importedTaskCount, 1)
+    XCTAssertEqual(pages.count, 1)
     XCTAssertEqual(snapshot.projects.count, 1)
     XCTAssertEqual(snapshot.projects[0].title, "Client Project")
     XCTAssertEqual(
@@ -71,10 +77,17 @@ final class RetainedReminderImportSyncTests: XCTestCase {
     )
     XCTAssertEqual(snapshot.projects[0].tasks.count, 1)
     XCTAssertEqual(snapshot.projects[0].tasks[0].title, "Prepare kickoff")
+    XCTAssertEqual(
+      snapshot.projects[0].tasks[0].identity.taskID,
+      ReminderProjectionIdentity.taskID(for: "task-external-1")
+    )
     XCTAssertEqual(snapshot.projects[0].tasks[0].identity.reminderExternalIdentifier, "task-external-1")
     XCTAssertEqual(snapshot.projects[0].tasks[0].schedule.rawDate, "2026-04-24 09:30")
-    XCTAssertEqual(snapshot.projects[0].tasks[0].schedule.rawDuration, "45")
+    XCTAssertNil(snapshot.projects[0].tasks[0].schedule.rawDuration)
     XCTAssertEqual(snapshot.projects[0].tasks[0].schedule.rawRepeatRule, "weekly")
+    XCTAssertFalse(pageMarkdown.contains("brain_unfog_project_id::"))
+    XCTAssertFalse(pageMarkdown.contains("brain_unfog_task_id::"))
+    XCTAssertEqual(pageMarkdown.components(separatedBy: "reminder_external_id:: task-external-1").count - 1, 1)
   }
 
   func testReminderProjectionIdentityMatchesRetainedProjectionProjectIdentity() {

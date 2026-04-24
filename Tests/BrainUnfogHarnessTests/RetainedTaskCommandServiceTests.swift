@@ -44,20 +44,53 @@ final class RetainedTaskCommandServiceTests: XCTestCase {
     XCTAssertTrue(provider.completionWrites[0].isCompleted)
     XCTAssertEqual(provider.scheduleWrites.count, 0)
     XCTAssertEqual(provider.recurrenceWrites.count, 0)
-    XCTAssertEqual(
-      result.calendarBridgeDecision,
-      .upsert(
-        RetainedCalendarBridgeUpsertRequest(
-          externalIdentifier: "event-1",
-          title: "Prepare launch",
-          startDate: try XCTUnwrap(LogseqReminderPropertyCodec.decodeDate("2026-04-25 14:30")?.date),
-          durationMinutes: 45
-        )
-      )
-    )
+    XCTAssertEqual(result.calendarBridgeDecision, .noAction)
+    XCTAssertNil(result.calendarWriteMarker)
   }
 
-  func testDateOnlyScheduleReturnsRemoveIntentWithoutClearingCalendarIdentity() async throws {
+  func testCompletionUpdatesReminderOnlyImportedTaskWithoutLegacyHiddenIDs() async throws {
+    let graphRootURL = try makeGraphRoot(named: "RetainedReminderOnlyCompletionGraph")
+    let projectID = RetainedProjectionBuilder.derivedProjectID(for: "reminder-list-1")
+    let taskID = ReminderProjectionIdentity.taskID(for: "reminder-1")
+    let store = makeStore(graphRootURL: graphRootURL)
+    try await store.upsertPage(
+      .init(
+        projectID: projectID,
+        title: "Imported",
+        reminderListExternalIdentifier: "reminder-list-1"
+      ),
+      noteMarkdown: "",
+      managedTasks: [
+        .init(
+          title: "Imported task",
+          isCompleted: false,
+          reminderExternalIdentifier: "reminder-1"
+        )
+      ]
+    )
+    let provider = FakeReminderProjectProvider()
+
+    let result = try await RetainedTaskCommandService.setTaskCompletion(
+      graphRootURL: graphRootURL,
+      projectID: projectID,
+      taskID: taskID,
+      isCompleted: true,
+      completionDate: .now,
+      reminderProjectProvider: provider
+    )
+
+    let task = try await loadedTask(reminderExternalIdentifier: "reminder-1", graphRootURL: graphRootURL)
+    let pageURL = graphRootURL.appendingPathComponent("pages/Imported.md", isDirectory: false)
+    let markdown = try String(contentsOf: pageURL, encoding: .utf8)
+    XCTAssertTrue(task.isCompleted)
+    XCTAssertEqual(provider.completionWrites.count, 1)
+    XCTAssertEqual(provider.completionWrites[0].reference.taskID, taskID)
+    XCTAssertEqual(result.calendarBridgeDecision, .noAction)
+    XCTAssertFalse(markdown.contains("brain_unfog_project_id::"))
+    XCTAssertFalse(markdown.contains("brain_unfog_task_id::"))
+  }
+
+  func testDateOnlyScheduleDoesNotWriteCalendarEvent() async throws {
     let graphRootURL = try makeGraphRoot(named: "RetainedDateOnlyGraph")
     let projectID = UUID()
     let taskID = UUID()
@@ -101,12 +134,11 @@ final class RetainedTaskCommandServiceTests: XCTestCase {
     XCTAssertEqual(provider.scheduleWrites[0].reference.reminderExternalIdentifier, "reminder-1")
     XCTAssertEqual(provider.scheduleWrites[0].dueDate, day)
     XCTAssertFalse(provider.scheduleWrites[0].hasExplicitTime)
-    XCTAssertEqual(result.calendarBridgeDecision, .removeOwnedEvent(externalIdentifier: "event-1"))
-    XCTAssertEqual(result.calendarWriteMarker?.operation, .removeOwnedEvent)
-    XCTAssertEqual(result.calendarWriteMarker?.externalIdentifier, "event-1")
+    XCTAssertEqual(result.calendarBridgeDecision, .noAction)
+    XCTAssertNil(result.calendarWriteMarker)
   }
 
-  func testExplicitTimeScheduleReturnsUpsertIntentAndDoesNotWriteRecurrence() async throws {
+  func testExplicitTimeScheduleUpdatesReminderWithoutCalendarEventWrite() async throws {
     let graphRootURL = try makeGraphRoot(named: "RetainedTimedGraph")
     let projectID = UUID()
     let taskID = UUID()
@@ -152,18 +184,56 @@ final class RetainedTaskCommandServiceTests: XCTestCase {
     XCTAssertEqual(provider.scheduleWrites[0].dueDate, expectedStart)
     XCTAssertTrue(provider.scheduleWrites[0].hasExplicitTime)
     XCTAssertEqual(provider.recurrenceWrites.count, 0)
-    XCTAssertEqual(
-      result.calendarBridgeDecision,
-      .upsert(
-        RetainedCalendarBridgeUpsertRequest(
-          externalIdentifier: nil,
-          title: "Timed",
-          startDate: expectedStart,
-          durationMinutes: 45
+    XCTAssertEqual(result.calendarBridgeDecision, .noAction)
+    XCTAssertNil(result.calendarWriteMarker)
+  }
+
+  func testScheduleUpdatesReminderOnlyImportedTaskWithoutCalendarWrite() async throws {
+    let graphRootURL = try makeGraphRoot(named: "RetainedReminderOnlyScheduleGraph")
+    let projectID = RetainedProjectionBuilder.derivedProjectID(for: "reminder-list-1")
+    let taskID = ReminderProjectionIdentity.taskID(for: "reminder-1")
+    let store = makeStore(graphRootURL: graphRootURL)
+    try await store.upsertPage(
+      .init(
+        projectID: projectID,
+        title: "Imported",
+        reminderListExternalIdentifier: "reminder-list-1"
+      ),
+      noteMarkdown: "",
+      managedTasks: [
+        .init(
+          title: "Imported task",
+          isCompleted: false,
+          reminderExternalIdentifier: "reminder-1"
         )
-      )
+      ]
     )
-    XCTAssertEqual(result.calendarWriteMarker?.operation, .upsertOwnedEvent)
+    let provider = FakeReminderProjectProvider()
+    let day = try XCTUnwrap(Self.calendar.date(from: .init(year: 2026, month: 4, day: 25)))
+    let expectedStart = try XCTUnwrap(
+      Self.calendar.date(from: .init(year: 2026, month: 4, day: 25, hour: 9, minute: 15))
+    )
+
+    let result = try await RetainedTaskCommandService.setTaskSchedule(
+      graphRootURL: graphRootURL,
+      projectID: projectID,
+      taskID: taskID,
+      day: day,
+      timeMinutes: 9 * 60 + 15,
+      durationMinutes: 30,
+      calendar: Self.calendar,
+      reminderProjectProvider: provider
+    )
+
+    let task = try await loadedTask(reminderExternalIdentifier: "reminder-1", graphRootURL: graphRootURL)
+    XCTAssertEqual(task.date, "2026-04-25 09:15")
+    XCTAssertEqual(task.duration, "30")
+    XCTAssertEqual(provider.scheduleWrites.count, 1)
+    XCTAssertEqual(provider.scheduleWrites[0].reference.taskID, taskID)
+    XCTAssertEqual(provider.scheduleWrites[0].dueDate, expectedStart)
+    XCTAssertTrue(provider.scheduleWrites[0].hasExplicitTime)
+    XCTAssertEqual(result.calendarBridgeDecision, .noAction)
+    XCTAssertNil(result.calendarWriteMarker)
   }
 
   func testMissingReminderIdentityBlocksWithoutMutatingLogseqOrReminder() async throws {
@@ -230,11 +300,92 @@ final class RetainedTaskCommandServiceTests: XCTestCase {
         reminderProjectProvider: provider
       )
       XCTFail("Expected unmanaged task to block")
-    } catch RetainedTaskCommandError.unmanagedTask(let blockedTaskID) {
-      XCTAssertEqual(blockedTaskID, taskID)
+    } catch RetainedTaskCommandError.unsafeProjectPage(let blockedProjectID) {
+      XCTAssertEqual(blockedProjectID, projectID)
     }
 
     XCTAssertEqual(provider.completionWrites.count, 0)
+  }
+
+  func testExternalReminderBackedTaskCompletionUpdatesLogseqBlockInPlace() async throws {
+    let graphRootURL = try makeGraphRoot(named: "RetainedExternalCompletionGraph")
+    let projectID = RetainedProjectionBuilder.derivedProjectID(for: "reminder-list-1")
+    let taskID = ReminderProjectionIdentity.taskID(for: "reminder-1")
+    let pagesURL = graphRootURL.appendingPathComponent("pages", isDirectory: true)
+    try FileManager.default.createDirectory(at: pagesURL, withIntermediateDirectories: true)
+    let pageURL = pagesURL.appendingPathComponent("External.md", isDirectory: false)
+    try """
+    tags:: 프로젝트
+    reminder_list_external_id:: reminder-list-1
+
+    - TODO External task
+      reminder_external_id:: reminder-1
+      date:: 2026-04-25
+    """.write(to: pageURL, atomically: true, encoding: .utf8)
+    let provider = FakeReminderProjectProvider()
+
+    let result = try await RetainedTaskCommandService.setTaskCompletion(
+      graphRootURL: graphRootURL,
+      projectID: projectID,
+      taskID: taskID,
+      isCompleted: true,
+      completionDate: .now,
+      reminderProjectProvider: provider
+    )
+
+    let markdown = try String(contentsOf: pageURL, encoding: .utf8)
+    XCTAssertTrue(markdown.contains("- DONE External task"))
+    XCTAssertTrue(markdown.contains("reminder_external_id:: reminder-1"))
+    XCTAssertFalse(markdown.contains("brain_unfog_task_id::"))
+    XCTAssertEqual(provider.completionWrites.count, 1)
+    XCTAssertEqual(provider.completionWrites[0].reference.taskID, taskID)
+    XCTAssertEqual(result.calendarBridgeDecision, .noAction)
+  }
+
+  func testExternalReminderBackedTaskScheduleUpdatesLogseqBlockInPlace() async throws {
+    let graphRootURL = try makeGraphRoot(named: "RetainedExternalScheduleGraph")
+    let projectID = RetainedProjectionBuilder.derivedProjectID(for: "reminder-list-1")
+    let taskID = ReminderProjectionIdentity.taskID(for: "reminder-1")
+    let pagesURL = graphRootURL.appendingPathComponent("pages", isDirectory: true)
+    try FileManager.default.createDirectory(at: pagesURL, withIntermediateDirectories: true)
+    let pageURL = pagesURL.appendingPathComponent("External.md", isDirectory: false)
+    try """
+    tags:: 프로젝트
+    reminder_list_external_id:: reminder-list-1
+
+    - TODO External task
+      reminder_external_id:: reminder-1
+      repeat:: weekly
+      - child note
+    """.write(to: pageURL, atomically: true, encoding: .utf8)
+    let provider = FakeReminderProjectProvider()
+    let day = try XCTUnwrap(Self.calendar.date(from: .init(year: 2026, month: 4, day: 25)))
+    let expectedStart = try XCTUnwrap(
+      Self.calendar.date(from: .init(year: 2026, month: 4, day: 25, hour: 11, minute: 0))
+    )
+
+    let result = try await RetainedTaskCommandService.setTaskSchedule(
+      graphRootURL: graphRootURL,
+      projectID: projectID,
+      taskID: taskID,
+      day: day,
+      timeMinutes: 11 * 60,
+      durationMinutes: 45,
+      calendar: Self.calendar,
+      reminderProjectProvider: provider
+    )
+
+    let markdown = try String(contentsOf: pageURL, encoding: .utf8)
+    XCTAssertTrue(markdown.contains("date:: 2026-04-25 11:00"))
+    XCTAssertTrue(markdown.contains("duration:: 45"))
+    XCTAssertTrue(markdown.contains("repeat:: weekly"))
+    XCTAssertTrue(markdown.contains("- child note"))
+    XCTAssertEqual(provider.scheduleWrites.count, 1)
+    XCTAssertEqual(provider.scheduleWrites[0].reference.taskID, taskID)
+    XCTAssertEqual(provider.scheduleWrites[0].dueDate, expectedStart)
+    XCTAssertTrue(provider.scheduleWrites[0].hasExplicitTime)
+    XCTAssertEqual(result.calendarBridgeDecision, .noAction)
+    XCTAssertNil(result.calendarWriteMarker)
   }
 
   func testReminderFailureRollsBackLogseqManagedTaskMutation() async throws {
@@ -389,6 +540,16 @@ final class RetainedTaskCommandServiceTests: XCTestCase {
     let pages = try await store.loadProjectPagesInScope()
     let tasks = pages.flatMap(\.managedTasks) + pages.flatMap(\.externalTasks)
     return try XCTUnwrap(tasks.first { $0.taskID == taskID })
+  }
+
+  private func loadedTask(
+    reminderExternalIdentifier: String,
+    graphRootURL: URL
+  ) async throws -> LogseqProjectPageStore.TaskRecord {
+    let store = makeStore(graphRootURL: graphRootURL)
+    let pages = try await store.loadProjectPagesInScope()
+    let tasks = pages.flatMap(\.managedTasks) + pages.flatMap(\.externalTasks)
+    return try XCTUnwrap(tasks.first { $0.reminderExternalIdentifier == reminderExternalIdentifier })
   }
 
   private func makeGraphRoot(named name: String) throws -> URL {

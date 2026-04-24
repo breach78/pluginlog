@@ -43,6 +43,7 @@ actor LogseqProjectPageStore {
     case projectIdentityMismatch
     case managedSectionUnavailable
     case managedTasksChangedSinceLoad
+    case externalTasksChangedSinceLoad
 
     var errorDescription: String? {
       switch self {
@@ -56,6 +57,8 @@ actor LogseqProjectPageStore {
         return "기존 페이지에 BUF 관리 섹션이 없어 관리 작업을 쓸 수 없습니다."
       case .managedTasksChangedSinceLoad:
         return "Logseq 관리 작업 섹션이 명령 준비 이후 변경되어 덮어쓰기를 중단했습니다."
+      case .externalTasksChangedSinceLoad:
+        return "Logseq 작업 블록이 동기화 준비 이후 변경되어 덮어쓰기를 중단했습니다."
       }
     }
   }
@@ -119,7 +122,7 @@ actor LogseqProjectPageStore {
     }
 
     let parsedPage = try parsePage(at: fileURL)
-    guard parsedPage.usesProjectTag || parsedPage.projectID != nil else { return nil }
+    guard pageIsInScope(parsedPage) else { return nil }
     return pageSnapshot(for: fileURL, parsedPage: parsedPage)
   }
 
@@ -166,7 +169,30 @@ actor LogseqProjectPageStore {
     return try allPageURLs()
       .compactMap { fileURL in
         let parsedPage = try parsePage(at: fileURL)
-        guard parsedPage.usesProjectTag || parsedPage.projectID != nil else {
+        guard pageIsInScope(parsedPage) else {
+          return nil
+        }
+        return pageSnapshot(for: fileURL, parsedPage: parsedPage)
+      }
+      .sorted { lhs, rhs in
+        let titleCompare = lhs.title.localizedStandardCompare(rhs.title)
+        if titleCompare != .orderedSame {
+          return titleCompare == .orderedAscending
+        }
+        return lhs.fileURL.lastPathComponent.localizedStandardCompare(rhs.fileURL.lastPathComponent)
+          == .orderedAscending
+      }
+  }
+
+  func loadProjectPagesInScope(at fileURLs: [URL]) throws -> [PageSnapshot] {
+    try preparePagesDirectory()
+
+    return try fileURLs
+      .filter { $0.pathExtension.lowercased() == "md" }
+      .filter { fileManager.fileExists(atPath: $0.path) }
+      .compactMap { fileURL in
+        let parsedPage = try parsePage(at: fileURL)
+        guard pageIsInScope(parsedPage) else {
           return nil
         }
         return pageSnapshot(for: fileURL, parsedPage: parsedPage)
@@ -193,11 +219,8 @@ actor LogseqProjectPageStore {
 
     if let fileURL = try resolvedOwnedPageURL(for: identity) {
       let parsedPage = try parsePage(at: fileURL)
-      guard let existingProjectID = parsedPage.projectID else {
+      guard pageMatches(identity: identity, parsedPage: parsedPage) else {
         throw StoreError.pageNotOwned
-      }
-      guard existingProjectID == identity.projectID else {
-        throw StoreError.projectIdentityMismatch
       }
       if !managedTasks.isEmpty && !parsedPage.hasManagedTaskSection {
         throw StoreError.managedSectionUnavailable
@@ -221,10 +244,10 @@ actor LogseqProjectPageStore {
       let destinationURL = try destinationPageURL(
         currentFileURL: fileURL,
         title: resolvedTitle,
-        projectID: identity.projectID
+        identity: identity
       )
       try write(rendered, to: destinationURL)
-      if destinationURL != fileURL, fileManager.fileExists(atPath: fileURL.path) {
+      if !sameFileURL(destinationURL, fileURL), fileManager.fileExists(atPath: fileURL.path) {
         try fileManager.removeItem(at: fileURL)
       }
       return .updated
@@ -258,11 +281,8 @@ actor LogseqProjectPageStore {
     managedTasks: [TaskRecord]
   ) throws -> UpsertDisposition {
     let parsedPage = try parsePage(at: page.fileURL)
-    guard let existingProjectID = parsedPage.projectID else {
+    guard pageSnapshotMatches(parsedPage: parsedPage, snapshot: page) else {
       throw StoreError.pageNotOwned
-    }
-    guard existingProjectID == page.projectID else {
-      throw StoreError.projectIdentityMismatch
     }
     guard parsedPage.hasManagedTaskSection, parsedPage.externalTasks.isEmpty else {
       throw StoreError.managedSectionUnavailable
@@ -275,7 +295,7 @@ actor LogseqProjectPageStore {
       propertyLines: parsedPage.propertyLines,
       existingUsesProjectReferenceTag: parsedPage.usesProjectTag && usesReferenceProjectTag(parsedPage.propertyLines),
       identity: ProjectIdentity(
-        projectID: existingProjectID,
+        projectID: retainedProjectID(for: parsedPage, fallback: page.projectID),
         title: parsedPage.title,
         reminderListExternalIdentifier: parsedPage.reminderListExternalIdentifier
       ),
@@ -330,12 +350,91 @@ actor LogseqProjectPageStore {
     let destinationURL = try destinationPageURL(
       currentFileURL: fileURL,
       title: resolvedTitle,
-      projectID: identity.projectID
+      identity: identity
     )
     try write(rendered, to: destinationURL)
-    if destinationURL != fileURL, fileManager.fileExists(atPath: fileURL.path) {
+    if !sameFileURL(destinationURL, fileURL), fileManager.fileExists(atPath: fileURL.path) {
       try fileManager.removeItem(at: fileURL)
     }
+    return .updated
+  }
+
+  @discardableResult
+  func writeReminderProvisioning(
+    to page: PageSnapshot,
+    reminderListExternalIdentifier: String,
+    externalTaskReminderIdentifiersByIndex: [Int: String]
+  ) throws -> UpsertDisposition {
+    let normalizedReminderListExternalIdentifier = normalizedOptionalValue(
+      reminderListExternalIdentifier
+    )
+    guard let normalizedReminderListExternalIdentifier else {
+      throw StoreError.projectIdentityMismatch
+    }
+
+    let parsedPage = try parsePage(at: page.fileURL)
+    if let existingReminderListExternalIdentifier = parsedPage.reminderListExternalIdentifier,
+      existingReminderListExternalIdentifier != normalizedReminderListExternalIdentifier
+    {
+      throw StoreError.projectIdentityMismatch
+    }
+    guard parsedPage.externalTasks == page.externalTasks else {
+      throw StoreError.externalTasksChangedSinceLoad
+    }
+    guard externalTaskReminderIdentifiersByIndex.keys.allSatisfy({ page.externalTasks.indices.contains($0) }) else {
+      throw StoreError.externalTasksChangedSinceLoad
+    }
+
+    var lines = normalizedLineEndings(try readText(at: page.fileURL))
+      .components(separatedBy: "\n")
+    upsertReminderListExternalIdentifier(
+      normalizedReminderListExternalIdentifier,
+      into: &lines
+    )
+    upsertExternalTaskReminderIdentifiers(
+      externalTaskReminderIdentifiersByIndex,
+      into: &lines
+    )
+
+    var rendered = lines.joined(separator: "\n")
+    if !rendered.hasSuffix("\n") {
+      rendered += "\n"
+    }
+    try write(rendered, to: page.fileURL)
+    return .updated
+  }
+
+  @discardableResult
+  func updateExternalTask(
+    in page: PageSnapshot,
+    expectedExternalTasks: [TaskRecord],
+    taskIndex: Int,
+    task: TaskRecord
+  ) throws -> UpsertDisposition {
+    guard expectedExternalTasks.indices.contains(taskIndex) else {
+      throw StoreError.externalTasksChangedSinceLoad
+    }
+    let parsedPage = try parsePage(at: page.fileURL)
+    guard pageSnapshotMatches(parsedPage: parsedPage, snapshot: page) else {
+      throw StoreError.pageNotOwned
+    }
+    guard parsedPage.externalTasks == expectedExternalTasks else {
+      throw StoreError.externalTasksChangedSinceLoad
+    }
+
+    var lines = normalizedLineEndings(try readText(at: page.fileURL))
+      .components(separatedBy: "\n")
+    updateExternalTaskRecord(
+      at: taskIndex,
+      with: task,
+      in: &lines
+    )
+
+    var rendered = lines.joined(separator: "\n")
+    if !rendered.hasSuffix("\n") {
+      rendered += "\n"
+    }
+    try write(rendered, to: page.fileURL)
     return .updated
   }
 
@@ -470,12 +569,16 @@ actor LogseqProjectPageStore {
       value: tagsValue,
       into: &lines
     )
-    upsertProperty(
-      rawKey: "brain_unfog_project_id",
-      key: "brain_unfog_project_id",
-      value: identity.projectID.uuidString.lowercased(),
-      into: &lines
-    )
+    if propertyValue(forKey: "brain_unfog_project_id", in: lines) != nil
+      || normalizedOptionalValue(identity.reminderListExternalIdentifier) == nil
+    {
+      upsertProperty(
+        rawKey: "brain_unfog_project_id",
+        key: "brain_unfog_project_id",
+        value: identity.projectID.uuidString.lowercased(),
+        into: &lines
+      )
+    }
 
     if let reminderListExternalIdentifier = normalizedOptionalValue(identity.reminderListExternalIdentifier) {
       upsertProperty(
@@ -650,6 +753,267 @@ actor LogseqProjectPageStore {
     return nil
   }
 
+  private func upsertReminderListExternalIdentifier(
+    _ reminderListExternalIdentifier: String,
+    into lines: inout [String]
+  ) {
+    let propertyRange = leadingPropertyRange(in: lines)
+    var propertyLines = parsePropertyLines(from: Array(lines[propertyRange]))
+    upsertProperty(
+      rawKey: "reminder_list_external_id",
+      key: "reminder_list_external_id",
+      value: reminderListExternalIdentifier,
+      into: &propertyLines
+    )
+    var replacement = propertyLines.map { "\($0.rawKey):: \($0.value)" }
+    if !replacement.isEmpty,
+      propertyRange.upperBound < lines.count,
+      !lines[propertyRange.upperBound].trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    {
+      replacement.append("")
+    }
+    lines.replaceSubrange(propertyRange, with: replacement)
+  }
+
+  private func upsertExternalTaskReminderIdentifiers(
+    _ identifiersByExternalTaskIndex: [Int: String],
+    into lines: inout [String]
+  ) {
+    guard !identifiersByExternalTaskIndex.isEmpty else { return }
+
+    let propertyRange = leadingPropertyRange(in: lines)
+    let bodyStart = propertyRange.upperBound
+    let managedRange = managedSectionRange(in: Array(lines.dropFirst(bodyStart))).map {
+      (bodyStart + $0.lowerBound)..<(bodyStart + $0.upperBound)
+    }
+
+    var externalTaskIndex = 0
+    var lineIndex = bodyStart
+    while lineIndex < lines.count {
+      if let managedRange, managedRange.contains(lineIndex) {
+        lineIndex = managedRange.upperBound
+        continue
+      }
+      guard let parsedTask = parseTaskLine(lines[lineIndex]) else {
+        lineIndex += 1
+        continue
+      }
+
+      if let reminderExternalIdentifier = normalizedOptionalValue(
+        identifiersByExternalTaskIndex[externalTaskIndex]
+      ) {
+        upsertTaskProperty(
+          key: "reminder_external_id",
+          rawKey: "reminder_external_id",
+          value: reminderExternalIdentifier,
+          taskLineIndex: lineIndex,
+          taskIndent: parsedTask.indent,
+          managedRange: managedRange,
+          in: &lines
+        )
+      }
+
+      externalTaskIndex += 1
+      lineIndex += 1
+    }
+  }
+
+  private func updateExternalTaskRecord(
+    at targetExternalTaskIndex: Int,
+    with task: TaskRecord,
+    in lines: inout [String]
+  ) {
+    let propertyRange = leadingPropertyRange(in: lines)
+    let bodyStart = propertyRange.upperBound
+    let managedRange = managedSectionRange(in: Array(lines.dropFirst(bodyStart))).map {
+      (bodyStart + $0.lowerBound)..<(bodyStart + $0.upperBound)
+    }
+
+    var externalTaskIndex = 0
+    var lineIndex = bodyStart
+    while lineIndex < lines.count {
+      if let managedRange, managedRange.contains(lineIndex) {
+        lineIndex = managedRange.upperBound
+        continue
+      }
+      guard let parsedTask = parseTaskLine(lines[lineIndex]) else {
+        lineIndex += 1
+        continue
+      }
+      guard externalTaskIndex == targetExternalTaskIndex else {
+        externalTaskIndex += 1
+        lineIndex += 1
+        continue
+      }
+
+      updateTaskMarker(at: lineIndex, isCompleted: task.isCompleted, in: &lines)
+      upsertOrRemoveTaskProperty(
+        key: "reminder_external_id",
+        rawKey: "reminder_external_id",
+        value: task.reminderExternalIdentifier,
+        taskLineIndex: lineIndex,
+        taskIndent: parsedTask.indent,
+        managedRange: managedRange,
+        in: &lines
+      )
+      upsertOrRemoveTaskProperty(
+        key: "date",
+        rawKey: "date",
+        value: task.date,
+        taskLineIndex: lineIndex,
+        taskIndent: parsedTask.indent,
+        managedRange: managedRange,
+        in: &lines
+      )
+      upsertOrRemoveTaskProperty(
+        key: "duration",
+        rawKey: "duration",
+        value: task.duration,
+        taskLineIndex: lineIndex,
+        taskIndent: parsedTask.indent,
+        managedRange: managedRange,
+        in: &lines
+      )
+      upsertOrRemoveTaskProperty(
+        key: "repeat",
+        rawKey: "repeat",
+        value: task.repeatRule,
+        taskLineIndex: lineIndex,
+        taskIndent: parsedTask.indent,
+        managedRange: managedRange,
+        in: &lines
+      )
+      return
+    }
+  }
+
+  private func updateTaskMarker(
+    at lineIndex: Int,
+    isCompleted: Bool,
+    in lines: inout [String]
+  ) {
+    let replacement = isCompleted ? "DONE" : "TODO"
+    if let range = lines[lineIndex].range(of: "- TODO ") {
+      lines[lineIndex].replaceSubrange(range, with: "- \(replacement) ")
+      return
+    }
+    if let range = lines[lineIndex].range(of: "- DONE ") {
+      lines[lineIndex].replaceSubrange(range, with: "- \(replacement) ")
+    }
+  }
+
+  private func upsertOrRemoveTaskProperty(
+    key: String,
+    rawKey: String,
+    value: String?,
+    taskLineIndex: Int,
+    taskIndent: Int,
+    managedRange: Range<Int>?,
+    in lines: inout [String]
+  ) {
+    guard let value = normalizedOptionalValue(value) else {
+      removeTaskProperty(
+        key: key,
+        taskLineIndex: taskLineIndex,
+        taskIndent: taskIndent,
+        managedRange: managedRange,
+        in: &lines
+      )
+      return
+    }
+    upsertTaskProperty(
+      key: key,
+      rawKey: rawKey,
+      value: value,
+      taskLineIndex: taskLineIndex,
+      taskIndent: taskIndent,
+      managedRange: managedRange,
+      in: &lines
+    )
+  }
+
+  private func removeTaskProperty(
+    key: String,
+    taskLineIndex: Int,
+    taskIndent: Int,
+    managedRange: Range<Int>?,
+    in lines: inout [String]
+  ) {
+    let endIndex = taskBlockEndIndex(
+      from: taskLineIndex,
+      taskIndent: taskIndent,
+      managedRange: managedRange,
+      in: lines
+    )
+    var lineIndex = taskLineIndex + 1
+    while lineIndex < endIndex {
+      if let property = parsePropertyLine(lines[lineIndex]), property.key == key {
+        lines.remove(at: lineIndex)
+        return
+      }
+      lineIndex += 1
+    }
+  }
+
+  private func upsertTaskProperty(
+    key: String,
+    rawKey: String,
+    value: String,
+    taskLineIndex: Int,
+    taskIndent: Int,
+    managedRange: Range<Int>?,
+    in lines: inout [String]
+  ) {
+    let endIndex = taskBlockEndIndex(
+      from: taskLineIndex,
+      taskIndent: taskIndent,
+      managedRange: managedRange,
+      in: lines
+    )
+    var insertionIndex = taskLineIndex + 1
+    var lineIndex = taskLineIndex + 1
+    while lineIndex < endIndex {
+      if let property = parsePropertyLine(lines[lineIndex]), property.key == key {
+        let indent = String(repeating: " ", count: indentationWidth(of: lines[lineIndex]))
+        lines[lineIndex] = "\(indent)\(property.rawKey):: \(value)"
+        return
+      }
+      lineIndex += 1
+    }
+
+    insertionIndex = min(insertionIndex, lines.count)
+    let indent = String(repeating: " ", count: taskIndent + 2)
+    lines.insert("\(indent)\(rawKey):: \(value)", at: insertionIndex)
+  }
+
+  private func taskBlockEndIndex(
+    from taskLineIndex: Int,
+    taskIndent: Int,
+    managedRange: Range<Int>?,
+    in lines: [String]
+  ) -> Int {
+    var lineIndex = taskLineIndex + 1
+    while lineIndex < lines.count {
+      if let managedRange, managedRange.contains(lineIndex) {
+        break
+      }
+      let line = lines[lineIndex]
+      if line.hasPrefix("## ") {
+        break
+      }
+      if parseTaskLine(line) != nil {
+        break
+      }
+      if indentationWidth(of: line) <= taskIndent,
+        !line.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+      {
+        break
+      }
+      lineIndex += 1
+    }
+    return lineIndex
+  }
+
   private func leadingPropertyRange(
     in lines: [String]
   ) -> Range<Int> {
@@ -726,6 +1090,67 @@ actor LogseqProjectPageStore {
   ) -> Bool {
     guard let tagsValue = propertyValue(forKey: "tags", in: propertyLines) else { return false }
     return tagsContainProjectScope(tagsValue)
+  }
+
+  private func pageIsInScope(_ parsedPage: ParsedPage) -> Bool {
+    parsedPage.usesProjectTag
+      || parsedPage.projectID != nil
+      || parsedPage.reminderListExternalIdentifier != nil
+  }
+
+  private func pageMatches(
+    identity: ProjectIdentity,
+    parsedPage: ParsedPage
+  ) -> Bool {
+    let identityReminderListExternalIdentifier = normalizedOptionalValue(
+      identity.reminderListExternalIdentifier
+    )
+    let projectMatches = parsedPage.projectID == identity.projectID
+    let reminderMatches =
+      identityReminderListExternalIdentifier != nil
+      && parsedPage.reminderListExternalIdentifier == identityReminderListExternalIdentifier
+
+    guard projectMatches || reminderMatches else { return false }
+    if let projectID = parsedPage.projectID, projectID != identity.projectID {
+      return false
+    }
+    if let reminderListExternalIdentifier = parsedPage.reminderListExternalIdentifier {
+      guard let identityReminderListExternalIdentifier,
+        reminderListExternalIdentifier == identityReminderListExternalIdentifier
+      else {
+        return false
+      }
+    }
+    return true
+  }
+
+  private func pageSnapshotMatches(
+    parsedPage: ParsedPage,
+    snapshot: PageSnapshot
+  ) -> Bool {
+    guard parsedPage.projectID != nil || parsedPage.reminderListExternalIdentifier != nil else {
+      return false
+    }
+    if parsedPage.projectID != snapshot.projectID {
+      return false
+    }
+    if parsedPage.reminderListExternalIdentifier != snapshot.reminderListExternalIdentifier {
+      return false
+    }
+    return true
+  }
+
+  private func retainedProjectID(
+    for parsedPage: ParsedPage,
+    fallback: UUID?
+  ) -> UUID {
+    if let projectID = parsedPage.projectID {
+      return projectID
+    }
+    if let reminderListExternalIdentifier = parsedPage.reminderListExternalIdentifier {
+      return RetainedProjectionBuilder.derivedProjectID(for: reminderListExternalIdentifier)
+    }
+    return fallback ?? UUID()
   }
 
   private func usesReferenceProjectTag(
@@ -869,18 +1294,21 @@ actor LogseqProjectPageStore {
     for fileURL: URL,
     parsedPage: ParsedPage
   ) -> PageSnapshot {
-    PageSnapshot(
+    let hasRetainedIdentity =
+      parsedPage.projectID != nil
+      || parsedPage.reminderListExternalIdentifier != nil
+    return PageSnapshot(
       fileURL: fileURL,
       title: parsedPage.title,
       projectID: parsedPage.projectID,
       reminderListExternalIdentifier: parsedPage.reminderListExternalIdentifier,
       usesProjectTag: parsedPage.usesProjectTag,
-      isBUFOwned: parsedPage.projectID != nil,
+      isBUFOwned: hasRetainedIdentity,
       hasManagedTaskSection: parsedPage.hasManagedTaskSection,
       noteMarkdown: parsedPage.noteMarkdown,
       managedTasks: parsedPage.managedTasks,
       externalTasks: parsedPage.externalTasks,
-      canSafelyPersistProjectNote: parsedPage.projectID != nil && parsedPage.externalTasks.isEmpty
+      canSafelyPersistProjectNote: hasRetainedIdentity && parsedPage.externalTasks.isEmpty
     )
   }
 
@@ -895,17 +1323,22 @@ actor LogseqProjectPageStore {
   private func destinationPageURL(
     currentFileURL: URL,
     title: String,
-    projectID: UUID
+    identity: ProjectIdentity
   ) throws -> URL {
     let preferredURL = preferredFileURL(for: title)
-    guard preferredURL != currentFileURL else { return currentFileURL }
+    guard !sameFileURL(preferredURL, currentFileURL) else { return currentFileURL }
     guard fileManager.fileExists(atPath: preferredURL.path) else { return preferredURL }
 
     let parsedPage = try parsePage(at: preferredURL)
-    guard parsedPage.projectID == projectID else {
+    guard pageMatches(identity: identity, parsedPage: parsedPage) else {
       throw StoreError.pageNotOwned
     }
     return preferredURL
+  }
+
+  private func sameFileURL(_ lhs: URL, _ rhs: URL) -> Bool {
+    lhs.resolvingSymlinksInPath().standardizedFileURL
+      == rhs.resolvingSymlinksInPath().standardizedFileURL
   }
 
   private func write(
@@ -946,5 +1379,10 @@ actor LogseqProjectPageStore {
       }
       throw error
     }
+    NotificationCenter.default.post(
+      name: .logseqProjectPageStoreDidWriteMarkdown,
+      object: self,
+      userInfo: [LogseqProjectPageStoreWriteNotification.fileURLKey: fileURL]
+    )
   }
 }

@@ -1,7 +1,11 @@
 # ADR-001: Keep BUF as the native hub and sync Logseq graph with Apple Reminders and Calendar
 
 ## Status
-Proposed
+Superseded in part by ADR-002, ADR-003, and ADR-004
+
+`ADR-002-reminder-backed-schedule-blocks-no-calendar-event-mirroring.md` supersedes the parts of this ADR that describe mirroring Reminder-backed tasks into a BUF-owned Apple Calendar.
+`ADR-003-use-reminder-identifiers-as-retained-sync-identity.md` supersedes the parts of this ADR that describe persisted Brain-Unfog-owned Markdown identity properties.
+`ADR-004-project-tag-auto-provisions-reminders-sync.md` supersedes the parts of this ADR that require manual adoption before project-tagged Logseq pages and tasks create Reminders objects.
 
 ## Date
 2026-04-23

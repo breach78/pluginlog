@@ -3,12 +3,18 @@
 ## Status
 Draft
 
+Superseded for current execution by `docs/plans/PLAN-005-logseq-reminders-calendar-sync-completion.md`.
+This document remains policy background, but its older Logseq-first bootstrap wording, Brain-Unfog-owned Markdown identity wording, and task-to-Calendar event write wording must not override `PLAN-005`, ADR-002, or ADR-003.
+
 ## Date
 2026-04-23
 
 ## Related Decision
 
 - `docs/decisions/ADR-001-buf-logseq-eventkit-architecture.md`
+- `docs/decisions/ADR-002-reminder-backed-schedule-blocks-no-calendar-event-mirroring.md`
+- `docs/decisions/ADR-003-use-reminder-identifiers-as-retained-sync-identity.md`
+- `docs/decisions/ADR-004-project-tag-auto-provisions-reminders-sync.md`
 
 ## Goal
 
@@ -16,7 +22,7 @@ Ship a controlled V1 sync system for:
 
 - `BUF <-> Logseq file graph`
 - `BUF <-> Apple Reminders`
-- `BUF <-> BUF-owned Apple Calendar`
+- `Apple Calendar -> BUF read-only Schedule overlay`
 
 without turning sync into a full mirror system.
 
@@ -43,8 +49,8 @@ The policy below keeps those risks bounded by reducing symmetry and making BUF t
 - BUF project title syncs with Apple Reminders list title
 - Logseq task blocks sync with Apple Reminders items
 - Logseq `date::`, `duration::`, `repeat::` sync with BUF scheduling fields
-- explicit-time scheduled tasks sync with a BUF-owned Apple Calendar
-- foreign calendars render as read-only overlays in BUF
+- Reminder-backed tasks render in Schedule with Logseq/app-owned duration blocks
+- Apple Calendar events render as read-only overlays in BUF
 - project selection in BUF opens the corresponding Logseq page
 
 ### Out of Scope
@@ -53,6 +59,7 @@ The policy below keeps those risks bounded by reducing symmetry and making BUF t
 - DB graph support
 - mirroring Logseq bullet order to Reminders
 - mirroring Logseq nesting to Reminders
+- creating, updating, or deleting Apple Calendar events from Reminder-backed tasks
 - automatic sync into arbitrary user calendars
 - automatic destructive delete propagation across all sides
 - exact task-block deep link on day one
@@ -107,14 +114,15 @@ These are user-editable and must round-trip through Logseq.
 
 Page:
 
-- `brain_unfog_project_id:: <uuid>`
 - `reminder_list_external_id:: <string>`
 
 Task:
 
-- `brain_unfog_task_id:: <uuid>`
 - `reminder_external_id:: <string>`
-- `calendar_event_external_id:: <string>` when the task owns a calendar event
+
+- `brain_unfog_project_id::` and `brain_unfog_task_id::` may exist from earlier prototypes, but they are not part of the current retained sync contract.
+- Current retained sync derives app runtime IDs from Reminder external identifiers instead of writing Brain Unfog IDs to Markdown.
+- `calendar_event_external_id::` may exist from earlier prototypes, but it is not part of the current retained task sync contract.
 
 These are linkage properties. They should be hidden in Logseq UI when the current client supports property hiding, but the system must remain correct even if they are visible.
 
@@ -125,11 +133,13 @@ V1 must treat shared user-facing properties as structured values, not free-form 
 - `date::`
   - allowed forms: `YYYY-MM-DD` or `YYYY-MM-DD HH:MM`
   - stored and interpreted in graph-local time
-  - date-only means reminder due date without explicit calendar time
-  - datetime means reminder due date with explicit time and becomes calendar-eligible when `duration::` is also present
+  - date-only means Reminder due date and day-level Schedule placement
+  - datetime means Reminder due date with explicit time and exact Schedule placement
 - `duration::`
   - allowed form: positive integer minutes
   - examples: `30`, `45`, `90`
+  - used by the Schedule view as the task block length
+  - remains in Logseq/app schedule state because Apple Reminders has no native duration field
 - `repeat::`
   - V1 allowed values: `daily`, `weekly`, `monthly`, `yearly`
   - free-form recurrence strings are out of scope for V1
@@ -144,7 +154,7 @@ This is a multi-writer system with one hub.
 - BUF is the reconciliation hub
 - Logseq is a user-editable content source
 - Reminders is a user-editable task source
-- the BUF-owned Calendar is a user-editable schedule source
+- Apple Calendar is a read-only schedule context source
 
 Interpretation:
 
@@ -173,7 +183,8 @@ Project scope is controlled by both visible project tagging and stable internal 
 Rules:
 
 - a page enters project sync scope when it has `tags:: 프로젝트` or `tags:: [[프로젝트]]`
-- a page already carrying valid BUF-owned internal IDs is treated as a managed page even if the tag is later removed
+- a project-tagged page without `reminder_list_external_id::` automatically creates a Reminders list and records the new list identifier
+- a page already carrying `reminder_list_external_id::` is treated as a managed page even if the tag is later removed
 - removing the tag from a managed page does not silently unsync it
 - tag removal from a managed page enters explicit repair or opt-out flow
 
@@ -187,23 +198,19 @@ First sync is import-first, not merge-everything-first.
 
 ### Rules
 
-1. Import project pages from Logseq into BUF first.
-2. Only pages with `tags:: 프로젝트` or `tags:: [[프로젝트]]` enter sync scope.
-3. Bind to existing reminders only when stable internal identifiers already match.
-4. Unmatched existing reminders are treated as unclaimed remote objects, not automatic matches.
-5. A separate claim or adoption flow may bind an unclaimed reminder or reminder list to a Logseq project or task only with explicit review or deterministic safe criteria.
-6. Create missing reminder lists and reminder items only after Logseq import finishes.
-7. Create owned calendar events only after task import finishes.
-8. Never delete unmatched remote objects during first sync.
-9. Never rewrite unowned Logseq pages during first sync.
+1. Import existing Reminders lists into Logseq pages first.
+2. Scan Logseq pages with `tags:: 프로젝트` or `tags:: [[프로젝트]]`.
+3. Create missing Reminders lists for project-tagged Logseq pages without `reminder_list_external_id::`.
+4. Create missing Reminder items for TODO/DONE blocks on Reminders-backed pages without `reminder_external_id::`.
+5. Bind to existing reminders only when stable Reminder identifiers already match or deterministic repair criteria apply.
+6. Load Apple Calendar overlay only after Reminders/Logseq task projection is stable.
+7. Never delete unmatched remote objects during first sync.
+8. Never rewrite ordinary untagged Logseq pages during first sync.
 
 ### Consequence
 
-V1 seeds from Logseq scope and claims remote objects conservatively.
-This lowers duplication risk.
-
-It also means pre-existing reminders without BUF IDs are not silently absorbed.
-They remain unclaimed until adopted or intentionally left unmanaged.
+V1 seeds from existing Reminders first, then auto-provisions project-tagged Logseq pages into Reminders.
+Ordinary Logseq pages and TODOs remain untouched.
 
 ## Rename Policy
 
@@ -243,8 +250,8 @@ Field fan-out in V1:
 
 - `title` syncs across Logseq, BUF, and Reminders
 - `completion state` syncs across Logseq, BUF, and Reminders
-- `date::` is the shared task time field and syncs to Reminders due date and to the owned Calendar event when one exists
-- `duration::` syncs to the owned Calendar event only
+- `date::` is the shared task time field and syncs to Reminders due date/date-time
+- `duration::` stays in Logseq/app state and controls Schedule task block length
 - `repeat::` syncs to Reminders only in V1
 
 ### Logseq-Only Fields
@@ -256,15 +263,18 @@ Field fan-out in V1:
 
 ### Calendar Projection Rule
 
-Only tasks with explicit schedule meaning become editable calendar events.
+The Schedule view is a project-planning surface built from Reminder-backed task blocks.
+Apple Calendar events are read-only context. Reminder-backed tasks must never be mirrored into Apple Calendar events.
 
 V1 rule:
 
-- create calendar events only for tasks that have a concrete `date::`
-- require `duration::` for owned event projection
+- show Reminder-backed tasks with `date::` and optional `duration::` in Schedule
+- use `duration::` as the Schedule task block length
+- use a 15 minute default Schedule block when a timed task has no valid `duration::`
+- do not create, update, or delete Apple Calendar events from Reminder-backed tasks
 - do not create recurring calendar series from `repeat::` in V1 unless recurrence support is designed explicitly
 
-Due-date-only tasks remain reminders-first tasks.
+Due-date-only tasks remain Reminder-backed task blocks and can still appear in Schedule as day-level work.
 
 ## Conflict Policy
 
@@ -280,13 +290,12 @@ Due-date-only tasks remain reminders-first tasks.
 
 The engine must detect and handle:
 
-- missing `brain_unfog_*` IDs
 - missing remote external IDs
 - orphaned reminders
 - orphaned calendar events
 - duplicate reminders linked to one task
-- duplicate Logseq pages carrying the same `brain_unfog_project_id`
-- duplicate Logseq tasks carrying the same `brain_unfog_task_id`
+- duplicate Logseq pages carrying the same `reminder_list_external_id::`
+- duplicate Logseq tasks carrying the same `reminder_external_id::`
 
 Repair should prefer rebinding over creating new objects when identity can be recovered safely.
 
@@ -337,7 +346,8 @@ Without this, rename and property-update loops will appear immediately.
 
 - importing an existing Logseq project graph does not create duplicate reminders
 - importing an existing reminder list without IDs does not hijack unrelated Logseq pages
-- importing an existing reminder list without IDs leaves it unclaimed unless explicitly adopted
+- adding `tags:: 프로젝트` to a Logseq page creates a Reminders list and writes `reminder_list_external_id::`
+- adding TODO/DONE inside a Reminders-backed page creates a Reminder item and writes `reminder_external_id::`
 - legacy body-level `#프로젝트` pages can be migrated into property-based scope before sync begins
 
 ### Rename
@@ -353,15 +363,15 @@ Without this, rename and property-update loops will appear immediately.
 
 ### Calendar
 
-- explicit-time task with `duration::` creates one owned event
-- moving the owned event updates the Logseq task properties
-- foreign calendar events remain read-only
+- timed Reminder-backed tasks render as Schedule blocks with Logseq/app-owned duration
+- Calendar events remain read-only overlays
+- Reminder-backed tasks never create, update, or delete Calendar events
 
 ### Repair
 
 - removing `reminder_external_id::` from a task does not crash sync
 - duplicate remote reminder detection enters repair flow instead of duplicating again
-- duplicate local `brain_unfog_task_id::` detection enters repair flow before writeback
+- duplicate local `reminder_external_id::` detection enters repair flow before writeback
 - removing `tags:: 프로젝트` from a managed page enters repair or opt-out flow instead of silently dropping scope
 
 ## Implementation Order
@@ -402,7 +412,7 @@ Exit criteria:
 - bootstrap from Logseq pages
 - create and bind reminder lists
 - create and bind reminder items from task blocks
-- add unclaimed reminder adoption path
+- auto-provision project-tagged pages and project-page tasks
 - round-trip title, completion, `date::`, and `repeat::`
 
 Exit criteria:
@@ -411,14 +421,14 @@ Exit criteria:
 
 ### Slice 5: Calendar sync
 
-- create BUF-owned calendar
-- project eligible tasks into owned events
-- round-trip `date::` and `duration::`
-- overlay foreign calendars read-only
+- read Apple Calendar events as Schedule overlays
+- keep Reminder-backed task blocks separate from Calendar events
+- never project tasks into Calendar events
+- keep overlay calendar interactions read-only
 
 Exit criteria:
 
-- one eligible task maps to one owned event and edits round-trip once
+- Schedule shows Reminder-backed task blocks and Calendar overlays without any task-to-Calendar writes
 
 ### Slice 6: Repair and hardening
 
@@ -442,7 +452,7 @@ V1 is done when:
 
 - project pages are the only Logseq sync surface
 - reminders round-trip for title, completion, `date::`, and `repeat::`
-- owned calendar events round-trip for `date::` and `duration::`
+- Reminder-backed task blocks use `date::` and `duration::` in Schedule without creating Calendar events
 - no duplicate creation occurs in the tested bootstrap paths
 - rename loops are suppressed
 - damage to hidden IDs is recoverable

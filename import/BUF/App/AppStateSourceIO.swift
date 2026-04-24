@@ -13,9 +13,29 @@ extension AppState {
     guard let pageStore = logseqProjectPageStore() else { return }
     do {
       try await pageStore.preparePagesDirectory()
+      configureLogseqPagesDirectoryWatcher()
     } catch {
       reportError(error, logMessage: "prepareProjectNoteStore failed")
     }
+  }
+
+  func configureLogseqPagesDirectoryWatcher() {
+    logseqPagesDirectoryWatcher?.stop()
+    guard let logseqGraphRootURL else {
+      logseqPagesDirectoryWatcher = nil
+      return
+    }
+    let pagesRootURL = logseqGraphRootURL.appendingPathComponent("pages", isDirectory: true)
+    let watcher = LogseqPagesDirectoryWatcher(pagesRootURL: pagesRootURL) { [weak self] changedFiles in
+      await self?.handleLogseqPagesDirectoryChange(changedFiles)
+    }
+    logseqPagesDirectoryWatcher = watcher
+    watcher.start()
+  }
+
+  func stopLogseqPagesDirectoryWatcher() {
+    logseqPagesDirectoryWatcher?.stop()
+    logseqPagesDirectoryWatcher = nil
   }
 
   func loadProjectNoteFromSource(projectID: UUID, context: ModelContext) async -> String? {
@@ -76,15 +96,53 @@ extension AppState {
         ),
         store: pageStore
       )
-      TaskIdentityBridgeStore.replaceAll(
-        projects: result.projectRecords,
-        tasks: result.taskRecords
+      let provisioningResult = try await RetainedLogseqProjectProvisioningSync.sync(
+        store: pageStore,
+        reminderProjectProvider: reminderProjectProvider
       )
-      syncStatus = "Synced \(result.importedProjectCount) lists / \(result.importedTaskCount) tasks"
+      TaskIdentityBridgeStore.replaceAll(
+        projects: result.projectRecords + provisioningResult.projectRecords,
+        tasks: result.taskRecords + provisioningResult.taskRecords
+      )
+      syncStatus =
+        "Synced \(result.importedProjectCount + provisioningResult.createdProjectCount) lists / \(result.importedTaskCount + provisioningResult.createdTaskCount) tasks"
       bumpWorkspaceTreeRevision()
     } catch {
       reportError(error, logMessage: "reconcileManagedLogseqPagesWithReminderSource failed")
       syncStatus = "Reminder sync failed"
+    }
+  }
+
+  func handleLogseqPagesDirectoryChange(_ changedFiles: [URL]) async {
+    guard !changedFiles.isEmpty, let pageStore = logseqProjectPageStore() else { return }
+    do {
+      let result = try await RetainedLogseqProjectProvisioningSync.syncChangedPages(
+        fileURLs: changedFiles,
+        store: pageStore,
+        reminderProjectProvider: reminderProjectProvider
+      )
+      for projectRecord in result.projectRecords {
+        TaskIdentityBridgeStore.upsertProject(
+          projectID: projectRecord.projectID,
+          title: projectRecord.title,
+          reminderListExternalIdentifier: projectRecord.reminderListExternalIdentifier
+        )
+      }
+      for taskRecord in result.taskRecords {
+        TaskIdentityBridgeStore.upsertTask(
+          taskID: taskRecord.taskID,
+          title: taskRecord.title,
+          reminderExternalIdentifier: taskRecord.reminderExternalIdentifier,
+          ownerProjectID: taskRecord.ownerProjectID
+        )
+      }
+      if result.createdProjectCount > 0 || result.createdTaskCount > 0 {
+        syncStatus = "Synced \(result.createdProjectCount) lists / \(result.createdTaskCount) tasks"
+      }
+      bumpWorkspaceTreeRevision()
+    } catch {
+      reportError(error, logMessage: "handleLogseqPagesDirectoryChange failed")
+      syncStatus = "Logseq sync failed"
     }
   }
 

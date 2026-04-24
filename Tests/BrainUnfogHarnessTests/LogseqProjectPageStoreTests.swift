@@ -43,7 +43,7 @@ final class LogseqProjectPageStoreTests: XCTestCase {
 
     let fileContents = try String(contentsOf: expectedFileURL, encoding: .utf8)
     XCTAssertTrue(fileContents.contains("tags:: 프로젝트"))
-    XCTAssertTrue(fileContents.contains("brain_unfog_project_id:: \(projectID.uuidString.lowercased())"))
+    XCTAssertFalse(fileContents.contains("brain_unfog_project_id::"))
     XCTAssertTrue(fileContents.contains("## Brain Unfog Managed Tasks"))
 
     let loaded = try await store.loadProjectPage(
@@ -289,7 +289,7 @@ final class LogseqProjectPageStoreTests: XCTestCase {
     XCTAssertTrue(codec.requiresExplicitTitleProperty(pageTitle: "Alpha/Beta"))
   }
 
-  func testOwnedPageRenameMovesFileAndKeepsOwnershipMetadata() async throws {
+  func testOwnedPageRenameMovesFileAndKeepsReminderOwnershipMetadata() async throws {
     let graphRootURL = try makeGraphRoot(named: "RenameGraph")
     let store = LogseqProjectPageStore(
       pagesRootURL: graphRootURL.appendingPathComponent("pages", isDirectory: true)
@@ -347,11 +347,12 @@ final class LogseqProjectPageStoreTests: XCTestCase {
       )
     )
     XCTAssertEqual(loaded?.fileURL.standardizedFileURL, newURL.standardizedFileURL)
-    XCTAssertEqual(loaded?.projectID, projectID)
+    XCTAssertEqual(loaded?.projectID, nil)
+    XCTAssertEqual(loaded?.reminderListExternalIdentifier, "reminder-list-1")
     XCTAssertEqual(loaded?.title, "New Title")
   }
 
-  func testClaimTaggedPageAddsOwnershipMetadataToInScopePage() async throws {
+  func testClaimTaggedPageAddsReminderOwnershipMetadataToInScopePage() async throws {
     let graphRootURL = try makeGraphRoot(named: "ClaimTaggedPageGraph")
     let pagesRootURL = graphRootURL.appendingPathComponent("pages", isDirectory: true)
     try FileManager.default.createDirectory(at: pagesRootURL, withIntermediateDirectories: true)
@@ -393,10 +394,31 @@ final class LogseqProjectPageStoreTests: XCTestCase {
       )
     )
 
-    XCTAssertEqual(loaded?.projectID, projectID)
+    XCTAssertEqual(loaded?.projectID, nil)
     XCTAssertEqual(loaded?.reminderListExternalIdentifier, "reminder-list-1")
     XCTAssertEqual(loaded?.managedTasks.count, 1)
     XCTAssertEqual(loaded?.managedTasks.first?.taskID, taskID)
+  }
+
+  func testReminderListIdentityAloneKeepsPageInScope() async throws {
+    let graphRootURL = try makeGraphRoot(named: "ReminderOnlyScopeGraph")
+    let pagesRootURL = graphRootURL.appendingPathComponent("pages", isDirectory: true)
+    try FileManager.default.createDirectory(at: pagesRootURL, withIntermediateDirectories: true)
+
+    let pageURL = pagesRootURL.appendingPathComponent("Reminder Only.md", isDirectory: false)
+    try """
+    reminder_list_external_id:: reminder-list-1
+
+    Imported from Reminders
+    """.write(to: pageURL, atomically: true, encoding: .utf8)
+
+    let store = LogseqProjectPageStore(pagesRootURL: pagesRootURL)
+    let pages = try await store.loadProjectPagesInScope()
+
+    XCTAssertEqual(pages.map(\.title), ["Reminder Only"])
+    XCTAssertEqual(pages.first?.projectID, nil)
+    XCTAssertEqual(pages.first?.reminderListExternalIdentifier, "reminder-list-1")
+    XCTAssertEqual(pages.first?.isBUFOwned, true)
   }
 
   func testClaimTaggedPageRejectsReadOnlyTaskImportPage() async throws {

@@ -24,7 +24,7 @@ enum WorkspaceTaskScheduleEventStore {
     let durationMinutes: Int
   }
 
-  static let defaultScheduledDurationMinutes = 30
+  static let defaultScheduledDurationMinutes = 15
   static let defaultPreparationTimeMinutes = 9 * 60
 
   static func items(

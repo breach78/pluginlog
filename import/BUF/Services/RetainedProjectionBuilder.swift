@@ -77,22 +77,15 @@ enum RetainedProjectionBuilder {
     var seenCalendarEventExternalIdentifiers: Set<String> = []
 
     for page in source.pages.sorted(by: pageSort) {
-      guard let projectID = page.projectID else {
+      let reminderListExternalIdentifier = normalizedIdentifier(page.reminderListExternalIdentifier)
+      guard let projectID = try resolvedProjectID(
+        from: page,
+        reminderListExternalIdentifier: reminderListExternalIdentifier
+      ) else {
         if let damagedTask = firstTaskWithRetainedIdentity(in: page) {
           throw Error.damagedTaskIdentity(projectTitle: page.title, taskTitle: damagedTask.title)
         }
-        if normalizedIdentifier(page.reminderListExternalIdentifier) != nil {
-          throw Error.damagedProjectIdentity(pageTitle: page.title)
-        }
         continue
-      }
-
-      let reminderListExternalIdentifier = normalizedIdentifier(page.reminderListExternalIdentifier)
-      guard isConsistentProjectIdentity(
-        projectID: projectID,
-        reminderListExternalIdentifier: reminderListExternalIdentifier
-      ) else {
-        throw Error.conflictingProjectIdentity(pageTitle: page.title)
       }
 
       guard seenProjectIDs.insert(projectID).inserted else {
@@ -106,6 +99,7 @@ enum RetainedProjectionBuilder {
 
       let tasks = try buildTasks(
         page: page,
+        projectID: projectID,
         seenTaskIDs: &seenTaskIDs,
         seenReminderExternalIdentifiers: &seenReminderExternalIdentifiers,
         seenCalendarEventExternalIdentifiers: &seenCalendarEventExternalIdentifiers,
@@ -167,6 +161,7 @@ enum RetainedProjectionBuilder {
 
   private static func buildTasks(
     page: LogseqProjectPageStore.PageSnapshot,
+    projectID: UUID,
     seenTaskIDs: inout Set<UUID>,
     seenReminderExternalIdentifiers: inout Set<String>,
     seenCalendarEventExternalIdentifiers: inout Set<String>,
@@ -193,7 +188,7 @@ enum RetainedProjectionBuilder {
 
       if let taskID = identity.taskID {
         tasksByID[taskID] = IndexedTask(
-          projectID: try unwrappedProjectID(from: page),
+          projectID: projectID,
           task: task
         )
       }
@@ -212,15 +207,13 @@ enum RetainedProjectionBuilder {
     let reminderExternalIdentifier = normalizedIdentifier(record.reminderExternalIdentifier)
     let calendarEventExternalIdentifier = normalizedIdentifier(record.calendarEventExternalIdentifier)
 
-    if record.taskID == nil && (reminderExternalIdentifier != nil || calendarEventExternalIdentifier != nil) {
+    let taskID = record.taskID
+      ?? reminderExternalIdentifier.map(ReminderProjectionIdentity.taskID(for:))
+
+    if taskID == nil && calendarEventExternalIdentifier != nil {
       throw Error.damagedTaskIdentity(projectTitle: projectTitle, taskTitle: record.title)
     }
 
-    if let taskID = record.taskID {
-      guard seenTaskIDs.insert(taskID).inserted else {
-        throw Error.duplicateTaskID(taskID)
-      }
-    }
     if let reminderExternalIdentifier {
       guard seenReminderExternalIdentifiers.insert(reminderExternalIdentifier).inserted else {
         throw Error.duplicateReminderExternalIdentifier(reminderExternalIdentifier)
@@ -231,9 +224,14 @@ enum RetainedProjectionBuilder {
         throw Error.duplicateCalendarEventExternalIdentifier(calendarEventExternalIdentifier)
       }
     }
+    if let taskID {
+      guard seenTaskIDs.insert(taskID).inserted else {
+        throw Error.duplicateTaskID(taskID)
+      }
+    }
 
     return RetainedTaskIdentity(
-      taskID: record.taskID,
+      taskID: taskID,
       reminderExternalIdentifier: reminderExternalIdentifier,
       calendarEventExternalIdentifier: calendarEventExternalIdentifier
     )
@@ -344,15 +342,6 @@ enum RetainedProjectionBuilder {
     }
   }
 
-  private static func unwrappedProjectID(
-    from page: LogseqProjectPageStore.PageSnapshot
-  ) throws -> UUID {
-    guard let projectID = page.projectID else {
-      throw Error.damagedProjectIdentity(pageTitle: page.title)
-    }
-    return projectID
-  }
-
   private static func parsedDurationMinutes(_ rawValue: String?) -> Int? {
     guard let rawValue = normalizedIdentifier(rawValue), let minutes = Int(rawValue), minutes > 0 else {
       return nil
@@ -385,6 +374,22 @@ enum RetainedProjectionBuilder {
   ) -> Bool {
     guard let reminderListExternalIdentifier else { return true }
     return projectID == derivedProjectID(for: reminderListExternalIdentifier)
+  }
+
+  private static func resolvedProjectID(
+    from page: LogseqProjectPageStore.PageSnapshot,
+    reminderListExternalIdentifier: String?
+  ) throws -> UUID? {
+    if let projectID = page.projectID {
+      guard isConsistentProjectIdentity(
+        projectID: projectID,
+        reminderListExternalIdentifier: reminderListExternalIdentifier
+      ) else {
+        throw Error.conflictingProjectIdentity(pageTitle: page.title)
+      }
+      return projectID
+    }
+    return reminderListExternalIdentifier.map(derivedProjectID(for:))
   }
 
   static func derivedProjectID(for reminderListExternalIdentifier: String) -> UUID {
