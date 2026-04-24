@@ -1,0 +1,5 @@
+---
+triple:          'arm64-apple-darwin'
+binary-path:     '/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/pluginlog-harnessPackageTests.xctest/Contents/MacOS/pluginlog-harnessPackageTests'
+relocations:     []
+...

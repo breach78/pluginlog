@@ -1,0 +1,12 @@
+{
+  "": {
+    "swift-dependencies": "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/pluginlog_harnessPackageTests.build/master.swiftdeps"
+  },
+  "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/pluginlog-harnessPackageTests.derived/runner.swift": {
+    "dependencies": "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/pluginlog_harnessPackageTests.build/runner.d",
+    "object": "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/pluginlog_harnessPackageTests.build/runner.swift.o",
+    "swiftmodule": "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/pluginlog_harnessPackageTests.build/runner~partial.swiftmodule",
+    "swift-dependencies": "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/pluginlog_harnessPackageTests.build/runner.swiftdeps",
+    "diagnostics": "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/pluginlog_harnessPackageTests.build/runner.dia"
+  }
+}

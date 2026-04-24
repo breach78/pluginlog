@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CFBundleIdentifier</key>
+  <string>com.brainunfog.harness</string>
+  <key>CFBundleName</key>
+  <string>BrainUnfogHarness</string>
+  <key>CFBundleDisplayName</key>
+  <string>Brain Unfog</string>
+  <key>CFBundleExecutable</key>
+  <string>BrainUnfogHarness</string>
+  <key>CFBundlePackageType</key>
+  <string>APPL</string>
+  <key>CFBundleShortVersionString</key>
+  <string>0.1</string>
+  <key>CFBundleVersion</key>
+  <string>1</string>
+  <key>NSCalendarsFullAccessUsageDescription</key>
+  <string>Brain Unfog needs calendar access to sync scheduled tasks with the BUF-owned calendar.</string>
+  <key>NSCalendarsWriteOnlyAccessUsageDescription</key>
+  <string>Brain Unfog needs calendar write access to maintain BUF-owned schedule events.</string>
+  <key>NSCalendarsUsageDescription</key>
+  <string>Brain Unfog needs calendar access to sync scheduled tasks with the BUF-owned calendar.</string>
+  <key>NSContactsUsageDescription</key>
+  <string>Brain Unfog may need contacts access when macOS resolves calendar participant metadata.</string>
+  <key>NSRemindersFullAccessUsageDescription</key>
+  <string>Brain Unfog needs reminders access to sync Logseq project tasks with Apple Reminders.</string>
+  <key>NSRemindersUsageDescription</key>
+  <string>Brain Unfog needs reminders access to sync Logseq project tasks with Apple Reminders.</string>
+</dict>
+</plist>
