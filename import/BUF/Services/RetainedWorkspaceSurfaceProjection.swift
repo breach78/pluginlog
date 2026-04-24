@@ -40,6 +40,15 @@ enum RetainedWorkspaceSurfaceProjectionBlocker: Equatable {
       return "Retained projection load failed: \(message)"
     }
   }
+
+  var shouldPresentGlobalError: Bool {
+    switch self {
+    case .taskIdentityUnavailable:
+      return false
+    case .identityFailure, .partialProjectCoverage, .graphNotConfigured, .loadFailed:
+      return true
+    }
+  }
 }
 
 enum RetainedWorkspaceSurfaceProjectionLoadResult: Equatable {
@@ -63,6 +72,7 @@ struct RetainedWorkspaceSurfaceProjectionResolvedRead: Equatable {
 
   var errorMessage: String? {
     guard case .blocked(let blocker) = source else { return nil }
+    guard blocker.shouldPresentGlobalError else { return nil }
     return blocker.userMessage
   }
 }
@@ -139,7 +149,7 @@ enum RetainedWorkspaceSurfaceProjectionBuilder {
 
       for (index, task) in project.tasks.enumerated() {
         guard let taskID = task.identity.taskID else {
-          return .blocked(.taskIdentityUnavailable(projectID: projectID, title: task.title))
+          continue
         }
 
         let scheduleEntry = scheduleEntry(

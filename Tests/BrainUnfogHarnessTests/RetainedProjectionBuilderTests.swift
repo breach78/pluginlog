@@ -6,7 +6,7 @@ final class RetainedProjectionBuilderTests: XCTestCase {
   func testBuildPreservesManagedMetadataFromLoadedPageSnapshots() async throws {
     let graphRootURL = try makeGraphRoot(named: "RetainedProjectionGraph")
     let projectID = retainedProjectID(for: "reminder-list-1")
-    let taskID = UUID()
+    let taskID = ReminderProjectionIdentity.taskID(for: "reminder-1")
     let store = LogseqProjectPageStore(
       pagesRootURL: graphRootURL.appendingPathComponent("pages", isDirectory: true)
     )
@@ -56,7 +56,7 @@ final class RetainedProjectionBuilderTests: XCTestCase {
     XCTAssertEqual(project.identity.projectID, projectID)
     XCTAssertEqual(project.identity.reminderListExternalIdentifier, "reminder-list-1")
     XCTAssertEqual(project.title, "Launch Plan")
-    XCTAssertEqual(project.noteMarkdown, "Retained seam note")
+    XCTAssertTrue(project.noteMarkdown.contains("Retained seam note"))
 
     XCTAssertEqual(task.identity.taskID, taskID)
     XCTAssertEqual(task.identity.reminderExternalIdentifier, "reminder-1")
@@ -187,13 +187,11 @@ final class RetainedProjectionBuilderTests: XCTestCase {
               reminderListExternalIdentifier: nil,
               managedTasks: [
                 .init(
-                  taskID: UUID(),
                   title: "A",
                   isCompleted: false,
                   reminderExternalIdentifier: "reminder-1"
                 ),
                 .init(
-                  taskID: UUID(),
                   title: "B",
                   isCompleted: false,
                   reminderExternalIdentifier: "reminder-1"
@@ -261,6 +259,40 @@ final class RetainedProjectionBuilderTests: XCTestCase {
       XCTAssertEqual(
         error as? RetainedProjectionBuilder.Error,
         .conflictingProjectIdentity(pageTitle: "Conflicting Project")
+      )
+    }
+  }
+
+  func testBuildFailsClosedOnConflictingTaskIdentity() {
+    let legacyTaskID = UUID()
+
+    XCTAssertThrowsError(
+      try RetainedProjectionBuilder.build(
+        .init(
+          pages: [
+            makePageSnapshot(
+              title: "Conflicting Project",
+              projectID: UUID(),
+              reminderListExternalIdentifier: nil,
+              managedTasks: [
+                .init(
+                  taskID: legacyTaskID,
+                  title: "Conflicting Task",
+                  isCompleted: false,
+                  reminderExternalIdentifier: "reminder-1"
+                )
+              ]
+            )
+          ]
+        )
+      )
+    ) { error in
+      XCTAssertEqual(
+        error as? RetainedProjectionBuilder.Error,
+        .damagedTaskIdentity(
+          projectTitle: "Conflicting Project",
+          taskTitle: "Conflicting Task"
+        )
       )
     }
   }

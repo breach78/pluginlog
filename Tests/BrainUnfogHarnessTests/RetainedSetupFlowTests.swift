@@ -20,6 +20,22 @@ final class RetainedSetupFlowTests: XCTestCase {
     try await super.tearDown()
   }
 
+  func testHarnessEntitlementsAllowGraphFolderSelectionAndPersistence() throws {
+    let entitlementsURL = URL(fileURLWithPath: #filePath)
+      .deletingLastPathComponent()
+      .deletingLastPathComponent()
+      .deletingLastPathComponent()
+      .appendingPathComponent("import/BUF/BrainUnfogHarness.entitlements", isDirectory: false)
+    let data = try Data(contentsOf: entitlementsURL)
+    let plist = try XCTUnwrap(
+      PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Bool]
+    )
+
+    XCTAssertEqual(plist["com.apple.security.app-sandbox"], true)
+    XCTAssertEqual(plist["com.apple.security.files.user-selected.read-write"], true)
+    XCTAssertEqual(plist["com.apple.security.files.bookmarks.app-scope"], true)
+  }
+
   func testLaunchDoesNotFallbackToOldContainerWhenGraphLocalBufIsDamaged() async throws {
     let storageCoordinator = LocalStorageCoordinator()
     let oldContainerRoot = try makeTemporaryDirectory(named: "old-container")
@@ -70,7 +86,50 @@ final class RetainedSetupFlowTests: XCTestCase {
     XCTAssertTrue(appState.hasSyncConsentDecision)
     XCTAssertFalse(appState.syncStarted)
     XCTAssertFalse(appState.isInitialSyncRunning)
+    XCTAssertNotNil(appState.reminderSourceObserver)
     XCTAssertEqual(calendarService.requestAccessCallCount, 1)
+
+    let configURL = graphRoot.appendingPathComponent("logseq/config.edn", isDirectory: false)
+    let configContents = try String(contentsOf: configURL, encoding: .utf8)
+    XCTAssertTrue(configContents.contains(":reminder_list_external_id"))
+    XCTAssertTrue(configContents.contains(":reminder_external_id"))
+
+    let cssURL = graphRoot.appendingPathComponent("logseq/custom.css", isDirectory: false)
+    let cssContents = try String(contentsOf: cssURL, encoding: .utf8)
+    XCTAssertTrue(cssContents.contains("a[data-ref=\"reminder_list_external_id\" i]"))
+    XCTAssertTrue(cssContents.contains("a[data-ref=\"reminder_external_id\" i]"))
+  }
+
+  func testDeniedInitialSyncConsentBlocksStartupSync() async throws {
+    let graphRoot = try makeTemporaryDirectory(named: "graph")
+    let appState = makeAppState()
+
+    await appState.configureLogseqGraphRoot(at: graphRoot, activateWhenReady: true)
+    appState.setInitialSyncConsentPreference(granted: false, activateWhenReady: false)
+
+    appState.requestStartupSyncIfNeeded()
+
+    XCTAssertTrue(appState.hasCompletedInitialSetup)
+    XCTAssertFalse(appState.hasInitialSyncConsent)
+    XCTAssertFalse(appState.syncStarted)
+    XCTAssertFalse(appState.isInitialSyncRunning)
+    XCTAssertEqual(appState.syncStatus, "Refresh paused")
+  }
+
+  func testExternalReminderInvalidationRunsRetainedReconciliation() async throws {
+    let graphRoot = try makeTemporaryDirectory(named: "graph")
+    let appState = makeAppState()
+
+    await appState.configureLogseqGraphRoot(at: graphRoot, activateWhenReady: true)
+    let didRefresh = await appState.handleExternalReminderTaskInvalidation(
+      ownerIDs: ["task-ext-1"],
+      changedFields: [.title],
+      waitForEditorIdle: false
+    )
+
+    XCTAssertTrue(didRefresh)
+    XCTAssertTrue(appState.syncStarted)
+    XCTAssertEqual(appState.syncStatus, "Refreshed (\(SyncReason.eventStoreChanged.rawValue))")
   }
 
   private func makeAppState(

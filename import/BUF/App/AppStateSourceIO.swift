@@ -33,6 +33,25 @@ extension AppState {
     watcher.start()
   }
 
+  func configureReminderSourceObservation() {
+    reminderSourceObserver?.stop()
+    let observer = ReminderSourceObserver(
+      gateway: reminderGateway,
+      invalidateSource: { [weak self] reason in
+        guard let self else { return false }
+        return await self.performReminderSourceRefresh(reason: reason)
+      },
+      handleExternalOwnerChange: { [weak self] command in
+        guard let self else { return false }
+        return await self.send(command, waitForEditorIdle: false)
+      }
+    )
+    reminderSourceObserver = observer
+    Task { @MainActor [weak observer] in
+      await observer?.startObserving()
+    }
+  }
+
   func stopLogseqPagesDirectoryWatcher() {
     logseqPagesDirectoryWatcher?.stop()
     logseqPagesDirectoryWatcher = nil
@@ -86,6 +105,10 @@ extension AppState {
     }
 
     do {
+      guard try await reminderProjectProvider.requestAccess() else {
+        syncStatus = "Reminders access denied"
+        return
+      }
       let snapshotProvider = ReminderGatewayImportSnapshotProvider(gateway: gateway)
       let lists = try await snapshotProvider.fetchAllLists()
       let itemsByListIdentifier = try await snapshotProvider.fetchItemsByList(for: lists)
@@ -116,6 +139,10 @@ extension AppState {
   func handleLogseqPagesDirectoryChange(_ changedFiles: [URL]) async {
     guard !changedFiles.isEmpty, let pageStore = logseqProjectPageStore() else { return }
     do {
+      guard try await reminderProjectProvider.requestAccess() else {
+        syncStatus = "Reminders access denied"
+        return
+      }
       let result = try await RetainedLogseqProjectProvisioningSync.syncChangedPages(
         fileURLs: changedFiles,
         store: pageStore,

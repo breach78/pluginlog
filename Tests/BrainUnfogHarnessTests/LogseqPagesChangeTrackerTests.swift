@@ -48,6 +48,24 @@ final class LogseqPagesChangeTrackerTests: XCTestCase {
     XCTAssertEqual(tracker.changedMarkdownFiles(in: pagesRoot).map(\.lastPathComponent), ["Project.md"])
   }
 
+  func testAppAuthoredWriteTrackingToleratesConcurrentWatcherCallbacks() throws {
+    let pagesRoot = try makePagesRoot()
+    let tracker = LogseqPagesChangeTracker()
+    let markdownURL = pagesRoot.appendingPathComponent("Project.md", isDirectory: false)
+    try "tags:: 프로젝트\n".write(to: markdownURL, atomically: true, encoding: .utf8)
+    _ = tracker.changedMarkdownFiles(in: pagesRoot)
+
+    DispatchQueue.concurrentPerform(iterations: 200) { index in
+      if index.isMultiple(of: 2) {
+        tracker.recordAppAuthoredWrite(to: markdownURL)
+      } else {
+        _ = tracker.changedMarkdownFiles(in: pagesRoot)
+      }
+    }
+
+    _ = tracker.changedMarkdownFiles(in: pagesRoot)
+  }
+
   private func makePagesRoot() throws -> URL {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("LogseqPagesChangeTrackerTests-\(UUID().uuidString)", isDirectory: true)

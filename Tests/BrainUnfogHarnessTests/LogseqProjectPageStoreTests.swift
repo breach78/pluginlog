@@ -44,7 +44,8 @@ final class LogseqProjectPageStoreTests: XCTestCase {
     let fileContents = try String(contentsOf: expectedFileURL, encoding: .utf8)
     XCTAssertTrue(fileContents.contains("tags:: 프로젝트"))
     XCTAssertFalse(fileContents.contains("brain_unfog_project_id::"))
-    XCTAssertTrue(fileContents.contains("## Brain Unfog Managed Tasks"))
+    XCTAssertFalse(fileContents.contains("## Brain Unfog Managed Tasks"))
+    XCTAssertFalse(fileContents.contains("<!-- generated-by: Brain Unfog -->"))
 
     let loaded = try await store.loadProjectPage(
       for: .init(
@@ -57,9 +58,10 @@ final class LogseqProjectPageStoreTests: XCTestCase {
     XCTAssertEqual(loaded?.fileURL.standardizedFileURL, expectedFileURL.standardizedFileURL)
     XCTAssertEqual(loaded?.title, "Alpha/Beta")
     XCTAssertEqual(loaded?.reminderListExternalIdentifier, "reminder-list-1")
-    XCTAssertEqual(loaded?.noteMarkdown, "Intro line\n- plain bullet\n  continuation")
+    XCTAssertTrue(loaded?.noteMarkdown.contains("Intro line\n- plain bullet\n  continuation") == true)
+    XCTAssertEqual(loaded?.managedTasks, [])
     XCTAssertEqual(
-      loaded?.managedTasks,
+      loaded?.externalTasks,
       [
         .init(
           taskID: taskID,
@@ -73,9 +75,88 @@ final class LogseqProjectPageStoreTests: XCTestCase {
         )
       ]
     )
-    XCTAssertEqual(loaded?.hasManagedTaskSection, true)
-    XCTAssertEqual(loaded?.externalTasks, [])
-    XCTAssertEqual(loaded?.canSafelyPersistProjectNote, true)
+    XCTAssertEqual(loaded?.hasManagedTaskSection, false)
+    XCTAssertEqual(loaded?.canSafelyPersistProjectNote, false)
+  }
+
+  func testUpsertRemovesLegacyProjectIdentityProperty() async throws {
+    let graphRootURL = try makeGraphRoot(named: "RemoveLegacyProjectIdentityGraph")
+    let pagesRootURL = graphRootURL.appendingPathComponent("pages", isDirectory: true)
+    try FileManager.default.createDirectory(at: pagesRootURL, withIntermediateDirectories: true)
+    let projectID = UUID()
+    let pageURL = pagesRootURL.appendingPathComponent("Legacy.md", isDirectory: false)
+    try """
+    tags:: 프로젝트
+    brain_unfog_project_id:: \(projectID.uuidString.lowercased())
+    reminder_list_external_id:: reminder-list-1
+
+    Legacy note
+
+    ## Brain Unfog Managed Tasks
+    <!-- generated-by: Brain Unfog -->
+    """.write(to: pageURL, atomically: true, encoding: .utf8)
+    let store = LogseqProjectPageStore(pagesRootURL: pagesRootURL)
+
+    _ = try await store.upsertPage(
+      .init(
+        projectID: projectID,
+        title: "Legacy",
+        reminderListExternalIdentifier: "reminder-list-1"
+      ),
+      noteMarkdown: "Updated note",
+      managedTasks: []
+    )
+
+    let fileContents = try String(contentsOf: pageURL, encoding: .utf8)
+    XCTAssertFalse(fileContents.contains("brain_unfog_project_id::"))
+    XCTAssertFalse(fileContents.contains("## Brain Unfog Managed Tasks"))
+    XCTAssertTrue(fileContents.contains("reminder_list_external_id:: reminder-list-1"))
+    XCTAssertTrue(fileContents.contains("Updated note"))
+  }
+
+  func testUpsertWithoutReminderListDoesNotWriteLegacyProjectIdentityProperty() async throws {
+    let graphRootURL = try makeGraphRoot(named: "NoLegacyProjectIdentityGraph")
+    let store = LogseqProjectPageStore(
+      pagesRootURL: graphRootURL.appendingPathComponent("pages", isDirectory: true)
+    )
+
+    _ = try await store.upsertPage(
+      .init(
+        projectID: UUID(),
+        title: "Local Project",
+        reminderListExternalIdentifier: nil
+      ),
+      noteMarkdown: "Local note",
+      managedTasks: []
+    )
+
+    let pageURL = graphRootURL.appendingPathComponent("pages/Local Project.md", isDirectory: false)
+    let fileContents = try String(contentsOf: pageURL, encoding: .utf8)
+    XCTAssertFalse(fileContents.contains("brain_unfog_project_id::"))
+    XCTAssertTrue(fileContents.contains("tags:: 프로젝트"))
+  }
+
+  func testLoadsHyphenatedReminderPropertyAliases() async throws {
+    let graphRootURL = try makeGraphRoot(named: "HyphenatedReminderPropertyGraph")
+    let pagesRootURL = graphRootURL.appendingPathComponent("pages", isDirectory: true)
+    try FileManager.default.createDirectory(at: pagesRootURL, withIntermediateDirectories: true)
+    let pageURL = pagesRootURL.appendingPathComponent("Aliases.md", isDirectory: false)
+    try """
+    tags:: 프로젝트
+    reminder-list-external-id:: list-ext-1
+
+    - TODO Aliased task
+      reminder-external-id:: task-ext-1
+    """.write(to: pageURL, atomically: true, encoding: .utf8)
+    let store = LogseqProjectPageStore(pagesRootURL: pagesRootURL)
+
+    let pages = try await store.loadProjectPagesInScope()
+
+    XCTAssertEqual(pages.count, 1)
+    let page = try XCTUnwrap(pages.first)
+    XCTAssertEqual(page.reminderListExternalIdentifier, "list-ext-1")
+    XCTAssertEqual(page.externalTasks.count, 1)
+    XCTAssertEqual(page.externalTasks.first?.reminderExternalIdentifier, "task-ext-1")
   }
 
   func testExistingManagedTasksOutsideManagedSectionStayReadableAndBlockRewrite() async throws {
@@ -114,31 +195,20 @@ final class LogseqProjectPageStoreTests: XCTestCase {
     XCTAssertEqual(loaded?.canSafelyPersistProjectNote, false)
     XCTAssertTrue(loaded?.noteMarkdown.contains("Imported task") == true)
 
-    do {
-      _ = try await store.upsertPage(
-        .init(
-          projectID: projectID,
-          title: "Read Only Project",
-          reminderListExternalIdentifier: "reminder-list-1"
-        ),
-        noteMarkdown: try XCTUnwrap(loaded).noteMarkdown,
-        managedTasks: [
-          .init(
-            taskID: taskID,
-            title: "Imported task",
-            isCompleted: false
-          )
-        ]
-      )
-      XCTFail("Expected write to be blocked for a page that still keeps managed tasks outside the managed section")
-    } catch let error as LogseqProjectPageStore.StoreError {
-      switch error {
-      case .managedSectionUnavailable:
-        break
-      default:
-        XCTFail("Unexpected store error: \(error)")
-      }
-    }
+    _ = try await store.upsertPage(
+      .init(
+        projectID: projectID,
+        title: "Read Only Project",
+        reminderListExternalIdentifier: "reminder-list-1"
+      ),
+      noteMarkdown: try XCTUnwrap(loaded).noteMarkdown,
+      managedTasks: []
+    )
+
+    let rewritten = try String(contentsOf: pageURL, encoding: .utf8)
+    XCTAssertFalse(rewritten.contains("## Brain Unfog Managed Tasks"))
+    XCTAssertFalse(rewritten.contains("<!-- generated-by: Brain Unfog -->"))
+    XCTAssertTrue(rewritten.contains("Imported task"))
   }
 
   func testForeignTitleMatchedPageIsNotRewritten() async throws {
@@ -396,8 +466,9 @@ final class LogseqProjectPageStoreTests: XCTestCase {
 
     XCTAssertEqual(loaded?.projectID, nil)
     XCTAssertEqual(loaded?.reminderListExternalIdentifier, "reminder-list-1")
-    XCTAssertEqual(loaded?.managedTasks.count, 1)
-    XCTAssertEqual(loaded?.managedTasks.first?.taskID, taskID)
+    XCTAssertEqual(loaded?.managedTasks.count, 0)
+    XCTAssertEqual(loaded?.externalTasks.count, 1)
+    XCTAssertEqual(loaded?.externalTasks.first?.taskID, taskID)
   }
 
   func testReminderListIdentityAloneKeepsPageInScope() async throws {

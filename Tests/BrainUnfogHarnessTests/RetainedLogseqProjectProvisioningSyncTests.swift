@@ -109,6 +109,112 @@ final class RetainedLogseqProjectProvisioningSyncTests: XCTestCase {
     XCTAssertEqual(provider.createdTasks.count, 2)
   }
 
+  func testExistingReminderBackedTaskTitleChangeUpdatesReminderInPlace() async throws {
+    let graphRoot = try makeTemporaryDirectory()
+    let pagesRoot = graphRoot.appendingPathComponent("pages", isDirectory: true)
+    try FileManager.default.createDirectory(at: pagesRoot, withIntermediateDirectories: true)
+    let projectPageURL = pagesRoot.appendingPathComponent("Launch.md", isDirectory: false)
+    try """
+    tags:: 프로젝트
+    reminder_list_external_id:: list-ext-1
+
+    - TODO Edited title
+      reminder_external_id:: task-ext-1
+    """.write(to: projectPageURL, atomically: true, encoding: .utf8)
+    let store = LogseqProjectPageStore(pagesRootURL: pagesRoot)
+    let provider = ProvisioningFakeReminderProjectProvider()
+    provider.taskSnapshotsByExternalIdentifier["task-ext-1"] = .init(
+      identifier: "task-local-1",
+      externalIdentifier: "task-ext-1",
+      calendarIdentifier: "list-ext-1",
+      title: "Original title",
+      noteText: "",
+      dueDate: nil,
+      hasExplicitTime: false,
+      priority: 0,
+      modifiedAt: .now
+    )
+
+    let result = try await RetainedLogseqProjectProvisioningSync.syncChangedPages(
+      fileURLs: [projectPageURL],
+      store: store,
+      reminderProjectProvider: provider
+    )
+    let secondResult = try await RetainedLogseqProjectProvisioningSync.syncChangedPages(
+      fileURLs: [projectPageURL],
+      store: store,
+      reminderProjectProvider: provider
+    )
+
+    XCTAssertEqual(result.createdTaskCount, 0)
+    XCTAssertEqual(secondResult.createdTaskCount, 0)
+    XCTAssertEqual(provider.createdTasks.count, 0)
+    XCTAssertEqual(provider.titleWrites.map(\.title), ["Edited title"])
+    XCTAssertEqual(provider.titleWrites.first?.reference.reminderExternalIdentifier, "task-ext-1")
+    XCTAssertEqual(provider.taskSnapshotsByExternalIdentifier["task-ext-1"]?.title, "Edited title")
+  }
+
+  func testExistingReminderBackedTaskChangesUpdateReminderInPlace() async throws {
+    let graphRoot = try makeTemporaryDirectory()
+    let pagesRoot = graphRoot.appendingPathComponent("pages", isDirectory: true)
+    try FileManager.default.createDirectory(at: pagesRoot, withIntermediateDirectories: true)
+    let projectPageURL = pagesRoot.appendingPathComponent("Launch.md", isDirectory: false)
+    try """
+    tags:: 프로젝트
+    reminder_list_external_id:: list-ext-1
+
+    - DONE Existing task
+      reminder_external_id:: task-ext-1
+      date:: 2026-04-25 14:30
+      repeat:: weekly
+    """.write(to: projectPageURL, atomically: true, encoding: .utf8)
+    let store = LogseqProjectPageStore(pagesRootURL: pagesRoot)
+    let provider = ProvisioningFakeReminderProjectProvider()
+    provider.taskSnapshotsByExternalIdentifier["task-ext-1"] = .init(
+      identifier: "task-local-1",
+      externalIdentifier: "task-ext-1",
+      calendarIdentifier: "list-ext-1",
+      title: "Existing task",
+      noteText: "",
+      isCompleted: false,
+      dueDate: LogseqReminderPropertyCodec.decodeDate("2026-04-23")?.date,
+      hasExplicitTime: false,
+      priority: 0,
+      recurrenceRuleRaw: nil,
+      modifiedAt: .now
+    )
+
+    let result = try await RetainedLogseqProjectProvisioningSync.syncChangedPages(
+      fileURLs: [projectPageURL],
+      store: store,
+      reminderProjectProvider: provider
+    )
+    let secondResult = try await RetainedLogseqProjectProvisioningSync.syncChangedPages(
+      fileURLs: [projectPageURL],
+      store: store,
+      reminderProjectProvider: provider
+    )
+
+    XCTAssertEqual(result.createdTaskCount, 0)
+    XCTAssertEqual(secondResult.createdTaskCount, 0)
+    XCTAssertEqual(provider.createdTasks.count, 0)
+    XCTAssertEqual(provider.completionWrites.map(\.isCompleted), [true])
+    XCTAssertEqual(provider.scheduleWrites.map(\.dueDate), [
+      LogseqReminderPropertyCodec.decodeDate("2026-04-25 14:30")?.date
+    ])
+    XCTAssertEqual(provider.scheduleWrites.map(\.hasExplicitTime), [true])
+    XCTAssertEqual(provider.recurrenceWrites.map(\.recurrenceRuleRaw), ["weekly|1|"])
+    XCTAssertEqual(provider.taskSnapshotsByExternalIdentifier["task-ext-1"]?.isCompleted, true)
+    XCTAssertEqual(
+      LogseqReminderPropertyCodec.encodeDate(
+        provider.taskSnapshotsByExternalIdentifier["task-ext-1"]?.dueDate,
+        hasExplicitTime: provider.taskSnapshotsByExternalIdentifier["task-ext-1"]?.hasExplicitTime ?? false
+      ),
+      "2026-04-25 14:30"
+    )
+    XCTAssertEqual(provider.taskSnapshotsByExternalIdentifier["task-ext-1"]?.recurrenceRuleRaw, "weekly|1|")
+  }
+
   private func makeTemporaryDirectory() throws -> URL {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("RetainedLogseqProjectProvisioningSyncTests-\(UUID().uuidString)", isDirectory: true)
@@ -133,6 +239,7 @@ private final class ProvisioningFakeReminderProjectProvider: ReminderProjectProv
 
   struct CompletionWrite {
     let reference: ReminderTaskReference
+    let isCompleted: Bool
   }
 
   struct RecurrenceWrite {
@@ -140,10 +247,24 @@ private final class ProvisioningFakeReminderProjectProvider: ReminderProjectProv
     let recurrenceRuleRaw: String?
   }
 
+  struct ScheduleWrite {
+    let reference: ReminderTaskReference
+    let dueDate: Date?
+    let hasExplicitTime: Bool
+  }
+
+  struct TitleWrite {
+    let reference: ReminderTaskReference
+    let title: String
+  }
+
   var createdLists: [CreatedList] = []
   var createdTasks: [CreatedTask] = []
   var completionWrites: [CompletionWrite] = []
   var recurrenceWrites: [RecurrenceWrite] = []
+  var scheduleWrites: [ScheduleWrite] = []
+  var titleWrites: [TitleWrite] = []
+  var taskSnapshotsByExternalIdentifier: [String: ReminderTaskRemoteSnapshot] = [:]
 
   var reminderGateway: ReminderGateway? { nil }
   var defaultCalendarIdentifierForNewReminders: String? { nil }
@@ -200,14 +321,38 @@ private final class ProvisioningFakeReminderProjectProvider: ReminderProjectProv
   }
 
   func taskSnapshot(for task: ReminderTaskReference) throws -> ReminderTaskRemoteSnapshot? {
-    _ = task
-    return nil
+    guard let reminderExternalIdentifier = task.reminderExternalIdentifier else {
+      return nil
+    }
+    return taskSnapshotsByExternalIdentifier[reminderExternalIdentifier]
   }
 
   func setTaskTitle(for task: ReminderTaskReference, title: String) throws -> ReminderTaskRemoteMetadata? {
-    _ = task
-    _ = title
-    return nil
+    titleWrites.append(TitleWrite(reference: task, title: title))
+    if let reminderExternalIdentifier = task.reminderExternalIdentifier,
+      let snapshot = taskSnapshotsByExternalIdentifier[reminderExternalIdentifier]
+    {
+      taskSnapshotsByExternalIdentifier[reminderExternalIdentifier] = ReminderTaskRemoteSnapshot(
+        identifier: snapshot.identifier,
+        externalIdentifier: snapshot.externalIdentifier,
+        calendarIdentifier: snapshot.calendarIdentifier,
+        title: title,
+        noteText: snapshot.noteText,
+        isCompleted: snapshot.isCompleted,
+        completionDate: snapshot.completionDate,
+        startDate: snapshot.startDate,
+        dueDate: snapshot.dueDate,
+        hasExplicitTime: snapshot.hasExplicitTime,
+        priority: snapshot.priority,
+        recurrenceRuleRaw: snapshot.recurrenceRuleRaw,
+        modifiedAt: .now
+      )
+    }
+    return ReminderTaskRemoteMetadata(
+      identifier: task.reminderIdentifier ?? "",
+      externalIdentifier: task.reminderExternalIdentifier,
+      modifiedAt: .now
+    )
   }
 
   func setTaskCompletion(
@@ -215,9 +360,24 @@ private final class ProvisioningFakeReminderProjectProvider: ReminderProjectProv
     isCompleted: Bool,
     completionDate: Date?
   ) throws -> ReminderTaskRemoteMetadata? {
-    _ = isCompleted
-    _ = completionDate
-    completionWrites.append(CompletionWrite(reference: task))
+    completionWrites.append(CompletionWrite(reference: task, isCompleted: isCompleted))
+    updateSnapshot(task) { snapshot in
+      ReminderTaskRemoteSnapshot(
+        identifier: snapshot.identifier,
+        externalIdentifier: snapshot.externalIdentifier,
+        calendarIdentifier: snapshot.calendarIdentifier,
+        title: snapshot.title,
+        noteText: snapshot.noteText,
+        isCompleted: isCompleted,
+        completionDate: completionDate,
+        startDate: snapshot.startDate,
+        dueDate: snapshot.dueDate,
+        hasExplicitTime: snapshot.hasExplicitTime,
+        priority: snapshot.priority,
+        recurrenceRuleRaw: snapshot.recurrenceRuleRaw,
+        modifiedAt: .now
+      )
+    }
     return ReminderTaskRemoteMetadata(
       identifier: task.reminderIdentifier ?? "",
       externalIdentifier: task.reminderExternalIdentifier,
@@ -236,10 +396,33 @@ private final class ProvisioningFakeReminderProjectProvider: ReminderProjectProv
     dueDate: Date?,
     hasExplicitTime: Bool
   ) throws -> ReminderTaskRemoteMetadata? {
-    _ = task
-    _ = dueDate
-    _ = hasExplicitTime
-    return nil
+    scheduleWrites.append(ScheduleWrite(
+      reference: task,
+      dueDate: dueDate,
+      hasExplicitTime: hasExplicitTime
+    ))
+    updateSnapshot(task) { snapshot in
+      ReminderTaskRemoteSnapshot(
+        identifier: snapshot.identifier,
+        externalIdentifier: snapshot.externalIdentifier,
+        calendarIdentifier: snapshot.calendarIdentifier,
+        title: snapshot.title,
+        noteText: snapshot.noteText,
+        isCompleted: snapshot.isCompleted,
+        completionDate: snapshot.completionDate,
+        startDate: snapshot.startDate,
+        dueDate: dueDate,
+        hasExplicitTime: hasExplicitTime,
+        priority: snapshot.priority,
+        recurrenceRuleRaw: snapshot.recurrenceRuleRaw,
+        modifiedAt: .now
+      )
+    }
+    return ReminderTaskRemoteMetadata(
+      identifier: task.reminderIdentifier ?? "",
+      externalIdentifier: task.reminderExternalIdentifier,
+      modifiedAt: .now
+    )
   }
 
   func setTaskRecurrence(
@@ -247,6 +430,23 @@ private final class ProvisioningFakeReminderProjectProvider: ReminderProjectProv
     recurrenceRuleRaw: String?
   ) throws -> ReminderTaskRemoteMetadata? {
     recurrenceWrites.append(RecurrenceWrite(reference: task, recurrenceRuleRaw: recurrenceRuleRaw))
+    updateSnapshot(task) { snapshot in
+      ReminderTaskRemoteSnapshot(
+        identifier: snapshot.identifier,
+        externalIdentifier: snapshot.externalIdentifier,
+        calendarIdentifier: snapshot.calendarIdentifier,
+        title: snapshot.title,
+        noteText: snapshot.noteText,
+        isCompleted: snapshot.isCompleted,
+        completionDate: snapshot.completionDate,
+        startDate: snapshot.startDate,
+        dueDate: snapshot.dueDate,
+        hasExplicitTime: snapshot.hasExplicitTime,
+        priority: snapshot.priority,
+        recurrenceRuleRaw: recurrenceRuleRaw,
+        modifiedAt: .now
+      )
+    }
     return ReminderTaskRemoteMetadata(
       identifier: task.reminderIdentifier ?? "",
       externalIdentifier: task.reminderExternalIdentifier,
@@ -289,6 +489,16 @@ private final class ProvisioningFakeReminderProjectProvider: ReminderProjectProv
   ) -> ReminderProjectCleanupResult {
     _ = projects
     return ReminderProjectCleanupResult(removedCount: 0, failedProjectIDs: [])
+  }
+
+  private func updateSnapshot(
+    _ task: ReminderTaskReference,
+    transform: (ReminderTaskRemoteSnapshot) -> ReminderTaskRemoteSnapshot
+  ) {
+    guard let reminderExternalIdentifier = task.reminderExternalIdentifier,
+      let snapshot = taskSnapshotsByExternalIdentifier[reminderExternalIdentifier]
+    else { return }
+    taskSnapshotsByExternalIdentifier[reminderExternalIdentifier] = transform(snapshot)
   }
 }
 

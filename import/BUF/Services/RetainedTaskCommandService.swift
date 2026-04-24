@@ -399,15 +399,14 @@ enum RetainedTaskCommandService {
   private static func retainedTaskID(
     for task: LogseqProjectPageStore.TaskRecord
   ) -> UUID? {
-    if let taskID = task.taskID {
-      return taskID
+    if let reminderExternalIdentifier = normalizedIdentifier(task.reminderExternalIdentifier) {
+      let reminderDerivedTaskID = ReminderProjectionIdentity.taskID(for: reminderExternalIdentifier)
+      guard task.taskID == nil || task.taskID == reminderDerivedTaskID else {
+        return nil
+      }
+      return reminderDerivedTaskID
     }
-    guard let reminderExternalIdentifier = normalizedIdentifier(
-      task.reminderExternalIdentifier
-    ) else {
-      return nil
-    }
-    return ReminderProjectionIdentity.taskID(for: reminderExternalIdentifier)
+    return task.taskID
   }
 
   private static func result(

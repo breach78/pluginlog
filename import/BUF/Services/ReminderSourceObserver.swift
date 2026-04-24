@@ -79,6 +79,12 @@ final class ReminderSourceObserver: ObservableObject {
     await refreshKnownReminderOwners()
   }
 
+  func startObserving() async {
+    registerEventStoreObserverIfNeeded()
+    guard await ensureReminderAccessIfNeeded() else { return }
+    status = "Observing"
+  }
+
   func refresh(reason: SyncReason) async {
     registerEventStoreObserverIfNeeded()
     guard await ensureReminderAccessIfNeeded() else { return }
@@ -332,10 +338,8 @@ final class ReminderSourceObserver: ObservableObject {
 
           guard let self else { return }
           guard await self.ensureReminderAccessIfNeeded() else { return }
-          AppLogger.sync.info(
-            "event store changed; scheduling scoped external owner refresh"
-          )
-          await self.applyExternalReminderOwnerChanges()
+          AppLogger.sync.info("event store changed; scheduling reminder source refresh")
+          await self.invalidateReminderSource(reason: .eventStoreChanged)
         }
       }
     }

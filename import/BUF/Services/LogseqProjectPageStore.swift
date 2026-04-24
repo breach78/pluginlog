@@ -222,13 +222,6 @@ actor LogseqProjectPageStore {
       guard pageMatches(identity: identity, parsedPage: parsedPage) else {
         throw StoreError.pageNotOwned
       }
-      if !managedTasks.isEmpty && !parsedPage.hasManagedTaskSection {
-        throw StoreError.managedSectionUnavailable
-      }
-      if !parsedPage.externalTasks.isEmpty {
-        throw StoreError.managedSectionUnavailable
-      }
-
       let rendered = renderPage(
         propertyLines: parsedPage.propertyLines,
         existingUsesProjectReferenceTag: parsedPage.usesProjectTag && usesReferenceProjectTag(parsedPage.propertyLines),
@@ -239,7 +232,7 @@ actor LogseqProjectPageStore {
         ),
         noteMarkdown: noteMarkdown,
         managedTasks: managedTasks,
-        includeManagedSection: parsedPage.hasManagedTaskSection
+        includeManagedSection: !managedTasks.isEmpty
       )
       let destinationURL = try destinationPageURL(
         currentFileURL: fileURL,
@@ -272,6 +265,130 @@ actor LogseqProjectPageStore {
     )
     try write(rendered, to: fileURL)
     return .created
+  }
+
+  @discardableResult
+  func upsertReminderBackedPage(
+    _ identity: ProjectIdentity,
+    importedTasks: [TaskRecord]
+  ) throws -> UpsertDisposition {
+    let resolvedTitle = normalizedTitle(identity.title)
+    guard !resolvedTitle.isEmpty else { throw StoreError.emptyTitle }
+    try preparePagesDirectory()
+
+    if let fileURL = try resolvedOwnedPageURL(for: identity) {
+      let parsedPage = try parsePage(at: fileURL)
+      guard pageMatches(identity: identity, parsedPage: parsedPage) else {
+        throw StoreError.pageNotOwned
+      }
+
+      if parsedPage.hasManagedTaskSection {
+        let importedTaskMarkdown = renderExternalTaskSection(tasks: importedTasks)
+        let rendered = renderPage(
+          propertyLines: parsedPage.propertyLines,
+          existingUsesProjectReferenceTag: parsedPage.usesProjectTag && usesReferenceProjectTag(parsedPage.propertyLines),
+          identity: ProjectIdentity(
+            projectID: identity.projectID,
+            title: resolvedTitle,
+            reminderListExternalIdentifier: identity.reminderListExternalIdentifier
+          ),
+          noteMarkdown: joinedMarkdown(parsedPage.noteMarkdown, importedTaskMarkdown),
+          managedTasks: [],
+          includeManagedSection: false
+        )
+        let destinationURL = try destinationPageURL(
+          currentFileURL: fileURL,
+          title: resolvedTitle,
+          identity: identity
+        )
+        try write(rendered, to: destinationURL)
+        if !sameFileURL(destinationURL, fileURL), fileManager.fileExists(atPath: fileURL.path) {
+          try fileManager.removeItem(at: fileURL)
+        }
+        return .updated
+      }
+
+      try reconcileReminderImportedExternalTasks(
+        in: fileURL,
+        parsedPage: parsedPage,
+        expectedExternalTasks: parsedPage.externalTasks,
+        importedTasks: importedTasks,
+        reminderListExternalIdentifier: identity.reminderListExternalIdentifier
+      )
+      return .updated
+    }
+
+    if try !candidatePageURLs(matchingTitle: resolvedTitle).isEmpty {
+      throw StoreError.pageNotOwned
+    }
+
+    let fileURL = preferredFileURL(for: resolvedTitle)
+    let rendered = renderPage(
+      propertyLines: [],
+      existingUsesProjectReferenceTag: false,
+      identity: ProjectIdentity(
+        projectID: identity.projectID,
+        title: resolvedTitle,
+        reminderListExternalIdentifier: identity.reminderListExternalIdentifier
+      ),
+      noteMarkdown: renderExternalTaskSection(tasks: importedTasks),
+      managedTasks: [],
+      includeManagedSection: false
+    )
+    try write(rendered, to: fileURL)
+    return .created
+  }
+
+  @discardableResult
+  func claimReminderBackedTaggedPage(
+    at fileURL: URL,
+    as identity: ProjectIdentity,
+    importedTasks: [TaskRecord]
+  ) throws -> UpsertDisposition {
+    let resolvedTitle = normalizedTitle(identity.title)
+    guard !resolvedTitle.isEmpty else { throw StoreError.emptyTitle }
+    try preparePagesDirectory()
+
+    let parsedPage = try parsePage(at: fileURL)
+    guard parsedPage.projectID == nil, parsedPage.usesProjectTag else {
+      throw StoreError.pageNotOwned
+    }
+    guard parsedPage.externalTasks.isEmpty else {
+      throw StoreError.managedSectionUnavailable
+    }
+    let normalizedReminderListExternalIdentifier = normalizedOptionalValue(
+      identity.reminderListExternalIdentifier
+    )
+    if let reminderListExternalIdentifier = parsedPage.reminderListExternalIdentifier,
+      let normalizedReminderListExternalIdentifier,
+      reminderListExternalIdentifier != normalizedReminderListExternalIdentifier
+    {
+      throw StoreError.projectIdentityMismatch
+    }
+
+    let importedTaskMarkdown = renderExternalTaskSection(tasks: importedTasks)
+    let rendered = renderPage(
+      propertyLines: parsedPage.propertyLines,
+      existingUsesProjectReferenceTag: usesReferenceProjectTag(parsedPage.propertyLines),
+      identity: ProjectIdentity(
+        projectID: identity.projectID,
+        title: resolvedTitle,
+        reminderListExternalIdentifier: identity.reminderListExternalIdentifier
+      ),
+      noteMarkdown: joinedMarkdown(parsedPage.noteMarkdown, importedTaskMarkdown),
+      managedTasks: [],
+      includeManagedSection: false
+    )
+    let destinationURL = try destinationPageURL(
+      currentFileURL: fileURL,
+      title: resolvedTitle,
+      identity: identity
+    )
+    try write(rendered, to: destinationURL)
+    if !sameFileURL(destinationURL, fileURL), fileManager.fileExists(atPath: fileURL.path) {
+      try fileManager.removeItem(at: fileURL)
+    }
+    return .updated
   }
 
   @discardableResult
@@ -569,16 +686,7 @@ actor LogseqProjectPageStore {
       value: tagsValue,
       into: &lines
     )
-    if propertyValue(forKey: "brain_unfog_project_id", in: lines) != nil
-      || normalizedOptionalValue(identity.reminderListExternalIdentifier) == nil
-    {
-      upsertProperty(
-        rawKey: "brain_unfog_project_id",
-        key: "brain_unfog_project_id",
-        value: identity.projectID.uuidString.lowercased(),
-        into: &lines
-      )
-    }
+    removeProperty(key: "brain_unfog_project_id", from: &lines)
 
     if let reminderListExternalIdentifier = normalizedOptionalValue(identity.reminderListExternalIdentifier) {
       upsertProperty(
@@ -613,35 +721,42 @@ actor LogseqProjectPageStore {
   private func renderManagedSection(
     tasks: [TaskRecord]
   ) -> String {
-    var lines = [Self.managedSectionHeader, Self.generatedComment]
+    renderExternalTaskSection(tasks: tasks)
+  }
 
-    for task in tasks {
-      let trimmedTitle = normalizedTitle(task.title)
-      let marker = task.isCompleted ? "DONE" : "TODO"
-      lines.append("- \(marker) \(trimmedTitle)")
-      if let taskID = task.taskID {
-        lines.append("  brain_unfog_task_id:: \(taskID.uuidString.lowercased())")
-      }
-      if let reminderExternalIdentifier = normalizedOptionalValue(task.reminderExternalIdentifier) {
-        lines.append("  reminder_external_id:: \(reminderExternalIdentifier)")
-      }
-      if let calendarEventExternalIdentifier = normalizedOptionalValue(
-        task.calendarEventExternalIdentifier
-      ) {
-        lines.append("  calendar_event_external_id:: \(calendarEventExternalIdentifier)")
-      }
-      if let date = normalizedOptionalValue(task.date) {
-        lines.append("  date:: \(date)")
-      }
-      if let duration = normalizedOptionalValue(task.duration) {
-        lines.append("  duration:: \(duration)")
-      }
-      if let repeatRule = normalizedOptionalValue(task.repeatRule) {
-        lines.append("  repeat:: \(repeatRule)")
-      }
+  private func renderExternalTaskSection(
+    tasks: [TaskRecord]
+  ) -> String {
+    tasks.flatMap(renderTaskLines).joined(separator: "\n")
+  }
+
+  private func renderTaskLines(
+    _ task: TaskRecord
+  ) -> [String] {
+    let trimmedTitle = normalizedTitle(task.title)
+    let marker = task.isCompleted ? "DONE" : "TODO"
+    var lines = ["- \(marker) \(trimmedTitle)"]
+    if let taskID = task.taskID {
+      lines.append("  brain_unfog_task_id:: \(taskID.uuidString.lowercased())")
     }
-
-    return lines.joined(separator: "\n")
+    if let reminderExternalIdentifier = normalizedOptionalValue(task.reminderExternalIdentifier) {
+      lines.append("  reminder_external_id:: \(reminderExternalIdentifier)")
+    }
+    if let calendarEventExternalIdentifier = normalizedOptionalValue(
+      task.calendarEventExternalIdentifier
+    ) {
+      lines.append("  calendar_event_external_id:: \(calendarEventExternalIdentifier)")
+    }
+    if let date = normalizedOptionalValue(task.date) {
+      lines.append("  date:: \(date)")
+    }
+    if let duration = normalizedOptionalValue(task.duration) {
+      lines.append("  duration:: \(duration)")
+    }
+    if let repeatRule = normalizedOptionalValue(task.repeatRule) {
+      lines.append("  repeat:: \(repeatRule)")
+    }
+    return lines
   }
 
   private func parseTasks<S: Sequence>(
@@ -765,6 +880,108 @@ actor LogseqProjectPageStore {
       value: reminderListExternalIdentifier,
       into: &propertyLines
     )
+    var replacement = propertyLines.map { "\($0.rawKey):: \($0.value)" }
+    if !replacement.isEmpty,
+      propertyRange.upperBound < lines.count,
+      !lines[propertyRange.upperBound].trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    {
+      replacement.append("")
+    }
+    lines.replaceSubrange(propertyRange, with: replacement)
+  }
+
+  private func reconcileReminderImportedExternalTasks(
+    in fileURL: URL,
+    parsedPage: ParsedPage,
+    expectedExternalTasks: [TaskRecord],
+    importedTasks: [TaskRecord],
+    reminderListExternalIdentifier: String?
+  ) throws {
+    guard parsedPage.externalTasks == expectedExternalTasks else {
+      throw StoreError.externalTasksChangedSinceLoad
+    }
+
+    var lines = normalizedLineEndings(try readText(at: fileURL))
+      .components(separatedBy: "\n")
+    removeLeadingProperty(key: "brain_unfog_project_id", from: &lines)
+    if let reminderListExternalIdentifier = normalizedOptionalValue(reminderListExternalIdentifier) {
+      upsertReminderListExternalIdentifier(reminderListExternalIdentifier, into: &lines)
+    }
+
+    let imported = importedTasksByReminderIdentifier(importedTasks)
+    var updatedReminderIdentifiers = Set<String>()
+    for (index, task) in expectedExternalTasks.enumerated() {
+      guard let reminderIdentifier = normalizedOptionalValue(task.reminderExternalIdentifier),
+        let importedTask = imported.tasksByIdentifier[reminderIdentifier]
+      else {
+        continue
+      }
+      updateExternalTaskRecord(
+        at: index,
+        with: importedTask,
+        in: &lines
+      )
+      updatedReminderIdentifiers.insert(reminderIdentifier)
+    }
+
+    let missingImportedTasks = imported.orderedIdentifiers.compactMap { reminderIdentifier in
+      updatedReminderIdentifiers.contains(reminderIdentifier)
+        ? nil
+        : imported.tasksByIdentifier[reminderIdentifier]
+    }
+    appendExternalTasks(missingImportedTasks, to: &lines)
+
+    var rendered = lines.joined(separator: "\n")
+    if !rendered.hasSuffix("\n") {
+      rendered += "\n"
+    }
+    try write(rendered, to: fileURL)
+  }
+
+  private func importedTasksByReminderIdentifier(
+    _ tasks: [TaskRecord]
+  ) -> (orderedIdentifiers: [String], tasksByIdentifier: [String: TaskRecord]) {
+    var orderedIdentifiers: [String] = []
+    var tasksByIdentifier: [String: TaskRecord] = [:]
+    for task in tasks {
+      guard let reminderIdentifier = normalizedOptionalValue(task.reminderExternalIdentifier) else {
+        continue
+      }
+      if tasksByIdentifier[reminderIdentifier] == nil {
+        orderedIdentifiers.append(reminderIdentifier)
+      }
+      tasksByIdentifier[reminderIdentifier] = task
+    }
+    return (orderedIdentifiers, tasksByIdentifier)
+  }
+
+  private func appendExternalTasks(
+    _ tasks: [TaskRecord],
+    to lines: inout [String]
+  ) {
+    let renderedTasks = renderExternalTaskSection(tasks: tasks)
+    guard !renderedTasks.isEmpty else { return }
+
+    while let lastLine = lines.last,
+      lastLine.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    {
+      lines.removeLast()
+    }
+    if !lines.isEmpty {
+      lines.append("")
+    }
+    lines.append(contentsOf: renderedTasks.components(separatedBy: "\n"))
+  }
+
+  private func removeLeadingProperty(
+    key: String,
+    from lines: inout [String]
+  ) {
+    let propertyRange = leadingPropertyRange(in: lines)
+    guard !propertyRange.isEmpty else { return }
+
+    var propertyLines = parsePropertyLines(from: Array(lines[propertyRange]))
+    removeProperty(key: key, from: &propertyLines)
     var replacement = propertyLines.map { "\($0.rawKey):: \($0.value)" }
     if !replacement.isEmpty,
       propertyRange.upperBound < lines.count,
@@ -1051,16 +1268,22 @@ actor LogseqProjectPageStore {
     let valueStart = separatorRange.upperBound
     let value = String(trimmedLine[valueStart...]).trimmingCharacters(in: .whitespaces)
     return PropertyLine(
-      key: rawKey.lowercased(),
+      key: normalizedPropertyKey(rawKey),
       rawKey: rawKey,
       value: value
     )
   }
 
+  private func normalizedPropertyKey(_ rawKey: String) -> String {
+    rawKey.lowercased().replacingOccurrences(of: "-", with: "_")
+  }
+
   private func managedSectionRange(
     in lines: [String]
   ) -> Range<Int>? {
-    guard let startIndex = lines.firstIndex(of: Self.managedSectionHeader) else { return nil }
+    guard let startIndex = lines.firstIndex(where: {
+      $0 == Self.managedSectionHeader || $0 == Self.generatedComment
+    }) else { return nil }
     var endIndex = startIndex + 1
     while endIndex < lines.count {
       if lines[endIndex].hasPrefix("## ") {
@@ -1253,6 +1476,15 @@ actor LogseqProjectPageStore {
     trimmedMarkdown(
       from: normalizedLineEndings(markdown).components(separatedBy: "\n")
     )
+  }
+
+  private func joinedMarkdown(
+    _ first: String,
+    _ second: String
+  ) -> String {
+    [trimmedMarkdown(first), trimmedMarkdown(second)]
+      .filter { !$0.isEmpty }
+      .joined(separator: "\n\n")
   }
 
   private func trimmedMarkdown(

@@ -199,7 +199,8 @@ enum ScheduleCalendarAccessPromptPolicy {
   ) -> Bool {
     switch authorizationStatus {
     case .notDetermined:
-      return !promptAttempted
+      _ = promptAttempted
+      return true
     case .fullAccess, .authorized, .writeOnly, .denied, .restricted:
       return false
     @unknown default:
@@ -211,14 +212,14 @@ enum ScheduleCalendarAccessPromptPolicy {
     authorizationStatus: EKAuthorizationStatus,
     promptAttempted: Bool
   ) -> Bool {
-    authorizationStatus == .notDetermined && promptAttempted
+    _ = authorizationStatus
+    _ = promptAttempted
+    return false
   }
 
   static func shouldPersistPromptAttempt(after authorizationStatus: EKAuthorizationStatus) -> Bool {
     switch authorizationStatus {
-    case .notDetermined:
-      return false
-    case .fullAccess, .authorized, .writeOnly, .denied, .restricted:
+    case .notDetermined, .fullAccess, .authorized, .writeOnly, .denied, .restricted:
       return true
     @unknown default:
       return false
@@ -1274,18 +1275,13 @@ final class ScheduleCalendarStore: ObservableObject, ScheduleCalendarServicing,
     case .notDetermined:
       let promptAttemptedKey = ScheduleCalendarAccessPromptPolicy.promptAttemptedKey
       let storedPromptAttempted = userDefaults.bool(forKey: promptAttemptedKey)
-      if ScheduleCalendarAccessPromptPolicy.hasStalePromptAttempt(
-        authorizationStatus: authorizationStatus,
-        promptAttempted: storedPromptAttempted
-      ) {
-        userDefaults.removeObject(forKey: promptAttemptedKey)
-      }
       guard ScheduleCalendarAccessPromptPolicy.shouldRequestAccess(
         authorizationStatus: authorizationStatus,
-        promptAttempted: false
+        promptAttempted: storedPromptAttempted
       ) else {
         return false
       }
+      userDefaults.set(true, forKey: promptAttemptedKey)
       var granted = try await eventStore.requestFullAccessToEvents()
       if !granted && EKEventStore.authorizationStatus(for: .event) == .notDetermined {
         granted = try await requestFullAccessToEventsWithCompletionHandler()

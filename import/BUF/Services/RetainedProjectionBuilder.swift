@@ -207,8 +207,15 @@ enum RetainedProjectionBuilder {
     let reminderExternalIdentifier = normalizedIdentifier(record.reminderExternalIdentifier)
     let calendarEventExternalIdentifier = normalizedIdentifier(record.calendarEventExternalIdentifier)
 
-    let taskID = record.taskID
-      ?? reminderExternalIdentifier.map(ReminderProjectionIdentity.taskID(for:))
+    let reminderDerivedTaskID = reminderExternalIdentifier.map(ReminderProjectionIdentity.taskID(for:))
+    if let taskID = record.taskID,
+       let reminderDerivedTaskID,
+       taskID != reminderDerivedTaskID
+    {
+      throw Error.damagedTaskIdentity(projectTitle: projectTitle, taskTitle: record.title)
+    }
+
+    let taskID = reminderDerivedTaskID ?? record.taskID
 
     if taskID == nil && calendarEventExternalIdentifier != nil {
       throw Error.damagedTaskIdentity(projectTitle: projectTitle, taskTitle: record.title)

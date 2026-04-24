@@ -5,11 +5,11 @@ import XCTest
 final class RetainedTaskCommandServiceTests: XCTestCase {
   func testCompletionUpdatesLogseqAndReminderWithoutLegacyCalendarWrite() async throws {
     let graphRootURL = try makeGraphRoot(named: "RetainedCompletionGraph")
-    let projectID = UUID()
-    let taskID = UUID()
+    let projectID = RetainedProjectionBuilder.derivedProjectID(for: "reminder-list-1")
+    let taskID = ReminderProjectionIdentity.taskID(for: "reminder-1")
     let store = makeStore(graphRootURL: graphRootURL)
     try await store.upsertPage(
-      .init(projectID: projectID, title: "Launch", reminderListExternalIdentifier: nil),
+      .init(projectID: projectID, title: "Launch", reminderListExternalIdentifier: "reminder-list-1"),
       noteMarkdown: "Launch note",
       managedTasks: [
         .init(
@@ -92,11 +92,11 @@ final class RetainedTaskCommandServiceTests: XCTestCase {
 
   func testDateOnlyScheduleDoesNotWriteCalendarEvent() async throws {
     let graphRootURL = try makeGraphRoot(named: "RetainedDateOnlyGraph")
-    let projectID = UUID()
-    let taskID = UUID()
+    let projectID = RetainedProjectionBuilder.derivedProjectID(for: "reminder-list-1")
+    let taskID = ReminderProjectionIdentity.taskID(for: "reminder-1")
     let store = makeStore(graphRootURL: graphRootURL)
     try await store.upsertPage(
-      .init(projectID: projectID, title: "Launch", reminderListExternalIdentifier: nil),
+      .init(projectID: projectID, title: "Launch", reminderListExternalIdentifier: "reminder-list-1"),
       noteMarkdown: "",
       managedTasks: [
         .init(
@@ -140,11 +140,11 @@ final class RetainedTaskCommandServiceTests: XCTestCase {
 
   func testExplicitTimeScheduleUpdatesReminderWithoutCalendarEventWrite() async throws {
     let graphRootURL = try makeGraphRoot(named: "RetainedTimedGraph")
-    let projectID = UUID()
-    let taskID = UUID()
+    let projectID = RetainedProjectionBuilder.derivedProjectID(for: "reminder-list-1")
+    let taskID = ReminderProjectionIdentity.taskID(for: "reminder-1")
     let store = makeStore(graphRootURL: graphRootURL)
     try await store.upsertPage(
-      .init(projectID: projectID, title: "Launch", reminderListExternalIdentifier: nil),
+      .init(projectID: projectID, title: "Launch", reminderListExternalIdentifier: "reminder-list-1"),
       noteMarkdown: "",
       managedTasks: [
         .init(
@@ -238,11 +238,11 @@ final class RetainedTaskCommandServiceTests: XCTestCase {
 
   func testMissingReminderIdentityBlocksWithoutMutatingLogseqOrReminder() async throws {
     let graphRootURL = try makeGraphRoot(named: "RetainedMissingReminderGraph")
-    let projectID = UUID()
+    let projectID = RetainedProjectionBuilder.derivedProjectID(for: "reminder-list-1")
     let taskID = UUID()
     let store = makeStore(graphRootURL: graphRootURL)
     try await store.upsertPage(
-      .init(projectID: projectID, title: "Launch", reminderListExternalIdentifier: nil),
+      .init(projectID: projectID, title: "Launch", reminderListExternalIdentifier: "reminder-list-1"),
       noteMarkdown: "",
       managedTasks: [
         .init(taskID: taskID, title: "No reminder", isCompleted: false)
@@ -273,7 +273,7 @@ final class RetainedTaskCommandServiceTests: XCTestCase {
   func testExternalTaskBlocksWithoutLegacyFallback() async throws {
     let graphRootURL = try makeGraphRoot(named: "RetainedExternalTaskGraph")
     let projectID = UUID()
-    let taskID = UUID()
+    let taskID = ReminderProjectionIdentity.taskID(for: "reminder-1")
     let pagesURL = graphRootURL.appendingPathComponent("pages", isDirectory: true)
     try FileManager.default.createDirectory(at: pagesURL, withIntermediateDirectories: true)
     let pageURL = pagesURL.appendingPathComponent("External.md", isDirectory: false)
@@ -390,11 +390,11 @@ final class RetainedTaskCommandServiceTests: XCTestCase {
 
   func testReminderFailureRollsBackLogseqManagedTaskMutation() async throws {
     let graphRootURL = try makeGraphRoot(named: "RetainedRollbackGraph")
-    let projectID = UUID()
-    let taskID = UUID()
+    let projectID = RetainedProjectionBuilder.derivedProjectID(for: "reminder-list-1")
+    let taskID = ReminderProjectionIdentity.taskID(for: "reminder-1")
     let store = makeStore(graphRootURL: graphRootURL)
     try await store.upsertPage(
-      .init(projectID: projectID, title: "Launch", reminderListExternalIdentifier: nil),
+      .init(projectID: projectID, title: "Launch", reminderListExternalIdentifier: "reminder-list-1"),
       noteMarkdown: "",
       managedTasks: [
         .init(
@@ -426,13 +426,13 @@ final class RetainedTaskCommandServiceTests: XCTestCase {
     XCTAssertEqual(provider.completionWrites.count, 1)
   }
 
-  func testManagedTaskUpdateFailsClosedWhenBaselineChanged() async throws {
+  func testExternalTaskUpdateFailsClosedWhenBaselineChanged() async throws {
     let graphRootURL = try makeGraphRoot(named: "RetainedConcurrentWriteGraph")
-    let projectID = UUID()
-    let taskID = UUID()
+    let projectID = RetainedProjectionBuilder.derivedProjectID(for: "reminder-list-1")
+    let taskID = ReminderProjectionIdentity.taskID(for: "reminder-1")
     let store = makeStore(graphRootURL: graphRootURL)
     try await store.upsertPage(
-      .init(projectID: projectID, title: "Launch", reminderListExternalIdentifier: nil),
+      .init(projectID: projectID, title: "Launch", reminderListExternalIdentifier: "reminder-list-1"),
       noteMarkdown: "",
       managedTasks: [
         .init(
@@ -445,24 +445,26 @@ final class RetainedTaskCommandServiceTests: XCTestCase {
     )
     let pages = try await store.loadProjectPagesInScope()
     let page = try XCTUnwrap(pages.onlyValue)
-    var firstWrite = page.managedTasks
+    var firstWrite = page.externalTasks
     firstWrite[0].isCompleted = true
-    try await store.updateManagedTasks(
+    try await store.updateExternalTask(
       in: page,
-      expectedManagedTasks: page.managedTasks,
-      managedTasks: firstWrite
+      expectedExternalTasks: page.externalTasks,
+      taskIndex: 0,
+      task: firstWrite[0]
     )
-    var staleWrite = page.managedTasks
+    var staleWrite = page.externalTasks
     staleWrite[0].title = "Stale overwrite"
 
     do {
-      try await store.updateManagedTasks(
+      try await store.updateExternalTask(
         in: page,
-        expectedManagedTasks: page.managedTasks,
-        managedTasks: staleWrite
+        expectedExternalTasks: page.externalTasks,
+        taskIndex: 0,
+        task: staleWrite[0]
       )
       XCTFail("Expected baseline mismatch to fail closed")
-    } catch LogseqProjectPageStore.StoreError.managedTasksChangedSinceLoad {
+    } catch LogseqProjectPageStore.StoreError.externalTasksChangedSinceLoad {
     }
 
     let task = try await loadedTask(taskID: taskID, graphRootURL: graphRootURL)

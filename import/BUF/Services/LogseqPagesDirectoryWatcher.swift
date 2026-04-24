@@ -18,6 +18,7 @@ final class LogseqPagesChangeTracker: @unchecked Sendable {
   }
 
   private let fileManager: FileManager
+  private let lock = NSLock()
   private var signaturesByURL: [URL: FileSignature] = [:]
   private var appAuthoredSignaturesByURL: [URL: FileSignature] = [:]
 
@@ -27,17 +28,25 @@ final class LogseqPagesChangeTracker: @unchecked Sendable {
 
   func recordAppAuthoredWrite(to fileURL: URL) {
     guard let signature = signature(for: fileURL) else { return }
+    lock.lock()
+    defer { lock.unlock() }
     appAuthoredSignaturesByURL[normalized(fileURL)] = signature
   }
 
   func changedMarkdownFiles(in pagesRootURL: URL) -> [URL] {
-    let markdownFiles = currentMarkdownFiles(in: pagesRootURL)
+    let currentSignatures = currentMarkdownFiles(in: pagesRootURL).compactMap { fileURL
+      -> (URL, FileSignature)? in
+      let normalizedURL = normalized(fileURL)
+      guard let signature = signature(for: normalizedURL) else { return nil }
+      return (normalizedURL, signature)
+    }
     var nextSignatures: [URL: FileSignature] = [:]
     var changedFiles: [URL] = []
 
-    for fileURL in markdownFiles {
-      let normalizedURL = normalized(fileURL)
-      guard let signature = signature(for: normalizedURL) else { continue }
+    lock.lock()
+    defer { lock.unlock() }
+
+    for (normalizedURL, signature) in currentSignatures {
       nextSignatures[normalizedURL] = signature
       guard signaturesByURL[normalizedURL] != signature else { continue }
       if appAuthoredSignaturesByURL[normalizedURL] == signature {

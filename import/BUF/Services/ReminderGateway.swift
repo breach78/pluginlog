@@ -71,8 +71,32 @@ private struct ReminderSnapshot: @unchecked Sendable {
 @MainActor
 final class EventKitReminderGateway: ReminderGateway {
   let eventStore = EKEventStore()
+  private let userDefaults: UserDefaults
+
+  init(userDefaults: UserDefaults = .standard) {
+    self.userDefaults = userDefaults
+  }
 
   func requestAccess() async throws -> Bool {
+    let authorizationStatus = EKEventStore.authorizationStatus(for: .reminder)
+    switch authorizationStatus {
+    case .fullAccess, .authorized:
+      return true
+    case .denied, .restricted, .writeOnly:
+      return false
+    case .notDetermined:
+      let promptAttemptedKey = ReminderAccessPromptPolicy.promptAttemptedKey
+      guard ReminderAccessPromptPolicy.shouldRequestAccess(
+        authorizationStatus: authorizationStatus,
+        promptAttempted: userDefaults.bool(forKey: promptAttemptedKey)
+      ) else {
+        return false
+      }
+      userDefaults.set(true, forKey: promptAttemptedKey)
+    @unknown default:
+      return false
+    }
+
     do {
       let granted = try await eventStore.requestFullAccessToReminders()
       if !granted {
@@ -358,6 +382,25 @@ final class EventKitReminderGateway: ReminderGateway {
   }
 }
 
+enum ReminderAccessPromptPolicy {
+  static let promptAttemptedKey = "reminders.accessPromptAttempted"
+
+  static func shouldRequestAccess(
+    authorizationStatus: EKAuthorizationStatus,
+    promptAttempted: Bool
+  ) -> Bool {
+    switch authorizationStatus {
+    case .notDetermined:
+      _ = promptAttempted
+      return true
+    case .fullAccess, .authorized, .writeOnly, .denied, .restricted:
+      return false
+    @unknown default:
+      return false
+    }
+  }
+}
+
 @MainActor
 final class PreviewReminderGateway: ReminderGateway {
   private lazy var previewEventStore = EKEventStore()
@@ -427,6 +470,7 @@ struct ReminderTaskRemoteSnapshot: Sendable {
   let dueDate: Date?
   let hasExplicitTime: Bool
   let priority: Int
+  let recurrenceRuleRaw: String?
   let modifiedAt: Date
 
   init(
@@ -441,6 +485,7 @@ struct ReminderTaskRemoteSnapshot: Sendable {
     dueDate: Date?,
     hasExplicitTime: Bool,
     priority: Int,
+    recurrenceRuleRaw: String? = nil,
     modifiedAt: Date
   ) {
     self.identifier = identifier
@@ -454,6 +499,7 @@ struct ReminderTaskRemoteSnapshot: Sendable {
     self.dueDate = dueDate
     self.hasExplicitTime = hasExplicitTime
     self.priority = priority
+    self.recurrenceRuleRaw = recurrenceRuleRaw
     self.modifiedAt = modifiedAt
   }
 }
@@ -675,6 +721,7 @@ final class EventKitReminderProjectProvider: ReminderProjectProvider {
       dueDate: dueDate,
       hasExplicitTime: hasExplicitTime,
       priority: reminder.priority,
+      recurrenceRuleRaw: ReminderRecurrenceCodec.rawValue(from: reminder.recurrenceRules),
       modifiedAt: gateway.lastModifiedDate(for: reminder) ?? .now
     )
   }

@@ -87,7 +87,11 @@ final class RetainedReminderImportSyncTests: XCTestCase {
     XCTAssertEqual(snapshot.projects[0].tasks[0].schedule.rawRepeatRule, "weekly")
     XCTAssertFalse(pageMarkdown.contains("brain_unfog_project_id::"))
     XCTAssertFalse(pageMarkdown.contains("brain_unfog_task_id::"))
+    XCTAssertFalse(pageMarkdown.contains("## Brain Unfog Managed Tasks"))
+    XCTAssertFalse(pageMarkdown.contains("<!-- generated-by: Brain Unfog -->"))
     XCTAssertEqual(pageMarkdown.components(separatedBy: "reminder_external_id:: task-external-1").count - 1, 1)
+    XCTAssertEqual(pages.first?.managedTasks.count, 0)
+    XCTAssertEqual(pages.first?.externalTasks.count, 1)
   }
 
   func testReminderProjectionIdentityMatchesRetainedProjectionProjectIdentity() {

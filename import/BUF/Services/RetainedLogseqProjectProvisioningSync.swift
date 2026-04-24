@@ -66,7 +66,18 @@ enum RetainedLogseqProjectProvisioningSync {
       var taskIdentifiersByIndex: [Int: String] = [:]
 
       for (taskIndex, task) in page.externalTasks.enumerated() {
-        guard normalized(task.reminderExternalIdentifier) == nil else { continue }
+        if let reminderExternalIdentifier = normalized(task.reminderExternalIdentifier) {
+          try applyExistingReminderUpdates(
+            task,
+            projectID: projectID,
+            reminderExternalIdentifier: reminderExternalIdentifier,
+            reminderProjectProvider: reminderProjectProvider,
+            taskRecords: &taskRecords,
+            now: now
+          )
+          continue
+        }
+
         let decodedDate = LogseqReminderPropertyCodec.decodeDate(task.date)
         guard let metadata = try reminderProjectProvider.createTaskReminder(
           inProject: listIdentifier,
@@ -132,6 +143,82 @@ enum RetainedLogseqProjectProvisioningSync {
       projectRecords: projectRecords,
       taskRecords: taskRecords
     )
+  }
+
+  private static func applyExistingReminderUpdates(
+    _ task: LogseqProjectPageStore.TaskRecord,
+    projectID: UUID,
+    reminderExternalIdentifier: String,
+    reminderProjectProvider: ReminderProjectProvider,
+    taskRecords: inout [TaskIdentityBridgeRecord],
+    now: Date
+  ) throws {
+    let taskID = ReminderProjectionIdentity.taskID(for: reminderExternalIdentifier)
+    let reference = ReminderTaskReference(
+      taskID: taskID,
+      reminderIdentifier: nil,
+      reminderExternalIdentifier: reminderExternalIdentifier
+    )
+
+    guard let snapshot = try reminderProjectProvider.taskSnapshot(for: reference) else {
+      return
+    }
+
+    var updatedAt: Date?
+    if normalized(snapshot.title) != normalized(task.title) {
+      let metadata = try reminderProjectProvider.setTaskTitle(
+        for: reference,
+        title: task.title
+      )
+      updatedAt = metadata?.modifiedAt ?? updatedAt
+    }
+
+    if snapshot.isCompleted != task.isCompleted {
+      let metadata = try reminderProjectProvider.setTaskCompletion(
+        for: reference,
+        isCompleted: task.isCompleted,
+        completionDate: nil
+      )
+      updatedAt = metadata?.modifiedAt ?? updatedAt
+    }
+
+    let desiredDate = LogseqReminderPropertyCodec.decodeDate(task.date)
+    if encodedDate(snapshot.dueDate, hasExplicitTime: snapshot.hasExplicitTime)
+      != encodedDate(desiredDate?.date, hasExplicitTime: desiredDate?.hasExplicitTime ?? false)
+    {
+      let metadata = try reminderProjectProvider.setTaskSchedule(
+        for: reference,
+        dueDate: desiredDate?.date,
+        hasExplicitTime: desiredDate?.hasExplicitTime ?? false
+      )
+      updatedAt = metadata?.modifiedAt ?? updatedAt
+    }
+
+    let desiredRecurrence = LogseqReminderPropertyCodec.decodeRepeat(task.repeatRule)
+    let remoteRecurrence = LogseqReminderPropertyCodec.decodeRepeat(snapshot.recurrenceRuleRaw)
+    if desiredRecurrence != remoteRecurrence {
+      let metadata = try reminderProjectProvider.setTaskRecurrence(
+        for: reference,
+        recurrenceRuleRaw: desiredRecurrence
+      )
+      updatedAt = metadata?.modifiedAt ?? updatedAt
+    }
+
+    guard let updatedAt else { return }
+    taskRecords.append(
+      TaskIdentityBridgeRecord(
+        taskID: taskID,
+        title: task.title,
+        reminderExternalIdentifier: reminderExternalIdentifier,
+        ownerProjectID: projectID,
+        createdAt: now,
+        updatedAt: updatedAt
+      )
+    )
+  }
+
+  private static func encodedDate(_ date: Date?, hasExplicitTime: Bool) -> String? {
+    LogseqReminderPropertyCodec.encodeDate(date, hasExplicitTime: hasExplicitTime)
   }
 
   private static func applyCompletionIfNeeded(

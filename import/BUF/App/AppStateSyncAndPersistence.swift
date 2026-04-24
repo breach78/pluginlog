@@ -12,15 +12,24 @@ extension AppState {
   }
 
   func refreshReminderSourceNow(reason: SyncReason = .manual) {
-    guard !isInitialSyncRunning else { return }
-    isInitialSyncRunning = true
     Task { @MainActor [weak self] in
       guard let self else { return }
-      await self.reconcileManagedLogseqPagesWithReminderSource()
-      self.syncStarted = true
-      self.isInitialSyncRunning = false
-      self.syncStatus = "Refreshed (\(reason.rawValue))"
+      _ = await self.performReminderSourceRefresh(reason: reason)
     }
+  }
+
+  @discardableResult
+  func performReminderSourceRefresh(reason: SyncReason) async -> Bool {
+    guard !isInitialSyncRunning else { return false }
+    isInitialSyncRunning = true
+    defer { isInitialSyncRunning = false }
+
+    await reconcileManagedLogseqPagesWithReminderSource()
+    syncStarted = true
+    if syncStatus != "Reminders access denied", syncStatus != "Reminder sync failed" {
+      syncStatus = "Refreshed (\(reason.rawValue))"
+    }
+    return syncStatus != "Reminders access denied" && syncStatus != "Reminder sync failed"
   }
 
   @discardableResult
@@ -29,8 +38,7 @@ extension AppState {
     waitForEditorIdle: Bool = true
   ) async -> Bool {
     _ = waitForEditorIdle
-    refreshReminderSourceNow(reason: reason)
-    return true
+    return await performReminderSourceRefresh(reason: reason)
   }
 
   @discardableResult
@@ -89,10 +97,9 @@ extension AppState {
     ownerIDs: [String],
     waitForEditorIdle: Bool = true
   ) async -> Bool {
-    _ = ownerIDs
+    guard !ownerIDs.isEmpty else { return false }
     _ = waitForEditorIdle
-    bumpWorkspaceTreeRevision()
-    return true
+    return await performReminderSourceRefresh(reason: .eventStoreChanged)
   }
 
   @discardableResult
@@ -101,11 +108,10 @@ extension AppState {
     changedFields: [AppOwnerField],
     waitForEditorIdle: Bool = true
   ) async -> Bool {
-    _ = ownerIDs
+    guard !ownerIDs.isEmpty else { return false }
     _ = changedFields
     _ = waitForEditorIdle
-    bumpWorkspaceTreeRevision()
-    return true
+    return await performReminderSourceRefresh(reason: .eventStoreChanged)
   }
 
   @discardableResult

@@ -53,6 +53,7 @@
 '/Users/three/app_build/logseq plugin/import/BUF/Models/Enums.swift'
 '/Users/three/app_build/logseq plugin/import/BUF/Persistence/ContainerPaths.swift'
 '/Users/three/app_build/logseq plugin/import/BUF/Persistence/StorageCoordinator.swift'
+'/Users/three/app_build/logseq plugin/import/BUF/Services/LogseqGraphConfigStore.swift'
 '/Users/three/app_build/logseq plugin/import/BUF/Services/LogseqPageFilenameCodec.swift'
 '/Users/three/app_build/logseq plugin/import/BUF/Services/LogseqPagesDirectoryWatcher.swift'
 '/Users/three/app_build/logseq plugin/import/BUF/Services/LogseqProjectPageStore.swift'

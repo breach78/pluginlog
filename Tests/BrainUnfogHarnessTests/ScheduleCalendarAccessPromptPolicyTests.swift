@@ -12,8 +12,8 @@ final class ScheduleCalendarAccessPromptPolicyTests: XCTestCase {
     )
   }
 
-  func testDoesNotRequestAgainAfterPromptWasAttempted() {
-    XCTAssertFalse(
+  func testRequestsAgainWhenAuthorizationIsStillNotDeterminedAfterPromptWasAttempted() {
+    XCTAssertTrue(
       ScheduleCalendarAccessPromptPolicy.shouldRequestAccess(
         authorizationStatus: .notDetermined,
         promptAttempted: true
@@ -36,8 +36,8 @@ final class ScheduleCalendarAccessPromptPolicyTests: XCTestCase {
     )
   }
 
-  func testDetectsStalePromptAttemptWhenAuthorizationIsStillNotDetermined() {
-    XCTAssertTrue(
+  func testDoesNotTreatStoredPromptAttemptAsStaleWhenAuthorizationIsStillNotDetermined() {
+    XCTAssertFalse(
       ScheduleCalendarAccessPromptPolicy.hasStalePromptAttempt(
         authorizationStatus: .notDetermined,
         promptAttempted: true
@@ -45,8 +45,8 @@ final class ScheduleCalendarAccessPromptPolicyTests: XCTestCase {
     )
   }
 
-  func testPersistsPromptAttemptOnlyAfterAuthorizationIsResolved() {
-    XCTAssertFalse(
+  func testPersistsPromptAttemptForNotDeterminedAndResolvedAuthorization() {
+    XCTAssertTrue(
       ScheduleCalendarAccessPromptPolicy.shouldPersistPromptAttempt(after: .notDetermined)
     )
     XCTAssertTrue(

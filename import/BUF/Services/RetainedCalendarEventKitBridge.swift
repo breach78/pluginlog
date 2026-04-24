@@ -512,10 +512,19 @@ final class EventKitRetainedCalendarEventWriter: RetainedCalendarEventWriting {
   }
 
   private func requestAccessIfNeeded() async throws -> Bool {
-    switch EKEventStore.authorizationStatus(for: .event) {
+    let authorizationStatus = EKEventStore.authorizationStatus(for: .event)
+    switch authorizationStatus {
     case .authorized, .fullAccess:
       return true
     case .notDetermined:
+      let promptAttemptedKey = ScheduleCalendarAccessPromptPolicy.promptAttemptedKey
+      guard ScheduleCalendarAccessPromptPolicy.shouldRequestAccess(
+        authorizationStatus: authorizationStatus,
+        promptAttempted: userDefaults.bool(forKey: promptAttemptedKey)
+      ) else {
+        return false
+      }
+      userDefaults.set(true, forKey: promptAttemptedKey)
       return try await eventStore.requestFullAccessToEvents()
     case .denied, .restricted, .writeOnly:
       return false

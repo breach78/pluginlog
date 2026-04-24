@@ -188,14 +188,16 @@ final class RetainedWorkspaceSurfaceProjectionTests: XCTestCase {
     )
   }
 
-  func testBuildBlocksTasksWithoutStableTaskIdentity() {
+  func testBuildSkipsTasksWithoutStableTaskIdentity() throws {
     let projectID = UUID()
+    let stableTaskID = UUID()
     let snapshot = RetainedWorkspaceSnapshot(
       projects: [
         makeProject(
           projectID: projectID,
           tasks: [
-            makeTask(taskID: nil, title: "Plain Logseq task")
+            makeTask(taskID: nil, title: "Plain Logseq task"),
+            makeTask(taskID: stableTaskID, title: "Reminder-backed task"),
           ]
         )
       ]
@@ -206,11 +208,11 @@ final class RetainedWorkspaceSurfaceProjectionTests: XCTestCase {
       projectIDs: [projectID],
       calendar: Self.calendar
     )
+    let surface = try XCTUnwrap(result.loadedProjection)
 
-    XCTAssertEqual(
-      result,
-      .blocked(.taskIdentityUnavailable(projectID: projectID, title: "Plain Logseq task"))
-    )
+    XCTAssertEqual(surface.projectSnapshots[projectID]?.title, "Project")
+    XCTAssertEqual(surface.scheduleEntriesByProjectID[projectID]?.map(\.taskID), [stableTaskID])
+    XCTAssertEqual(surface.calendarBridgeDecisionsByTaskID[stableTaskID], .noAction)
   }
 
   func testLoadAllowsFallbackWhenGraphIsNotConfigured() async {
@@ -228,6 +230,10 @@ final class RetainedWorkspaceSurfaceProjectionTests: XCTestCase {
       .fallbackAllowed(.graphNotConfigured)
     )
     XCTAssertEqual(graphMissing.source, .blocked(.graphNotConfigured))
+    XCTAssertEqual(
+      graphMissing.errorMessage,
+      RetainedWorkspaceSurfaceProjectionBlocker.graphNotConfigured.userMessage
+    )
     XCTAssertTrue(graphMissing.projectSnapshots.isEmpty)
     XCTAssertTrue(graphMissing.scheduleEntriesByProjectID.isEmpty)
     XCTAssertTrue(graphMissing.calendarBridgeDecisionsByTaskID.isEmpty)
@@ -236,9 +242,29 @@ final class RetainedWorkspaceSurfaceProjectionTests: XCTestCase {
       .fallbackAllowed(.loadFailed("disk unavailable"))
     )
     XCTAssertEqual(loadFailed.source, .blocked(.loadFailed("disk unavailable")))
+    XCTAssertEqual(
+      loadFailed.errorMessage,
+      RetainedWorkspaceSurfaceProjectionBlocker.loadFailed("disk unavailable").userMessage
+    )
     XCTAssertTrue(loadFailed.projectSnapshots.isEmpty)
     XCTAssertTrue(loadFailed.scheduleEntriesByProjectID.isEmpty)
     XCTAssertTrue(loadFailed.calendarBridgeDecisionsByTaskID.isEmpty)
+  }
+
+  func testTaskIdentityUnavailableBlocksWithoutGlobalErrorAlert() {
+    let projectID = UUID()
+
+    let blockedRead = RetainedWorkspaceSurfaceProjectionBuilder.resolveRetainedOnly(
+      .blocked(.taskIdentityUnavailable(projectID: projectID, title: "Plain Logseq task"))
+    )
+
+    XCTAssertEqual(
+      blockedRead.source,
+      .blocked(.taskIdentityUnavailable(projectID: projectID, title: "Plain Logseq task"))
+    )
+    XCTAssertNil(blockedRead.errorMessage)
+    XCTAssertTrue(blockedRead.projectSnapshots.isEmpty)
+    XCTAssertTrue(blockedRead.scheduleEntriesByProjectID.isEmpty)
   }
 
   func testRetainedOnlyBlockedReadsRequireConsumerCacheInvalidation() {
@@ -311,13 +337,17 @@ final class RetainedWorkspaceSurfaceProjectionTests: XCTestCase {
 
   func testLoadBuildsFromLogseqGraphRootWhenAvailable() async throws {
     let graphRootURL = try makeGraphRoot(named: "RetainedSurfaceGraph")
-    let projectID = UUID()
-    let taskID = UUID()
+    let projectID = RetainedProjectionBuilder.derivedProjectID(for: "reminder-list-1")
+    let taskID = ReminderProjectionIdentity.taskID(for: "reminder-1")
     let store = LogseqProjectPageStore(
       pagesRootURL: graphRootURL.appendingPathComponent("pages", isDirectory: true)
     )
     _ = try await store.upsertPage(
-      .init(projectID: projectID, title: "Graph Project", reminderListExternalIdentifier: nil),
+      .init(
+        projectID: projectID,
+        title: "Graph Project",
+        reminderListExternalIdentifier: "reminder-list-1"
+      ),
       noteMarkdown: "Graph note",
       managedTasks: [
         .init(

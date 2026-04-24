@@ -29,7 +29,7 @@ enum RetainedReminderImportSync {
         for: listExternalIdentifier
       )
       let items = batch.itemsByListIdentifier[list.identifier] ?? []
-      let managedTasks = items.compactMap { item -> LogseqProjectPageStore.TaskRecord? in
+      let importedTasks = items.compactMap { item -> LogseqProjectPageStore.TaskRecord? in
         guard let taskIdentifier = normalized(item.externalIdentifier) ?? normalized(item.identifier),
           let taskTitle = normalized(item.title)
         else {
@@ -70,7 +70,7 @@ enum RetainedReminderImportSync {
           title: title,
           reminderListExternalIdentifier: listExternalIdentifier
         ),
-        managedTasks: managedTasks
+        importedTasks: importedTasks
       )
 
       let latestTaskUpdate = items.map(\.modifiedAt).max()
@@ -84,7 +84,7 @@ enum RetainedReminderImportSync {
         )
       )
       importedProjectCount += 1
-      importedTaskCount += managedTasks.count
+      importedTaskCount += importedTasks.count
     }
 
     return SyncResult(
@@ -98,23 +98,21 @@ enum RetainedReminderImportSync {
   private static func upsertOrClaimProjectPage(
     store: LogseqProjectPageStore,
     identity: LogseqProjectPageStore.ProjectIdentity,
-    managedTasks: [LogseqProjectPageStore.TaskRecord]
+    importedTasks: [LogseqProjectPageStore.TaskRecord]
   ) async throws {
     do {
-      _ = try await store.upsertPage(
+      _ = try await store.upsertReminderBackedPage(
         identity,
-        noteMarkdown: "",
-        managedTasks: managedTasks
+        importedTasks: importedTasks
       )
     } catch LogseqProjectPageStore.StoreError.pageNotOwned {
       guard let claimablePage = try await store.loadClaimableTaggedPage(for: identity) else {
         throw LogseqProjectPageStore.StoreError.pageNotOwned
       }
-      _ = try await store.claimTaggedPage(
+      _ = try await store.claimReminderBackedTaggedPage(
         at: claimablePage.fileURL,
         as: identity,
-        noteMarkdown: claimablePage.noteMarkdown,
-        managedTasks: managedTasks
+        importedTasks: importedTasks
       )
     }
   }

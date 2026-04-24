@@ -112,24 +112,12 @@ enum TaskIdentityBridgeStore {
     tasks: [TaskIdentityBridgeRecord]
   ) {
     lock.lock()
+    defer { lock.unlock() }
     let existingProjects = projectsByID
     let existingTasks = tasksByID
-    projectsByID = Dictionary(
-      uniqueKeysWithValues: projects.map { record in
-        var next = record
-        next.createdAt = existingProjects[record.projectID]?.createdAt ?? record.createdAt
-        return (record.projectID, next)
-      }
-    )
-    tasksByID = Dictionary(
-      uniqueKeysWithValues: tasks.map { record in
-        var next = record
-        next.createdAt = existingTasks[record.taskID]?.createdAt ?? record.createdAt
-        return (record.taskID, next)
-      }
-    )
+    projectsByID = mergedProjectsByID(projects, existingProjects: existingProjects)
+    tasksByID = mergedTasksByID(tasks, existingTasks: existingTasks)
     persistLocked()
-    lock.unlock()
   }
 
   static func projectID(for taskID: UUID) -> UUID? {
@@ -196,8 +184,48 @@ enum TaskIdentityBridgeStore {
       tasksByID = [:]
       return
     }
-    projectsByID = Dictionary(uniqueKeysWithValues: payload.projects.map { ($0.projectID, $0) })
-    tasksByID = Dictionary(uniqueKeysWithValues: payload.tasks.map { ($0.taskID, $0) })
+    projectsByID = mergedProjectsByID(payload.projects, existingProjects: [:])
+    tasksByID = mergedTasksByID(payload.tasks, existingTasks: [:])
+  }
+
+  private static func mergedProjectsByID(
+    _ records: [ProjectIdentityBridgeRecord],
+    existingProjects: [UUID: ProjectIdentityBridgeRecord]
+  ) -> [UUID: ProjectIdentityBridgeRecord] {
+    var merged: [UUID: ProjectIdentityBridgeRecord] = [:]
+    for record in records {
+      var next = record
+      next.createdAt = existingProjects[record.projectID]?.createdAt
+        ?? merged[record.projectID]?.createdAt
+        ?? record.createdAt
+      if let previous = merged[record.projectID],
+        previous.updatedAt > record.updatedAt
+      {
+        continue
+      }
+      merged[record.projectID] = next
+    }
+    return merged
+  }
+
+  private static func mergedTasksByID(
+    _ records: [TaskIdentityBridgeRecord],
+    existingTasks: [UUID: TaskIdentityBridgeRecord]
+  ) -> [UUID: TaskIdentityBridgeRecord] {
+    var merged: [UUID: TaskIdentityBridgeRecord] = [:]
+    for record in records {
+      var next = record
+      next.createdAt = existingTasks[record.taskID]?.createdAt
+        ?? merged[record.taskID]?.createdAt
+        ?? record.createdAt
+      if let previous = merged[record.taskID],
+        previous.updatedAt > record.updatedAt
+      {
+        continue
+      }
+      merged[record.taskID] = next
+    }
+    return merged
   }
 
   private static func persistLocked() {

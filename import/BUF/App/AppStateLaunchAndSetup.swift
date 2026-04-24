@@ -66,6 +66,13 @@ extension AppState {
   private func prepareGraphLocalContainer(for graphRootURL: URL) async throws {
     let containerRootURL = graphRootURL.appendingPathComponent(".buf", isDirectory: true)
     try await storageCoordinator.openOrInitializeContainer(at: containerRootURL)
+    do {
+      try LogseqGraphConfigStore(graphRootURL: graphRootURL).ensureInternalIdentityPropertiesHidden()
+    } catch {
+      AppLogger.sync.error(
+        "logseq hidden property config update failed: \(error.localizedDescription, privacy: .public)"
+      )
+    }
     refreshContainerRootURL()
     enableRetainedSyncConsent()
   }
@@ -102,6 +109,10 @@ extension AppState {
 
   func requestStartupSyncIfNeeded() {
     guard hasCompletedInitialSetup else { return }
+    guard hasInitialSyncConsent else {
+      syncStatus = "Refresh paused"
+      return
+    }
     refreshReminderSourceNow()
   }
 
@@ -173,6 +184,7 @@ extension AppState {
       modelContainer = try ModelContainer(for: Schema([]), configurations: [])
       if shouldRefreshHealth { await refreshHealth() }
       await prepareProjectNoteStore()
+      configureReminderSourceObservation()
       boardsLoaded = true
       syncStatus = "Ready"
       if startStartupSync {
