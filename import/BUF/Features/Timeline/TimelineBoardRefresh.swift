@@ -118,16 +118,29 @@ extension TimelineBoardView {
       workspaceTimelineProjectSnapshots = [:]
       workspaceTimelineProjectSummaries = [:]
       workspaceTimelineScheduleEntriesByProjectID = [:]
+      retainedTimelineCalendarBridgeDecisionsByTaskID = [:]
       return
     }
 
-    let projection = ReminderRuntimeProjectionReadModelService.workspaceSurfaceProjection(
-      projectIDs: requestedProjectIDs,
-      runtimeSnapshot: appState.cachedOutlinerRuntimeProjectionSnapshot
+    let retainedResult = await RetainedWorkspaceSurfaceProjectionBuilder.load(
+      graphRootURL: appState.logseqGraphRootURL,
+      projectIDs: requestedProjectIDs
     )
-    workspaceTimelineProjectSnapshots = projection.projectSnapshots
-    workspaceTimelineProjectSummaries = projection.projectSummaries
-    workspaceTimelineScheduleEntriesByProjectID = projection.scheduleEntriesByProjectID
+    let resolvedRead = RetainedWorkspaceSurfaceProjectionBuilder.resolve(retainedResult) {
+      ReminderRuntimeProjectionReadModelService.workspaceSurfaceProjection(
+        projectIDs: requestedProjectIDs,
+        runtimeSnapshot: appState.cachedOutlinerRuntimeProjectionSnapshot
+      )
+    }
+
+    workspaceTimelineProjectSnapshots = resolvedRead.projectSnapshots
+    workspaceTimelineProjectSummaries = resolvedRead.projectSummaries
+    workspaceTimelineScheduleEntriesByProjectID = resolvedRead.scheduleEntriesByProjectID
+    retainedTimelineCalendarBridgeDecisionsByTaskID =
+      resolvedRead.calendarBridgeDecisionsByTaskID
+    if case .blocked = resolvedRead.source {
+      appState.errorMessage = resolvedRead.errorMessage
+    }
   }
 
   func refreshAnchorDateIfNeeded(referenceDate: Date = .now) {

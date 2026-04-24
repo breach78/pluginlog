@@ -210,19 +210,39 @@ extension ScheduleBoardView {
       await MainActor.run {
         workspaceScheduleProjectSnapshots = [:]
         workspaceScheduleSliceEntriesByProjectID = [:]
+        retainedScheduleCalendarBridgeDecisionsByTaskID = [:]
         recordWorkspaceLoadFallback(nil)
       }
       return
     }
 
+    let graphRootURL = await MainActor.run {
+      appState.logseqGraphRootURL
+    }
+    let retainedResult = await RetainedWorkspaceSurfaceProjectionBuilder.load(
+      graphRootURL: graphRootURL,
+      projectIDs: requestedProjectIDs
+    )
+
     await MainActor.run {
-      let projection = ReminderRuntimeProjectionReadModelService.workspaceSurfaceProjection(
-        projectIDs: requestedProjectIDs,
-        runtimeSnapshot: appState.cachedOutlinerRuntimeProjectionSnapshot
-      )
-      workspaceScheduleProjectSnapshots = projection.projectSnapshots
-      workspaceScheduleSliceEntriesByProjectID = projection.scheduleEntriesByProjectID
-      recordWorkspaceLoadFallback(nil)
+      let resolvedRead = RetainedWorkspaceSurfaceProjectionBuilder.resolve(retainedResult) {
+        ReminderRuntimeProjectionReadModelService.workspaceSurfaceProjection(
+          projectIDs: requestedProjectIDs,
+          runtimeSnapshot: appState.cachedOutlinerRuntimeProjectionSnapshot
+        )
+      }
+      workspaceScheduleProjectSnapshots = resolvedRead.projectSnapshots
+      workspaceScheduleSliceEntriesByProjectID = resolvedRead.scheduleEntriesByProjectID
+      retainedScheduleCalendarBridgeDecisionsByTaskID =
+        resolvedRead.calendarBridgeDecisionsByTaskID
+
+      switch resolvedRead.source {
+      case .retained, .legacyFallback:
+        recordWorkspaceLoadFallback(nil)
+      case .blocked:
+        appState.errorMessage = resolvedRead.errorMessage
+        recordWorkspaceLoadFallback(nil)
+      }
     }
   }
 

@@ -1,0 +1,384 @@
+import Foundation
+
+struct RetainedWorkspaceSurfaceProjection: Equatable {
+  let projectSnapshots: [UUID: WorkspaceProjectRuntimeRecord]
+  let projectSummaries: [UUID: ProjectSummaryRecord]
+  let scheduleEntriesByProjectID: [UUID: [ScheduleSliceEntry]]
+  let calendarBridgeDecisionsByTaskID: [UUID: RetainedCalendarBridgeDecision]
+
+  static let empty = RetainedWorkspaceSurfaceProjection(
+    projectSnapshots: [:],
+    projectSummaries: [:],
+    scheduleEntriesByProjectID: [:],
+    calendarBridgeDecisionsByTaskID: [:]
+  )
+}
+
+enum RetainedWorkspaceSurfaceProjectionFallbackReason: Equatable {
+  case graphNotConfigured
+  case loadFailed(String)
+}
+
+enum RetainedWorkspaceSurfaceProjectionBlocker: Equatable {
+  case identityFailure(RetainedProjectionBuilder.Error)
+  case partialProjectCoverage(missingProjectIDs: [UUID])
+  case taskIdentityUnavailable(projectID: UUID, title: String)
+
+  var userMessage: String {
+    switch self {
+    case .identityFailure(let error):
+      return error.localizedDescription
+    case .partialProjectCoverage(let missingProjectIDs):
+      return "Retained projection is missing \(missingProjectIDs.count) requested project(s)."
+    case .taskIdentityUnavailable(_, let title):
+      return "Retained task cannot be shown in Schedule/Timeline without a stable task id: \(title)"
+    }
+  }
+}
+
+enum RetainedWorkspaceSurfaceProjectionLoadResult: Equatable {
+  case loaded(RetainedWorkspaceSurfaceProjection)
+  case fallbackAllowed(RetainedWorkspaceSurfaceProjectionFallbackReason)
+  case blocked(RetainedWorkspaceSurfaceProjectionBlocker)
+}
+
+struct RetainedWorkspaceSurfaceProjectionResolvedRead: Equatable {
+  enum Source: Equatable {
+    case retained
+    case legacyFallback(RetainedWorkspaceSurfaceProjectionFallbackReason)
+    case blocked(RetainedWorkspaceSurfaceProjectionBlocker)
+  }
+
+  let projectSnapshots: [UUID: WorkspaceProjectRuntimeRecord]
+  let projectSummaries: [UUID: ProjectSummaryRecord]
+  let scheduleEntriesByProjectID: [UUID: [ScheduleSliceEntry]]
+  let calendarBridgeDecisionsByTaskID: [UUID: RetainedCalendarBridgeDecision]
+  let source: Source
+
+  var errorMessage: String? {
+    guard case .blocked(let blocker) = source else { return nil }
+    return blocker.userMessage
+  }
+}
+
+enum RetainedWorkspaceSurfaceProjectionBuilder {
+  static func load(
+    graphRootURL: URL?,
+    projectIDs: [UUID],
+    calendar: Calendar = .autoupdatingCurrent
+  ) async -> RetainedWorkspaceSurfaceProjectionLoadResult {
+    guard let graphRootURL else {
+      return .fallbackAllowed(.graphNotConfigured)
+    }
+
+    let pageStore = LogseqProjectPageStore(
+      pagesRootURL: graphRootURL.appendingPathComponent("pages", isDirectory: true)
+    )
+
+    do {
+      let pages = try await pageStore.loadProjectPagesInScope()
+      return build(pages: pages, projectIDs: projectIDs, calendar: calendar)
+    } catch {
+      return .fallbackAllowed(.loadFailed(error.localizedDescription))
+    }
+  }
+
+  static func build(
+    pages: [LogseqProjectPageStore.PageSnapshot],
+    projectIDs: [UUID],
+    calendar: Calendar = .autoupdatingCurrent
+  ) -> RetainedWorkspaceSurfaceProjectionLoadResult {
+    do {
+      let snapshot = try RetainedProjectionBuilder.build(.init(pages: pages))
+      return build(snapshot: snapshot, projectIDs: projectIDs, calendar: calendar)
+    } catch let error as RetainedProjectionBuilder.Error {
+      return .blocked(.identityFailure(error))
+    } catch {
+      return .fallbackAllowed(.loadFailed(error.localizedDescription))
+    }
+  }
+
+  static func build(
+    snapshot: RetainedWorkspaceSnapshot,
+    projectIDs: [UUID],
+    calendar: Calendar = .autoupdatingCurrent
+  ) -> RetainedWorkspaceSurfaceProjectionLoadResult {
+    if let blocker = validateSnapshotIdentities(snapshot) {
+      return .blocked(blocker)
+    }
+
+    let normalizedProjectIDs = normalizedProjectIDs(projectIDs)
+    let projectsByID = Dictionary(uniqueKeysWithValues: snapshot.projects.map {
+      ($0.identity.projectID, $0)
+    })
+    let missingProjectIDs = normalizedProjectIDs.filter { projectsByID[$0] == nil }
+    guard missingProjectIDs.isEmpty else {
+      return .blocked(.partialProjectCoverage(missingProjectIDs: missingProjectIDs))
+    }
+
+    let selectedProjects =
+      normalizedProjectIDs.isEmpty
+      ? snapshot.projects
+      : normalizedProjectIDs.compactMap { projectsByID[$0] }
+
+    var projectSnapshots: [UUID: WorkspaceProjectRuntimeRecord] = [:]
+    var projectSummaries: [UUID: ProjectSummaryRecord] = [:]
+    var scheduleEntriesByProjectID: [UUID: [ScheduleSliceEntry]] = [:]
+    var calendarBridgeDecisionsByTaskID: [UUID: RetainedCalendarBridgeDecision] = [:]
+
+    for project in selectedProjects {
+      let projectID = project.identity.projectID
+      let projectSnapshot = workspaceProjectSnapshot(for: project)
+      var scheduleEntries: [ScheduleSliceEntry] = []
+
+      for (index, task) in project.tasks.enumerated() {
+        guard let taskID = task.identity.taskID else {
+          return .blocked(.taskIdentityUnavailable(projectID: projectID, title: task.title))
+        }
+
+        let scheduleEntry = scheduleEntry(
+          for: task,
+          taskID: taskID,
+          projectID: projectID,
+          rowOrder: index,
+          projectSnapshot: projectSnapshot
+        )
+        scheduleEntries.append(scheduleEntry)
+        calendarBridgeDecisionsByTaskID[taskID] = RetainedCalendarBridgePolicy.decision(for: task)
+      }
+
+      projectSnapshots[projectID] = projectSnapshot
+      scheduleEntriesByProjectID[projectID] = scheduleEntries
+      projectSummaries[projectID] = projectSummary(
+        from: scheduleEntries,
+        projectSnapshot: projectSnapshot,
+        calendar: calendar
+      )
+    }
+
+    return .loaded(
+      RetainedWorkspaceSurfaceProjection(
+        projectSnapshots: projectSnapshots,
+        projectSummaries: projectSummaries,
+        scheduleEntriesByProjectID: scheduleEntriesByProjectID,
+        calendarBridgeDecisionsByTaskID: calendarBridgeDecisionsByTaskID
+      )
+    )
+  }
+
+  static func resolve(
+    _ result: RetainedWorkspaceSurfaceProjectionLoadResult,
+    legacyFallback: () -> ReminderWorkspaceSurfaceProjection
+  ) -> RetainedWorkspaceSurfaceProjectionResolvedRead {
+    switch result {
+    case .loaded(let projection):
+      return RetainedWorkspaceSurfaceProjectionResolvedRead(
+        projectSnapshots: projection.projectSnapshots,
+        projectSummaries: projection.projectSummaries,
+        scheduleEntriesByProjectID: projection.scheduleEntriesByProjectID,
+        calendarBridgeDecisionsByTaskID: projection.calendarBridgeDecisionsByTaskID,
+        source: .retained
+      )
+    case .fallbackAllowed(let reason):
+      let projection = legacyFallback()
+      return RetainedWorkspaceSurfaceProjectionResolvedRead(
+        projectSnapshots: projection.projectSnapshots,
+        projectSummaries: projection.projectSummaries,
+        scheduleEntriesByProjectID: projection.scheduleEntriesByProjectID,
+        calendarBridgeDecisionsByTaskID: [:],
+        source: .legacyFallback(reason)
+      )
+    case .blocked(let blocker):
+      return RetainedWorkspaceSurfaceProjectionResolvedRead(
+        projectSnapshots: [:],
+        projectSummaries: [:],
+        scheduleEntriesByProjectID: [:],
+        calendarBridgeDecisionsByTaskID: [:],
+        source: .blocked(blocker)
+      )
+    }
+  }
+
+  private static func validateSnapshotIdentities(
+    _ snapshot: RetainedWorkspaceSnapshot
+  ) -> RetainedWorkspaceSurfaceProjectionBlocker? {
+    var seenProjectIDs: Set<UUID> = []
+    var seenReminderListExternalIdentifiers: Set<String> = []
+    var seenTaskIDs: Set<UUID> = []
+    var seenReminderExternalIdentifiers: Set<String> = []
+    var seenCalendarEventExternalIdentifiers: Set<String> = []
+
+    for project in snapshot.projects {
+      let projectID = project.identity.projectID
+      guard seenProjectIDs.insert(projectID).inserted else {
+        return .identityFailure(.duplicateProjectID(projectID))
+      }
+
+      if let reminderListExternalIdentifier = normalized(project.identity.reminderListExternalIdentifier) {
+        guard projectID == RetainedProjectionBuilder.derivedProjectID(
+          for: reminderListExternalIdentifier
+        ) else {
+          return .identityFailure(.conflictingProjectIdentity(pageTitle: project.title))
+        }
+        guard seenReminderListExternalIdentifiers.insert(reminderListExternalIdentifier).inserted else {
+          return .identityFailure(
+            .duplicateReminderListExternalIdentifier(reminderListExternalIdentifier)
+          )
+        }
+      }
+
+      for task in project.tasks {
+        let reminderExternalIdentifier = normalized(task.identity.reminderExternalIdentifier)
+        let calendarEventExternalIdentifier = normalized(
+          task.identity.calendarEventExternalIdentifier
+        )
+
+        guard let taskID = task.identity.taskID else {
+          if reminderExternalIdentifier != nil || calendarEventExternalIdentifier != nil {
+            return .identityFailure(
+              .damagedTaskIdentity(projectTitle: project.title, taskTitle: task.title)
+            )
+          }
+          continue
+        }
+        guard seenTaskIDs.insert(taskID).inserted else {
+          return .identityFailure(.duplicateTaskID(taskID))
+        }
+        if let reminderExternalIdentifier {
+          guard seenReminderExternalIdentifiers.insert(reminderExternalIdentifier).inserted else {
+            return .identityFailure(.duplicateReminderExternalIdentifier(reminderExternalIdentifier))
+          }
+        }
+        if let calendarEventExternalIdentifier {
+          guard seenCalendarEventExternalIdentifiers.insert(calendarEventExternalIdentifier).inserted else {
+            return .identityFailure(
+              .duplicateCalendarEventExternalIdentifier(calendarEventExternalIdentifier)
+            )
+          }
+        }
+      }
+    }
+
+    return nil
+  }
+
+  private static func workspaceProjectSnapshot(
+    for project: RetainedProject
+  ) -> WorkspaceProjectRuntimeRecord {
+    WorkspaceProjectRuntimeRecord(
+      id: project.identity.projectID,
+      title: project.title,
+      colorHex: nil,
+      reminderListIdentifier: nil,
+      reminderListExternalIdentifier: project.identity.reminderListExternalIdentifier,
+      projectNoteMarkdown: project.noteMarkdown,
+      localStartDate: nil,
+      localDeadline: nil,
+      progressStageRaw: nil,
+      boardOrder: nil,
+      createdAt: .distantPast,
+      updatedAt: .distantPast,
+      isArchived: false
+    )
+  }
+
+  private static func scheduleEntry(
+    for task: RetainedTask,
+    taskID: UUID,
+    projectID: UUID,
+    rowOrder: Int,
+    projectSnapshot: WorkspaceProjectRuntimeRecord
+  ) -> ScheduleSliceEntry {
+    ScheduleSliceEntry(
+      taskID: taskID,
+      parentTaskID: nil,
+      title: task.title,
+      displayedDate: task.schedule.parsedDate,
+      startDate: nil,
+      dueDate: task.schedule.parsedDate,
+      scheduleHasExplicitTime: task.schedule.hasExplicitTime,
+      scheduledDurationMinutes: task.schedule.durationMinutes,
+      isCompleted: task.isCompleted,
+      completionDate: nil,
+      recurrenceRuleRaw: task.schedule.canonicalRepeatRule,
+      attachmentCount: 0,
+      reminderNoteText: "",
+      requiredWorkDays: 0,
+      completedWorkUnits: 0,
+      completedWorkUnitDates: [],
+      preparationScheduleOverridesRaw: "",
+      rowOrder: rowOrder,
+      priority: 0,
+      isFlagged: false,
+      isArchived: projectSnapshot.isArchived,
+      localUpdatedAt: .distantPast,
+      createdAt: .distantPast
+    )
+  }
+
+  private static func projectSummary(
+    from scheduleEntries: [ScheduleSliceEntry],
+    projectSnapshot: WorkspaceProjectRuntimeRecord,
+    calendar: Calendar
+  ) -> ProjectSummaryRecord {
+    let today = calendar.startOfDay(for: .now)
+    var openRootTaskCount = 0
+    var completedRootTaskCount = 0
+    var undatedOpenRootTaskCount = 0
+    var overdueOpenRootTaskCount = 0
+    var todayTaskCount = 0
+    var upcomingDates: [Date] = []
+
+    for task in scheduleEntries where task.parentTaskID == nil {
+      if task.isCompleted {
+        completedRootTaskCount += 1
+        continue
+      }
+
+      openRootTaskCount += 1
+      guard let dueDate = task.dueDate else {
+        undatedOpenRootTaskCount += 1
+        continue
+      }
+
+      let day = calendar.startOfDay(for: dueDate)
+      if day < today {
+        overdueOpenRootTaskCount += 1
+      }
+      if day == today {
+        todayTaskCount += 1
+      }
+      if day >= today {
+        upcomingDates.append(day)
+      }
+    }
+
+    return ProjectSummaryRecord(
+      openRootTaskCount: openRootTaskCount,
+      completedRootTaskCount: completedRootTaskCount,
+      undatedOpenRootTaskCount: undatedOpenRootTaskCount,
+      overdueOpenRootTaskCount: overdueOpenRootTaskCount,
+      todayTaskCount: todayTaskCount,
+      nextUpcomingDate: upcomingDates.min(),
+      deadline: projectSnapshot.localDeadline,
+      stageRaw: ProjectProgressStage.do.storageRawValue,
+      progress: ProjectProgressStage.do.progressValue,
+      latestTaskUpdatedAt: scheduleEntries.map(\.localUpdatedAt).max(),
+      title: projectSnapshot.title,
+      colorHex: projectSnapshot.colorHex,
+      isArchived: projectSnapshot.isArchived
+    )
+  }
+
+  private static func normalizedProjectIDs(_ projectIDs: [UUID]) -> [UUID] {
+    var seen: Set<UUID> = []
+    return projectIDs.filter { seen.insert($0).inserted }
+  }
+
+  private static func normalized(_ value: String?) -> String? {
+    guard let value = value?.trimmingCharacters(in: .whitespacesAndNewlines), !value.isEmpty else {
+      return nil
+    }
+    return value
+  }
+}

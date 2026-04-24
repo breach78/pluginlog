@@ -601,6 +601,8 @@ struct ScheduleBoardView: View {
   @State var cachedAllDayEntries: [ScheduleAllDayLayout] = []
   @State var cachedBackgroundTimedEntries: [ScheduleTimedBlockLayout] = []
   @State var cachedBackgroundAllDayEntries: [ScheduleAllDayLayout] = []
+  @State var retainedScheduleCalendarBridgeDecisionsByTaskID:
+    [UUID: RetainedCalendarBridgeDecision] = [:]
   @State var workspaceScheduleProjectSnapshots: [UUID: WorkspaceProjectRuntimeRecord] = [:]
   @State var workspaceScheduleSliceEntriesByProjectID: [UUID: [ScheduleSliceEntry]] = [:]
   @State var workspaceLoadFallback: ScheduleWorkspaceLoadFallback?

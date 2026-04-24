@@ -86,6 +86,8 @@ struct TimelineBoardView: View {
   @State var workspaceTimelineProjectSnapshots: [UUID: WorkspaceProjectRuntimeRecord] = [:]
   @State var workspaceTimelineProjectSummaries: [UUID: ProjectSummaryRecord] = [:]
   @State var workspaceTimelineScheduleEntriesByProjectID: [UUID: [ScheduleSliceEntry]] = [:]
+  @State var retainedTimelineCalendarBridgeDecisionsByTaskID:
+    [UUID: RetainedCalendarBridgeDecision] = [:]
   @State var cachedTimelineBars: [TimelineProjectBar] = []
   @State var cachedTimelineRowLayouts: [TimelineRowLayout] = []
   @State var cachedTimelineBarsSourceSignature: Int?
