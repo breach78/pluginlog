@@ -19,6 +19,7 @@ enum RetainedLogseqProjectProvisioningSync {
       pages: pages,
       store: store,
       reminderProjectProvider: reminderProjectProvider,
+      forceExistingReminderUpdates: false,
       now: now
     )
   }
@@ -34,6 +35,7 @@ enum RetainedLogseqProjectProvisioningSync {
       pages: pages,
       store: store,
       reminderProjectProvider: reminderProjectProvider,
+      forceExistingReminderUpdates: true,
       now: now
     )
   }
@@ -42,6 +44,7 @@ enum RetainedLogseqProjectProvisioningSync {
     pages: [LogseqProjectPageStore.PageSnapshot],
     store: LogseqProjectPageStore,
     reminderProjectProvider: ReminderProjectProvider,
+    forceExistingReminderUpdates: Bool,
     now: Date
   ) async throws -> SyncResult {
     var createdProjectCount = 0
@@ -63,6 +66,7 @@ enum RetainedLogseqProjectProvisioningSync {
       }
 
       let projectID = RetainedProjectionBuilder.derivedProjectID(for: listIdentifier)
+      let pageModifiedAt = modificationDate(of: page.fileURL)
       var taskIdentifiersByIndex: [Int: String] = [:]
 
       for (taskIndex, task) in page.externalTasks.enumerated() {
@@ -72,6 +76,8 @@ enum RetainedLogseqProjectProvisioningSync {
             projectID: projectID,
             reminderExternalIdentifier: reminderExternalIdentifier,
             reminderProjectProvider: reminderProjectProvider,
+            forceExistingReminderUpdates: forceExistingReminderUpdates,
+            pageModifiedAt: pageModifiedAt,
             taskRecords: &taskRecords,
             now: now
           )
@@ -150,6 +156,8 @@ enum RetainedLogseqProjectProvisioningSync {
     projectID: UUID,
     reminderExternalIdentifier: String,
     reminderProjectProvider: ReminderProjectProvider,
+    forceExistingReminderUpdates: Bool,
+    pageModifiedAt: Date?,
     taskRecords: inout [TaskIdentityBridgeRecord],
     now: Date
   ) throws {
@@ -161,6 +169,9 @@ enum RetainedLogseqProjectProvisioningSync {
     )
 
     guard let snapshot = try reminderProjectProvider.taskSnapshot(for: reference) else {
+      return
+    }
+    guard forceExistingReminderUpdates || localPageIsNewerThanRemote(pageModifiedAt, snapshot.modifiedAt) else {
       return
     }
 
@@ -219,6 +230,15 @@ enum RetainedLogseqProjectProvisioningSync {
 
   private static func encodedDate(_ date: Date?, hasExplicitTime: Bool) -> String? {
     LogseqReminderPropertyCodec.encodeDate(date, hasExplicitTime: hasExplicitTime)
+  }
+
+  private static func localPageIsNewerThanRemote(_ pageModifiedAt: Date?, _ remoteModifiedAt: Date) -> Bool {
+    guard let pageModifiedAt else { return false }
+    return pageModifiedAt.timeIntervalSince(remoteModifiedAt) > 0.5
+  }
+
+  private static func modificationDate(of fileURL: URL) -> Date? {
+    try? fileURL.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate
   }
 
   private static func applyCompletionIfNeeded(

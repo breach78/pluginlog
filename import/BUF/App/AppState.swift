@@ -16,6 +16,7 @@ final class AppState: ObservableObject {
   static let includeCompletedSyncEnabledKey = "sync.includeCompletedRemindersEnabled"
   static let initialSyncConsentGrantedKey = "sync.initialConsentGranted"
   static let initialSyncConsentDecidedKey = "sync.initialConsentDecided"
+  static let showCompletedLogseqTasksKey = "logseq.showCompletedTasks"
   static let logseqGraphBookmarkDataKey = "logseq.graphRoot.bookmarkData"
   static let logseqGraphRootPathKey = "logseq.graphRoot.path"
   static let timelineDayColumnWidthKey = "timeline.dayColumnWidth"
@@ -46,6 +47,7 @@ final class AppState: ObservableObject {
   @Published var isHoveringTimelineDayHeaderOverlay = false
   @Published var workspaceNavigationRequest: WorkspaceNavigationRequest?
   @Published var includeCompletedSyncEnabled = true
+  @Published var showsCompletedLogseqTasks = false
   @Published var hasInitialSyncConsent = false
   @Published var hasSyncConsentDecision = false
   @Published var logseqGraphRootURL: URL?
@@ -80,6 +82,9 @@ final class AppState: ObservableObject {
   var reminderSyncRecoveryJournal: ReminderSyncRecoveryJournalStore?
   var reminderSourceObserver: ReminderSourceObserver?
   var logseqPagesDirectoryWatcher: LogseqPagesDirectoryWatcher?
+  var logseqParentCompletionCascadeTask: Task<Void, Never>?
+  var pendingLogseqParentCompletionCascadeFileURLs: Set<URL> = []
+  let logseqParentCompletionCascadeDelay: Duration = .seconds(3)
 
   let storageCoordinator: LocalStorageCoordinator
   let platformUIFoundation: PlatformUIFoundation
@@ -174,6 +179,9 @@ final class AppState: ObservableObject {
 
     UserDefaults.standard.set(true, forKey: Self.includeCompletedSyncEnabledKey)
     includeCompletedSyncEnabled = true
+    showsCompletedLogseqTasks =
+      UserDefaults.standard.object(forKey: Self.showCompletedLogseqTasksKey) as? Bool
+      ?? false
     hasInitialSyncConsent = UserDefaults.standard.bool(forKey: Self.initialSyncConsentGrantedKey)
     hasSyncConsentDecision =
       UserDefaults.standard.object(forKey: Self.initialSyncConsentDecidedKey) as? Bool

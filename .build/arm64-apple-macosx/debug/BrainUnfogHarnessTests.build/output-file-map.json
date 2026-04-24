@@ -58,6 +58,13 @@
     "swift-dependencies": "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarnessTests.build/ReminderAccessPromptPolicyTests.swiftdeps",
     "diagnostics": "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarnessTests.build/ReminderAccessPromptPolicyTests.dia"
   },
+  "/Users/three/app_build/logseq plugin/Tests/BrainUnfogHarnessTests/ReminderSourceObserverTests.swift": {
+    "dependencies": "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarnessTests.build/ReminderSourceObserverTests.d",
+    "object": "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarnessTests.build/ReminderSourceObserverTests.swift.o",
+    "swiftmodule": "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarnessTests.build/ReminderSourceObserverTests~partial.swiftmodule",
+    "swift-dependencies": "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarnessTests.build/ReminderSourceObserverTests.swiftdeps",
+    "diagnostics": "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarnessTests.build/ReminderSourceObserverTests.dia"
+  },
   "/Users/three/app_build/logseq plugin/Tests/BrainUnfogHarnessTests/ReminderTaskAdoptionPolicyTests.swift": {
     "dependencies": "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarnessTests.build/ReminderTaskAdoptionPolicyTests.d",
     "object": "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarnessTests.build/ReminderTaskAdoptionPolicyTests.swift.o",

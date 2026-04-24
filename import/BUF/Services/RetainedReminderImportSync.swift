@@ -29,12 +29,14 @@ enum RetainedReminderImportSync {
         for: listExternalIdentifier
       )
       let items = batch.itemsByListIdentifier[list.identifier] ?? []
+      var remoteModifiedAtByReminderIdentifier: [String: Date] = [:]
       let importedTasks = items.compactMap { item -> LogseqProjectPageStore.TaskRecord? in
         guard let taskIdentifier = normalized(item.externalIdentifier) ?? normalized(item.identifier),
           let taskTitle = normalized(item.title)
         else {
           return nil
         }
+        remoteModifiedAtByReminderIdentifier[taskIdentifier] = item.modifiedAt
 
         let taskID = ReminderProjectionIdentity.taskID(for: taskIdentifier)
         taskRecords.append(
@@ -70,7 +72,8 @@ enum RetainedReminderImportSync {
           title: title,
           reminderListExternalIdentifier: listExternalIdentifier
         ),
-        importedTasks: importedTasks
+        importedTasks: importedTasks,
+        remoteModifiedAtByReminderIdentifier: remoteModifiedAtByReminderIdentifier
       )
 
       let latestTaskUpdate = items.map(\.modifiedAt).max()
@@ -98,12 +101,14 @@ enum RetainedReminderImportSync {
   private static func upsertOrClaimProjectPage(
     store: LogseqProjectPageStore,
     identity: LogseqProjectPageStore.ProjectIdentity,
-    importedTasks: [LogseqProjectPageStore.TaskRecord]
+    importedTasks: [LogseqProjectPageStore.TaskRecord],
+    remoteModifiedAtByReminderIdentifier: [String: Date]
   ) async throws {
     do {
       _ = try await store.upsertReminderBackedPage(
         identity,
-        importedTasks: importedTasks
+        importedTasks: importedTasks,
+        remoteModifiedAtByReminderIdentifier: remoteModifiedAtByReminderIdentifier
       )
     } catch LogseqProjectPageStore.StoreError.pageNotOwned {
       guard let claimablePage = try await store.loadClaimableTaggedPage(for: identity) else {

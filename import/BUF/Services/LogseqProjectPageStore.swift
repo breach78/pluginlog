@@ -83,6 +83,8 @@ actor LogseqProjectPageStore {
 
   private static let managedSectionHeader = "## Brain Unfog Managed Tasks"
   private static let generatedComment = "<!-- generated-by: Brain Unfog -->"
+  private static let activeTaskMarkers: Set<String> = ["TODO", "NOW", "LATER", "DOING", "WAITING"]
+  private static let completedTaskMarkers: Set<String> = ["DONE", "CANCELED", "CANCELLED"]
 
   private let pagesRootURL: URL
   private let preferredFilenameFormat: LogseqPageFilenameFormat
@@ -270,7 +272,8 @@ actor LogseqProjectPageStore {
   @discardableResult
   func upsertReminderBackedPage(
     _ identity: ProjectIdentity,
-    importedTasks: [TaskRecord]
+    importedTasks: [TaskRecord],
+    remoteModifiedAtByReminderIdentifier: [String: Date] = [:]
   ) throws -> UpsertDisposition {
     let resolvedTitle = normalizedTitle(identity.title)
     guard !resolvedTitle.isEmpty else { throw StoreError.emptyTitle }
@@ -313,6 +316,7 @@ actor LogseqProjectPageStore {
         parsedPage: parsedPage,
         expectedExternalTasks: parsedPage.externalTasks,
         importedTasks: importedTasks,
+        remoteModifiedAtByReminderIdentifier: remoteModifiedAtByReminderIdentifier,
         reminderListExternalIdentifier: identity.reminderListExternalIdentifier
       )
       return .updated
@@ -553,6 +557,49 @@ actor LogseqProjectPageStore {
     }
     try write(rendered, to: page.fileURL)
     return .updated
+  }
+
+  @discardableResult
+  func completeDescendantTasksUnderCompletedParents(
+    in fileURLs: [URL]
+  ) throws -> [URL] {
+    var changedFileURLs: [URL] = []
+    var seenFileURLs: Set<URL> = []
+
+    for rawFileURL in fileURLs {
+      let fileURL = rawFileURL.resolvingSymlinksInPath().standardizedFileURL
+      guard seenFileURLs.insert(fileURL).inserted,
+        fileURL.pathExtension.lowercased() == "md",
+        fileManager.fileExists(atPath: fileURL.path)
+      else {
+        continue
+      }
+
+      let originalText = normalizedLineEndings(try readText(at: fileURL))
+      var lines = originalText.components(separatedBy: "\n")
+      let bodyStart = leadingPropertyRange(in: lines).upperBound
+      let managedRange = managedSectionRange(in: Array(lines.dropFirst(bodyStart))).map {
+        (bodyStart + $0.lowerBound)..<(bodyStart + $0.upperBound)
+      }
+      guard completeDescendantTasksUnderCompletedParents(
+        in: &lines,
+        bodyStart: bodyStart,
+        managedRange: managedRange
+      ) else {
+        continue
+      }
+
+      var rendered = lines.joined(separator: "\n")
+      if !rendered.hasSuffix("\n") {
+        rendered += "\n"
+      }
+      let comparableOriginal = originalText.hasSuffix("\n") ? originalText : originalText + "\n"
+      guard rendered != comparableOriginal else { continue }
+      try write(rendered, to: fileURL)
+      changedFileURLs.append(fileURL)
+    }
+
+    return changedFileURLs
   }
 
   private func resolvedOwnedPageURL(
@@ -829,18 +876,24 @@ actor LogseqProjectPageStore {
 
   private func parseTaskLine(
     _ line: String
-  ) -> (indent: Int, task: TaskRecord)? {
-    let indent = indentationWidth(of: line)
+  ) -> (indent: Int, indentPrefix: String, marker: String, task: TaskRecord)? {
+    let indentPrefix = leadingWhitespacePrefix(of: line)
+    let indent = indentPrefix.count
     let trimmedLine = line.trimmingCharacters(in: .whitespaces)
     guard trimmedLine.hasPrefix("- ") else { return nil }
 
     let remainder = String(trimmedLine.dropFirst(2))
-    if remainder.hasPrefix("TODO ") {
+    guard let markerEndIndex = remainder.firstIndex(of: " ") else { return nil }
+    let marker = String(remainder[..<markerEndIndex])
+    let title = String(remainder[remainder.index(after: markerEndIndex)...])
+    if Self.activeTaskMarkers.contains(marker) {
       return (
         indent,
+        indentPrefix,
+        marker,
         TaskRecord(
           taskID: nil,
-          title: String(remainder.dropFirst(5)),
+          title: title,
           isCompleted: false,
           date: nil,
           duration: nil,
@@ -850,12 +903,14 @@ actor LogseqProjectPageStore {
         )
       )
     }
-    if remainder.hasPrefix("DONE ") {
+    if Self.completedTaskMarkers.contains(marker) {
       return (
         indent,
+        indentPrefix,
+        marker,
         TaskRecord(
           taskID: nil,
-          title: String(remainder.dropFirst(5)),
+          title: title,
           isCompleted: true,
           date: nil,
           duration: nil,
@@ -895,14 +950,15 @@ actor LogseqProjectPageStore {
     parsedPage: ParsedPage,
     expectedExternalTasks: [TaskRecord],
     importedTasks: [TaskRecord],
+    remoteModifiedAtByReminderIdentifier: [String: Date],
     reminderListExternalIdentifier: String?
   ) throws {
     guard parsedPage.externalTasks == expectedExternalTasks else {
       throw StoreError.externalTasksChangedSinceLoad
     }
 
-    var lines = normalizedLineEndings(try readText(at: fileURL))
-      .components(separatedBy: "\n")
+    let originalText = normalizedLineEndings(try readText(at: fileURL))
+    var lines = originalText.components(separatedBy: "\n")
     removeLeadingProperty(key: "brain_unfog_project_id", from: &lines)
     if let reminderListExternalIdentifier = normalizedOptionalValue(reminderListExternalIdentifier) {
       upsertReminderListExternalIdentifier(reminderListExternalIdentifier, into: &lines)
@@ -914,6 +970,13 @@ actor LogseqProjectPageStore {
       guard let reminderIdentifier = normalizedOptionalValue(task.reminderExternalIdentifier),
         let importedTask = imported.tasksByIdentifier[reminderIdentifier]
       else {
+        continue
+      }
+      if shouldPreserveLocalExternalTask(
+        fileURL: fileURL,
+        remoteModifiedAt: remoteModifiedAtByReminderIdentifier[reminderIdentifier]
+      ) {
+        updatedReminderIdentifiers.insert(reminderIdentifier)
         continue
       }
       updateExternalTaskRecord(
@@ -935,7 +998,21 @@ actor LogseqProjectPageStore {
     if !rendered.hasSuffix("\n") {
       rendered += "\n"
     }
+    let comparableOriginal = originalText.hasSuffix("\n") ? originalText : originalText + "\n"
+    guard rendered != comparableOriginal else { return }
     try write(rendered, to: fileURL)
+  }
+
+  private func shouldPreserveLocalExternalTask(
+    fileURL: URL,
+    remoteModifiedAt: Date?
+  ) -> Bool {
+    guard let remoteModifiedAt,
+      let localModifiedAt = modificationDate(of: fileURL)
+    else {
+      return false
+    }
+    return localModifiedAt.timeIntervalSince(remoteModifiedAt) > 0.5
   }
 
   private func importedTasksByReminderIdentifier(
@@ -1025,6 +1102,7 @@ actor LogseqProjectPageStore {
           value: reminderExternalIdentifier,
           taskLineIndex: lineIndex,
           taskIndent: parsedTask.indent,
+          taskIndentPrefix: parsedTask.indentPrefix,
           managedRange: managedRange,
           in: &lines
         )
@@ -1063,13 +1141,14 @@ actor LogseqProjectPageStore {
         continue
       }
 
-      updateTaskMarker(at: lineIndex, isCompleted: task.isCompleted, in: &lines)
+      updateTaskLine(at: lineIndex, parsedTask: parsedTask, with: task, in: &lines)
       upsertOrRemoveTaskProperty(
         key: "reminder_external_id",
         rawKey: "reminder_external_id",
         value: task.reminderExternalIdentifier,
         taskLineIndex: lineIndex,
         taskIndent: parsedTask.indent,
+        taskIndentPrefix: parsedTask.indentPrefix,
         managedRange: managedRange,
         in: &lines
       )
@@ -1079,6 +1158,7 @@ actor LogseqProjectPageStore {
         value: task.date,
         taskLineIndex: lineIndex,
         taskIndent: parsedTask.indent,
+        taskIndentPrefix: parsedTask.indentPrefix,
         managedRange: managedRange,
         in: &lines
       )
@@ -1088,6 +1168,7 @@ actor LogseqProjectPageStore {
         value: task.duration,
         taskLineIndex: lineIndex,
         taskIndent: parsedTask.indent,
+        taskIndentPrefix: parsedTask.indentPrefix,
         managedRange: managedRange,
         in: &lines
       )
@@ -1097,6 +1178,7 @@ actor LogseqProjectPageStore {
         value: task.repeatRule,
         taskLineIndex: lineIndex,
         taskIndent: parsedTask.indent,
+        taskIndentPrefix: parsedTask.indentPrefix,
         managedRange: managedRange,
         in: &lines
       )
@@ -1104,19 +1186,92 @@ actor LogseqProjectPageStore {
     }
   }
 
-  private func updateTaskMarker(
-    at lineIndex: Int,
-    isCompleted: Bool,
-    in lines: inout [String]
+  private func completeDescendantTasksUnderCompletedParents(
+    in lines: inout [String],
+    bodyStart: Int,
+    managedRange: Range<Int>?
+  ) -> Bool {
+    var didChange = false
+    var completedAncestorIndents: [Int] = []
+    var lineIndex = bodyStart
+
+    while lineIndex < lines.count {
+      if let managedRange, managedRange.contains(lineIndex) {
+        completedAncestorIndents.removeAll(keepingCapacity: true)
+        lineIndex = managedRange.upperBound
+        continue
+      }
+
+      guard let parsedTask = parseTaskLine(lines[lineIndex]) else {
+        trimCompletedAncestors(
+          atNonTaskLine: lines[lineIndex],
+          completedAncestorIndents: &completedAncestorIndents
+        )
+        lineIndex += 1
+        continue
+      }
+
+      trimCompletedAncestors(
+        atTaskIndent: parsedTask.indent,
+        completedAncestorIndents: &completedAncestorIndents
+      )
+
+      if Self.completedTaskMarkers.contains(parsedTask.marker) {
+        completedAncestorIndents.append(parsedTask.indent)
+      } else if Self.activeTaskMarkers.contains(parsedTask.marker),
+        !completedAncestorIndents.isEmpty
+      {
+        var completedTask = parsedTask.task
+        completedTask.isCompleted = true
+        updateTaskLine(at: lineIndex, parsedTask: parsedTask, with: completedTask, in: &lines)
+        completedAncestorIndents.append(parsedTask.indent)
+        didChange = true
+      }
+
+      lineIndex += 1
+    }
+
+    return didChange
+  }
+
+  private func trimCompletedAncestors(
+    atTaskIndent taskIndent: Int,
+    completedAncestorIndents: inout [Int]
   ) {
-    let replacement = isCompleted ? "DONE" : "TODO"
-    if let range = lines[lineIndex].range(of: "- TODO ") {
-      lines[lineIndex].replaceSubrange(range, with: "- \(replacement) ")
+    while let completedAncestorIndent = completedAncestorIndents.last,
+      completedAncestorIndent >= taskIndent
+    {
+      completedAncestorIndents.removeLast()
+    }
+  }
+
+  private func trimCompletedAncestors(
+    atNonTaskLine line: String,
+    completedAncestorIndents: inout [Int]
+  ) {
+    guard !line.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
       return
     }
-    if let range = lines[lineIndex].range(of: "- DONE ") {
-      lines[lineIndex].replaceSubrange(range, with: "- \(replacement) ")
+    trimCompletedAncestors(
+      atTaskIndent: indentationWidth(of: line),
+      completedAncestorIndents: &completedAncestorIndents
+    )
+  }
+
+  private func updateTaskLine(
+    at lineIndex: Int,
+    parsedTask: (indent: Int, indentPrefix: String, marker: String, task: TaskRecord),
+    with task: TaskRecord,
+    in lines: inout [String]
+  ) {
+    let title = normalizedTitle(task.title)
+    guard !title.isEmpty else {
+      return
     }
+    let marker = parsedTask.task.isCompleted == task.isCompleted
+      ? parsedTask.marker
+      : (task.isCompleted ? "DONE" : "TODO")
+    lines[lineIndex] = "\(parsedTask.indentPrefix)- \(marker) \(title)"
   }
 
   private func upsertOrRemoveTaskProperty(
@@ -1125,6 +1280,7 @@ actor LogseqProjectPageStore {
     value: String?,
     taskLineIndex: Int,
     taskIndent: Int,
+    taskIndentPrefix: String,
     managedRange: Range<Int>?,
     in lines: inout [String]
   ) {
@@ -1144,6 +1300,7 @@ actor LogseqProjectPageStore {
       value: value,
       taskLineIndex: taskLineIndex,
       taskIndent: taskIndent,
+      taskIndentPrefix: taskIndentPrefix,
       managedRange: managedRange,
       in: &lines
     )
@@ -1178,6 +1335,7 @@ actor LogseqProjectPageStore {
     value: String,
     taskLineIndex: Int,
     taskIndent: Int,
+    taskIndentPrefix: String,
     managedRange: Range<Int>?,
     in lines: inout [String]
   ) {
@@ -1199,7 +1357,7 @@ actor LogseqProjectPageStore {
     }
 
     insertionIndex = min(insertionIndex, lines.count)
-    let indent = String(repeating: " ", count: taskIndent + 2)
+    let indent = taskIndentPrefix + "  "
     lines.insert("\(indent)\(rawKey):: \(value)", at: insertionIndex)
   }
 
@@ -1452,7 +1610,13 @@ actor LogseqProjectPageStore {
   private func indentationWidth(
     of line: String
   ) -> Int {
-    line.prefix { $0 == " " || $0 == "\t" }.count
+    leadingWhitespacePrefix(of: line).count
+  }
+
+  private func leadingWhitespacePrefix(
+    of line: String
+  ) -> String {
+    String(line.prefix { $0 == " " || $0 == "\t" })
   }
 
   private func normalizedTitle(
@@ -1571,6 +1735,10 @@ actor LogseqProjectPageStore {
   private func sameFileURL(_ lhs: URL, _ rhs: URL) -> Bool {
     lhs.resolvingSymlinksInPath().standardizedFileURL
       == rhs.resolvingSymlinksInPath().standardizedFileURL
+  }
+
+  private func modificationDate(of fileURL: URL) -> Date? {
+    try? fileURL.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate
   }
 
   private func write(

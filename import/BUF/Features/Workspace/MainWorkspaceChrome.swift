@@ -26,6 +26,8 @@ extension MainWorkspaceView {
   var headerLeadingControls: some View {
     let availableViewModes = appState.availableViewModes
     HStack(spacing: 6) {
+      completedTaskVisibilityToggle
+
       Picker("", selection: viewModeBinding) {
         ForEach(availableViewModes) { mode in
           Image(systemName: mode.iconName)
@@ -86,6 +88,17 @@ extension MainWorkspaceView {
   @ViewBuilder
   var workspaceQuickAddSection: some View {
     syncStatusIndicator
+  }
+
+  var completedTaskVisibilityToggle: some View {
+    Toggle(isOn: completedLogseqTasksVisibleBinding) {
+      Text("완료")
+        .font(.caption.weight(.semibold))
+    }
+    .toggleStyle(.switch)
+    .controlSize(.small)
+    .help("Logseq 완료항목 표시/숨김")
+    .accessibilityLabel("완료항목 표시")
   }
 
   var syncStatusIndicator: some View {

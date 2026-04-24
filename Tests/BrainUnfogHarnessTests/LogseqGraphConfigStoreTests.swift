@@ -40,6 +40,9 @@ final class LogseqGraphConfigStoreTests: XCTestCase {
     XCTAssertTrue(cssContents.contains("a[data-ref=\"reminder_external_id\" i]"))
     XCTAssertTrue(cssContents.contains("a[data-ref=\"reminder-external-id\" i]"))
     XCTAssertTrue(cssContents.contains("Brain Unfog schedule chips"))
+    XCTAssertTrue(cssContents.contains("Brain Unfog completed task filter"))
+    XCTAssertTrue(cssContents.contains("div.ls-block:has(> div.flex.flex-row input[type=\"checkbox\"]:checked)"))
+    XCTAssertTrue(cssContents.contains("div.ls-block:has(> div.flex.flex-row .block-content-inner .marker-switch.done)"))
     XCTAssertTrue(cssContents.contains("div.block-properties:not(.page-properties)"))
     XCTAssertTrue(cssContents.contains("a[data-ref=\"date\" i]"))
     XCTAssertTrue(cssContents.contains("a[data-ref=\"duration\" i]"))
@@ -64,6 +67,23 @@ final class LogseqGraphConfigStoreTests: XCTestCase {
     XCTAssertTrue(cssContents.contains("> div:has(a[data-ref=\"date\" i]) a"))
     XCTAssertTrue(cssContents.contains("> div:has(a[data-ref=\"duration\" i]) a"))
     XCTAssertTrue(cssContents.contains("> div:has(a[data-ref=\"repeat\" i]) a"))
+  }
+
+  func testCompletedTaskFilterCanBeRemovedFromManagedCSS() throws {
+    let originalCSS = LogseqGraphConfigStore.updatingCustomCSS("", hideCompletedTasks: true)
+    let updatedCSS = LogseqGraphConfigStore.updatingCustomCSS(
+      originalCSS,
+      hideCompletedTasks: false
+    )
+
+    XCTAssertTrue(originalCSS.contains("Brain Unfog completed task filter"))
+    XCTAssertFalse(updatedCSS.contains("Brain Unfog completed task filter"))
+    XCTAssertFalse(updatedCSS.contains("input[type=\"checkbox\"]:checked"))
+    XCTAssertTrue(updatedCSS.contains("Brain Unfog schedule chips"))
+    XCTAssertEqual(
+      updatedCSS.components(separatedBy: "Brain Unfog internal identity properties: begin").count - 1,
+      1
+    )
   }
 
   func testEnsureMergesExistingHiddenConfigWithoutDroppingUserProperties() throws {

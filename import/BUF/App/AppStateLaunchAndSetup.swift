@@ -67,7 +67,10 @@ extension AppState {
     let containerRootURL = graphRootURL.appendingPathComponent(".buf", isDirectory: true)
     try await storageCoordinator.openOrInitializeContainer(at: containerRootURL)
     do {
-      try LogseqGraphConfigStore(graphRootURL: graphRootURL).ensureInternalIdentityPropertiesHidden()
+      try LogseqGraphConfigStore(graphRootURL: graphRootURL)
+        .ensureInternalIdentityPropertiesHidden(
+          hideCompletedTasks: !showsCompletedLogseqTasks
+        )
     } catch {
       AppLogger.sync.error(
         "logseq hidden property config update failed: \(error.localizedDescription, privacy: .public)"
@@ -133,6 +136,9 @@ extension AppState {
     refreshContainerRootURL()
     reminderSourceObserver?.stop()
     reminderSourceObserver = nil
+    logseqParentCompletionCascadeTask?.cancel()
+    logseqParentCompletionCascadeTask = nil
+    pendingLogseqParentCompletionCascadeFileURLs.removeAll(keepingCapacity: true)
     stopLogseqPagesDirectoryWatcher()
     modelContainer = nil
     scheduleCalendarOverlayProjection = .empty

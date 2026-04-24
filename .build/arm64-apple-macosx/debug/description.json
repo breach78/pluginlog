@@ -1144,6 +1144,10 @@
         },
         {
           "kind" : "file",
+          "name" : "/Users/three/app_build/logseq plugin/Tests/BrainUnfogHarnessTests/ReminderSourceObserverTests.swift"
+        },
+        {
+          "kind" : "file",
           "name" : "/Users/three/app_build/logseq plugin/Tests/BrainUnfogHarnessTests/ReminderTaskAdoptionPolicyTests.swift"
         },
         {
@@ -1211,6 +1215,7 @@
         "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarnessTests.build/OwnedScheduleCalendarInvalidationPolicyTests.swift.o",
         "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarnessTests.build/OwnedScheduleCalendarSyncPolicyTests.swift.o",
         "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarnessTests.build/ReminderAccessPromptPolicyTests.swift.o",
+        "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarnessTests.build/ReminderSourceObserverTests.swift.o",
         "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarnessTests.build/ReminderTaskAdoptionPolicyTests.swift.o",
         "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarnessTests.build/RetainedCalendarBridgePolicyTests.swift.o",
         "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarnessTests.build/RetainedCalendarEventKitBridgeTests.swift.o",
@@ -1313,6 +1318,10 @@
         },
         {
           "kind" : "file",
+          "name" : "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarnessTests.build/ReminderSourceObserverTests.swift.o"
+        },
+        {
+          "kind" : "file",
           "name" : "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarnessTests.build/ReminderTaskAdoptionPolicyTests.swift.o"
         },
         {
@@ -1370,6 +1379,7 @@
         "/Users/three/app_build/logseq plugin/Tests/BrainUnfogHarnessTests/OwnedScheduleCalendarInvalidationPolicyTests.swift",
         "/Users/three/app_build/logseq plugin/Tests/BrainUnfogHarnessTests/OwnedScheduleCalendarSyncPolicyTests.swift",
         "/Users/three/app_build/logseq plugin/Tests/BrainUnfogHarnessTests/ReminderAccessPromptPolicyTests.swift",
+        "/Users/three/app_build/logseq plugin/Tests/BrainUnfogHarnessTests/ReminderSourceObserverTests.swift",
         "/Users/three/app_build/logseq plugin/Tests/BrainUnfogHarnessTests/ReminderTaskAdoptionPolicyTests.swift",
         "/Users/three/app_build/logseq plugin/Tests/BrainUnfogHarnessTests/RetainedCalendarBridgePolicyTests.swift",
         "/Users/three/app_build/logseq plugin/Tests/BrainUnfogHarnessTests/RetainedCalendarEventKitBridgeTests.swift",
@@ -1669,6 +1679,7 @@
       "/Users/three/app_build/logseq plugin/Tests/BrainUnfogHarnessTests/OwnedScheduleCalendarInvalidationPolicyTests.swift",
       "/Users/three/app_build/logseq plugin/Tests/BrainUnfogHarnessTests/OwnedScheduleCalendarSyncPolicyTests.swift",
       "/Users/three/app_build/logseq plugin/Tests/BrainUnfogHarnessTests/ReminderAccessPromptPolicyTests.swift",
+      "/Users/three/app_build/logseq plugin/Tests/BrainUnfogHarnessTests/ReminderSourceObserverTests.swift",
       "/Users/three/app_build/logseq plugin/Tests/BrainUnfogHarnessTests/ReminderTaskAdoptionPolicyTests.swift",
       "/Users/three/app_build/logseq plugin/Tests/BrainUnfogHarnessTests/RetainedCalendarBridgePolicyTests.swift",
       "/Users/three/app_build/logseq plugin/Tests/BrainUnfogHarnessTests/RetainedCalendarEventKitBridgeTests.swift",
@@ -2697,6 +2708,10 @@
         },
         {
           "kind" : "file",
+          "name" : "/Users/three/app_build/logseq plugin/Tests/BrainUnfogHarnessTests/ReminderSourceObserverTests.swift"
+        },
+        {
+          "kind" : "file",
           "name" : "/Users/three/app_build/logseq plugin/Tests/BrainUnfogHarnessTests/ReminderTaskAdoptionPolicyTests.swift"
         },
         {
@@ -3172,6 +3187,10 @@
         {
           "kind" : "file",
           "name" : "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarnessTests.build/ReminderAccessPromptPolicyTests.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarnessTests.build/ReminderSourceObserverTests.swift.o"
         },
         {
           "kind" : "file",

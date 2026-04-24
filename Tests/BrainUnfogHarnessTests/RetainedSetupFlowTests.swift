@@ -98,6 +98,12 @@ final class RetainedSetupFlowTests: XCTestCase {
     let cssContents = try String(contentsOf: cssURL, encoding: .utf8)
     XCTAssertTrue(cssContents.contains("a[data-ref=\"reminder_list_external_id\" i]"))
     XCTAssertTrue(cssContents.contains("a[data-ref=\"reminder_external_id\" i]"))
+    XCTAssertTrue(cssContents.contains("Brain Unfog completed task filter"))
+    XCTAssertFalse(appState.showsCompletedLogseqTasks)
+
+    appState.setShowsCompletedLogseqTasks(true)
+    let visibleCompletedCSS = try String(contentsOf: cssURL, encoding: .utf8)
+    XCTAssertFalse(visibleCompletedCSS.contains("Brain Unfog completed task filter"))
   }
 
   func testDeniedInitialSyncConsentBlocksStartupSync() async throws {
@@ -157,6 +163,7 @@ final class RetainedSetupFlowTests: XCTestCase {
     [
       AppState.initialSyncConsentGrantedKey,
       AppState.initialSyncConsentDecidedKey,
+      AppState.showCompletedLogseqTasksKey,
       AppState.logseqGraphBookmarkDataKey,
       AppState.logseqGraphRootPathKey,
       "container.bookmarkData",

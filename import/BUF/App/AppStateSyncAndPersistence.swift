@@ -24,7 +24,7 @@ extension AppState {
     isInitialSyncRunning = true
     defer { isInitialSyncRunning = false }
 
-    await reconcileManagedLogseqPagesWithReminderSource()
+    await reconcileManagedLogseqPagesWithReminderSource(reason: reason)
     syncStarted = true
     if syncStatus != "Reminders access denied", syncStatus != "Reminder sync failed" {
       syncStatus = "Refreshed (\(reason.rawValue))"

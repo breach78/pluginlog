@@ -16,6 +16,11 @@ struct LogseqGraphConfigStore {
     "duration",
     "repeat",
   ]
+  private static let completedTaskMarkerNames = [
+    "done",
+    "canceled",
+    "cancelled",
+  ]
   private static let cssBlockStart = "/* Brain Unfog internal identity properties: begin */"
   private static let cssBlockEnd = "/* Brain Unfog internal identity properties: end */"
 
@@ -27,7 +32,7 @@ struct LogseqGraphConfigStore {
     self.fileManager = fileManager
   }
 
-  func ensureInternalIdentityPropertiesHidden() throws {
+  func ensureInternalIdentityPropertiesHidden(hideCompletedTasks: Bool = true) throws {
     let logseqURL = graphRootURL.appendingPathComponent("logseq", isDirectory: true)
     try fileManager.createDirectory(at: logseqURL, withIntermediateDirectories: true)
 
@@ -52,7 +57,10 @@ struct LogseqGraphConfigStore {
       originalCSS = ""
     }
 
-    let updatedCSS = Self.updatingCustomCSS(originalCSS)
+    let updatedCSS = Self.updatingCustomCSS(
+      originalCSS,
+      hideCompletedTasks: hideCompletedTasks
+    )
     guard updatedCSS != originalCSS else { return }
     try updatedCSS.write(to: customCSSURL, atomically: true, encoding: .utf8)
   }
@@ -71,8 +79,8 @@ struct LogseqGraphConfigStore {
     )
   }
 
-  static func updatingCustomCSS(_ contents: String) -> String {
-    let managedBlock = managedCustomCSSBlock()
+  static func updatingCustomCSS(_ contents: String, hideCompletedTasks: Bool = true) -> String {
+    let managedBlock = managedCustomCSSBlock(hideCompletedTasks: hideCompletedTasks)
     guard let startRange = contents.range(of: cssBlockStart) else {
       return appendingManagedCSSBlock(managedBlock, to: contents)
     }
@@ -165,7 +173,7 @@ struct LogseqGraphConfigStore {
     return "\(beforeClosingBrace)\(separator) \(settingLine)\n\(afterClosingBrace)"
   }
 
-  private static func managedCustomCSSBlock() -> String {
+  private static func managedCustomCSSBlock(hideCompletedTasks: Bool) -> String {
     let hiddenSelectors = internalIdentityPropertyAliases
       .map { "div.block-properties > div:has(a[data-ref=\"\($0)\" i])" }
       .joined(separator: ",\n")
@@ -229,12 +237,24 @@ struct LogseqGraphConfigStore {
         "div.block-properties:not(.page-properties) > div:has(a[data-ref=\"\($0)\" i]) > div.page-property-value"
       }
       .joined(separator: ",\n")
+    let completedTaskSelectors = completedTaskHidingSelectors().joined(separator: ",\n")
+    let completedTaskFilterCSS =
+      hideCompletedTasks
+      ? """
+
+    /* Brain Unfog completed task filter */
+    \(completedTaskSelectors) {
+      display: none !important;
+    }
+    """
+      : ""
 
     return """
     \(cssBlockStart)
     \(hiddenSelectors) {
       display: none !important;
     }
+    \(completedTaskFilterCSS)
 
     /* Brain Unfog schedule chips */
     \(blockContentRowSelectors) {
@@ -343,6 +363,24 @@ struct LogseqGraphConfigStore {
     }
     \(cssBlockEnd)
     """
+  }
+
+  private static func completedTaskHidingSelectors() -> [String] {
+    let markerSelectors = completedTaskMarkerNames.flatMap { marker in
+      [
+        "div.ls-block:has(> div.flex.flex-row .block-content-inner .marker-switch.\(marker))",
+        "div.ls-block:has(> div.flex.flex-row .block-content-inner .marker-switch.\(marker.uppercased()))",
+        "div.ls-block:has(> div.flex.flex-row .block-content-inner .\(marker))",
+        "div.ls-block:has(> div.flex.flex-row .block-content-inner .\(marker.uppercased()))",
+        "div.ls-block:has(> div.flex.flex-row .block-content-inner a[data-ref=\"\(marker)\" i])",
+        "div.ls-block[data-refs-self*=\"\(marker)\" i]",
+      ]
+    }
+    return [
+      "div.ls-block:has(> div.flex.flex-row input[type=\"checkbox\"]:checked)",
+      "div.ls-block:has(> div.flex.flex-row .form-checkbox:checked)",
+      "div.ls-block:has(> div.flex.flex-row .form-checkbox.checked)",
+    ] + markerSelectors
   }
 
   private static func appendingManagedCSSBlock(_ block: String, to contents: String) -> String {

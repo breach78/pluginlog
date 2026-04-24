@@ -94,7 +94,7 @@ extension AppState {
     _ = context
   }
 
-  func reconcileManagedLogseqPagesWithReminderSource() async {
+  func reconcileManagedLogseqPagesWithReminderSource(reason: SyncReason) async {
     guard let pageStore = logseqProjectPageStore() else {
       syncStatus = "Logseq graph not configured"
       return
@@ -119,10 +119,18 @@ extension AppState {
         ),
         store: pageStore
       )
-      let provisioningResult = try await RetainedLogseqProjectProvisioningSync.sync(
-        store: pageStore,
-        reminderProjectProvider: reminderProjectProvider
-      )
+      let shouldProvisionFromLogseq = reason != .eventStoreChanged
+      let provisioningResult = shouldProvisionFromLogseq
+        ? try await RetainedLogseqProjectProvisioningSync.sync(
+          store: pageStore,
+          reminderProjectProvider: reminderProjectProvider
+        )
+        : RetainedLogseqProjectProvisioningSync.SyncResult(
+          createdProjectCount: 0,
+          createdTaskCount: 0,
+          projectRecords: [],
+          taskRecords: []
+        )
       TaskIdentityBridgeStore.replaceAll(
         projects: result.projectRecords + provisioningResult.projectRecords,
         tasks: result.taskRecords + provisioningResult.taskRecords
@@ -148,28 +156,84 @@ extension AppState {
         store: pageStore,
         reminderProjectProvider: reminderProjectProvider
       )
-      for projectRecord in result.projectRecords {
-        TaskIdentityBridgeStore.upsertProject(
-          projectID: projectRecord.projectID,
-          title: projectRecord.title,
-          reminderListExternalIdentifier: projectRecord.reminderListExternalIdentifier
-        )
-      }
-      for taskRecord in result.taskRecords {
-        TaskIdentityBridgeStore.upsertTask(
-          taskID: taskRecord.taskID,
-          title: taskRecord.title,
-          reminderExternalIdentifier: taskRecord.reminderExternalIdentifier,
-          ownerProjectID: taskRecord.ownerProjectID
-        )
-      }
+      applyRetainedLogseqProvisioningResult(result)
       if result.createdProjectCount > 0 || result.createdTaskCount > 0 {
         syncStatus = "Synced \(result.createdProjectCount) lists / \(result.createdTaskCount) tasks"
       }
       bumpWorkspaceTreeRevision()
+      scheduleLogseqParentCompletionCascade(for: changedFiles)
     } catch {
       reportError(error, logMessage: "handleLogseqPagesDirectoryChange failed")
       syncStatus = "Logseq sync failed"
+    }
+  }
+
+  func scheduleLogseqParentCompletionCascade(for fileURLs: [URL]) {
+    let markdownFileURLs = fileURLs
+      .filter { $0.pathExtension.lowercased() == "md" }
+      .map { $0.resolvingSymlinksInPath().standardizedFileURL }
+    guard !markdownFileURLs.isEmpty else { return }
+
+    pendingLogseqParentCompletionCascadeFileURLs.formUnion(markdownFileURLs)
+    logseqParentCompletionCascadeTask?.cancel()
+    let delay = logseqParentCompletionCascadeDelay
+    logseqParentCompletionCascadeTask = Task { @MainActor [weak self] in
+      do {
+        try await Task.sleep(for: delay)
+      } catch {
+        return
+      }
+      await self?.applyPendingLogseqParentCompletionCascade()
+    }
+  }
+
+  func applyPendingLogseqParentCompletionCascade() async {
+    let fileURLs = Array(pendingLogseqParentCompletionCascadeFileURLs)
+      .sorted {
+        $0.lastPathComponent.localizedStandardCompare($1.lastPathComponent) == .orderedAscending
+      }
+    pendingLogseqParentCompletionCascadeFileURLs.removeAll(keepingCapacity: true)
+    logseqParentCompletionCascadeTask = nil
+    guard !fileURLs.isEmpty, let pageStore = logseqProjectPageStore() else { return }
+
+    do {
+      let changedFiles = try await pageStore.completeDescendantTasksUnderCompletedParents(in: fileURLs)
+      guard !changedFiles.isEmpty else { return }
+      guard try await reminderProjectProvider.requestAccess() else {
+        syncStatus = "Reminders access denied"
+        return
+      }
+      let result = try await RetainedLogseqProjectProvisioningSync.syncChangedPages(
+        fileURLs: changedFiles,
+        store: pageStore,
+        reminderProjectProvider: reminderProjectProvider
+      )
+      applyRetainedLogseqProvisioningResult(result)
+      syncStatus = "Synced completed subtasks"
+      bumpWorkspaceTreeRevision()
+    } catch {
+      reportError(error, logMessage: "applyPendingLogseqParentCompletionCascade failed")
+      syncStatus = "Logseq sync failed"
+    }
+  }
+
+  func applyRetainedLogseqProvisioningResult(
+    _ result: RetainedLogseqProjectProvisioningSync.SyncResult
+  ) {
+    for projectRecord in result.projectRecords {
+      TaskIdentityBridgeStore.upsertProject(
+        projectID: projectRecord.projectID,
+        title: projectRecord.title,
+        reminderListExternalIdentifier: projectRecord.reminderListExternalIdentifier
+      )
+    }
+    for taskRecord in result.taskRecords {
+      TaskIdentityBridgeStore.upsertTask(
+        taskID: taskRecord.taskID,
+        title: taskRecord.title,
+        reminderExternalIdentifier: taskRecord.reminderExternalIdentifier,
+        ownerProjectID: taskRecord.ownerProjectID
+      )
     }
   }
 

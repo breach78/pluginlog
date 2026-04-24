@@ -617,6 +617,13 @@ struct MainWorkspaceView: View {
     )
   }
 
+  var completedLogseqTasksVisibleBinding: Binding<Bool> {
+    Binding(
+      get: { appState.showsCompletedLogseqTasks },
+      set: { appState.setShowsCompletedLogseqTasks($0) }
+    )
+  }
+
   var showArchive: Bool {
     get { false }
     nonmutating set { _ = newValue }

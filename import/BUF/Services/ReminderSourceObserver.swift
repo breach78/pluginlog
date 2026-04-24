@@ -50,7 +50,9 @@ final class ReminderSourceObserver: ObservableObject {
   private let gateway: ReminderGateway
   private let invalidateSource: SourceInvalidationHandler
   private let handleExternalOwnerChange: ExternalOwnerChangeHandler
-  private let eventDebounceDelay: Duration = .milliseconds(900)
+  private let eventDebounceDelay: Duration
+  private let eventFollowUpDelay: Duration
+  private let authorizationStatusProvider: () -> EKAuthorizationStatus
 
   private var storeObserver: StoreObserverBox?
   private var eventDebounceTask: Task<Void, Never>?
@@ -60,11 +62,19 @@ final class ReminderSourceObserver: ObservableObject {
   init(
     gateway: ReminderGateway,
     invalidateSource: @escaping SourceInvalidationHandler,
-    handleExternalOwnerChange: @escaping ExternalOwnerChangeHandler
+    handleExternalOwnerChange: @escaping ExternalOwnerChangeHandler,
+    eventDebounceDelay: Duration = .milliseconds(900),
+    eventFollowUpDelay: Duration = .seconds(2),
+    authorizationStatusProvider: @escaping () -> EKAuthorizationStatus = {
+      EKEventStore.authorizationStatus(for: .reminder)
+    }
   ) {
     self.gateway = gateway
     self.invalidateSource = invalidateSource
     self.handleExternalOwnerChange = handleExternalOwnerChange
+    self.eventDebounceDelay = eventDebounceDelay
+    self.eventFollowUpDelay = eventFollowUpDelay
+    self.authorizationStatusProvider = authorizationStatusProvider
   }
 
   deinit {
@@ -292,7 +302,7 @@ final class ReminderSourceObserver: ObservableObject {
   }
 
   private func ensureReminderAccessIfNeeded() async -> Bool {
-    let authorizationStatus = EKEventStore.authorizationStatus(for: .reminder)
+    let authorizationStatus = authorizationStatusProvider()
     switch authorizationStatus {
     case .notDetermined:
       do {
@@ -339,6 +349,17 @@ final class ReminderSourceObserver: ObservableObject {
           guard let self else { return }
           guard await self.ensureReminderAccessIfNeeded() else { return }
           AppLogger.sync.info("event store changed; scheduling reminder source refresh")
+          await self.invalidateReminderSource(reason: .eventStoreChanged)
+
+          // Reminders/iCloud can publish EKEventStoreChanged before fetchReminders returns
+          // the committed item. A delayed pull closes that transient partial-snapshot gap.
+          do {
+            try await Task.sleep(for: self.eventFollowUpDelay)
+          } catch {
+            return
+          }
+          guard await self.ensureReminderAccessIfNeeded() else { return }
+          AppLogger.sync.info("event store changed; scheduling delayed reminder source refresh")
           await self.invalidateReminderSource(reason: .eventStoreChanged)
         }
       }

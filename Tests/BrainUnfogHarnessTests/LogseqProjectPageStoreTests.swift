@@ -492,6 +492,45 @@ final class LogseqProjectPageStoreTests: XCTestCase {
     XCTAssertEqual(pages.first?.isBUFOwned, true)
   }
 
+  func testCompleteDescendantTasksUnderCompletedParentsOnly() async throws {
+    let graphRootURL = try makeGraphRoot(named: "ParentCompletionCascadeGraph")
+    let pagesRootURL = graphRootURL.appendingPathComponent("pages", isDirectory: true)
+    try FileManager.default.createDirectory(at: pagesRootURL, withIntermediateDirectories: true)
+
+    let pageURL = pagesRootURL.appendingPathComponent("Cascade.md", isDirectory: false)
+    try """
+    tags:: 프로젝트
+    reminder_list_external_id:: reminder-list-1
+
+    - DONE Completed parent
+      reminder_external_id:: parent-reminder
+      - TODO Child task
+        reminder_external_id:: child-reminder
+        - LATER Grandchild task
+          reminder_external_id:: grandchild-reminder
+    - TODO Active sibling
+      - TODO Active sibling child
+    - CANCELED Canceled parent
+      - WAITING Canceled child
+
+    ## Brain Unfog Managed Tasks
+    - DONE Managed parent
+      - TODO Managed child stays untouched
+    """.write(to: pageURL, atomically: true, encoding: .utf8)
+    let store = LogseqProjectPageStore(pagesRootURL: pagesRootURL)
+
+    let changedFiles = try await store.completeDescendantTasksUnderCompletedParents(in: [pageURL])
+    let rewritten = try String(contentsOf: pageURL, encoding: .utf8)
+
+    XCTAssertEqual(changedFiles.map(\.standardizedFileURL), [pageURL.standardizedFileURL])
+    XCTAssertTrue(rewritten.contains("  - DONE Child task"))
+    XCTAssertTrue(rewritten.contains("    - DONE Grandchild task"))
+    XCTAssertTrue(rewritten.contains("- TODO Active sibling"))
+    XCTAssertTrue(rewritten.contains("  - TODO Active sibling child"))
+    XCTAssertTrue(rewritten.contains("  - DONE Canceled child"))
+    XCTAssertTrue(rewritten.contains("  - TODO Managed child stays untouched"))
+  }
+
   func testClaimTaggedPageRejectsReadOnlyTaskImportPage() async throws {
     let graphRootURL = try makeGraphRoot(named: "ClaimReadOnlyGraph")
     let pagesRootURL = graphRootURL.appendingPathComponent("pages", isDirectory: true)
