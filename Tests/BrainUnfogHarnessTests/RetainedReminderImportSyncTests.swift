@@ -1,0 +1,94 @@
+import XCTest
+@testable import BrainUnfogHarness
+
+final class RetainedReminderImportSyncTests: XCTestCase {
+  private var temporaryRoots: [URL] = []
+
+  override func tearDown() async throws {
+    for root in temporaryRoots {
+      try? FileManager.default.removeItem(at: root)
+    }
+    temporaryRoots = []
+    try await super.tearDown()
+  }
+
+  func testSyncImportsReminderListsAndTasksIntoRetainedLogseqPages() async throws {
+    let graphRoot = try makeTemporaryDirectory()
+    let store = LogseqProjectPageStore(
+      pagesRootURL: graphRoot.appendingPathComponent("pages", isDirectory: true)
+    )
+    let dueDate = try XCTUnwrap(
+      Calendar(identifier: .gregorian).date(from: DateComponents(year: 2026, month: 4, day: 24, hour: 9, minute: 30))
+    )
+    let batch = ReminderImportSnapshotBatch(
+      lists: [
+        .init(
+          identifier: "list-local-1",
+          externalIdentifier: "list-external-1",
+          title: "Client Project",
+          colorHex: nil
+        )
+      ],
+      itemsByListIdentifier: [
+        "list-local-1": [
+          .init(
+            identifier: "task-local-1",
+            externalIdentifier: "task-external-1",
+            parentExternalIdentifier: nil,
+            sourceListIdentifier: "list-local-1",
+            sourceListTitle: "Client Project",
+            title: "Prepare kickoff",
+            notes: "",
+            attachmentCount: 0,
+            isCompleted: false,
+            completionDate: nil,
+            startDate: nil,
+            dueDate: dueDate,
+            scheduleHasExplicitTime: true,
+            scheduledDurationMinutes: 45,
+            priority: 0,
+            recurrenceRuleRaw: "weekly",
+            isFlagged: false,
+            requiredWorkDays: 0,
+            createdAt: dueDate,
+            modifiedAt: dueDate
+          )
+        ],
+      ]
+    )
+
+    let result = try await RetainedReminderImportSync.sync(batch: batch, store: store, now: dueDate)
+    let pages = try await store.loadProjectPagesInScope()
+    let snapshot = try RetainedProjectionBuilder.build(.init(pages: pages))
+
+    XCTAssertEqual(result.importedProjectCount, 1)
+    XCTAssertEqual(result.importedTaskCount, 1)
+    XCTAssertEqual(snapshot.projects.count, 1)
+    XCTAssertEqual(snapshot.projects[0].title, "Client Project")
+    XCTAssertEqual(
+      snapshot.projects[0].identity.projectID,
+      RetainedProjectionBuilder.derivedProjectID(for: "list-external-1")
+    )
+    XCTAssertEqual(snapshot.projects[0].tasks.count, 1)
+    XCTAssertEqual(snapshot.projects[0].tasks[0].title, "Prepare kickoff")
+    XCTAssertEqual(snapshot.projects[0].tasks[0].identity.reminderExternalIdentifier, "task-external-1")
+    XCTAssertEqual(snapshot.projects[0].tasks[0].schedule.rawDate, "2026-04-24 09:30")
+    XCTAssertEqual(snapshot.projects[0].tasks[0].schedule.rawDuration, "45")
+    XCTAssertEqual(snapshot.projects[0].tasks[0].schedule.rawRepeatRule, "weekly")
+  }
+
+  func testReminderProjectionIdentityMatchesRetainedProjectionProjectIdentity() {
+    XCTAssertEqual(
+      ReminderProjectionIdentity.projectID(for: "list-external-1"),
+      RetainedProjectionBuilder.derivedProjectID(for: "list-external-1")
+    )
+  }
+
+  private func makeTemporaryDirectory() throws -> URL {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("RetainedReminderImportSyncTests-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    temporaryRoots.append(root)
+    return root
+  }
+}

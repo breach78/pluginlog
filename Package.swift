@@ -21,7 +21,6 @@ let package = Package(
         ".DS_Store",
         "BrainUnfogHarness.entitlements",
         "Info.plist",
-        "Features/Outliner/120_OUTLINE_TEXT_TO_NODE_CONVERSION_PLAN_v2.md",
       ],
       resources: [
         .process("Assets.xcassets"),

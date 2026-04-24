@@ -99,13 +99,13 @@ enum ProjectDocumentCanonicalOwnerMap {
 
   struct TreeStructure: CanonicalOwnerField {
     typealias Owner = SidecarStore
-    typealias Value = [ReminderProjectRootNodeRecord]
+    typealias Value = [String]
     static let canonicalPath = "treeStructure"
   }
 
   struct Ordering: CanonicalOwnerField {
     typealias Owner = SidecarStore
-    typealias Value = ProjectOrderingMutation
+    typealias Value = [UUID]
     static let canonicalPath = "ordering"
   }
 
@@ -203,4 +203,3 @@ enum OwnershipBoundary {
     Field.owner == owner
   }
 }
-

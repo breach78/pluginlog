@@ -945,28 +945,7 @@ struct MainWorkspaceView: View {
       return
     }
 
-    await refreshWorkspaceRuntimeProjectionSnapshotFromSourceIfNeeded()
-    guard let runtimeSnapshot = appState.resolvedRuntimeProjectionSnapshot() else {
-      if !workspaceOnlySearchResults.isEmpty {
-        workspaceOnlySearchResults = []
-      }
-      return
-    }
-
-    let breadcrumbTextByProjectID = Dictionary(
-      uniqueKeysWithValues: workspaceItems.compactMap { item in
-        item.projectID.map { ($0, item.breadcrumbText) }
-      }
-    )
-    let runtimeIndex = WorkspaceSearchProjectionService.runtimeIndex(
-      snapshot: runtimeSnapshot,
-      descriptors: workspaceProjectDescriptors,
-      breadcrumbTextByProjectID: breadcrumbTextByProjectID
-    )
-    let searchResults = WorkspaceSearchService.search(
-      canonicalIndex: runtimeIndex,
-      rawQuery: query
-    )
+    let searchResults = WorkspaceSearchService.projectResults(from: workspaceItems, rawQuery: query)
     guard searchResults != workspaceOnlySearchResults else { return }
     workspaceOnlySearchResults = searchResults
   }

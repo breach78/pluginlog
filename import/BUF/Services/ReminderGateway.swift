@@ -836,6 +836,10 @@ final class EventKitReminderProjectProvider: ReminderProjectProvider {
       return nil
     }
 
+    if let reminder = gateway.reminder(withIdentifier: externalIdentifier) {
+      return reminder
+    }
+
     let matches = gateway.reminders(withExternalIdentifier: externalIdentifier)
     if matches.count > 1 {
       AppLogger.sync.error(

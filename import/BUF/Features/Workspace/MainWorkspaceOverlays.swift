@@ -77,30 +77,12 @@ extension MainWorkspaceView {
 
   @ViewBuilder
   func inspectorPane(selection: UUID) -> some View {
-    Group {
-      ProjectDetailHostView(
-        projectID: selection,
-        completedVisibilityStorageScope: "workspaceInspector",
-        fixedWidth: inspectorFixedWidth,
-        showsLeadingDivider: true,
-        registersWorkspaceEscapeHandler: true,
-        navigationRequestID: appState.workspaceNavigationRequest?.id,
-        onScrollRequest: { projectID, proxy in
-          scrollInspectorIfNeeded(
-            for: appState.workspaceNavigationRequest,
-            projectID: projectID,
-            proxy: proxy
-          )
-        },
-        onRequestDetach: {
-          appState.openDetachedProjectWindow(projectID: selection)
-        },
-        onRequestClose: {
-          dismissInspectorSelection()
-        }
-      )
-      .id(selection)
-    }
+    Color.clear
+      .frame(width: 0, height: 0)
+      .onAppear {
+        openProjectPage(for: selection)
+        dismissInspectorSelection()
+      }
 #if DEBUG
       .background(WorkspaceLayoutProbe(role: .inspector, reason: "inspectorPane"))
 #endif

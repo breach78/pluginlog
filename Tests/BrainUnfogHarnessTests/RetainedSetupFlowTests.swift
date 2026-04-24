@@ -57,6 +57,14 @@ final class RetainedSetupFlowTests: XCTestCase {
 
     let expectedContainerRoot = graphRoot.appendingPathComponent(".buf", isDirectory: true)
     XCTAssertEqual(appState.containerRootURL?.standardizedFileURL, expectedContainerRoot.standardizedFileURL)
+    for legacyDirectoryName in ["attachments", "notes", "cache", "exports"] {
+      XCTAssertFalse(
+        FileManager.default.fileExists(
+          atPath: expectedContainerRoot.appendingPathComponent(legacyDirectoryName).path
+        ),
+        "Retained setup must not create legacy \(legacyDirectoryName) storage."
+      )
+    }
     XCTAssertNotNil(appState.modelContainer)
     XCTAssertTrue(appState.hasInitialSyncConsent)
     XCTAssertTrue(appState.hasSyncConsentDecision)
@@ -92,9 +100,6 @@ final class RetainedSetupFlowTests: XCTestCase {
       AppState.initialSyncConsentDecidedKey,
       AppState.logseqGraphBookmarkDataKey,
       AppState.logseqGraphRootPathKey,
-      AppState.obsidianBookmarkDataKey,
-      AppState.obsidianRootPathKey,
-      AppState.privateObsidianFeaturesEnabledKey,
       "container.bookmarkData",
       "container.rootPath",
     ].forEach(defaults.removeObject(forKey:))

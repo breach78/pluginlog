@@ -45,10 +45,6 @@ extension MainWorkspaceView {
     let timelineSelectionProjectIDs = timelineProjectIDs(from: visibleProjects)
 
     switch mode {
-    case .compass:
-      EmptyView()
-    case .journal:
-      EmptyView()
     case .timeline:
       TimelineBoardView(
         projectListSortMode: Binding(

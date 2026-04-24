@@ -7,6 +7,7 @@
 '/Users/three/app_build/logseq plugin/Tests/BrainUnfogHarnessTests/RetainedCalendarBridgePolicyTests.swift'
 '/Users/three/app_build/logseq plugin/Tests/BrainUnfogHarnessTests/RetainedCalendarEventKitBridgeTests.swift'
 '/Users/three/app_build/logseq plugin/Tests/BrainUnfogHarnessTests/RetainedProjectionBuilderTests.swift'
+'/Users/three/app_build/logseq plugin/Tests/BrainUnfogHarnessTests/RetainedReminderImportSyncTests.swift'
 '/Users/three/app_build/logseq plugin/Tests/BrainUnfogHarnessTests/RetainedSetupFlowTests.swift'
 '/Users/three/app_build/logseq plugin/Tests/BrainUnfogHarnessTests/RetainedTaskCommandServiceTests.swift'
 '/Users/three/app_build/logseq plugin/Tests/BrainUnfogHarnessTests/RetainedWorkspaceSurfaceProjectionTests.swift'

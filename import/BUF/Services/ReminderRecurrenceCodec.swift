@@ -3,14 +3,21 @@ import Foundation
 
 enum ReminderRecurrenceCodec {
   static func recurrenceRules(fromRawValue rawValue: String?) -> [EKRecurrenceRule]? {
-    guard let recurrence = OutlinerIntegratedStore.decodeRecurrence(rawValue: rawValue) else {
+    guard let rawValue = rawValue?.trimmingCharacters(in: .whitespacesAndNewlines),
+      !rawValue.isEmpty
+    else {
       return nil
     }
 
-    switch recurrence {
-    case let .daily(interval):
+    let parts = rawValue.lowercased().split(separator: "|", omittingEmptySubsequences: false)
+    let frequency = parts.first.map(String.init) ?? rawValue.lowercased()
+    let interval = parts.dropFirst().first.flatMap { Int($0) } ?? 1
+
+    switch frequency {
+    case "daily":
       return [EKRecurrenceRule(recurrenceWith: .daily, interval: max(1, interval), end: nil)]
-    case let .weekly(interval, weekdays):
+    case "weekly":
+      let weekdays = parts.dropFirst(2).first?.split(separator: ",").compactMap { Int($0) } ?? []
       let daysOfWeek = weekdays.compactMap { rawValue -> EKRecurrenceDayOfWeek? in
         guard let weekday = EKWeekday(rawValue: rawValue) else { return nil }
         return EKRecurrenceDayOfWeek(weekday)
@@ -26,10 +33,12 @@ enum ReminderRecurrenceCodec {
         setPositions: nil,
         end: nil
       )]
-    case let .monthly(interval):
+    case "monthly":
       return [EKRecurrenceRule(recurrenceWith: .monthly, interval: max(1, interval), end: nil)]
-    case let .yearly(interval):
+    case "yearly":
       return [EKRecurrenceRule(recurrenceWith: .yearly, interval: max(1, interval), end: nil)]
+    default:
+      return nil
     }
   }
 

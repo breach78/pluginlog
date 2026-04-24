@@ -34,6 +34,14 @@ enum LogseqReminderPropertyCodec {
     guard let normalized = normalized(rawValue) else { return nil }
 
     switch normalized.lowercased() {
+    case let value where value.hasPrefix("daily|"):
+      return "daily|1"
+    case let value where value.hasPrefix("weekly|"):
+      return "weekly|1|"
+    case let value where value.hasPrefix("monthly|"):
+      return "monthly|1"
+    case let value where value.hasPrefix("yearly|"):
+      return "yearly|1"
     case "daily":
       return "daily|1"
     case "weekly":
@@ -43,29 +51,29 @@ enum LogseqReminderPropertyCodec {
     case "yearly":
       return "yearly|1"
     default:
-      guard let recurrence = OutlinerIntegratedStore.decodeRecurrence(rawValue: normalized) else {
-        return nil
-      }
-      return OutlinerIntegratedStore.encodeRecurrence(recurrence)
+      return nil
     }
   }
 
   static func encodeRepeat(_ rawValue: String?) -> String? {
-    guard let normalized = normalized(rawValue),
-      let recurrence = OutlinerIntegratedStore.decodeRecurrence(rawValue: normalized)
-    else {
-      return nil
-    }
+    guard let normalized = normalized(rawValue) else { return nil }
+    let value = normalized.lowercased()
 
-    switch recurrence {
-    case .daily:
+    switch value {
+    case "daily":
       return "daily"
-    case .weekly:
+    case "weekly":
       return "weekly"
-    case .monthly:
+    case "monthly":
       return "monthly"
-    case .yearly:
+    case "yearly":
       return "yearly"
+    default:
+      if value.hasPrefix("daily|") { return "daily" }
+      if value.hasPrefix("weekly|") { return "weekly" }
+      if value.hasPrefix("monthly|") { return "monthly" }
+      if value.hasPrefix("yearly|") { return "yearly" }
+      return nil
     }
   }
 
