@@ -67,7 +67,7 @@ final class LogseqPagesChangeTracker: @unchecked Sendable {
     (try? fileManager.contentsOfDirectory(
       at: pagesRootURL,
       includingPropertiesForKeys: [.contentModificationDateKey, .fileSizeKey],
-      options: [.skipsHiddenFiles]
+      options: []
     ))?.filter { $0.pathExtension.lowercased() == "md" } ?? []
   }
 
@@ -95,6 +95,7 @@ final class LogseqPagesDirectoryWatcher: @unchecked Sendable {
 
   private let pagesRootURL: URL
   private let debounceNanoseconds: UInt64
+  private let pollingNanoseconds: UInt64?
   private let tracker: LogseqPagesChangeTracker
   private let handler: ChangeHandler
   private let queue = DispatchQueue(label: "BrainUnfog.LogseqPagesDirectoryWatcher")
@@ -102,16 +103,19 @@ final class LogseqPagesDirectoryWatcher: @unchecked Sendable {
   private var fileDescriptor: CInt = -1
   private var source: DispatchSourceFileSystemObject?
   private var debounceWorkItem: DispatchWorkItem?
+  private var pollingTimer: DispatchSourceTimer?
   private var writeObserver: NSObjectProtocol?
 
   init(
     pagesRootURL: URL,
     debounceNanoseconds: UInt64 = LogseqPagesDirectoryWatcher.defaultDebounceNanoseconds,
+    pollingNanoseconds: UInt64? = LogseqPagesDirectoryWatcher.defaultDebounceNanoseconds,
     tracker: LogseqPagesChangeTracker = LogseqPagesChangeTracker(),
     handler: @escaping ChangeHandler
   ) {
     self.pagesRootURL = pagesRootURL
     self.debounceNanoseconds = debounceNanoseconds
+    self.pollingNanoseconds = pollingNanoseconds
     self.tracker = tracker
     self.handler = handler
   }
@@ -124,6 +128,7 @@ final class LogseqPagesDirectoryWatcher: @unchecked Sendable {
     stop()
     _ = tracker.changedMarkdownFiles(in: pagesRootURL)
     registerWriteObserver()
+    startPollingTimer()
 
     fileDescriptor = open(pagesRootURL.path, O_EVTONLY)
     guard fileDescriptor >= 0 else { return }
@@ -148,6 +153,8 @@ final class LogseqPagesDirectoryWatcher: @unchecked Sendable {
   func stop() {
     debounceWorkItem?.cancel()
     debounceWorkItem = nil
+    pollingTimer?.cancel()
+    pollingTimer = nil
     if let writeObserver {
       NotificationCenter.default.removeObserver(writeObserver)
       self.writeObserver = nil
@@ -155,6 +162,20 @@ final class LogseqPagesDirectoryWatcher: @unchecked Sendable {
     source?.cancel()
     source = nil
     fileDescriptor = -1
+  }
+
+  private func startPollingTimer() {
+    guard let pollingNanoseconds else { return }
+    let interval = DispatchTimeInterval.nanoseconds(
+      Int(min(pollingNanoseconds, UInt64(Int.max)))
+    )
+    let timer = DispatchSource.makeTimerSource(queue: queue)
+    timer.schedule(deadline: .now() + interval, repeating: interval)
+    timer.setEventHandler { [weak self] in
+      self?.runScan()
+    }
+    pollingTimer = timer
+    timer.resume()
   }
 
   private func registerWriteObserver() {
@@ -176,14 +197,17 @@ final class LogseqPagesDirectoryWatcher: @unchecked Sendable {
       Int(min(debounceNanoseconds, UInt64(Int.max)))
     )
     let workItem = DispatchWorkItem { [weak self] in
-      guard let self else { return }
-      let changedFiles = tracker.changedMarkdownFiles(in: pagesRootURL)
-      guard !changedFiles.isEmpty else { return }
-      Task { @MainActor [handler] in
-        await handler(changedFiles)
-      }
+      self?.runScan()
     }
     debounceWorkItem = workItem
     queue.asyncAfter(deadline: .now() + delay, execute: workItem)
+  }
+
+  private func runScan() {
+    let changedFiles = tracker.changedMarkdownFiles(in: pagesRootURL)
+    guard !changedFiles.isEmpty else { return }
+    Task { @MainActor [handler] in
+      await handler(changedFiles)
+    }
   }
 }

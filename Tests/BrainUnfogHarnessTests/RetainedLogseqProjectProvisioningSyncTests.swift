@@ -144,7 +144,91 @@ final class RetainedLogseqProjectProvisioningSyncTests: XCTestCase {
     XCTAssertTrue(markdown.contains("\t- NOW Another nested child task"))
   }
 
-  func testExistingReminderBackedTaskTitleChangeUpdatesReminderInPlace() async throws {
+  func testLogseqTaskSubtreeUpdatesReminderNoteText() async throws {
+    let graphRoot = try makeTemporaryDirectory()
+    let pagesRoot = graphRoot.appendingPathComponent("pages", isDirectory: true)
+    let dataRoot = graphRoot.appendingPathComponent(".buf/data", isDirectory: true)
+    try FileManager.default.createDirectory(at: pagesRoot, withIntermediateDirectories: true)
+    ReminderSyncBaselineStore.install(dataDirectory: dataRoot)
+    defer { ReminderSyncBaselineStore.reset() }
+    let projectPageURL = pagesRoot.appendingPathComponent("Launch.md", isDirectory: false)
+    try """
+    tags:: 프로젝트
+    reminder_list_external_id:: list-ext-1
+
+    - TODO Parent task
+      reminder_external_id:: parent-ext
+    \t- direct note
+    \t\t- nested note
+    \t- TODO Child task
+    \t  reminder_external_id:: child-ext
+    \t\t- child private note
+    \t- trailing note
+    """.write(to: projectPageURL, atomically: true, encoding: .utf8)
+    let remoteModifiedAt = Date(timeIntervalSince1970: 1_000)
+    ReminderSyncBaselineStore.upsert(
+      reminderExternalIdentifier: "parent-ext",
+      state: ReminderSyncTaskState(
+        title: "Parent task",
+        isCompleted: false,
+        date: nil,
+        repeatRule: nil,
+        noteText: nil
+      ),
+      remoteModifiedAt: remoteModifiedAt,
+      now: remoteModifiedAt
+    )
+    ReminderSyncBaselineStore.upsert(
+      reminderExternalIdentifier: "child-ext",
+      state: ReminderSyncTaskState(
+        title: "Child task",
+        isCompleted: false,
+        date: nil,
+        repeatRule: nil,
+        noteText: nil
+      ),
+      remoteModifiedAt: remoteModifiedAt,
+      now: remoteModifiedAt
+    )
+    let store = LogseqProjectPageStore(pagesRootURL: pagesRoot)
+    let provider = ProvisioningFakeReminderProjectProvider()
+    provider.taskSnapshotsByExternalIdentifier["parent-ext"] = .init(
+      identifier: "parent-local",
+      externalIdentifier: "parent-ext",
+      calendarIdentifier: "list-ext-1",
+      title: "Parent task",
+      noteText: "",
+      dueDate: nil,
+      hasExplicitTime: false,
+      priority: 0,
+      modifiedAt: remoteModifiedAt
+    )
+    provider.taskSnapshotsByExternalIdentifier["child-ext"] = .init(
+      identifier: "child-local",
+      externalIdentifier: "child-ext",
+      calendarIdentifier: "list-ext-1",
+      title: "Child task",
+      noteText: "",
+      dueDate: nil,
+      hasExplicitTime: false,
+      priority: 0,
+      modifiedAt: remoteModifiedAt
+    )
+
+    _ = try await RetainedLogseqProjectProvisioningSync.syncChangedPages(
+      fileURLs: [projectPageURL],
+      store: store,
+      reminderProjectProvider: provider
+    )
+
+    XCTAssertEqual(provider.noteWrites.map(\.reference.reminderExternalIdentifier), ["parent-ext", "child-ext"])
+    XCTAssertEqual(provider.noteWrites.map(\.noteText), [
+      "direct note\n nested note\nt:child-ext\ntrailing note",
+      "child private note",
+    ])
+  }
+
+  func testEmptyLogseqSubtreeDoesNotClearExistingReminderNoteText() async throws {
     let graphRoot = try makeTemporaryDirectory()
     let pagesRoot = graphRoot.appendingPathComponent("pages", isDirectory: true)
     try FileManager.default.createDirectory(at: pagesRoot, withIntermediateDirectories: true)
@@ -153,9 +237,114 @@ final class RetainedLogseqProjectProvisioningSyncTests: XCTestCase {
     tags:: 프로젝트
     reminder_list_external_id:: list-ext-1
 
+    - TODO Parent task
+      reminder_external_id:: parent-ext
+    """.write(to: projectPageURL, atomically: true, encoding: .utf8)
+    let store = LogseqProjectPageStore(pagesRootURL: pagesRoot)
+    let provider = ProvisioningFakeReminderProjectProvider()
+    provider.taskSnapshotsByExternalIdentifier["parent-ext"] = .init(
+      identifier: "parent-local",
+      externalIdentifier: "parent-ext",
+      calendarIdentifier: "list-ext-1",
+      title: "Parent task",
+      noteText: "important remote note",
+      dueDate: nil,
+      hasExplicitTime: false,
+      priority: 0,
+      modifiedAt: .now
+    )
+
+    _ = try await RetainedLogseqProjectProvisioningSync.syncChangedPages(
+      fileURLs: [projectPageURL],
+      store: store,
+      reminderProjectProvider: provider
+    )
+
+    XCTAssertEqual(provider.noteWrites.count, 0)
+    XCTAssertEqual(provider.taskSnapshotsByExternalIdentifier["parent-ext"]?.noteText, "important remote note")
+  }
+
+  func testBaselineTrackedEmptyLogseqSubtreeClearsReminderNoteText() async throws {
+    let graphRoot = try makeTemporaryDirectory()
+    let pagesRoot = graphRoot.appendingPathComponent("pages", isDirectory: true)
+    let dataRoot = graphRoot.appendingPathComponent(".buf/data", isDirectory: true)
+    try FileManager.default.createDirectory(at: pagesRoot, withIntermediateDirectories: true)
+    ReminderSyncBaselineStore.install(dataDirectory: dataRoot)
+    defer { ReminderSyncBaselineStore.reset() }
+
+    let projectPageURL = pagesRoot.appendingPathComponent("Launch.md", isDirectory: false)
+    try """
+    tags:: 프로젝트
+    reminder_list_external_id:: list-ext-1
+
+    - TODO Parent task
+      reminder_external_id:: parent-ext
+    """.write(to: projectPageURL, atomically: true, encoding: .utf8)
+    ReminderSyncBaselineStore.upsert(
+      reminderExternalIdentifier: "parent-ext",
+      state: ReminderSyncTaskState(
+        title: "Parent task",
+        isCompleted: false,
+        date: nil,
+        repeatRule: nil,
+        noteText: "important remote note"
+      ),
+      remoteModifiedAt: Date(timeIntervalSince1970: 1_000),
+      now: Date(timeIntervalSince1970: 1_000)
+    )
+
+    let provider = ProvisioningFakeReminderProjectProvider()
+    provider.taskSnapshotsByExternalIdentifier["parent-ext"] = .init(
+      identifier: "parent-local",
+      externalIdentifier: "parent-ext",
+      calendarIdentifier: "list-ext-1",
+      title: "Parent task",
+      noteText: "important remote note",
+      dueDate: nil,
+      hasExplicitTime: false,
+      priority: 0,
+      modifiedAt: Date(timeIntervalSince1970: 1_000)
+    )
+
+    _ = try await RetainedLogseqProjectProvisioningSync.syncChangedPages(
+      fileURLs: [projectPageURL],
+      store: LogseqProjectPageStore(pagesRootURL: pagesRoot),
+      reminderProjectProvider: provider
+    )
+
+    XCTAssertEqual(provider.noteWrites.map(\.noteText), [""])
+    XCTAssertEqual(provider.taskSnapshotsByExternalIdentifier["parent-ext"]?.noteText, "")
+    XCTAssertNil(ReminderSyncBaselineStore.baseline(for: "parent-ext")?.state.noteText)
+  }
+
+  func testExistingReminderBackedTaskTitleChangeUpdatesReminderInPlace() async throws {
+    let graphRoot = try makeTemporaryDirectory()
+    let pagesRoot = graphRoot.appendingPathComponent("pages", isDirectory: true)
+    let dataRoot = graphRoot.appendingPathComponent(".buf/data", isDirectory: true)
+    try FileManager.default.createDirectory(at: pagesRoot, withIntermediateDirectories: true)
+    ReminderSyncBaselineStore.install(dataDirectory: dataRoot)
+    defer { ReminderSyncBaselineStore.reset() }
+    let projectPageURL = pagesRoot.appendingPathComponent("Launch.md", isDirectory: false)
+    try """
+    tags:: 프로젝트
+    reminder_list_external_id:: list-ext-1
+
     - TODO Edited title
       reminder_external_id:: task-ext-1
     """.write(to: projectPageURL, atomically: true, encoding: .utf8)
+    let remoteModifiedAt = Date(timeIntervalSince1970: 1_000)
+    ReminderSyncBaselineStore.upsert(
+      reminderExternalIdentifier: "task-ext-1",
+      state: ReminderSyncTaskState(
+        title: "Original title",
+        isCompleted: false,
+        date: nil,
+        repeatRule: nil,
+        noteText: nil
+      ),
+      remoteModifiedAt: remoteModifiedAt,
+      now: remoteModifiedAt
+    )
     let store = LogseqProjectPageStore(pagesRootURL: pagesRoot)
     let provider = ProvisioningFakeReminderProjectProvider()
     provider.taskSnapshotsByExternalIdentifier["task-ext-1"] = .init(
@@ -167,7 +356,7 @@ final class RetainedLogseqProjectProvisioningSyncTests: XCTestCase {
       dueDate: nil,
       hasExplicitTime: false,
       priority: 0,
-      modifiedAt: .now
+      modifiedAt: remoteModifiedAt
     )
 
     let result = try await RetainedLogseqProjectProvisioningSync.syncChangedPages(
@@ -192,7 +381,10 @@ final class RetainedLogseqProjectProvisioningSyncTests: XCTestCase {
   func testExistingReminderBackedTaskChangesUpdateReminderInPlace() async throws {
     let graphRoot = try makeTemporaryDirectory()
     let pagesRoot = graphRoot.appendingPathComponent("pages", isDirectory: true)
+    let dataRoot = graphRoot.appendingPathComponent(".buf/data", isDirectory: true)
     try FileManager.default.createDirectory(at: pagesRoot, withIntermediateDirectories: true)
+    ReminderSyncBaselineStore.install(dataDirectory: dataRoot)
+    defer { ReminderSyncBaselineStore.reset() }
     let projectPageURL = pagesRoot.appendingPathComponent("Launch.md", isDirectory: false)
     try """
     tags:: 프로젝트
@@ -203,6 +395,19 @@ final class RetainedLogseqProjectProvisioningSyncTests: XCTestCase {
       date:: 2026-04-25 14:30
       repeat:: weekly
     """.write(to: projectPageURL, atomically: true, encoding: .utf8)
+    let remoteModifiedAt = Date(timeIntervalSince1970: 1_000)
+    ReminderSyncBaselineStore.upsert(
+      reminderExternalIdentifier: "task-ext-1",
+      state: ReminderSyncTaskState(
+        title: "Existing task",
+        isCompleted: false,
+        date: "2026-04-23",
+        repeatRule: nil,
+        noteText: nil
+      ),
+      remoteModifiedAt: remoteModifiedAt,
+      now: remoteModifiedAt
+    )
     let store = LogseqProjectPageStore(pagesRootURL: pagesRoot)
     let provider = ProvisioningFakeReminderProjectProvider()
     provider.taskSnapshotsByExternalIdentifier["task-ext-1"] = .init(
@@ -216,7 +421,7 @@ final class RetainedLogseqProjectProvisioningSyncTests: XCTestCase {
       hasExplicitTime: false,
       priority: 0,
       recurrenceRuleRaw: nil,
-      modifiedAt: .now
+      modifiedAt: remoteModifiedAt
     )
 
     let result = try await RetainedLogseqProjectProvisioningSync.syncChangedPages(
@@ -248,6 +453,104 @@ final class RetainedLogseqProjectProvisioningSyncTests: XCTestCase {
       "2026-04-25 14:30"
     )
     XCTAssertEqual(provider.taskSnapshotsByExternalIdentifier["task-ext-1"]?.recurrenceRuleRaw, "weekly|1|")
+  }
+
+  func testNoBaselineExistingReminderUpdateFailsClosedInsteadOfPushingLocalDiff() async throws {
+    let graphRoot = try makeTemporaryDirectory()
+    let pagesRoot = graphRoot.appendingPathComponent("pages", isDirectory: true)
+    let dataRoot = graphRoot.appendingPathComponent(".buf/data", isDirectory: true)
+    try FileManager.default.createDirectory(at: pagesRoot, withIntermediateDirectories: true)
+    ReminderSyncBaselineStore.install(dataDirectory: dataRoot)
+    defer { ReminderSyncBaselineStore.reset() }
+
+    let projectPageURL = pagesRoot.appendingPathComponent("Launch.md", isDirectory: false)
+    try """
+    tags:: 프로젝트
+    reminder_list_external_id:: list-ext-1
+
+    - TODO Stale local title
+      reminder_external_id:: task-ext-1
+    """.write(to: projectPageURL, atomically: true, encoding: .utf8)
+    let remoteModifiedAt = Date(timeIntervalSince1970: 2_000)
+    let provider = ProvisioningFakeReminderProjectProvider()
+    provider.taskSnapshotsByExternalIdentifier["task-ext-1"] = .init(
+      identifier: "task-local-1",
+      externalIdentifier: "task-ext-1",
+      calendarIdentifier: "list-ext-1",
+      title: "Remote title",
+      noteText: "",
+      isCompleted: false,
+      dueDate: nil,
+      hasExplicitTime: false,
+      priority: 0,
+      recurrenceRuleRaw: nil,
+      modifiedAt: remoteModifiedAt
+    )
+
+    _ = try await RetainedLogseqProjectProvisioningSync.syncChangedPages(
+      fileURLs: [projectPageURL],
+      store: LogseqProjectPageStore(pagesRootURL: pagesRoot),
+      reminderProjectProvider: provider
+    )
+
+    XCTAssertEqual(provider.titleWrites.count, 0)
+    XCTAssertEqual(provider.taskSnapshotsByExternalIdentifier["task-ext-1"]?.title, "Remote title")
+  }
+
+  func testDuplicateLocalReminderIdentifiersDoNotWriteSameReminder() async throws {
+    let graphRoot = try makeTemporaryDirectory()
+    let pagesRoot = graphRoot.appendingPathComponent("pages", isDirectory: true)
+    let dataRoot = graphRoot.appendingPathComponent(".buf/data", isDirectory: true)
+    try FileManager.default.createDirectory(at: pagesRoot, withIntermediateDirectories: true)
+    ReminderSyncBaselineStore.install(dataDirectory: dataRoot)
+    defer { ReminderSyncBaselineStore.reset() }
+
+    let projectPageURL = pagesRoot.appendingPathComponent("Launch.md", isDirectory: false)
+    try """
+    tags:: 프로젝트
+    reminder_list_external_id:: list-ext-1
+
+    - TODO First local title
+      reminder_external_id:: task-ext-1
+    - TODO Second local title
+      reminder_external_id:: task-ext-1
+    """.write(to: projectPageURL, atomically: true, encoding: .utf8)
+    let remoteModifiedAt = Date(timeIntervalSince1970: 1_000)
+    ReminderSyncBaselineStore.upsert(
+      reminderExternalIdentifier: "task-ext-1",
+      state: ReminderSyncTaskState(
+        title: "Remote title",
+        isCompleted: false,
+        date: nil,
+        repeatRule: nil,
+        noteText: nil
+      ),
+      remoteModifiedAt: remoteModifiedAt,
+      now: remoteModifiedAt
+    )
+    let provider = ProvisioningFakeReminderProjectProvider()
+    provider.taskSnapshotsByExternalIdentifier["task-ext-1"] = .init(
+      identifier: "task-local-1",
+      externalIdentifier: "task-ext-1",
+      calendarIdentifier: "list-ext-1",
+      title: "Remote title",
+      noteText: "",
+      isCompleted: false,
+      dueDate: nil,
+      hasExplicitTime: false,
+      priority: 0,
+      recurrenceRuleRaw: nil,
+      modifiedAt: remoteModifiedAt
+    )
+
+    _ = try await RetainedLogseqProjectProvisioningSync.syncChangedPages(
+      fileURLs: [projectPageURL],
+      store: LogseqProjectPageStore(pagesRootURL: pagesRoot),
+      reminderProjectProvider: provider
+    )
+
+    XCTAssertEqual(provider.titleWrites.count, 0)
+    XCTAssertEqual(provider.taskSnapshotsByExternalIdentifier["task-ext-1"]?.title, "Remote title")
   }
 
   func testReminderImportUpdatesLogseqTitleBeforeProvisioningCanOverwriteRemoteChange() async throws {
@@ -338,10 +641,97 @@ final class RetainedLogseqProjectProvisioningSyncTests: XCTestCase {
     XCTAssertEqual(provider.titleWrites.count, 0)
   }
 
+  func testNoBaselineMergeUsesReminderAsInitialBaselineBeforeProvisioning() async throws {
+    let graphRoot = try makeTemporaryDirectory()
+    let pagesRoot = graphRoot.appendingPathComponent("pages", isDirectory: true)
+    let dataRoot = graphRoot.appendingPathComponent(".buf/data", isDirectory: true)
+    try FileManager.default.createDirectory(at: pagesRoot, withIntermediateDirectories: true)
+    ReminderSyncBaselineStore.install(dataDirectory: dataRoot)
+    defer { ReminderSyncBaselineStore.reset() }
+
+    let projectPageURL = pagesRoot.appendingPathComponent("Launch.md", isDirectory: false)
+    try """
+    tags:: 프로젝트
+    reminder_list_external_id:: list-ext-1
+
+    - TODO Stale local title
+      reminder_external_id:: task-ext-1
+    """.write(to: projectPageURL, atomically: true, encoding: .utf8)
+    let remoteModifiedAt = Date(timeIntervalSince1970: 2_000)
+    let remoteTask = ReminderItemImportSnapshot(
+      identifier: "task-local-1",
+      externalIdentifier: "task-ext-1",
+      parentExternalIdentifier: nil,
+      sourceListIdentifier: "list-local-1",
+      sourceListTitle: "Launch",
+      title: "Remote Reminder title",
+      notes: "",
+      attachmentCount: 0,
+      isCompleted: false,
+      completionDate: nil,
+      startDate: nil,
+      dueDate: nil,
+      scheduleHasExplicitTime: false,
+      scheduledDurationMinutes: nil,
+      priority: 0,
+      recurrenceRuleRaw: nil,
+      isFlagged: false,
+      requiredWorkDays: 0,
+      createdAt: remoteModifiedAt,
+      modifiedAt: remoteModifiedAt
+    )
+    let store = LogseqProjectPageStore(pagesRootURL: pagesRoot)
+    let provider = ProvisioningFakeReminderProjectProvider()
+    provider.taskSnapshotsByExternalIdentifier["task-ext-1"] = .init(
+      identifier: "task-local-1",
+      externalIdentifier: "task-ext-1",
+      calendarIdentifier: "list-ext-1",
+      title: "Remote Reminder title",
+      noteText: "",
+      isCompleted: false,
+      dueDate: nil,
+      hasExplicitTime: false,
+      priority: 0,
+      recurrenceRuleRaw: nil,
+      modifiedAt: remoteModifiedAt
+    )
+
+    _ = try await RetainedReminderImportSync.sync(
+      batch: ReminderImportSnapshotBatch(
+        lists: [
+          .init(
+            identifier: "list-local-1",
+            externalIdentifier: "list-ext-1",
+            title: "Launch",
+            colorHex: nil
+          ),
+        ],
+        itemsByListIdentifier: ["list-local-1": [remoteTask]]
+      ),
+      store: store,
+      conflictPolicy: .mergeWithBaseline,
+      now: remoteModifiedAt
+    )
+    _ = try await RetainedLogseqProjectProvisioningSync.sync(
+      store: store,
+      reminderProjectProvider: provider,
+      now: remoteModifiedAt
+    )
+
+    let markdown = try String(contentsOf: projectPageURL, encoding: .utf8)
+    XCTAssertTrue(markdown.contains("- TODO Remote Reminder title"))
+    XCTAssertFalse(markdown.contains("Stale local title"))
+    XCTAssertEqual(provider.titleWrites.count, 0)
+    XCTAssertEqual(ReminderSyncBaselineStore.baseline(for: "task-ext-1")?.state.title, "Remote Reminder title")
+  }
+
   func testNewerLogseqChangeSurvivesStaleReminderImportAndPushesToReminder() async throws {
     let graphRoot = try makeTemporaryDirectory()
     let pagesRoot = graphRoot.appendingPathComponent("pages", isDirectory: true)
+    let dataRoot = graphRoot.appendingPathComponent(".buf/data", isDirectory: true)
     try FileManager.default.createDirectory(at: pagesRoot, withIntermediateDirectories: true)
+    ReminderSyncBaselineStore.install(dataDirectory: dataRoot)
+    defer { ReminderSyncBaselineStore.reset() }
     let projectPageURL = pagesRoot.appendingPathComponent("Launch.md", isDirectory: false)
     try """
     tags:: 프로젝트
@@ -354,6 +744,18 @@ final class RetainedLogseqProjectProvisioningSyncTests: XCTestCase {
     let store = LogseqProjectPageStore(pagesRootURL: pagesRoot)
     let remoteModifiedAt = try XCTUnwrap(
       Calendar(identifier: .gregorian).date(from: DateComponents(year: 2026, month: 4, day: 24, hour: 9))
+    )
+    ReminderSyncBaselineStore.upsert(
+      reminderExternalIdentifier: "task-ext-1",
+      state: ReminderSyncTaskState(
+        title: "Stale Reminder title",
+        isCompleted: false,
+        date: nil,
+        repeatRule: nil,
+        noteText: nil
+      ),
+      remoteModifiedAt: remoteModifiedAt,
+      now: remoteModifiedAt
     )
     let localModifiedAt = try XCTUnwrap(
       Calendar(identifier: .gregorian).date(from: DateComponents(year: 2026, month: 4, day: 24, hour: 10))
@@ -435,6 +837,118 @@ final class RetainedLogseqProjectProvisioningSyncTests: XCTestCase {
     XCTAssertEqual(provider.taskSnapshotsByExternalIdentifier["task-ext-1"]?.title, "Local Logseq title")
   }
 
+  func testChangedPageDoesNotOverwriteRemoteFieldChangedSinceBaseline() async throws {
+    let graphRoot = try makeTemporaryDirectory()
+    let pagesRoot = graphRoot.appendingPathComponent("pages", isDirectory: true)
+    let dataRoot = graphRoot.appendingPathComponent(".buf/data", isDirectory: true)
+    try FileManager.default.createDirectory(at: pagesRoot, withIntermediateDirectories: true)
+    ReminderSyncBaselineStore.install(dataDirectory: dataRoot)
+    defer { ReminderSyncBaselineStore.reset() }
+
+    let projectPageURL = pagesRoot.appendingPathComponent("Launch.md", isDirectory: false)
+    try """
+    tags:: 프로젝트
+    reminder_list_external_id:: list-ext-1
+
+    - TODO Base title
+      reminder_external_id:: task-ext-1
+      - Local note changed
+    """.write(to: projectPageURL, atomically: true, encoding: .utf8)
+
+    ReminderSyncBaselineStore.upsert(
+      reminderExternalIdentifier: "task-ext-1",
+      state: ReminderSyncTaskState(
+        title: "Base title",
+        isCompleted: false,
+        date: nil,
+        repeatRule: nil,
+        noteText: nil
+      ),
+      remoteModifiedAt: Date(timeIntervalSince1970: 1_000),
+      now: Date(timeIntervalSince1970: 1_000)
+    )
+
+    let store = LogseqProjectPageStore(pagesRootURL: pagesRoot)
+    let provider = ProvisioningFakeReminderProjectProvider()
+    provider.taskSnapshotsByExternalIdentifier["task-ext-1"] = .init(
+      identifier: "task-local-1",
+      externalIdentifier: "task-ext-1",
+      calendarIdentifier: "list-ext-1",
+      title: "Remote title",
+      noteText: "",
+      isCompleted: false,
+      dueDate: nil,
+      hasExplicitTime: false,
+      priority: 0,
+      recurrenceRuleRaw: nil,
+      modifiedAt: Date(timeIntervalSince1970: 2_000)
+    )
+
+    _ = try await RetainedLogseqProjectProvisioningSync.syncChangedPages(
+      fileURLs: [projectPageURL],
+      store: store,
+      reminderProjectProvider: provider
+    )
+
+    XCTAssertEqual(provider.titleWrites.count, 0)
+    XCTAssertEqual(provider.noteWrites.map(\.noteText), ["Local note changed"])
+    XCTAssertEqual(provider.taskSnapshotsByExternalIdentifier["task-ext-1"]?.title, "Remote title")
+  }
+
+  func testChangedPageDoesNotPushSameFieldConflictOverRemoteChange() async throws {
+    let graphRoot = try makeTemporaryDirectory()
+    let pagesRoot = graphRoot.appendingPathComponent("pages", isDirectory: true)
+    let dataRoot = graphRoot.appendingPathComponent(".buf/data", isDirectory: true)
+    try FileManager.default.createDirectory(at: pagesRoot, withIntermediateDirectories: true)
+    ReminderSyncBaselineStore.install(dataDirectory: dataRoot)
+    defer { ReminderSyncBaselineStore.reset() }
+
+    let projectPageURL = pagesRoot.appendingPathComponent("Launch.md", isDirectory: false)
+    try """
+    tags:: 프로젝트
+    reminder_list_external_id:: list-ext-1
+
+    - TODO Local title
+      reminder_external_id:: task-ext-1
+    """.write(to: projectPageURL, atomically: true, encoding: .utf8)
+    ReminderSyncBaselineStore.upsert(
+      reminderExternalIdentifier: "task-ext-1",
+      state: ReminderSyncTaskState(
+        title: "Base title",
+        isCompleted: false,
+        date: nil,
+        repeatRule: nil,
+        noteText: nil
+      ),
+      remoteModifiedAt: Date(timeIntervalSince1970: 1_000),
+      now: Date(timeIntervalSince1970: 1_000)
+    )
+
+    let provider = ProvisioningFakeReminderProjectProvider()
+    provider.taskSnapshotsByExternalIdentifier["task-ext-1"] = .init(
+      identifier: "task-local-1",
+      externalIdentifier: "task-ext-1",
+      calendarIdentifier: "list-ext-1",
+      title: "Remote title",
+      noteText: "",
+      isCompleted: false,
+      dueDate: nil,
+      hasExplicitTime: false,
+      priority: 0,
+      recurrenceRuleRaw: nil,
+      modifiedAt: Date(timeIntervalSince1970: 2_000)
+    )
+
+    _ = try await RetainedLogseqProjectProvisioningSync.syncChangedPages(
+      fileURLs: [projectPageURL],
+      store: LogseqProjectPageStore(pagesRootURL: pagesRoot),
+      reminderProjectProvider: provider
+    )
+
+    XCTAssertEqual(provider.titleWrites.count, 0)
+    XCTAssertEqual(provider.taskSnapshotsByExternalIdentifier["task-ext-1"]?.title, "Remote title")
+  }
+
   private func makeTemporaryDirectory() throws -> URL {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("RetainedLogseqProjectProvisioningSyncTests-\(UUID().uuidString)", isDirectory: true)
@@ -455,6 +969,7 @@ private final class ProvisioningFakeReminderProjectProvider: ReminderProjectProv
     let title: String
     let dueDate: Date?
     let hasExplicitTime: Bool
+    let noteText: String
   }
 
   struct CompletionWrite {
@@ -478,12 +993,18 @@ private final class ProvisioningFakeReminderProjectProvider: ReminderProjectProv
     let title: String
   }
 
+  struct NoteWrite {
+    let reference: ReminderTaskReference
+    let noteText: String
+  }
+
   var createdLists: [CreatedList] = []
   var createdTasks: [CreatedTask] = []
   var completionWrites: [CompletionWrite] = []
   var recurrenceWrites: [RecurrenceWrite] = []
   var scheduleWrites: [ScheduleWrite] = []
   var titleWrites: [TitleWrite] = []
+  var noteWrites: [NoteWrite] = []
   var taskSnapshotsByExternalIdentifier: [String: ReminderTaskRemoteSnapshot] = [:]
 
   var reminderGateway: ReminderGateway? { nil }
@@ -519,13 +1040,13 @@ private final class ProvisioningFakeReminderProjectProvider: ReminderProjectProv
     hasExplicitTime: Bool,
     noteText: String
   ) throws -> ReminderTaskRemoteMetadata? {
-    _ = noteText
     createdTasks.append(
       CreatedTask(
         inProject: identifier,
         title: title,
         dueDate: dueDate,
-        hasExplicitTime: hasExplicitTime
+        hasExplicitTime: hasExplicitTime,
+        noteText: noteText
       )
     )
     return ReminderTaskRemoteMetadata(
@@ -606,9 +1127,29 @@ private final class ProvisioningFakeReminderProjectProvider: ReminderProjectProv
   }
 
   func setTaskReminderNote(for task: ReminderTaskReference, noteText: String) throws -> ReminderTaskRemoteMetadata? {
-    _ = task
-    _ = noteText
-    return nil
+    noteWrites.append(NoteWrite(reference: task, noteText: noteText))
+    updateSnapshot(task) { snapshot in
+      ReminderTaskRemoteSnapshot(
+        identifier: snapshot.identifier,
+        externalIdentifier: snapshot.externalIdentifier,
+        calendarIdentifier: snapshot.calendarIdentifier,
+        title: snapshot.title,
+        noteText: noteText,
+        isCompleted: snapshot.isCompleted,
+        completionDate: snapshot.completionDate,
+        startDate: snapshot.startDate,
+        dueDate: snapshot.dueDate,
+        hasExplicitTime: snapshot.hasExplicitTime,
+        priority: snapshot.priority,
+        recurrenceRuleRaw: snapshot.recurrenceRuleRaw,
+        modifiedAt: .now
+      )
+    }
+    return ReminderTaskRemoteMetadata(
+      identifier: task.reminderIdentifier ?? "",
+      externalIdentifier: task.reminderExternalIdentifier,
+      modifiedAt: .now
+    )
   }
 
   func setTaskSchedule(

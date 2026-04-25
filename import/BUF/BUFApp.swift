@@ -1,18 +1,42 @@
 import AppKit
 import SwiftUI
 
+@MainActor
 final class BUFAppDelegate: NSObject, NSApplicationDelegate {
   func applicationDidFinishLaunching(_ notification: Notification) {
     guard !AppRuntimeEnvironment.isRunningPreview else { return }
     PlatformUIFoundation.shared.windowManager.activateApp()
+    NSApp.mainMenu?.items.first?.title = "Brain Unfog"
+    installSettingsMenuCommand()
     PlatformUIFoundation.shared.windowManager.bringVisibleWindowsToFront(titled: "Brain Unfog")
+  }
+
+  func applicationDidBecomeActive(_ notification: Notification) {
+    guard !AppRuntimeEnvironment.isRunningPreview else { return }
+    installSettingsMenuCommand()
+  }
+
+  private func installSettingsMenuCommand() {
+    AppSettingsWindowPresenter.shared.installAppMenuItem()
+    Task { @MainActor in
+      for delay in [100, 500, 1_500, 3_000] {
+        try? await Task.sleep(for: .milliseconds(delay))
+        AppSettingsWindowPresenter.shared.installAppMenuItem()
+      }
+    }
   }
 }
 
 @main
 struct BUFApplication: App {
   @NSApplicationDelegateAdaptor(BUFAppDelegate.self) private var appDelegate
-  @StateObject private var appState = AppState()
+  @StateObject private var appState: AppState
+
+  init() {
+    let appState = AppState()
+    _appState = StateObject(wrappedValue: appState)
+    AppSettingsWindowPresenter.shared.register(appState: appState)
+  }
 
   var body: some Scene {
     WindowGroup(id: "main") {
@@ -21,11 +45,20 @@ struct BUFApplication: App {
         .navigationTitle("Brain Unfog")
         .task {
           guard !AppRuntimeEnvironment.isRunningPreview else { return }
+          installSettingsMenuCommand()
           await appState.launch()
+          installSettingsMenuCommand()
           appState.scheduleDebugPhase0AutoExportIfNeeded()
         }
     }
     .commands {
+      CommandGroup(after: .appInfo) {
+        Button("설정...") {
+          AppSettingsWindowPresenter.shared.show(appState: appState)
+        }
+        .keyboardShortcut(",", modifiers: .command)
+      }
+
       CommandMenu("보기") {
         Button("타임라인") {
           appState.handleViewMenuSelection(.timeline)
@@ -56,6 +89,16 @@ struct BUFApplication: App {
         .keyboardShortcut("0", modifiers: [.command, .option, .shift])
       }
 #endif
+    }
+  }
+
+  private func installSettingsMenuCommand() {
+    AppSettingsWindowPresenter.shared.installAppMenuItem(appState: appState)
+    Task { @MainActor in
+      for delay in [250, 1_000, 2_500] {
+        try? await Task.sleep(for: .milliseconds(delay))
+        AppSettingsWindowPresenter.shared.installAppMenuItem(appState: appState)
+      }
     }
   }
 }

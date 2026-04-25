@@ -159,6 +159,26 @@ final class LogseqProjectPageStoreTests: XCTestCase {
     XCTAssertEqual(page.externalTasks.first?.reminderExternalIdentifier, "task-ext-1")
   }
 
+  func testLoadProjectPagesInScopeIncludesHiddenReminderBackedPage() async throws {
+    let graphRootURL = try makeGraphRoot(named: "HiddenReminderPageGraph")
+    let pagesRootURL = graphRootURL.appendingPathComponent("pages", isDirectory: true)
+    try FileManager.default.createDirectory(at: pagesRootURL, withIntermediateDirectories: true)
+    let pageURL = pagesRootURL.appendingPathComponent(".Hidden Project.md", isDirectory: false)
+    try """
+    reminder_list_external_id:: list-ext-1
+
+    - TODO Hidden task
+      reminder_external_id:: task-ext-1
+    """.write(to: pageURL, atomically: true, encoding: .utf8)
+    let store = LogseqProjectPageStore(pagesRootURL: pagesRootURL)
+
+    let pages = try await store.loadProjectPagesInScope()
+
+    XCTAssertEqual(pages.map(\.title), [".Hidden Project"])
+    XCTAssertEqual(pages.first?.reminderListExternalIdentifier, "list-ext-1")
+    XCTAssertEqual(pages.first?.externalTasks.first?.reminderExternalIdentifier, "task-ext-1")
+  }
+
   func testExistingManagedTasksOutsideManagedSectionStayReadableAndBlockRewrite() async throws {
     let graphRootURL = try makeGraphRoot(named: "ReadOnlyImportGraph")
     let pagesRootURL = graphRootURL.appendingPathComponent("pages", isDirectory: true)

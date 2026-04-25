@@ -117,9 +117,10 @@ extension AppState {
           lists: lists,
           itemsByListIdentifier: itemsByListIdentifier
         ),
-        store: pageStore
+        store: pageStore,
+        conflictPolicy: reminderImportConflictPolicy(for: reason)
       )
-      let shouldProvisionFromLogseq = reason != .eventStoreChanged
+      let shouldProvisionFromLogseq = shouldProvisionFromLogseqAfterImport(reason: reason)
       let provisioningResult = shouldProvisionFromLogseq
         ? try await RetainedLogseqProjectProvisioningSync.sync(
           store: pageStore,
@@ -144,7 +145,31 @@ extension AppState {
     }
   }
 
+  func reminderImportConflictPolicy(
+    for reason: SyncReason
+  ) -> LogseqProjectPageStore.ReminderImportConflictPolicy {
+    switch reason {
+    case .bootstrap:
+      return .remindersAuthoritative
+    case .eventStoreChanged, .manual, .periodic:
+      return .mergeWithBaseline
+    }
+  }
+
+  func shouldProvisionFromLogseqAfterImport(reason: SyncReason) -> Bool {
+    switch reason {
+    case .bootstrap:
+      return false
+    case .eventStoreChanged, .manual, .periodic:
+      return true
+    }
+  }
+
   func handleLogseqPagesDirectoryChange(_ changedFiles: [URL]) async {
+    guard !isInitialSyncRunning else {
+      queueReminderSourceRefresh(reason: .manual)
+      return
+    }
     guard !changedFiles.isEmpty, let pageStore = logseqProjectPageStore() else { return }
     do {
       let cascadeChangedFiles = try await pageStore.completeDescendantTasksUnderCompletedParents(

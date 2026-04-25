@@ -267,6 +267,22 @@ final class RetainedWorkspaceSurfaceProjectionTests: XCTestCase {
     XCTAssertTrue(blockedRead.scheduleEntriesByProjectID.isEmpty)
   }
 
+  func testPartialProjectCoverageBlocksWithoutGlobalErrorAlert() {
+    let missingProjectID = UUID()
+
+    let blockedRead = RetainedWorkspaceSurfaceProjectionBuilder.resolveRetainedOnly(
+      .blocked(.partialProjectCoverage(missingProjectIDs: [missingProjectID]))
+    )
+
+    XCTAssertEqual(
+      blockedRead.source,
+      .blocked(.partialProjectCoverage(missingProjectIDs: [missingProjectID]))
+    )
+    XCTAssertNil(blockedRead.errorMessage)
+    XCTAssertTrue(blockedRead.projectSnapshots.isEmpty)
+    XCTAssertTrue(blockedRead.scheduleEntriesByProjectID.isEmpty)
+  }
+
   func testRetainedOnlyBlockedReadsRequireConsumerCacheInvalidation() {
     XCTAssertFalse(
       RetainedWorkspaceSurfaceProjectionBuilder.shouldInvalidateConsumerCaches(for: .retained)

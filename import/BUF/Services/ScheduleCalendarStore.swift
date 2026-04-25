@@ -199,8 +199,7 @@ enum ScheduleCalendarAccessPromptPolicy {
   ) -> Bool {
     switch authorizationStatus {
     case .notDetermined:
-      _ = promptAttempted
-      return true
+      return !promptAttempted
     case .fullAccess, .authorized, .writeOnly, .denied, .restricted:
       return false
     @unknown default:

@@ -26,7 +26,9 @@ struct SetupContainerView: View {
           }
 
           Button(appState.isLogseqGraphConfigured ? "Logseq 그래프 변경" : "Logseq 그래프 선택") {
-            chooseLogseqGraph()
+            runSetupAction {
+              await appState.chooseLogseqGraphRootWithPicker(activateWhenReady: true)
+            }
           }
           .buttonStyle(.borderedProminent)
           .disabled(isInitializing)
@@ -56,23 +58,6 @@ struct SetupContainerView: View {
     }
     .padding(24)
     .frame(minWidth: 620, minHeight: 240)
-  }
-
-  private func chooseLogseqGraph() {
-    runSetupAction {
-      do {
-        let urls = try await appState.platformUIFoundation.pathPicker.pick(
-          request: PlatformPathPickerRequest(
-            kind: .directory,
-            message: "Logseq 그래프 루트를 선택해 주세요."
-          )
-        )
-        guard let url = urls.first else { return }
-        await appState.configureLogseqGraphRoot(at: url, activateWhenReady: true)
-      } catch {
-        appState.errorMessage = error.localizedDescription
-      }
-    }
   }
 
   private func runSetupAction(_ action: @escaping () async -> Void) {

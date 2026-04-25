@@ -160,6 +160,93 @@ final class RetainedReminderImportSyncTests: XCTestCase {
     XCTAssertEqual(pageMarkdown.components(separatedBy: "reminder_external_id:: task-external-2").count - 1, 1)
   }
 
+  func testReminderNoteUpdatesLogseqTaskSubtreeAndPreservesNestedTaskPosition() async throws {
+    let graphRoot = try makeTemporaryDirectory()
+    let pagesRoot = graphRoot.appendingPathComponent("pages", isDirectory: true)
+    try FileManager.default.createDirectory(at: pagesRoot, withIntermediateDirectories: true)
+    let pageURL = pagesRoot.appendingPathComponent("Launch.md", isDirectory: false)
+    try """
+    tags:: 프로젝트
+    reminder_list_external_id:: list-external-1
+
+    - TODO Parent task
+      reminder_external_id:: parent-ext
+      - stale note
+      - TODO Child one
+        reminder_external_id:: child-one-ext
+        - stale child one note
+      - TODO Child two
+        reminder_external_id:: child-two-ext
+        - stale child two note
+      - stale trailing
+    """.write(to: pageURL, atomically: true, encoding: .utf8)
+    let localModifiedAt = Date(timeIntervalSince1970: 1_000)
+    let remoteModifiedAt = Date(timeIntervalSince1970: 2_000)
+    try FileManager.default.setAttributes(
+      [.modificationDate: localModifiedAt],
+      ofItemAtPath: pageURL.path
+    )
+    let store = LogseqProjectPageStore(pagesRootURL: pagesRoot)
+    let list = ReminderListImportSnapshot(
+      identifier: "list-local-1",
+      externalIdentifier: "list-external-1",
+      title: "Launch",
+      colorHex: nil
+    )
+
+    _ = try await RetainedReminderImportSync.sync(
+      batch: ReminderImportSnapshotBatch(
+        lists: [list],
+        itemsByListIdentifier: [
+          list.identifier: [
+            makeItem(
+              identifier: "parent-local",
+              externalIdentifier: "parent-ext",
+              title: "Parent task",
+              notes: "remote note\nt:child-two-ext\nt:child-one-ext\nremote trailing",
+              list: list,
+              now: remoteModifiedAt
+            ),
+            makeItem(
+              identifier: "child-one-local",
+              externalIdentifier: "child-one-ext",
+              title: "Child one",
+              notes: "child one remote note",
+              list: list,
+              now: remoteModifiedAt
+            ),
+            makeItem(
+              identifier: "child-two-local",
+              externalIdentifier: "child-two-ext",
+              title: "Child two",
+              notes: "child two remote note",
+              list: list,
+              now: remoteModifiedAt
+            ),
+          ],
+        ]
+      ),
+      store: store,
+      now: remoteModifiedAt
+    )
+
+    let markdown = try String(contentsOf: pageURL, encoding: .utf8)
+    XCTAssertTrue(markdown.contains("  - remote note"))
+    XCTAssertTrue(markdown.contains("  - TODO Child two"))
+    XCTAssertTrue(markdown.contains("    - child two remote note"))
+    XCTAssertTrue(markdown.contains("  - TODO Child one"))
+    XCTAssertTrue(markdown.contains("    - child one remote note"))
+    XCTAssertTrue(markdown.contains("  - remote trailing"))
+    XCTAssertLessThan(
+      try XCTUnwrap(markdown.range(of: "  - TODO Child two")?.lowerBound),
+      try XCTUnwrap(markdown.range(of: "  - TODO Child one")?.lowerBound)
+    )
+    XCTAssertFalse(markdown.contains("stale note"))
+    XCTAssertFalse(markdown.contains("stale child one note"))
+    XCTAssertFalse(markdown.contains("stale child two note"))
+    XCTAssertFalse(markdown.contains("stale trailing"))
+  }
+
   func testReminderProjectionIdentityMatchesRetainedProjectionProjectIdentity() {
     XCTAssertEqual(
       ReminderProjectionIdentity.projectID(for: "list-external-1"),
@@ -167,10 +254,453 @@ final class RetainedReminderImportSyncTests: XCTestCase {
     )
   }
 
+  func testBootstrapImportOverwritesNewerLocalTaskWithReminderValue() async throws {
+    let graphRoot = try makeTemporaryDirectory()
+    let pagesRoot = graphRoot.appendingPathComponent("pages", isDirectory: true)
+    try FileManager.default.createDirectory(at: pagesRoot, withIntermediateDirectories: true)
+    let pageURL = pagesRoot.appendingPathComponent("Launch.md", isDirectory: false)
+    try """
+    tags:: 프로젝트
+    reminder_list_external_id:: list-external-1
+
+    - TODO Local stale title
+      reminder_external_id:: task-external-1
+      - stale local note
+    """.write(to: pageURL, atomically: true, encoding: .utf8)
+    let localModifiedAt = Date(timeIntervalSince1970: 2_000)
+    let remoteModifiedAt = Date(timeIntervalSince1970: 1_000)
+    try FileManager.default.setAttributes(
+      [.modificationDate: localModifiedAt],
+      ofItemAtPath: pageURL.path
+    )
+    let store = LogseqProjectPageStore(pagesRootURL: pagesRoot)
+    let list = ReminderListImportSnapshot(
+      identifier: "list-local-1",
+      externalIdentifier: "list-external-1",
+      title: "Launch",
+      colorHex: nil
+    )
+
+    _ = try await RetainedReminderImportSync.sync(
+      batch: ReminderImportSnapshotBatch(
+        lists: [list],
+        itemsByListIdentifier: [
+          list.identifier: [
+            makeItem(
+              identifier: "task-local-1",
+              externalIdentifier: "task-external-1",
+              title: "Reminder source title",
+              notes: "remote note",
+              list: list,
+              now: remoteModifiedAt
+            )
+          ],
+        ]
+      ),
+      store: store,
+      conflictPolicy: .remindersAuthoritative,
+      now: remoteModifiedAt
+    )
+
+    let markdown = try String(contentsOf: pageURL, encoding: .utf8)
+    XCTAssertTrue(markdown.contains("- TODO Reminder source title"))
+    XCTAssertTrue(markdown.contains("  - remote note"))
+    XCTAssertFalse(markdown.contains("Local stale title"))
+    XCTAssertFalse(markdown.contains("stale local note"))
+  }
+
+  func testFieldLevelMergeKeepsLocalTitleAndImportsRemoteSchedule() async throws {
+    let graphRoot = try makeTemporaryDirectory()
+    let pagesRoot = graphRoot.appendingPathComponent("pages", isDirectory: true)
+    let dataRoot = graphRoot.appendingPathComponent(".buf/data", isDirectory: true)
+    try FileManager.default.createDirectory(at: pagesRoot, withIntermediateDirectories: true)
+    ReminderSyncBaselineStore.install(dataDirectory: dataRoot)
+    defer { ReminderSyncBaselineStore.reset() }
+
+    let pageURL = pagesRoot.appendingPathComponent("Launch.md", isDirectory: false)
+    try """
+    tags:: 프로젝트
+    reminder_list_external_id:: list-external-1
+
+    - TODO Local title
+      reminder_external_id:: task-external-1
+    """.write(to: pageURL, atomically: true, encoding: .utf8)
+
+    let baseline = ReminderSyncTaskState(
+      title: "Base title",
+      isCompleted: false,
+      date: nil,
+      repeatRule: nil,
+      noteText: nil
+    )
+    ReminderSyncBaselineStore.upsert(
+      reminderExternalIdentifier: "task-external-1",
+      state: baseline,
+      remoteModifiedAt: Date(timeIntervalSince1970: 1_000),
+      now: Date(timeIntervalSince1970: 1_000)
+    )
+
+    let store = LogseqProjectPageStore(pagesRootURL: pagesRoot)
+    let list = ReminderListImportSnapshot(
+      identifier: "list-local-1",
+      externalIdentifier: "list-external-1",
+      title: "Launch",
+      colorHex: nil
+    )
+    let remoteModifiedAt = Date(timeIntervalSince1970: 2_000)
+    let dueDate = try XCTUnwrap(
+      Calendar(identifier: .gregorian)
+        .date(from: DateComponents(year: 2026, month: 5, day: 1, hour: 9))
+    )
+
+    _ = try await RetainedReminderImportSync.sync(
+      batch: ReminderImportSnapshotBatch(
+        lists: [list],
+        itemsByListIdentifier: [
+          list.identifier: [
+            ReminderItemImportSnapshot(
+              identifier: "task-local-1",
+              externalIdentifier: "task-external-1",
+              parentExternalIdentifier: nil,
+              sourceListIdentifier: list.identifier,
+              sourceListTitle: list.title,
+              title: "Base title",
+              notes: "",
+              attachmentCount: 0,
+              isCompleted: false,
+              completionDate: nil,
+              startDate: nil,
+              dueDate: dueDate,
+              scheduleHasExplicitTime: true,
+              scheduledDurationMinutes: nil,
+              priority: 0,
+              recurrenceRuleRaw: nil,
+              isFlagged: false,
+              requiredWorkDays: 0,
+              createdAt: remoteModifiedAt,
+              modifiedAt: remoteModifiedAt
+            ),
+          ],
+        ]
+      ),
+      store: store,
+      conflictPolicy: .mergeWithBaseline,
+      now: remoteModifiedAt
+    )
+
+    let markdown = try String(contentsOf: pageURL, encoding: .utf8)
+    let mergedBaseline = try XCTUnwrap(
+      ReminderSyncBaselineStore.baseline(for: "task-external-1")
+    )
+    XCTAssertTrue(markdown.contains("- TODO Local title"))
+    XCTAssertTrue(markdown.contains("date:: 2026-05-01 09:00"))
+    XCTAssertEqual(mergedBaseline.state.title, "Base title")
+    XCTAssertEqual(mergedBaseline.state.date, "2026-05-01 09:00")
+  }
+
+  func testEventMergeDoesNotOverwriteLocalTitleWithStaleReminderTitle() async throws {
+    let graphRoot = try makeTemporaryDirectory()
+    let pagesRoot = graphRoot.appendingPathComponent("pages", isDirectory: true)
+    let dataRoot = graphRoot.appendingPathComponent(".buf/data", isDirectory: true)
+    try FileManager.default.createDirectory(at: pagesRoot, withIntermediateDirectories: true)
+    ReminderSyncBaselineStore.install(dataDirectory: dataRoot)
+    defer { ReminderSyncBaselineStore.reset() }
+
+    let pageURL = pagesRoot.appendingPathComponent("Launch.md", isDirectory: false)
+    try """
+    tags:: 프로젝트
+    reminder_list_external_id:: list-external-1
+
+    - TODO Local title
+      reminder_external_id:: task-external-1
+    """.write(to: pageURL, atomically: true, encoding: .utf8)
+
+    ReminderSyncBaselineStore.upsert(
+      reminderExternalIdentifier: "task-external-1",
+      state: ReminderSyncTaskState(
+        title: "Base title",
+        isCompleted: false,
+        date: nil,
+        repeatRule: nil,
+        noteText: nil
+      ),
+      remoteModifiedAt: Date(timeIntervalSince1970: 1_000),
+      now: Date(timeIntervalSince1970: 1_000)
+    )
+
+    let store = LogseqProjectPageStore(pagesRootURL: pagesRoot)
+    let list = ReminderListImportSnapshot(
+      identifier: "list-local-1",
+      externalIdentifier: "list-external-1",
+      title: "Launch",
+      colorHex: nil
+    )
+
+    _ = try await RetainedReminderImportSync.sync(
+      batch: ReminderImportSnapshotBatch(
+        lists: [list],
+        itemsByListIdentifier: [
+          list.identifier: [
+            makeItem(
+              identifier: "task-local-1",
+              externalIdentifier: "task-external-1",
+              title: "Base title",
+              list: list,
+              now: Date(timeIntervalSince1970: 1_500)
+            ),
+          ],
+        ]
+      ),
+      store: store,
+      conflictPolicy: .mergeWithBaseline,
+      now: Date(timeIntervalSince1970: 1_500)
+    )
+
+    let markdown = try String(contentsOf: pageURL, encoding: .utf8)
+    XCTAssertTrue(markdown.contains("- TODO Local title"))
+    XCTAssertFalse(markdown.contains("- TODO Base title"))
+  }
+
+  func testStaleReminderSnapshotOlderThanBaselineDoesNotOverwriteLogseqOrBaseline() async throws {
+    let graphRoot = try makeTemporaryDirectory()
+    let pagesRoot = graphRoot.appendingPathComponent("pages", isDirectory: true)
+    let dataRoot = graphRoot.appendingPathComponent(".buf/data", isDirectory: true)
+    try FileManager.default.createDirectory(at: pagesRoot, withIntermediateDirectories: true)
+    ReminderSyncBaselineStore.install(dataDirectory: dataRoot)
+    defer { ReminderSyncBaselineStore.reset() }
+
+    let pageURL = pagesRoot.appendingPathComponent("Launch.md", isDirectory: false)
+    try """
+    tags:: 프로젝트
+    reminder_list_external_id:: list-external-1
+
+    - TODO Already pushed Logseq title
+      reminder_external_id:: task-external-1
+    """.write(to: pageURL, atomically: true, encoding: .utf8)
+
+    ReminderSyncBaselineStore.upsert(
+      reminderExternalIdentifier: "task-external-1",
+      state: ReminderSyncTaskState(
+        title: "Already pushed Logseq title",
+        isCompleted: false,
+        date: nil,
+        repeatRule: nil,
+        noteText: nil
+      ),
+      remoteModifiedAt: Date(timeIntervalSince1970: 2_000),
+      now: Date(timeIntervalSince1970: 2_000)
+    )
+
+    let store = LogseqProjectPageStore(pagesRootURL: pagesRoot)
+    let list = ReminderListImportSnapshot(
+      identifier: "list-local-1",
+      externalIdentifier: "list-external-1",
+      title: "Launch",
+      colorHex: nil
+    )
+    let staleRemoteModifiedAt = Date(timeIntervalSince1970: 1_500)
+
+    _ = try await RetainedReminderImportSync.sync(
+      batch: ReminderImportSnapshotBatch(
+        lists: [list],
+        itemsByListIdentifier: [
+          list.identifier: [
+            makeItem(
+              identifier: "task-local-1",
+              externalIdentifier: "task-external-1",
+              title: "Stale Reminder title",
+              list: list,
+              now: staleRemoteModifiedAt
+            ),
+          ],
+        ]
+      ),
+      store: store,
+      conflictPolicy: .mergeWithBaseline,
+      now: staleRemoteModifiedAt
+    )
+
+    let markdown = try String(contentsOf: pageURL, encoding: .utf8)
+    let baseline = try XCTUnwrap(ReminderSyncBaselineStore.baseline(for: "task-external-1"))
+    XCTAssertTrue(markdown.contains("- TODO Already pushed Logseq title"))
+    XCTAssertFalse(markdown.contains("Stale Reminder title"))
+    XCTAssertEqual(baseline.state.title, "Already pushed Logseq title")
+    XCTAssertEqual(baseline.remoteModifiedAt, Date(timeIntervalSince1970: 2_000))
+  }
+
+  func testDuplicateLocalReminderIdentifiersAreNotImportedOver() async throws {
+    let graphRoot = try makeTemporaryDirectory()
+    let pagesRoot = graphRoot.appendingPathComponent("pages", isDirectory: true)
+    let dataRoot = graphRoot.appendingPathComponent(".buf/data", isDirectory: true)
+    try FileManager.default.createDirectory(at: pagesRoot, withIntermediateDirectories: true)
+    ReminderSyncBaselineStore.install(dataDirectory: dataRoot)
+    defer { ReminderSyncBaselineStore.reset() }
+
+    let pageURL = pagesRoot.appendingPathComponent("Launch.md", isDirectory: false)
+    try """
+    tags:: 프로젝트
+    reminder_list_external_id:: list-external-1
+
+    - TODO First ambiguous local task
+      reminder_external_id:: task-external-1
+    - TODO Second ambiguous local task
+      reminder_external_id:: task-external-1
+    """.write(to: pageURL, atomically: true, encoding: .utf8)
+
+    let store = LogseqProjectPageStore(pagesRootURL: pagesRoot)
+    let list = ReminderListImportSnapshot(
+      identifier: "list-local-1",
+      externalIdentifier: "list-external-1",
+      title: "Launch",
+      colorHex: nil
+    )
+    let remoteModifiedAt = Date(timeIntervalSince1970: 2_000)
+
+    _ = try await RetainedReminderImportSync.sync(
+      batch: ReminderImportSnapshotBatch(
+        lists: [list],
+        itemsByListIdentifier: [
+          list.identifier: [
+            makeItem(
+              identifier: "task-local-1",
+              externalIdentifier: "task-external-1",
+              title: "Remote title",
+              list: list,
+              now: remoteModifiedAt
+            ),
+          ],
+        ]
+      ),
+      store: store,
+      conflictPolicy: .remindersAuthoritative,
+      now: remoteModifiedAt
+    )
+
+    let markdown = try String(contentsOf: pageURL, encoding: .utf8)
+    XCTAssertTrue(markdown.contains("- TODO First ambiguous local task"))
+    XCTAssertTrue(markdown.contains("- TODO Second ambiguous local task"))
+    XCTAssertFalse(markdown.contains("Remote title"))
+    XCTAssertNil(ReminderSyncBaselineStore.baseline(for: "task-external-1"))
+  }
+
+  func testImportedReminderNoteRendersIntoNewLogseqTaskSubtree() async throws {
+    let graphRoot = try makeTemporaryDirectory()
+    let dataRoot = graphRoot.appendingPathComponent(".buf/data", isDirectory: true)
+    ReminderSyncBaselineStore.install(dataDirectory: dataRoot)
+    defer { ReminderSyncBaselineStore.reset() }
+    let store = LogseqProjectPageStore(
+      pagesRootURL: graphRoot.appendingPathComponent("pages", isDirectory: true)
+    )
+    let now = Date(timeIntervalSince1970: 2_000)
+    let list = ReminderListImportSnapshot(
+      identifier: "list-local-1",
+      externalIdentifier: "list-external-1",
+      title: "Client Project",
+      colorHex: nil
+    )
+
+    _ = try await RetainedReminderImportSync.sync(
+      batch: ReminderImportSnapshotBatch(
+        lists: [list],
+        itemsByListIdentifier: [
+          list.identifier: [
+            makeItem(
+              identifier: "task-local-1",
+              externalIdentifier: "task-external-1",
+              title: "Reminder task",
+              notes: "first line\n nested line",
+              list: list,
+              now: now
+            )
+          ],
+        ]
+      ),
+      store: store,
+      conflictPolicy: .remindersAuthoritative,
+      now: now
+    )
+
+    let pages = try await store.loadProjectPagesInScope()
+    let pageFile = try XCTUnwrap(pages.first?.fileURL)
+    let markdown = try String(contentsOf: pageFile, encoding: .utf8)
+    XCTAssertTrue(markdown.contains("- TODO Reminder task"))
+    XCTAssertTrue(markdown.contains("  - first line"))
+    XCTAssertTrue(markdown.contains("    - nested line"))
+    XCTAssertEqual(
+      ReminderSyncBaselineStore.baseline(for: "task-external-1")?.state.noteText,
+      "first line\n nested line"
+    )
+  }
+
+  func testRemoteReminderNoteDeletionClearsLogseqSubtreeWithoutPushingStaleNoteBack() async throws {
+    let graphRoot = try makeTemporaryDirectory()
+    let pagesRoot = graphRoot.appendingPathComponent("pages", isDirectory: true)
+    let dataRoot = graphRoot.appendingPathComponent(".buf/data", isDirectory: true)
+    try FileManager.default.createDirectory(at: pagesRoot, withIntermediateDirectories: true)
+    ReminderSyncBaselineStore.install(dataDirectory: dataRoot)
+    defer { ReminderSyncBaselineStore.reset() }
+
+    let pageURL = pagesRoot.appendingPathComponent("Launch.md", isDirectory: false)
+    try """
+    tags:: 프로젝트
+    reminder_list_external_id:: list-external-1
+
+    - TODO Parent task
+      reminder_external_id:: parent-ext
+      - stale note
+    """.write(to: pageURL, atomically: true, encoding: .utf8)
+    ReminderSyncBaselineStore.upsert(
+      reminderExternalIdentifier: "parent-ext",
+      state: ReminderSyncTaskState(
+        title: "Parent task",
+        isCompleted: false,
+        date: nil,
+        repeatRule: nil,
+        noteText: "stale note"
+      ),
+      remoteModifiedAt: Date(timeIntervalSince1970: 1_000),
+      now: Date(timeIntervalSince1970: 1_000)
+    )
+    let list = ReminderListImportSnapshot(
+      identifier: "list-local-1",
+      externalIdentifier: "list-external-1",
+      title: "Launch",
+      colorHex: nil
+    )
+    let store = LogseqProjectPageStore(pagesRootURL: pagesRoot)
+
+    _ = try await RetainedReminderImportSync.sync(
+      batch: ReminderImportSnapshotBatch(
+        lists: [list],
+        itemsByListIdentifier: [
+          list.identifier: [
+            makeItem(
+              identifier: "parent-local",
+              externalIdentifier: "parent-ext",
+              title: "Parent task",
+              notes: "",
+              list: list,
+              now: Date(timeIntervalSince1970: 2_000)
+            )
+          ],
+        ]
+      ),
+      store: store,
+      conflictPolicy: .mergeWithBaseline,
+      now: Date(timeIntervalSince1970: 2_000)
+    )
+
+    let markdown = try String(contentsOf: pageURL, encoding: .utf8)
+    XCTAssertTrue(markdown.contains("- TODO Parent task"))
+    XCTAssertFalse(markdown.contains("stale note"))
+    XCTAssertNil(ReminderSyncBaselineStore.baseline(for: "parent-ext")?.state.noteText)
+  }
+
   private func makeItem(
     identifier: String,
     externalIdentifier: String,
     title: String,
+    notes: String = "",
     list: ReminderListImportSnapshot,
     now: Date
   ) -> ReminderItemImportSnapshot {
@@ -181,7 +711,7 @@ final class RetainedReminderImportSyncTests: XCTestCase {
       sourceListIdentifier: list.identifier,
       sourceListTitle: list.title,
       title: title,
-      notes: "",
+      notes: notes,
       attachmentCount: 0,
       isCompleted: false,
       completionDate: nil,

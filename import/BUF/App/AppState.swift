@@ -82,6 +82,7 @@ final class AppState: ObservableObject {
   var reminderSyncRecoveryJournal: ReminderSyncRecoveryJournalStore?
   var reminderSourceObserver: ReminderSourceObserver?
   var logseqPagesDirectoryWatcher: LogseqPagesDirectoryWatcher?
+  var pendingReminderSourceRefreshReason: SyncReason?
 
   let storageCoordinator: LocalStorageCoordinator
   let platformUIFoundation: PlatformUIFoundation

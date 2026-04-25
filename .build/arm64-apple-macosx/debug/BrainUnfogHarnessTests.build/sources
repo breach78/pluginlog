@@ -1,3 +1,5 @@
+'/Users/three/app_build/logseq plugin/Tests/BrainUnfogHarnessTests/AppBundleMetadataTests.swift'
+'/Users/three/app_build/logseq plugin/Tests/BrainUnfogHarnessTests/AppSettingsWindowPresenterTests.swift'
 '/Users/three/app_build/logseq plugin/Tests/BrainUnfogHarnessTests/LogseqGraphConfigStoreTests.swift'
 '/Users/three/app_build/logseq plugin/Tests/BrainUnfogHarnessTests/LogseqPagesChangeTrackerTests.swift'
 '/Users/three/app_build/logseq plugin/Tests/BrainUnfogHarnessTests/LogseqProjectPageStoreTests.swift'
@@ -18,3 +20,4 @@
 '/Users/three/app_build/logseq plugin/Tests/BrainUnfogHarnessTests/RetainedWorkspaceSurfaceProjectionTests.swift'
 '/Users/three/app_build/logseq plugin/Tests/BrainUnfogHarnessTests/ScheduleCalendarAccessPromptPolicyTests.swift'
 '/Users/three/app_build/logseq plugin/Tests/BrainUnfogHarnessTests/TaskIdentityBridgeStoreTests.swift'
+'/Users/three/app_build/logseq plugin/Tests/BrainUnfogHarnessTests/TimelineBoardReadPathTests.swift'

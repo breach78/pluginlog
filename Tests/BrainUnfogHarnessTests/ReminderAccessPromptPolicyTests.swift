@@ -12,8 +12,8 @@ final class ReminderAccessPromptPolicyTests: XCTestCase {
     )
   }
 
-  func testRequestsAgainWhenAuthorizationIsStillNotDeterminedAfterPromptWasAttempted() {
-    XCTAssertTrue(
+  func testDoesNotRequestAgainWhenAuthorizationIsStillNotDeterminedAfterPromptWasAttempted() {
+    XCTAssertFalse(
       ReminderAccessPromptPolicy.shouldRequestAccess(
         authorizationStatus: .notDetermined,
         promptAttempted: true

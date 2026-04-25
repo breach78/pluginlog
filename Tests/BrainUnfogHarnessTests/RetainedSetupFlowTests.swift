@@ -64,7 +64,7 @@ final class RetainedSetupFlowTests: XCTestCase {
     XCTAssertNotNil(appState.errorMessage)
   }
 
-  func testConfigureGraphCreatesBufButDoesNotStartStartupSync() async throws {
+  func testConfigureGraphCreatesBufAndRunsReminderFirstBootstrap() async throws {
     let graphRoot = try makeTemporaryDirectory(named: "graph")
     let calendarService = RecordingScheduleCalendarService()
     let appState = makeAppState(calendarService: calendarService)
@@ -84,10 +84,11 @@ final class RetainedSetupFlowTests: XCTestCase {
     XCTAssertNotNil(appState.modelContainer)
     XCTAssertTrue(appState.hasInitialSyncConsent)
     XCTAssertTrue(appState.hasSyncConsentDecision)
-    XCTAssertFalse(appState.syncStarted)
+    XCTAssertTrue(appState.syncStarted)
     XCTAssertFalse(appState.isInitialSyncRunning)
     XCTAssertNotNil(appState.reminderSourceObserver)
     XCTAssertEqual(calendarService.requestAccessCallCount, 1)
+    XCTAssertEqual(appState.syncStatus, "Refreshed (\(SyncReason.bootstrap.rawValue))")
 
     let configURL = graphRoot.appendingPathComponent("logseq/config.edn", isDirectory: false)
     let configContents = try String(contentsOf: configURL, encoding: .utf8)
@@ -106,6 +107,30 @@ final class RetainedSetupFlowTests: XCTestCase {
     XCTAssertFalse(visibleCompletedCSS.contains("Brain Unfog completed task filter"))
   }
 
+  func testConfigureGraphCanSwitchRootWithoutDeletingPreviousGraphData() async throws {
+    let oldGraphRoot = try makeTemporaryDirectory(named: "old-graph")
+    let newGraphRoot = try makeTemporaryDirectory(named: "new-graph")
+    let oldPageURL = oldGraphRoot
+      .appendingPathComponent("pages", isDirectory: true)
+      .appendingPathComponent("Keep.md", isDirectory: false)
+    try FileManager.default.createDirectory(
+      at: oldPageURL.deletingLastPathComponent(),
+      withIntermediateDirectories: true
+    )
+    try "tags:: 프로젝트\n".write(to: oldPageURL, atomically: true, encoding: .utf8)
+
+    let appState = makeAppState()
+
+    await appState.configureLogseqGraphRoot(at: oldGraphRoot, activateWhenReady: true)
+    await appState.configureLogseqGraphRoot(at: newGraphRoot, activateWhenReady: true)
+
+    let expectedContainerRoot = newGraphRoot.appendingPathComponent(".buf", isDirectory: true)
+    XCTAssertEqual(appState.logseqGraphRootURL?.standardizedFileURL, newGraphRoot.standardizedFileURL)
+    XCTAssertEqual(appState.containerRootURL?.standardizedFileURL, expectedContainerRoot.standardizedFileURL)
+    XCTAssertEqual(UserDefaults.standard.string(forKey: AppState.logseqGraphRootPathKey), newGraphRoot.path)
+    XCTAssertTrue(FileManager.default.fileExists(atPath: oldPageURL.path))
+  }
+
   func testDeniedInitialSyncConsentBlocksStartupSync() async throws {
     let graphRoot = try makeTemporaryDirectory(named: "graph")
     let appState = makeAppState()
@@ -117,9 +142,41 @@ final class RetainedSetupFlowTests: XCTestCase {
 
     XCTAssertTrue(appState.hasCompletedInitialSetup)
     XCTAssertFalse(appState.hasInitialSyncConsent)
-    XCTAssertFalse(appState.syncStarted)
+    XCTAssertTrue(appState.syncStarted)
     XCTAssertFalse(appState.isInitialSyncRunning)
     XCTAssertEqual(appState.syncStatus, "Refresh paused")
+  }
+
+  func testBootstrapSyncPolicyIsReminderAuthoritativeButEventSyncUsesBaselineMerge() {
+    let appState = makeAppState()
+
+    XCTAssertEqual(
+      appState.reminderImportConflictPolicy(for: .bootstrap),
+      .remindersAuthoritative
+    )
+    XCTAssertEqual(
+      appState.reminderImportConflictPolicy(for: .eventStoreChanged),
+      .mergeWithBaseline
+    )
+    XCTAssertEqual(
+      appState.reminderImportConflictPolicy(for: .manual),
+      .mergeWithBaseline
+    )
+    XCTAssertFalse(appState.shouldProvisionFromLogseqAfterImport(reason: .bootstrap))
+    XCTAssertTrue(appState.shouldProvisionFromLogseqAfterImport(reason: .eventStoreChanged))
+    XCTAssertTrue(appState.shouldProvisionFromLogseqAfterImport(reason: .manual))
+    XCTAssertTrue(appState.shouldProvisionFromLogseqAfterImport(reason: .periodic))
+  }
+
+  func testQueuedSyncRequestsCoalesceToHighestPriorityReason() {
+    let appState = makeAppState()
+
+    appState.queueReminderSourceRefresh(reason: .periodic)
+    appState.queueReminderSourceRefresh(reason: .eventStoreChanged)
+    appState.queueReminderSourceRefresh(reason: .manual)
+    appState.queueReminderSourceRefresh(reason: .periodic)
+
+    XCTAssertEqual(appState.pendingReminderSourceRefreshReason, .manual)
   }
 
   func testExternalReminderInvalidationRunsRetainedReconciliation() async throws {

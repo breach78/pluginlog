@@ -40,8 +40,26 @@ extension AppState {
     await initializeContainer(at: url)
   }
 
+  func chooseLogseqGraphRootWithPicker(activateWhenReady: Bool = true) async {
+    do {
+      let urls = try await platformUIFoundation.pathPicker.pick(
+        request: PlatformPathPickerRequest(
+          kind: .directory,
+          message: "Logseq 그래프 루트를 선택해 주세요."
+        )
+      )
+      guard let rootURL = urls.first else { return }
+      await configureLogseqGraphRoot(at: rootURL, activateWhenReady: activateWhenReady)
+    } catch {
+      errorMessage = error.localizedDescription
+    }
+  }
+
   func configureLogseqGraphRoot(at rootURL: URL, activateWhenReady: Bool = true) async {
     do {
+      reminderSourceObserver?.stop()
+      reminderSourceObserver = nil
+      stopLogseqPagesDirectoryWatcher()
       let bookmarkData = try rootURL.bookmarkData(
         options: [.withSecurityScope],
         includingResourceValuesForKeys: nil,
@@ -55,6 +73,7 @@ extension AppState {
       await requestRetainedExternalAccess()
       if activateWhenReady {
         await prepareWorkspaceIfSetupComplete(shouldRefreshHealth: true, startStartupSync: false)
+        _ = await performReminderSourceRefresh(reason: .bootstrap)
       }
     } catch {
       storageCoordinator.clearActiveContainer()
@@ -130,6 +149,7 @@ extension AppState {
   private func refreshContainerRootURL() {
     containerRootURL = storageCoordinator.paths?.root
     TaskIdentityBridgeStore.install(dataDirectory: storageCoordinator.paths?.dataDirectory)
+    ReminderSyncBaselineStore.install(dataDirectory: storageCoordinator.paths?.dataDirectory)
   }
 
   func applySetupPendingState() {

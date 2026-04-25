@@ -12,8 +12,8 @@ final class ScheduleCalendarAccessPromptPolicyTests: XCTestCase {
     )
   }
 
-  func testRequestsAgainWhenAuthorizationIsStillNotDeterminedAfterPromptWasAttempted() {
-    XCTAssertTrue(
+  func testDoesNotRequestAgainWhenAuthorizationIsStillNotDeterminedAfterPromptWasAttempted() {
+    XCTAssertFalse(
       ScheduleCalendarAccessPromptPolicy.shouldRequestAccess(
         authorizationStatus: .notDetermined,
         promptAttempted: true

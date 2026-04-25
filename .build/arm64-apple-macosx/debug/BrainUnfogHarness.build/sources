@@ -29,6 +29,8 @@
 '/Users/three/app_build/logseq plugin/import/BUF/Features/Schedule/ScheduleEventRenderingLayer.swift'
 '/Users/three/app_build/logseq plugin/import/BUF/Features/Schedule/ScheduleEventStores.swift'
 '/Users/three/app_build/logseq plugin/import/BUF/Features/Schedule/ScheduleInteractionLayers.swift'
+'/Users/three/app_build/logseq plugin/import/BUF/Features/Setup/AppSettingsView.swift'
+'/Users/three/app_build/logseq plugin/import/BUF/Features/Setup/AppSettingsWindowPresenter.swift'
 '/Users/three/app_build/logseq plugin/import/BUF/Features/Setup/SetupContainerView.swift'
 '/Users/three/app_build/logseq plugin/import/BUF/Features/Timeline/TimelineBoardActions.swift'
 '/Users/three/app_build/logseq plugin/import/BUF/Features/Timeline/TimelineBoardOverlays.swift'

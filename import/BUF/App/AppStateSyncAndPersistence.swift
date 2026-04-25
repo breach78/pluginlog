@@ -20,9 +20,20 @@ extension AppState {
 
   @discardableResult
   func performReminderSourceRefresh(reason: SyncReason) async -> Bool {
-    guard !isInitialSyncRunning else { return false }
+    guard !isInitialSyncRunning else {
+      queueReminderSourceRefresh(reason: reason)
+      return false
+    }
     isInitialSyncRunning = true
-    defer { isInitialSyncRunning = false }
+    defer {
+      isInitialSyncRunning = false
+      if let pendingReason = pendingReminderSourceRefreshReason {
+        pendingReminderSourceRefreshReason = nil
+        Task { @MainActor [weak self] in
+          _ = await self?.performReminderSourceRefresh(reason: pendingReason)
+        }
+      }
+    }
 
     await reconcileManagedLogseqPagesWithReminderSource(reason: reason)
     syncStarted = true
@@ -30,6 +41,34 @@ extension AppState {
       syncStatus = "Refreshed (\(reason.rawValue))"
     }
     return syncStatus != "Reminders access denied" && syncStatus != "Reminder sync failed"
+  }
+
+  func queueReminderSourceRefresh(reason: SyncReason) {
+    pendingReminderSourceRefreshReason = coalescedReminderSourceRefreshReason(
+      existing: pendingReminderSourceRefreshReason,
+      incoming: reason
+    )
+  }
+
+  private func coalescedReminderSourceRefreshReason(
+    existing: SyncReason?,
+    incoming: SyncReason
+  ) -> SyncReason {
+    guard let existing else { return incoming }
+    return refreshReasonPriority(incoming) > refreshReasonPriority(existing) ? incoming : existing
+  }
+
+  private func refreshReasonPriority(_ reason: SyncReason) -> Int {
+    switch reason {
+    case .bootstrap:
+      return 4
+    case .manual:
+      return 3
+    case .eventStoreChanged:
+      return 2
+    case .periodic:
+      return 1
+    }
   }
 
   @discardableResult

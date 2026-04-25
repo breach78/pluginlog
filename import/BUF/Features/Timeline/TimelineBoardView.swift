@@ -84,6 +84,7 @@ struct TimelineBoardView: View {
   @State var workspaceTimelineProjectSnapshots: [UUID: WorkspaceProjectRuntimeRecord] = [:]
   @State var workspaceTimelineProjectSummaries: [UUID: ProjectSummaryRecord] = [:]
   @State var workspaceTimelineScheduleEntriesByProjectID: [UUID: [ScheduleSliceEntry]] = [:]
+  @State var retainedTimelineReadBlocker: RetainedWorkspaceSurfaceProjectionBlocker?
   @State var retainedTimelineCalendarBridgeDecisionsByTaskID:
     [UUID: RetainedCalendarBridgeDecision] = [:]
   @State var retainedTimelineCalendarBridgeWriteMarkersByTaskID:
@@ -168,12 +169,12 @@ struct TimelineBoardView: View {
     Set(activeProjectIDs)
   }
   var showsTimelineLoadingState: Bool {
-    !activeProjectIDs.isEmpty
-      && !TimelineBoardReadPath.hasCompleteWorkspaceCoverage(
-        projectIDs: activeProjectIDs,
-        workspaceProjectSnapshots: workspaceTimelineProjectSnapshots,
-        scheduleEntriesByProjectID: workspaceTimelineScheduleEntriesByProjectID
-      )
+    TimelineBoardReadPath.shouldShowLoadingState(
+      projectIDs: activeProjectIDs,
+      workspaceProjectSnapshots: workspaceTimelineProjectSnapshots,
+      scheduleEntriesByProjectID: workspaceTimelineScheduleEntriesByProjectID,
+      readBlocker: retainedTimelineReadBlocker
+    )
   }
   var isTimelineScrolling: Bool { timelineScrollSession != nil }
   var canInteractivelyReorderProjects: Bool {
@@ -594,6 +595,9 @@ struct TimelineBoardView: View {
   }
 
   private var emptyStateDescription: String {
+    if let retainedTimelineReadBlocker {
+      return retainedTimelineReadBlocker.userMessage
+    }
     if showsTimelineLoadingState {
       return "프로젝트를 준비하는 중입니다."
     }

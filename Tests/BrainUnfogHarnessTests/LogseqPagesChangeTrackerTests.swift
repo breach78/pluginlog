@@ -25,8 +25,52 @@ final class LogseqPagesChangeTrackerTests: XCTestCase {
     XCTAssertEqual(changedFiles.map(\.lastPathComponent), ["Project.md"])
   }
 
+  func testChangedMarkdownFilesIncludesHiddenMarkdownPages() throws {
+    let pagesRoot = try makePagesRoot()
+    let tracker = LogseqPagesChangeTracker()
+    let hiddenMarkdownURL = pagesRoot.appendingPathComponent(".Hidden Project.md", isDirectory: false)
+    try "reminder_list_external_id:: list-1\n".write(
+      to: hiddenMarkdownURL,
+      atomically: true,
+      encoding: .utf8
+    )
+
+    let changedFiles = tracker.changedMarkdownFiles(in: pagesRoot)
+
+    XCTAssertEqual(changedFiles.map(\.lastPathComponent), [".Hidden Project.md"])
+  }
+
   func testDefaultWatcherDebounceLeavesThreeSecondsForUndoBeforeSync() {
     XCTAssertEqual(LogseqPagesDirectoryWatcher.defaultDebounceNanoseconds, 3_000_000_000)
+  }
+
+  @MainActor
+  func testWatcherPollingDetectsExistingMarkdownFileContentChanges() async throws {
+    let pagesRoot = try makePagesRoot()
+    let markdownURL = pagesRoot.appendingPathComponent("Project.md", isDirectory: false)
+    try "tags:: 프로젝트\n- TODO Existing\n".write(to: markdownURL, atomically: true, encoding: .utf8)
+
+    let detected = expectation(description: "polling scan detects in-place markdown edit")
+    let watcher = LogseqPagesDirectoryWatcher(
+      pagesRootURL: pagesRoot,
+      debounceNanoseconds: 10_000_000_000,
+      pollingNanoseconds: 50_000_000
+    ) { changedFiles in
+      if changedFiles.map(\.lastPathComponent).contains("Project.md") {
+        detected.fulfill()
+      }
+    }
+    watcher.start()
+    defer { watcher.stop() }
+
+    try await Task.sleep(nanoseconds: 120_000_000)
+    try "tags:: 프로젝트\n- TODO Existing\n  - note added under existing task\n".write(
+      to: markdownURL,
+      atomically: true,
+      encoding: .utf8
+    )
+
+    await fulfillment(of: [detected], timeout: 2)
   }
 
   func testAppAuthoredMarkdownWriteDoesNotReportChangeLoop() throws {

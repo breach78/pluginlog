@@ -36,6 +36,21 @@ enum TimelineBoardReadPath {
     }
   }
 
+  static func shouldShowLoadingState(
+    projectIDs: [UUID],
+    workspaceProjectSnapshots: [UUID: WorkspaceProjectRuntimeRecord],
+    scheduleEntriesByProjectID: [UUID: [ScheduleSliceEntry]],
+    readBlocker: RetainedWorkspaceSurfaceProjectionBlocker?
+  ) -> Bool {
+    guard readBlocker == nil else { return false }
+    return !normalizedProjectIDs(projectIDs).isEmpty
+      && !hasCompleteWorkspaceCoverage(
+        projectIDs: projectIDs,
+        workspaceProjectSnapshots: workspaceProjectSnapshots,
+        scheduleEntriesByProjectID: scheduleEntriesByProjectID
+      )
+  }
+
   static func workspaceDetailSignature(
     projectIDs: [UUID],
     workspaceProjectSnapshots: [UUID: WorkspaceProjectRuntimeRecord],
@@ -117,6 +132,7 @@ extension TimelineBoardView {
       workspaceTimelineProjectSnapshots = [:]
       workspaceTimelineProjectSummaries = [:]
       workspaceTimelineScheduleEntriesByProjectID = [:]
+      retainedTimelineReadBlocker = nil
       retainedTimelineCalendarBridgeDecisionsByTaskID = [:]
       retainedTimelineCalendarBridgeWriteMarkersByTaskID = [:]
       invalidateWorkspaceTimelineProjectionCaches()
@@ -128,6 +144,11 @@ extension TimelineBoardView {
       projectIDs: requestedProjectIDs
     )
     let resolvedRead = RetainedWorkspaceSurfaceProjectionBuilder.resolveRetainedOnly(retainedResult)
+    if case .blocked(let blocker) = resolvedRead.source {
+      retainedTimelineReadBlocker = blocker
+    } else {
+      retainedTimelineReadBlocker = nil
+    }
 
     workspaceTimelineProjectSnapshots = resolvedRead.projectSnapshots
     workspaceTimelineProjectSummaries = resolvedRead.projectSummaries

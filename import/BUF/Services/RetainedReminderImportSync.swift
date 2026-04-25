@@ -11,6 +11,7 @@ enum RetainedReminderImportSync {
   static func sync(
     batch: ReminderImportSnapshotBatch,
     store: LogseqProjectPageStore,
+    conflictPolicy: LogseqProjectPageStore.ReminderImportConflictPolicy = .preserveNewerLocal,
     now: Date = .now
   ) async throws -> SyncResult {
     var projectRecords: [ProjectIdentityBridgeRecord] = []
@@ -50,6 +51,7 @@ enum RetainedReminderImportSync {
           )
         )
 
+        let noteText = ReminderNoteSourceCodec.normalizeReminderRawNote(item.notes)
         return LogseqProjectPageStore.TaskRecord(
           taskID: nil,
           title: taskTitle,
@@ -61,7 +63,8 @@ enum RetainedReminderImportSync {
           duration: nil,
           repeatRule: LogseqReminderPropertyCodec.encodeRepeat(item.recurrenceRuleRaw),
           reminderExternalIdentifier: taskIdentifier,
-          calendarEventExternalIdentifier: nil
+          calendarEventExternalIdentifier: nil,
+          noteText: noteText
         )
       }
 
@@ -73,7 +76,8 @@ enum RetainedReminderImportSync {
           reminderListExternalIdentifier: listExternalIdentifier
         ),
         importedTasks: importedTasks,
-        remoteModifiedAtByReminderIdentifier: remoteModifiedAtByReminderIdentifier
+        remoteModifiedAtByReminderIdentifier: remoteModifiedAtByReminderIdentifier,
+        conflictPolicy: conflictPolicy
       )
 
       let latestTaskUpdate = items.map(\.modifiedAt).max()
@@ -102,13 +106,15 @@ enum RetainedReminderImportSync {
     store: LogseqProjectPageStore,
     identity: LogseqProjectPageStore.ProjectIdentity,
     importedTasks: [LogseqProjectPageStore.TaskRecord],
-    remoteModifiedAtByReminderIdentifier: [String: Date]
+    remoteModifiedAtByReminderIdentifier: [String: Date],
+    conflictPolicy: LogseqProjectPageStore.ReminderImportConflictPolicy
   ) async throws {
     do {
       _ = try await store.upsertReminderBackedPage(
         identity,
         importedTasks: importedTasks,
-        remoteModifiedAtByReminderIdentifier: remoteModifiedAtByReminderIdentifier
+        remoteModifiedAtByReminderIdentifier: remoteModifiedAtByReminderIdentifier,
+        conflictPolicy: conflictPolicy
       )
     } catch LogseqProjectPageStore.StoreError.pageNotOwned {
       guard let claimablePage = try await store.loadClaimableTaggedPage(for: identity) else {
@@ -117,7 +123,8 @@ enum RetainedReminderImportSync {
       _ = try await store.claimReminderBackedTaggedPage(
         at: claimablePage.fileURL,
         as: identity,
-        importedTasks: importedTasks
+        importedTasks: importedTasks,
+        remoteModifiedAtByReminderIdentifier: remoteModifiedAtByReminderIdentifier
       )
     }
   }

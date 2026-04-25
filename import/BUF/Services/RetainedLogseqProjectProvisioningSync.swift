@@ -19,7 +19,6 @@ enum RetainedLogseqProjectProvisioningSync {
       pages: pages,
       store: store,
       reminderProjectProvider: reminderProjectProvider,
-      forceExistingReminderUpdates: false,
       now: now
     )
   }
@@ -35,7 +34,6 @@ enum RetainedLogseqProjectProvisioningSync {
       pages: pages,
       store: store,
       reminderProjectProvider: reminderProjectProvider,
-      forceExistingReminderUpdates: true,
       now: now
     )
   }
@@ -44,7 +42,6 @@ enum RetainedLogseqProjectProvisioningSync {
     pages: [LogseqProjectPageStore.PageSnapshot],
     store: LogseqProjectPageStore,
     reminderProjectProvider: ReminderProjectProvider,
-    forceExistingReminderUpdates: Bool,
     now: Date
   ) async throws -> SyncResult {
     var createdProjectCount = 0
@@ -66,18 +63,19 @@ enum RetainedLogseqProjectProvisioningSync {
       }
 
       let projectID = RetainedProjectionBuilder.derivedProjectID(for: listIdentifier)
-      let pageModifiedAt = modificationDate(of: page.fileURL)
       var taskIdentifiersByIndex: [Int: String] = [:]
+      let blockedReminderIdentifiers = duplicatedReminderIdentifiers(in: page.externalTasks)
 
       for (taskIndex, task) in page.externalTasks.enumerated() {
         if let reminderExternalIdentifier = normalized(task.reminderExternalIdentifier) {
+          guard !blockedReminderIdentifiers.contains(reminderExternalIdentifier) else {
+            continue
+          }
           try applyExistingReminderUpdates(
             task,
             projectID: projectID,
             reminderExternalIdentifier: reminderExternalIdentifier,
             reminderProjectProvider: reminderProjectProvider,
-            forceExistingReminderUpdates: forceExistingReminderUpdates,
-            pageModifiedAt: pageModifiedAt,
             taskRecords: &taskRecords,
             now: now
           )
@@ -90,7 +88,7 @@ enum RetainedLogseqProjectProvisioningSync {
           title: task.title,
           dueDate: decodedDate?.date,
           hasExplicitTime: decodedDate?.hasExplicitTime ?? false,
-          noteText: ""
+          noteText: task.noteText ?? ""
         ) else {
           continue
         }
@@ -108,6 +106,12 @@ enum RetainedLogseqProjectProvisioningSync {
           taskID: taskID,
           metadata: metadata,
           reminderProjectProvider: reminderProjectProvider
+        )
+        ReminderSyncBaselineStore.upsert(
+          reminderExternalIdentifier: taskIdentifier,
+          state: ReminderSyncTaskState(task: task),
+          remoteModifiedAt: metadata.modifiedAt,
+          now: now
         )
         taskRecords.append(
           TaskIdentityBridgeRecord(
@@ -156,8 +160,6 @@ enum RetainedLogseqProjectProvisioningSync {
     projectID: UUID,
     reminderExternalIdentifier: String,
     reminderProjectProvider: ReminderProjectProvider,
-    forceExistingReminderUpdates: Bool,
-    pageModifiedAt: Date?,
     taskRecords: inout [TaskIdentityBridgeRecord],
     now: Date
   ) throws {
@@ -171,30 +173,57 @@ enum RetainedLogseqProjectProvisioningSync {
     guard let snapshot = try reminderProjectProvider.taskSnapshot(for: reference) else {
       return
     }
-    guard forceExistingReminderUpdates || localPageIsNewerThanRemote(pageModifiedAt, snapshot.modifiedAt) else {
+    guard let baseline = ReminderSyncBaselineStore.baseline(for: reminderExternalIdentifier) else {
+      return
+    }
+    let fieldsToPush = ReminderSyncTaskMerge.fieldsToPush(
+      localTask: task,
+      remoteSnapshot: snapshot,
+      baseline: baseline
+    )
+    guard !fieldsToPush.isEmpty else {
       return
     }
 
     var updatedAt: Date?
-    if normalized(snapshot.title) != normalized(task.title) {
+    var pushedFields: [ReminderSyncTaskField] = []
+    if fieldsToPush.contains(.title), normalized(snapshot.title) != normalized(task.title) {
       let metadata = try reminderProjectProvider.setTaskTitle(
         for: reference,
         title: task.title
       )
       updatedAt = metadata?.modifiedAt ?? updatedAt
+      pushedFields.append(.title)
     }
 
-    if snapshot.isCompleted != task.isCompleted {
+    if fieldsToPush.contains(.isCompleted), snapshot.isCompleted != task.isCompleted {
       let metadata = try reminderProjectProvider.setTaskCompletion(
         for: reference,
         isCompleted: task.isCompleted,
         completionDate: nil
       )
       updatedAt = metadata?.modifiedAt ?? updatedAt
+      pushedFields.append(.isCompleted)
+    }
+
+    if fieldsToPush.contains(.noteText),
+      shouldWriteReminderNote(
+        localNoteText: task.noteText,
+        remoteNoteText: snapshot.noteText,
+        allowEmptyLocalWrite: true
+      )
+    {
+      let metadata = try reminderProjectProvider.setTaskReminderNote(
+        for: reference,
+        noteText: task.noteText ?? ""
+      )
+      updatedAt = metadata?.modifiedAt ?? updatedAt
+      pushedFields.append(.noteText)
     }
 
     let desiredDate = LogseqReminderPropertyCodec.decodeDate(task.date)
-    if encodedDate(snapshot.dueDate, hasExplicitTime: snapshot.hasExplicitTime)
+    if fieldsToPush.contains(.date),
+      encodedDate(snapshot.dueDate, hasExplicitTime: snapshot.hasExplicitTime)
       != encodedDate(desiredDate?.date, hasExplicitTime: desiredDate?.hasExplicitTime ?? false)
     {
       let metadata = try reminderProjectProvider.setTaskSchedule(
@@ -203,19 +232,34 @@ enum RetainedLogseqProjectProvisioningSync {
         hasExplicitTime: desiredDate?.hasExplicitTime ?? false
       )
       updatedAt = metadata?.modifiedAt ?? updatedAt
+      pushedFields.append(.date)
     }
 
     let desiredRecurrence = LogseqReminderPropertyCodec.decodeRepeat(task.repeatRule)
     let remoteRecurrence = LogseqReminderPropertyCodec.decodeRepeat(snapshot.recurrenceRuleRaw)
-    if desiredRecurrence != remoteRecurrence {
+    if fieldsToPush.contains(.repeatRule), desiredRecurrence != remoteRecurrence {
       let metadata = try reminderProjectProvider.setTaskRecurrence(
         for: reference,
         recurrenceRuleRaw: desiredRecurrence
       )
       updatedAt = metadata?.modifiedAt ?? updatedAt
+      pushedFields.append(.repeatRule)
     }
 
     guard let updatedAt else { return }
+    let nextBaseline = ReminderSyncTaskMerge.baselineAfterPush(
+      previous: baseline,
+      localTask: task,
+      remoteSnapshot: snapshot,
+      pushedFields: pushedFields
+    )
+    ReminderSyncBaselineStore.upsert(
+      reminderExternalIdentifier: reminderExternalIdentifier,
+      state: nextBaseline.state,
+      remoteModifiedAt: updatedAt,
+      conflictedFields: nextBaseline.conflicts,
+      now: now
+    )
     taskRecords.append(
       TaskIdentityBridgeRecord(
         taskID: taskID,
@@ -232,13 +276,32 @@ enum RetainedLogseqProjectProvisioningSync {
     LogseqReminderPropertyCodec.encodeDate(date, hasExplicitTime: hasExplicitTime)
   }
 
-  private static func localPageIsNewerThanRemote(_ pageModifiedAt: Date?, _ remoteModifiedAt: Date) -> Bool {
-    guard let pageModifiedAt else { return false }
-    return pageModifiedAt.timeIntervalSince(remoteModifiedAt) > 0.5
+  private static func shouldWriteReminderNote(
+    localNoteText: String?,
+    remoteNoteText: String,
+    allowEmptyLocalWrite: Bool = false
+  ) -> Bool {
+    let local = ReminderNoteSourceCodec.normalize(localNoteText)
+    let remote = ReminderNoteSourceCodec.normalize(remoteNoteText)
+    guard local != remote else { return false }
+    if allowEmptyLocalWrite { return true }
+    return !local.isEmpty || remote.isEmpty
   }
 
-  private static func modificationDate(of fileURL: URL) -> Date? {
-    try? fileURL.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate
+  private static func duplicatedReminderIdentifiers(
+    in tasks: [LogseqProjectPageStore.TaskRecord]
+  ) -> Set<String> {
+    var seen: Set<String> = []
+    var duplicates: Set<String> = []
+    for task in tasks {
+      guard let reminderExternalIdentifier = normalized(task.reminderExternalIdentifier) else {
+        continue
+      }
+      if !seen.insert(reminderExternalIdentifier).inserted {
+        duplicates.insert(reminderExternalIdentifier)
+      }
+    }
+    return duplicates
   }
 
   private static func applyCompletionIfNeeded(

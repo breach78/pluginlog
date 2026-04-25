@@ -1,6 +1,12 @@
 import Foundation
 
 actor LogseqProjectPageStore {
+  enum ReminderImportConflictPolicy: Equatable, Sendable {
+    case preserveNewerLocal
+    case remindersAuthoritative
+    case mergeWithBaseline
+  }
+
   struct ProjectIdentity: Equatable, Sendable {
     var projectID: UUID
     var title: String
@@ -16,6 +22,29 @@ actor LogseqProjectPageStore {
     var repeatRule: String?
     var reminderExternalIdentifier: String?
     var calendarEventExternalIdentifier: String?
+    var noteText: String?
+
+    init(
+      taskID: UUID? = nil,
+      title: String,
+      isCompleted: Bool,
+      date: String? = nil,
+      duration: String? = nil,
+      repeatRule: String? = nil,
+      reminderExternalIdentifier: String? = nil,
+      calendarEventExternalIdentifier: String? = nil,
+      noteText: String? = nil
+    ) {
+      self.taskID = taskID
+      self.title = title
+      self.isCompleted = isCompleted
+      self.date = date
+      self.duration = duration
+      self.repeatRule = repeatRule
+      self.reminderExternalIdentifier = reminderExternalIdentifier
+      self.calendarEventExternalIdentifier = calendarEventExternalIdentifier
+      self.noteText = noteText
+    }
   }
 
   struct PageSnapshot: Equatable, Sendable {
@@ -273,7 +302,8 @@ actor LogseqProjectPageStore {
   func upsertReminderBackedPage(
     _ identity: ProjectIdentity,
     importedTasks: [TaskRecord],
-    remoteModifiedAtByReminderIdentifier: [String: Date] = [:]
+    remoteModifiedAtByReminderIdentifier: [String: Date] = [:],
+    conflictPolicy: ReminderImportConflictPolicy = .preserveNewerLocal
   ) throws -> UpsertDisposition {
     let resolvedTitle = normalizedTitle(identity.title)
     guard !resolvedTitle.isEmpty else { throw StoreError.emptyTitle }
@@ -308,6 +338,10 @@ actor LogseqProjectPageStore {
         if !sameFileURL(destinationURL, fileURL), fileManager.fileExists(atPath: fileURL.path) {
           try fileManager.removeItem(at: fileURL)
         }
+        recordImportedTaskBaselines(
+          importedTasks,
+          remoteModifiedAtByReminderIdentifier: remoteModifiedAtByReminderIdentifier
+        )
         return .updated
       }
 
@@ -317,7 +351,8 @@ actor LogseqProjectPageStore {
         expectedExternalTasks: parsedPage.externalTasks,
         importedTasks: importedTasks,
         remoteModifiedAtByReminderIdentifier: remoteModifiedAtByReminderIdentifier,
-        reminderListExternalIdentifier: identity.reminderListExternalIdentifier
+        reminderListExternalIdentifier: identity.reminderListExternalIdentifier,
+        conflictPolicy: conflictPolicy
       )
       return .updated
     }
@@ -340,6 +375,10 @@ actor LogseqProjectPageStore {
       includeManagedSection: false
     )
     try write(rendered, to: fileURL)
+    recordImportedTaskBaselines(
+      importedTasks,
+      remoteModifiedAtByReminderIdentifier: remoteModifiedAtByReminderIdentifier
+    )
     return .created
   }
 
@@ -347,7 +386,8 @@ actor LogseqProjectPageStore {
   func claimReminderBackedTaggedPage(
     at fileURL: URL,
     as identity: ProjectIdentity,
-    importedTasks: [TaskRecord]
+    importedTasks: [TaskRecord],
+    remoteModifiedAtByReminderIdentifier: [String: Date] = [:]
   ) throws -> UpsertDisposition {
     let resolvedTitle = normalizedTitle(identity.title)
     guard !resolvedTitle.isEmpty else { throw StoreError.emptyTitle }
@@ -392,6 +432,10 @@ actor LogseqProjectPageStore {
     if !sameFileURL(destinationURL, fileURL), fileManager.fileExists(atPath: fileURL.path) {
       try fileManager.removeItem(at: fileURL)
     }
+    recordImportedTaskBaselines(
+      importedTasks,
+      remoteModifiedAtByReminderIdentifier: remoteModifiedAtByReminderIdentifier
+    )
     return .updated
   }
 
@@ -803,6 +847,16 @@ actor LogseqProjectPageStore {
     if let repeatRule = normalizedOptionalValue(task.repeatRule) {
       lines.append("  repeat:: \(repeatRule)")
     }
+    if task.noteText != nil {
+      lines.append(contentsOf: renderedLogseqSubtreeLines(
+        fromReminderNote: task.noteText,
+        parentIndentPrefix: "",
+        preservedTaskBlocks: PreservedDescendantTaskBlocks(
+          orderedIdentifiers: [],
+          blocksByIdentifier: [:]
+        )
+      ))
+    }
     return lines
   }
 
@@ -825,6 +879,7 @@ actor LogseqProjectPageStore {
         continue
       }
 
+      let taskLineIndex = index
       var task = parsedTask.task
       let taskIndent = parsedTask.indent
       index += 1
@@ -847,7 +902,7 @@ actor LogseqProjectPageStore {
           break
         }
 
-        if let property = parsePropertyLine(nextLine) {
+        if let property = parseTaskPropertyLine(nextLine) {
           switch property.key {
           case "brain_unfog_task_id":
             task.taskID = UUID(uuidString: property.value)
@@ -868,6 +923,13 @@ actor LogseqProjectPageStore {
         index += 1
       }
 
+      let reminderNoteText = reminderNoteTextForTaskSubtree(
+        in: lines,
+        taskLineIndex: taskLineIndex,
+        taskIndent: taskIndent,
+        skipGeneratedComment: skipGeneratedComment
+      )
+      task.noteText = reminderNoteText.isEmpty ? nil : reminderNoteText
       tasks.append(task)
     }
 
@@ -923,6 +985,169 @@ actor LogseqProjectPageStore {
     return nil
   }
 
+  private func reminderNoteTextForTaskSubtree(
+    in lines: [String],
+    taskLineIndex: Int,
+    taskIndent: Int,
+    skipGeneratedComment: Bool
+  ) -> String {
+    let endIndex = taskSubtreeEndIndex(
+      from: taskLineIndex,
+      taskIndent: taskIndent,
+      skipGeneratedComment: skipGeneratedComment,
+      in: lines
+    )
+    var noteLines: [String] = []
+    var lineIndex = taskLineIndex + 1
+
+    while lineIndex < endIndex {
+      let line = lines[lineIndex]
+      if skipGeneratedComment && line == Self.generatedComment {
+        lineIndex += 1
+        continue
+      }
+      if parseTaskPropertyLine(line) != nil {
+        lineIndex += 1
+        continue
+      }
+      if let nestedTask = parseTaskLine(line), nestedTask.indent > taskIndent {
+        if let reminderIdentifier = reminderIdentifierForTask(
+          at: lineIndex,
+          taskIndent: nestedTask.indent,
+          limit: endIndex,
+          in: lines
+        ) {
+          let noteIndent = reminderNoteIndent(
+            lineIndentPrefix: nestedTask.indentPrefix,
+            parentIndentPrefix: leadingWhitespacePrefix(of: lines[taskLineIndex])
+          )
+          noteLines.append("\(String(repeating: " ", count: noteIndent))t:\(reminderIdentifier)")
+        }
+        lineIndex = taskSubtreeEndIndex(
+          from: lineIndex,
+          taskIndent: nestedTask.indent,
+          skipGeneratedComment: skipGeneratedComment,
+          in: lines
+        )
+        continue
+      }
+
+      if let noteLine = reminderNoteLine(
+        fromLogseqLine: line,
+        taskLine: lines[taskLineIndex]
+      ) {
+        noteLines.append(noteLine)
+      }
+      lineIndex += 1
+    }
+
+    return ReminderNoteSourceCodec.normalize(noteLines.joined(separator: "\n"))
+  }
+
+  private func reminderNoteLine(
+    fromLogseqLine line: String,
+    taskLine: String
+  ) -> String? {
+    let trimmed = line.trimmingCharacters(in: .whitespaces)
+    guard !trimmed.isEmpty else { return nil }
+    let content: String
+    if trimmed.hasPrefix("- ") {
+      content = String(trimmed.dropFirst(2)).trimmingCharacters(in: .whitespaces)
+    } else {
+      content = trimmed
+    }
+    guard !content.isEmpty else { return nil }
+    let noteIndent = reminderNoteIndent(
+      lineIndentPrefix: leadingWhitespacePrefix(of: line),
+      parentIndentPrefix: leadingWhitespacePrefix(of: taskLine)
+    )
+    return "\(String(repeating: " ", count: noteIndent))\(content)"
+  }
+
+  private func reminderNoteIndent(
+    lineIndentPrefix: String,
+    parentIndentPrefix: String
+  ) -> Int {
+    max(0, logicalIndentLevel(of: lineIndentPrefix) - logicalIndentLevel(of: parentIndentPrefix) - 1)
+  }
+
+  private func logicalIndentLevel(
+    of prefix: String
+  ) -> Int {
+    var level = 0
+    var pendingSpaces = 0
+    for character in prefix {
+      if character == "\t" {
+        level += pendingSpaces / 2
+        if pendingSpaces % 2 != 0 {
+          level += 1
+        }
+        pendingSpaces = 0
+        level += 1
+      } else if character == " " {
+        pendingSpaces += 1
+      }
+    }
+    level += pendingSpaces / 2
+    if pendingSpaces % 2 != 0 {
+      level += 1
+    }
+    return level
+  }
+
+  private func taskSubtreeEndIndex(
+    from taskLineIndex: Int,
+    taskIndent: Int,
+    skipGeneratedComment: Bool,
+    in lines: [String]
+  ) -> Int {
+    var lineIndex = taskLineIndex + 1
+    while lineIndex < lines.count {
+      if skipGeneratedComment && lines[lineIndex] == Self.generatedComment {
+        lineIndex += 1
+        continue
+      }
+      let line = lines[lineIndex]
+      if line.hasPrefix("## ") {
+        break
+      }
+      if indentationWidth(of: line) <= taskIndent,
+        !line.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+      {
+        break
+      }
+      lineIndex += 1
+    }
+    return lineIndex
+  }
+
+  private func reminderIdentifierForTask(
+    at taskLineIndex: Int,
+    taskIndent: Int,
+    limit: Int,
+    in lines: [String]
+  ) -> String? {
+    var lineIndex = taskLineIndex + 1
+    while lineIndex < min(limit, lines.count) {
+      let line = lines[lineIndex]
+      if parseTaskLine(line) != nil {
+        break
+      }
+      if indentationWidth(of: line) <= taskIndent,
+        !line.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+      {
+        break
+      }
+      if let property = parseTaskPropertyLine(line),
+        property.key == "reminder_external_id"
+      {
+        return normalizedOptionalValue(property.value)
+      }
+      lineIndex += 1
+    }
+    return nil
+  }
+
   private func upsertReminderListExternalIdentifier(
     _ reminderListExternalIdentifier: String,
     into lines: inout [String]
@@ -951,7 +1176,8 @@ actor LogseqProjectPageStore {
     expectedExternalTasks: [TaskRecord],
     importedTasks: [TaskRecord],
     remoteModifiedAtByReminderIdentifier: [String: Date],
-    reminderListExternalIdentifier: String?
+    reminderListExternalIdentifier: String?,
+    conflictPolicy: ReminderImportConflictPolicy
   ) throws {
     guard parsedPage.externalTasks == expectedExternalTasks else {
       throw StoreError.externalTasksChangedSinceLoad
@@ -965,34 +1191,83 @@ actor LogseqProjectPageStore {
     }
 
     let imported = importedTasksByReminderIdentifier(importedTasks)
+    let blockedReminderIdentifiers = duplicatedReminderIdentifiers(in: expectedExternalTasks)
+      .union(imported.duplicatedIdentifiers)
     var updatedReminderIdentifiers = Set<String>()
-    for (index, task) in expectedExternalTasks.enumerated() {
+    for task in expectedExternalTasks {
       guard let reminderIdentifier = normalizedOptionalValue(task.reminderExternalIdentifier),
         let importedTask = imported.tasksByIdentifier[reminderIdentifier]
       else {
         continue
       }
-      if shouldPreserveLocalExternalTask(
-        fileURL: fileURL,
-        remoteModifiedAt: remoteModifiedAtByReminderIdentifier[reminderIdentifier]
-      ) {
+      guard !blockedReminderIdentifiers.contains(reminderIdentifier) else {
         updatedReminderIdentifiers.insert(reminderIdentifier)
         continue
       }
+
+      if conflictPolicy == .preserveNewerLocal,
+        shouldPreserveLocalExternalTask(
+          fileURL: fileURL,
+          remoteModifiedAt: remoteModifiedAtByReminderIdentifier[reminderIdentifier],
+          conflictPolicy: conflictPolicy
+        )
+      {
+        updatedReminderIdentifiers.insert(reminderIdentifier)
+        continue
+      }
+
+      let taskToWrite: TaskRecord
+      let baselineState: ReminderSyncTaskState
+      let baselineRemoteModifiedAt: Date?
+      let conflictedFields: [ReminderSyncTaskField]
+      switch conflictPolicy {
+      case .mergeWithBaseline:
+        let decision = ReminderSyncTaskMerge.mergeImportedTask(
+          localTask: task,
+          remoteTask: importedTask,
+          remoteModifiedAt: remoteModifiedAtByReminderIdentifier[reminderIdentifier],
+          baseline: ReminderSyncBaselineStore.baseline(for: reminderIdentifier)
+        )
+        taskToWrite = decision.mergedTask
+        baselineState = decision.nextBaseline
+        baselineRemoteModifiedAt = decision.nextBaselineRemoteModifiedAt
+        conflictedFields = decision.conflictedFields
+      case .preserveNewerLocal:
+        taskToWrite = importedTaskPreservingLocalNoteWhenRemoteIsEmpty(importedTask)
+        baselineState = ReminderSyncTaskState(task: taskToWrite)
+        baselineRemoteModifiedAt = remoteModifiedAtByReminderIdentifier[reminderIdentifier]
+        conflictedFields = []
+      case .remindersAuthoritative:
+        taskToWrite = importedTask
+        baselineState = ReminderSyncTaskState(task: importedTask)
+        baselineRemoteModifiedAt = remoteModifiedAtByReminderIdentifier[reminderIdentifier]
+        conflictedFields = []
+      }
       updateExternalTaskRecord(
-        at: index,
-        with: importedTask,
+        reminderExternalIdentifier: reminderIdentifier,
+        with: taskToWrite,
         in: &lines
+      )
+      ReminderSyncBaselineStore.upsert(
+        reminderExternalIdentifier: reminderIdentifier,
+        state: baselineState,
+        remoteModifiedAt: baselineRemoteModifiedAt,
+        conflictedFields: conflictedFields
       )
       updatedReminderIdentifiers.insert(reminderIdentifier)
     }
 
     let missingImportedTasks = imported.orderedIdentifiers.compactMap { reminderIdentifier in
       updatedReminderIdentifiers.contains(reminderIdentifier)
+        || blockedReminderIdentifiers.contains(reminderIdentifier)
         ? nil
         : imported.tasksByIdentifier[reminderIdentifier]
     }
     appendExternalTasks(missingImportedTasks, to: &lines)
+    recordImportedTaskBaselines(
+      missingImportedTasks,
+      remoteModifiedAtByReminderIdentifier: remoteModifiedAtByReminderIdentifier
+    )
 
     var rendered = lines.joined(separator: "\n")
     if !rendered.hasSuffix("\n") {
@@ -1003,10 +1278,35 @@ actor LogseqProjectPageStore {
     try write(rendered, to: fileURL)
   }
 
+  private func recordImportedTaskBaselines(
+    _ importedTasks: [TaskRecord],
+    remoteModifiedAtByReminderIdentifier: [String: Date]
+  ) {
+    for task in importedTasks {
+      guard let reminderIdentifier = normalizedOptionalValue(task.reminderExternalIdentifier) else {
+        continue
+      }
+      ReminderSyncBaselineStore.upsert(
+        reminderExternalIdentifier: reminderIdentifier,
+        state: ReminderSyncTaskState(task: task),
+        remoteModifiedAt: remoteModifiedAtByReminderIdentifier[reminderIdentifier]
+      )
+    }
+  }
+
+  private func importedTaskPreservingLocalNoteWhenRemoteIsEmpty(_ task: TaskRecord) -> TaskRecord {
+    guard ReminderNoteSourceCodec.normalize(task.noteText).isEmpty else { return task }
+    var next = task
+    next.noteText = nil
+    return next
+  }
+
   private func shouldPreserveLocalExternalTask(
     fileURL: URL,
-    remoteModifiedAt: Date?
+    remoteModifiedAt: Date?,
+    conflictPolicy: ReminderImportConflictPolicy
   ) -> Bool {
+    guard conflictPolicy == .preserveNewerLocal else { return false }
     guard let remoteModifiedAt,
       let localModifiedAt = modificationDate(of: fileURL)
     else {
@@ -1017,19 +1317,42 @@ actor LogseqProjectPageStore {
 
   private func importedTasksByReminderIdentifier(
     _ tasks: [TaskRecord]
-  ) -> (orderedIdentifiers: [String], tasksByIdentifier: [String: TaskRecord]) {
+  ) -> (
+    orderedIdentifiers: [String],
+    tasksByIdentifier: [String: TaskRecord],
+    duplicatedIdentifiers: Set<String>
+  ) {
     var orderedIdentifiers: [String] = []
     var tasksByIdentifier: [String: TaskRecord] = [:]
+    var duplicatedIdentifiers: Set<String> = []
     for task in tasks {
       guard let reminderIdentifier = normalizedOptionalValue(task.reminderExternalIdentifier) else {
         continue
       }
       if tasksByIdentifier[reminderIdentifier] == nil {
         orderedIdentifiers.append(reminderIdentifier)
+      } else {
+        duplicatedIdentifiers.insert(reminderIdentifier)
       }
-      tasksByIdentifier[reminderIdentifier] = task
+      if !duplicatedIdentifiers.contains(reminderIdentifier) {
+        tasksByIdentifier[reminderIdentifier] = task
+      }
     }
-    return (orderedIdentifiers, tasksByIdentifier)
+    return (orderedIdentifiers, tasksByIdentifier, duplicatedIdentifiers)
+  }
+
+  private func duplicatedReminderIdentifiers(in tasks: [TaskRecord]) -> Set<String> {
+    var seen: Set<String> = []
+    var duplicates: Set<String> = []
+    for task in tasks {
+      guard let reminderIdentifier = normalizedOptionalValue(task.reminderExternalIdentifier) else {
+        continue
+      }
+      if !seen.insert(reminderIdentifier).inserted {
+        duplicates.insert(reminderIdentifier)
+      }
+    }
+    return duplicates
   }
 
   private func appendExternalTasks(
@@ -1141,49 +1464,276 @@ actor LogseqProjectPageStore {
         continue
       }
 
-      updateTaskLine(at: lineIndex, parsedTask: parsedTask, with: task, in: &lines)
-      upsertOrRemoveTaskProperty(
-        key: "reminder_external_id",
-        rawKey: "reminder_external_id",
-        value: task.reminderExternalIdentifier,
-        taskLineIndex: lineIndex,
-        taskIndent: parsedTask.indent,
-        taskIndentPrefix: parsedTask.indentPrefix,
-        managedRange: managedRange,
-        in: &lines
-      )
-      upsertOrRemoveTaskProperty(
-        key: "date",
-        rawKey: "date",
-        value: task.date,
-        taskLineIndex: lineIndex,
-        taskIndent: parsedTask.indent,
-        taskIndentPrefix: parsedTask.indentPrefix,
-        managedRange: managedRange,
-        in: &lines
-      )
-      upsertOrRemoveTaskProperty(
-        key: "duration",
-        rawKey: "duration",
-        value: task.duration,
-        taskLineIndex: lineIndex,
-        taskIndent: parsedTask.indent,
-        taskIndentPrefix: parsedTask.indentPrefix,
-        managedRange: managedRange,
-        in: &lines
-      )
-      upsertOrRemoveTaskProperty(
-        key: "repeat",
-        rawKey: "repeat",
-        value: task.repeatRule,
-        taskLineIndex: lineIndex,
-        taskIndent: parsedTask.indent,
-        taskIndentPrefix: parsedTask.indentPrefix,
+      updateExternalTaskRecord(
+        atLineIndex: lineIndex,
+        parsedTask: parsedTask,
+        with: task,
         managedRange: managedRange,
         in: &lines
       )
       return
     }
+  }
+
+  private func updateExternalTaskRecord(
+    reminderExternalIdentifier: String,
+    with task: TaskRecord,
+    in lines: inout [String]
+  ) {
+    let propertyRange = leadingPropertyRange(in: lines)
+    let bodyStart = propertyRange.upperBound
+    let managedRange = managedSectionRange(in: Array(lines.dropFirst(bodyStart))).map {
+      (bodyStart + $0.lowerBound)..<(bodyStart + $0.upperBound)
+    }
+
+    var lineIndex = bodyStart
+    while lineIndex < lines.count {
+      if let managedRange, managedRange.contains(lineIndex) {
+        lineIndex = managedRange.upperBound
+        continue
+      }
+      guard let parsedTask = parseTaskLine(lines[lineIndex]) else {
+        lineIndex += 1
+        continue
+      }
+      let blockEndIndex = taskSubtreeEndIndex(
+        from: lineIndex,
+        taskIndent: parsedTask.indent,
+        skipGeneratedComment: false,
+        in: lines
+      )
+      guard reminderIdentifierForTask(
+        at: lineIndex,
+        taskIndent: parsedTask.indent,
+        limit: blockEndIndex,
+        in: lines
+      ) == reminderExternalIdentifier else {
+        lineIndex += 1
+        continue
+      }
+
+      updateExternalTaskRecord(
+        atLineIndex: lineIndex,
+        parsedTask: parsedTask,
+        with: task,
+        managedRange: managedRange,
+        in: &lines
+      )
+      return
+    }
+  }
+
+  private func updateExternalTaskRecord(
+    atLineIndex lineIndex: Int,
+    parsedTask: (indent: Int, indentPrefix: String, marker: String, task: TaskRecord),
+    with task: TaskRecord,
+    managedRange: Range<Int>?,
+    in lines: inout [String]
+  ) {
+    updateTaskLine(at: lineIndex, parsedTask: parsedTask, with: task, in: &lines)
+    upsertOrRemoveTaskProperty(
+      key: "reminder_external_id",
+      rawKey: "reminder_external_id",
+      value: task.reminderExternalIdentifier,
+      taskLineIndex: lineIndex,
+      taskIndent: parsedTask.indent,
+      taskIndentPrefix: parsedTask.indentPrefix,
+      managedRange: managedRange,
+      in: &lines
+    )
+    upsertOrRemoveTaskProperty(
+      key: "date",
+      rawKey: "date",
+      value: task.date,
+      taskLineIndex: lineIndex,
+      taskIndent: parsedTask.indent,
+      taskIndentPrefix: parsedTask.indentPrefix,
+      managedRange: managedRange,
+      in: &lines
+    )
+    upsertOrRemoveTaskProperty(
+      key: "duration",
+      rawKey: "duration",
+      value: task.duration,
+      taskLineIndex: lineIndex,
+      taskIndent: parsedTask.indent,
+      taskIndentPrefix: parsedTask.indentPrefix,
+      managedRange: managedRange,
+      in: &lines
+    )
+    upsertOrRemoveTaskProperty(
+      key: "repeat",
+      rawKey: "repeat",
+      value: task.repeatRule,
+      taskLineIndex: lineIndex,
+      taskIndent: parsedTask.indent,
+      taskIndentPrefix: parsedTask.indentPrefix,
+      managedRange: managedRange,
+      in: &lines
+    )
+    replaceTaskNoteSubtree(
+      task,
+      taskLineIndex: lineIndex,
+      parsedTask: parsedTask,
+      managedRange: managedRange,
+      in: &lines
+    )
+  }
+
+  private struct PreservedDescendantTaskBlocks {
+    var orderedIdentifiers: [String]
+    var blocksByIdentifier: [String: [String]]
+  }
+
+  private func replaceTaskNoteSubtree(
+    _ task: TaskRecord,
+    taskLineIndex: Int,
+    parsedTask: (indent: Int, indentPrefix: String, marker: String, task: TaskRecord),
+    managedRange: Range<Int>?,
+    in lines: inout [String]
+  ) {
+    guard task.noteText != nil else { return }
+
+    let subtreeEndIndex = taskSubtreeEndIndex(
+      from: taskLineIndex,
+      taskIndent: parsedTask.indent,
+      skipGeneratedComment: false,
+      in: lines
+    )
+    let propertiesEndIndex = taskOwnPropertiesEndIndex(
+      from: taskLineIndex,
+      taskIndent: parsedTask.indent,
+      managedRange: managedRange,
+      in: lines
+    )
+    let preserved = preservedDescendantTaskBlocks(
+      from: propertiesEndIndex,
+      to: subtreeEndIndex,
+      parentTaskIndent: parsedTask.indent,
+      in: lines
+    )
+    let replacement = renderedLogseqSubtreeLines(
+      fromReminderNote: task.noteText,
+      parentIndentPrefix: parsedTask.indentPrefix,
+      preservedTaskBlocks: preserved
+    )
+    lines.replaceSubrange(propertiesEndIndex..<subtreeEndIndex, with: replacement)
+  }
+
+  private func taskOwnPropertiesEndIndex(
+    from taskLineIndex: Int,
+    taskIndent: Int,
+    managedRange: Range<Int>?,
+    in lines: [String]
+  ) -> Int {
+    let endIndex = taskBlockEndIndex(
+      from: taskLineIndex,
+      taskIndent: taskIndent,
+      managedRange: managedRange,
+      in: lines
+    )
+    var lineIndex = taskLineIndex + 1
+    while lineIndex < endIndex {
+      guard parseTaskPropertyLine(lines[lineIndex]) != nil else { break }
+      lineIndex += 1
+    }
+    return lineIndex
+  }
+
+  private func preservedDescendantTaskBlocks(
+    from startIndex: Int,
+    to endIndex: Int,
+    parentTaskIndent: Int,
+    in lines: [String]
+  ) -> PreservedDescendantTaskBlocks {
+    var orderedIdentifiers: [String] = []
+    var blocksByIdentifier: [String: [String]] = [:]
+    var lineIndex = startIndex
+
+    while lineIndex < endIndex {
+      guard let parsedTask = parseTaskLine(lines[lineIndex]),
+        parsedTask.indent > parentTaskIndent
+      else {
+        lineIndex += 1
+        continue
+      }
+
+      let blockEndIndex = taskSubtreeEndIndex(
+        from: lineIndex,
+        taskIndent: parsedTask.indent,
+        skipGeneratedComment: false,
+        in: lines
+      )
+      if let reminderIdentifier = reminderIdentifierForTask(
+        at: lineIndex,
+        taskIndent: parsedTask.indent,
+        limit: blockEndIndex,
+        in: lines
+      ),
+        blocksByIdentifier[reminderIdentifier] == nil
+      {
+        orderedIdentifiers.append(reminderIdentifier)
+        blocksByIdentifier[reminderIdentifier] = Array(lines[lineIndex..<blockEndIndex])
+      }
+      lineIndex = blockEndIndex
+    }
+
+    return PreservedDescendantTaskBlocks(
+      orderedIdentifiers: orderedIdentifiers,
+      blocksByIdentifier: blocksByIdentifier
+    )
+  }
+
+  private func renderedLogseqSubtreeLines(
+    fromReminderNote noteText: String?,
+    parentIndentPrefix: String,
+    preservedTaskBlocks: PreservedDescendantTaskBlocks
+  ) -> [String] {
+    let normalizedNote = ReminderNoteSourceCodec.normalize(noteText)
+    var replacement: [String] = []
+    var referencedTaskIdentifiers = Set<String>()
+
+    if !normalizedNote.isEmpty {
+      for rawLine in normalizedNote.components(separatedBy: "\n") {
+        let leadingSpaces = leadingReminderNoteSpaceCount(rawLine)
+        let content = String(rawLine.dropFirst(leadingSpaces))
+          .trimmingCharacters(in: .whitespaces)
+        guard !content.isEmpty else { continue }
+
+        if let taskIdentifier = reminderNoteTaskMarkerIdentifier(from: content) {
+          if let taskBlock = preservedTaskBlocks.blocksByIdentifier[taskIdentifier] {
+            replacement.append(contentsOf: taskBlock)
+            referencedTaskIdentifiers.insert(taskIdentifier)
+          }
+          continue
+        }
+
+        let indent = parentIndentPrefix + "  " + String(repeating: "  ", count: leadingSpaces)
+        replacement.append("\(indent)- \(content)")
+      }
+    }
+
+    for taskIdentifier in preservedTaskBlocks.orderedIdentifiers
+    where !referencedTaskIdentifiers.contains(taskIdentifier) {
+      if let taskBlock = preservedTaskBlocks.blocksByIdentifier[taskIdentifier] {
+        replacement.append(contentsOf: taskBlock)
+      }
+    }
+
+    return replacement
+  }
+
+  private func leadingReminderNoteSpaceCount(
+    _ line: String
+  ) -> Int {
+    line.prefix { $0 == " " }.count
+  }
+
+  private func reminderNoteTaskMarkerIdentifier(
+    from content: String
+  ) -> String? {
+    guard content.hasPrefix("t:") else { return nil }
+    return normalizedOptionalValue(String(content.dropFirst(2)))
   }
 
   private func completeDescendantTasksUnderCompletedParents(
@@ -1321,7 +1871,7 @@ actor LogseqProjectPageStore {
     )
     var lineIndex = taskLineIndex + 1
     while lineIndex < endIndex {
-      if let property = parsePropertyLine(lines[lineIndex]), property.key == key {
+      if let property = parseTaskPropertyLine(lines[lineIndex]), property.key == key {
         lines.remove(at: lineIndex)
         return
       }
@@ -1348,7 +1898,7 @@ actor LogseqProjectPageStore {
     var insertionIndex = taskLineIndex + 1
     var lineIndex = taskLineIndex + 1
     while lineIndex < endIndex {
-      if let property = parsePropertyLine(lines[lineIndex]), property.key == key {
+      if let property = parseTaskPropertyLine(lines[lineIndex]), property.key == key {
         let indent = String(repeating: " ", count: indentationWidth(of: lines[lineIndex]))
         lines[lineIndex] = "\(indent)\(property.rawKey):: \(value)"
         return
@@ -1430,6 +1980,14 @@ actor LogseqProjectPageStore {
       rawKey: rawKey,
       value: value
     )
+  }
+
+  private func parseTaskPropertyLine(
+    _ line: String
+  ) -> PropertyLine? {
+    let trimmedLine = line.trimmingCharacters(in: .whitespaces)
+    guard !trimmedLine.hasPrefix("- ") else { return nil }
+    return parsePropertyLine(line)
   }
 
   private func normalizedPropertyKey(_ rawKey: String) -> String {
@@ -1712,7 +2270,7 @@ actor LogseqProjectPageStore {
     try fileManager.contentsOfDirectory(
       at: pagesRootURL,
       includingPropertiesForKeys: nil,
-      options: [.skipsHiddenFiles]
+      options: []
     ).filter { $0.pathExtension.lowercased() == "md" }
   }
 

@@ -43,9 +43,9 @@ enum RetainedWorkspaceSurfaceProjectionBlocker: Equatable {
 
   var shouldPresentGlobalError: Bool {
     switch self {
-    case .taskIdentityUnavailable:
+    case .partialProjectCoverage, .taskIdentityUnavailable:
       return false
-    case .identityFailure, .partialProjectCoverage, .graphNotConfigured, .loadFailed:
+    case .identityFailure, .graphNotConfigured, .loadFailed:
       return true
     }
   }
