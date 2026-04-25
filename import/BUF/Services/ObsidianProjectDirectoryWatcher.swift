@@ -1,4 +1,5 @@
 import Darwin
+import CoreServices
 import Foundation
 
 extension Notification.Name {
@@ -119,6 +120,7 @@ final class ObsidianProjectDirectoryWatcher: @unchecked Sendable {
 
   private var fileDescriptor: CInt = -1
   private var source: DispatchSourceFileSystemObject?
+  private var eventStream: FSEventStreamRef?
   private var debounceWorkItem: DispatchWorkItem?
   private var fastDebounceWorkItem: DispatchWorkItem?
   private var pollingTimer: DispatchSourceTimer?
@@ -162,6 +164,7 @@ final class ObsidianProjectDirectoryWatcher: @unchecked Sendable {
     _ = pollingTracker.changedProjectMarkdownFiles(in: projectsRootURL)
     _ = fastTracker.changedProjectMarkdownFiles(in: projectsRootURL)
     registerWriteObserver()
+    startFileEventStream()
     startPollingTimer()
     startFastPollingTimer()
 
@@ -199,9 +202,82 @@ final class ObsidianProjectDirectoryWatcher: @unchecked Sendable {
       NotificationCenter.default.removeObserver(writeObserver)
       self.writeObserver = nil
     }
+    if let eventStream {
+      FSEventStreamStop(eventStream)
+      FSEventStreamInvalidate(eventStream)
+      FSEventStreamRelease(eventStream)
+      self.eventStream = nil
+    }
     source?.cancel()
     source = nil
     fileDescriptor = -1
+  }
+
+  private func startFileEventStream() {
+    var context = FSEventStreamContext(
+      version: 0,
+      info: Unmanaged.passUnretained(self).toOpaque(),
+      retain: nil,
+      release: nil,
+      copyDescription: nil
+    )
+    let paths = [projectsRootURL.path] as CFArray
+    let flags = UInt32(
+      kFSEventStreamCreateFlagUseCFTypes
+        | kFSEventStreamCreateFlagFileEvents
+        | kFSEventStreamCreateFlagNoDefer
+    )
+    guard let stream = FSEventStreamCreate(
+      kCFAllocatorDefault,
+      Self.fileEventCallback,
+      &context,
+      paths,
+      FSEventStreamEventId(kFSEventStreamEventIdSinceNow),
+      0.2,
+      flags
+    ) else {
+      return
+    }
+    FSEventStreamSetDispatchQueue(stream, queue)
+    guard FSEventStreamStart(stream) else {
+      FSEventStreamInvalidate(stream)
+      FSEventStreamRelease(stream)
+      return
+    }
+    eventStream = stream
+  }
+
+  private static let fileEventCallback: FSEventStreamCallback = {
+    _, contextInfo, eventCount, eventPaths, _, _ in
+    guard let contextInfo else { return }
+    let watcher = Unmanaged<ObsidianProjectDirectoryWatcher>
+      .fromOpaque(contextInfo)
+      .takeUnretainedValue()
+    watcher.handleFileEvents(eventCount: eventCount, eventPaths: eventPaths)
+  }
+
+  private func handleFileEvents(eventCount: Int, eventPaths: UnsafeMutableRawPointer) {
+    let paths = unsafeBitCast(eventPaths, to: NSArray.self) as? [String] ?? []
+    guard shouldScanAfterFileEvents(paths, eventCount: eventCount) else { return }
+    scheduleFastScan()
+    scheduleDebouncedScan()
+  }
+
+  private func shouldScanAfterFileEvents(_ paths: [String], eventCount: Int) -> Bool {
+    guard eventCount > 0 else { return false }
+    guard !paths.isEmpty else { return true }
+    let root = projectsRootURL.standardizedFileURL.resolvingSymlinksInPath()
+    let rootPath = root.path
+    for path in paths {
+      let eventURL = URL(fileURLWithPath: path).standardizedFileURL
+      if eventURL == root || eventURL.deletingLastPathComponent() == root {
+        return true
+      }
+      if eventURL.path.hasPrefix(rootPath + "/") {
+        return true
+      }
+    }
+    return false
   }
 
   private func startPollingTimer() {

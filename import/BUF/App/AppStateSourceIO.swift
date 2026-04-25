@@ -115,6 +115,19 @@ extension AppState {
           store: store
         )
         applyObsidianImportResult(result)
+        if let catchUpResult = try await reconcileObsidianLocalChangesWithReminderSource(
+          store: store,
+          reason: reason
+        ) {
+          applyObsidianProvisioningResult(catchUpResult)
+          if catchUpResult.createdProjectCount > 0
+            || catchUpResult.createdTaskCount > 0
+            || catchUpResult.updatedTaskCount > 0
+            || catchUpResult.deletedTaskCount > 0
+          {
+            recordAppAuthoredReminderPush()
+          }
+        }
         syncStatus = "Imported Obsidian \(result.importedProjectCount) lists / \(result.importedTaskCount) tasks / updated \(result.updatedTaskCount) / deleted \(result.deletedTaskCount)"
       }
       bumpWorkspaceTreeRevision()
@@ -128,6 +141,21 @@ extension AppState {
     store: ObsidianProjectMarkdownStore
   ) async throws -> Bool {
     try await store.loadProjectNotesInScope().isEmpty
+  }
+
+  private func reconcileObsidianLocalChangesWithReminderSource(
+    store: ObsidianProjectMarkdownStore,
+    reason: SyncReason
+  ) async throws -> ObsidianReminderProvisioningSync.SyncResult? {
+    guard reason == .bootstrap || reason == .manual else { return nil }
+    let snapshots = try await store.loadProjectNotesInScope()
+    guard !snapshots.isEmpty else { return nil }
+    return try await ObsidianReminderProvisioningSync.syncLoadedSnapshots(
+      snapshots: snapshots,
+      store: store,
+      reminderProjectProvider: reminderProjectProvider,
+      now: .now
+    )
   }
 
   func handleObsidianProjectDirectoryChange(_ changedFiles: [URL]) async {

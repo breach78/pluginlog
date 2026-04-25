@@ -119,6 +119,31 @@ final class ObsidianProjectDirectoryWatcherTests: XCTestCase {
     XCTAssertEqual(handlerCalls, 1)
   }
 
+  func testWatcherReceivesExistingProjectFileContentChangeWithoutPolling() async throws {
+    let vaultURL = try makeVault()
+    let projectsURL = try makeProjectsDirectory(in: vaultURL)
+    let projectURL = projectsURL.appendingPathComponent("Project.md")
+    try projectMarkdown(listID: "LIST-1").write(to: projectURL, atomically: true, encoding: .utf8)
+
+    let detected = expectation(description: "file events report existing project file content change")
+    let watcher = ObsidianProjectDirectoryWatcher(
+      vaultRootURL: vaultURL,
+      debounceNanoseconds: 120_000_000,
+      pollingNanoseconds: nil
+    ) { changedFiles in
+      XCTAssertEqual(changedFiles.map(\.lastPathComponent), ["Project.md"])
+      detected.fulfill()
+    }
+    watcher.start()
+    defer { watcher.stop() }
+
+    try await Task.sleep(nanoseconds: 120_000_000)
+    try projectMarkdown(listID: "LIST-1", taskID: "TASK-2")
+      .write(to: projectURL, atomically: true, encoding: .utf8)
+
+    await fulfillment(of: [detected], timeout: 2)
+  }
+
   func testWatcherAccumulatesDifferentProjectFilesDuringOneIdleWindow() async throws {
     let vaultURL = try makeVault()
     let projectsURL = try makeProjectsDirectory(in: vaultURL)
@@ -175,6 +200,37 @@ final class ObsidianProjectDirectoryWatcherTests: XCTestCase {
     defer { watcher.stop() }
 
     try await Task.sleep(nanoseconds: 80_000_000)
+    try projectMarkdown(listID: "LIST-1", taskID: "TASK-2")
+      .write(to: projectURL, atomically: true, encoding: .utf8)
+
+    await fulfillment(of: [fastDetected, syncDetected], timeout: 2)
+  }
+
+  func testFileEventsDriveFastHintAndDebouncedSyncWithoutPolling() async throws {
+    let vaultURL = try makeVault()
+    let projectsURL = try makeProjectsDirectory(in: vaultURL)
+    let projectURL = projectsURL.appendingPathComponent("Project.md")
+    try projectMarkdown(listID: "LIST-1").write(to: projectURL, atomically: true, encoding: .utf8)
+
+    let fastDetected = expectation(description: "file event reports fast projection invalidation")
+    let syncDetected = expectation(description: "file event reports debounced sync change")
+    let watcher = ObsidianProjectDirectoryWatcher(
+      vaultRootURL: vaultURL,
+      debounceNanoseconds: 120_000_000,
+      fastDebounceNanoseconds: 40_000_000,
+      pollingNanoseconds: nil,
+      fastPollingNanoseconds: nil,
+      fastHandler: {
+        fastDetected.fulfill()
+      }
+    ) { changedFiles in
+      XCTAssertEqual(changedFiles.map(\.lastPathComponent), ["Project.md"])
+      syncDetected.fulfill()
+    }
+    watcher.start()
+    defer { watcher.stop() }
+
+    try await Task.sleep(nanoseconds: 120_000_000)
     try projectMarkdown(listID: "LIST-1", taskID: "TASK-2")
       .write(to: projectURL, atomically: true, encoding: .utf8)
 
