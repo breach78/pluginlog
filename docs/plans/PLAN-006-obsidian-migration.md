@@ -7,6 +7,40 @@ Accepted and active on 2026-04-25.
 This is the execution plan for the Obsidian migration unless a later plan
 explicitly supersedes it.
 
+## Implementation Status
+
+Updated 2026-04-25 after TASK-PACKET-021.
+
+- Phase 1 parser/renderer: complete.
+- Phase 2 project Markdown store seam: complete.
+- Phase 3 Obsidian vault setup and Reminders-first bootstrap runtime seam:
+  complete.
+- Phase 4 helper installer/resource seam: complete, but helper auto-enable and
+  required runtime dependence remain out of scope.
+- Phase 5 Reminders-first Obsidian bootstrap: complete.
+- Phase 6 Obsidian -> Reminders create/update/delete sync: complete for
+  project notes/tasks, task fields, subtree notes, duration-only metadata, and
+  safe task deletion.
+- Phase 7 Reminders -> Obsidian reconciliation: complete for list/task import,
+  field updates, subtree note import, duplicate/damaged fail-closed behavior,
+  and safe task deletion.
+- Phase 8 Timeline/Schedule cutover: complete for read projection,
+  changed-file refresh, watcher/debounce, completion/schedule command writes to
+  Obsidian, and task reveal/open routing to Obsidian project notes. Task reveal
+  attempts Obsidian block focus when an existing `^buf-*` block id is present,
+  otherwise it opens the project note.
+- Phase 9 Logseq deletion/removal: complete for approved source/resource/test
+  and runtime wiring removal. User graph data, Obsidian vault data, `.buf`
+  sidecars, Reminders data, Calendar data, SwiftData schema, and historical docs
+  were not deleted.
+
+Latest release gate:
+
+- `swift build` passed.
+- `rg -n "Logseq|logseq" import/BUF Tests Package.swift` returned no matches.
+- `swift test` passed with 162 tests after TASK-PACKET-021.
+- Modified `BrainUnfogHarness.app` relaunched from `.build`.
+
 ## Related Decisions
 
 - `docs/decisions/ADR-002-reminder-backed-schedule-blocks-no-calendar-event-mirroring.md`
@@ -662,19 +696,83 @@ Verification:
 
 Goal: remove Logseq code after Obsidian passes gates.
 
-Ask before this phase.
+Executed after explicit user approval in TASK-PACKET-021 scope.
 
-Deletion candidates:
+Deleted source/resource/test/setup/runtime wiring:
 
-- `import/BUF/Services/LogseqProjectPageStore.swift`
-- `import/BUF/Services/LogseqPagesDirectoryWatcher.swift`
-- `import/BUF/Services/LogseqPageFilenameCodec.swift`
+High-risk runtime source removal:
+
+- `import/BUF/App/LogseqGraphRootPreferenceResolver.swift`
 - `import/BUF/Services/LogseqGraphConfigStore.swift`
 - `import/BUF/Services/LogseqHelperPluginInstaller.swift`
-- `import/BUF/Resources/LogseqHelperPlugin`
+- `import/BUF/Services/LogseqPageFilenameCodec.swift`
+- `import/BUF/Services/LogseqPagesDirectoryWatcher.swift`
+- `import/BUF/Services/LogseqProjectMarkdownStoreAdapter.swift`
+- `import/BUF/Services/LogseqProjectPageStore.swift`
+- `import/BUF/Services/LogseqReminderPropertyCodec.swift`
+- `import/BUF/Services/ManagedLogseqSyncHardening.swift`
+- `import/BUF/Services/RetainedReminderImportSync.swift`
+- `import/BUF/Services/RetainedCalendarEventKitBridge.swift`
+- `import/BUF/Services/RetainedLogseqProjectProvisioningSync.swift`
 - `import/BUF/Utilities/LogseqDeepLinking.swift`
-- Logseq-specific tests after Obsidian replacements exist
-- Logseq-specific setup UI and preferences
+
+Rewired runtime references:
+
+- Logseq graph preference keys and state in `import/BUF/App/AppState.swift`
+- Logseq setup/runtime startup wiring in
+  `import/BUF/App/AppStateLaunchAndSetup.swift`
+- Logseq project actions in `import/BUF/App/AppStateProjectActions.swift`
+- Logseq source IO paths in `import/BUF/App/AppStateSourceIO.swift`
+- Logseq setup/settings labels and controls in
+  `import/BUF/Features/Setup/AppSettingsView.swift`
+- Logseq setup container copy in
+  `import/BUF/Features/Setup/SetupContainerView.swift`
+- Logseq retained fallback inputs in
+  `import/BUF/Services/RetainedProjectionBuilder.swift`
+- Logseq fallback branches that remain only for non-Obsidian mode in
+  `import/BUF/Services/RetainedWorkspaceSurfaceProjection.swift`,
+  `import/BUF/Features/Schedule/ScheduleBoardActions.swift`,
+  `import/BUF/Features/Timeline/TimelineBoardActions.swift`, and
+  `import/BUF/Features/Workspace/MainWorkspaceView.swift`
+
+Medium-risk bundled resource removal:
+
+- `import/BUF/Resources/LogseqHelperPlugin/icon.svg`
+- `import/BUF/Resources/LogseqHelperPlugin/index.html`
+- `import/BUF/Resources/LogseqHelperPlugin/index.js`
+- `import/BUF/Resources/LogseqHelperPlugin/package.json`
+- `import/BUF/Resources/LogseqHelperPlugin/styles.css`
+
+Medium-risk Logseq test removal after replacement coverage is confirmed:
+
+- `Tests/BrainUnfogHarnessTests/LogseqGraphConfigStoreTests.swift`
+- `Tests/BrainUnfogHarnessTests/LogseqGraphRootPreferenceResolverTests.swift`
+- `Tests/BrainUnfogHarnessTests/LogseqHelperPluginInstallerTests.swift`
+- `Tests/BrainUnfogHarnessTests/LogseqPagesChangeTrackerTests.swift`
+- `Tests/BrainUnfogHarnessTests/LogseqProjectMarkdownStoreAdapterTests.swift`
+- `Tests/BrainUnfogHarnessTests/LogseqProjectPageStoreTests.swift`
+- `Tests/BrainUnfogHarnessTests/LogseqReminderPropertyCodecTests.swift`
+- `Tests/BrainUnfogHarnessTests/ManagedLogseqSyncHardeningTests.swift`
+- `Tests/BrainUnfogHarnessTests/RetainedReminderImportSyncTests.swift`
+- `Tests/BrainUnfogHarnessTests/RetainedTaskCommandServiceTests.swift`
+- `Tests/BrainUnfogHarnessTests/RetainedCalendarEventKitBridgeTests.swift`
+- `Tests/BrainUnfogHarnessTests/RetainedProjectionBuilderTests.swift`
+- `Tests/BrainUnfogHarnessTests/RetainedLogseqProjectProvisioningSyncTests.swift`
+
+Low-risk historical/reference material removal, only if repository cleanup is
+approved separately:
+
+- `docs/design/logseq-date-time-popup-mockup.svg`
+- `docs/plans/PLAN-005-logseq-reminders-calendar-sync-completion.md`
+- `docs/plans/TASK-PACKET-007-logseq-reminders-sync-hardening.md`
+- `logseq-plugin-materials/`
+
+Not deletion candidates:
+
+- `docs/decisions/ADR-001-buf-logseq-eventkit-architecture.md` remains useful as
+  architecture history unless the docs archive policy changes.
+- User graph data, `.buf` sidecars, Obsidian vault data, Reminders data, and
+  Calendar data must not be deleted by Phase 9.
 
 Acceptance:
 
@@ -685,7 +783,10 @@ Acceptance:
 
 Verification:
 
-- `rg -n "Logseq|logseq" import/BUF Tests`
+- `rg -n "Logseq|logseq" import/BUF Tests Package.swift`
+- Calendar/EventKit write grep reviewed; remaining writes are Reminders gateway
+  saves/removes or non-retained Calendar overlay/owned-calendar support, not
+  Obsidian Reminder-backed task writes.
 - `swift build`
 - `swift test`
 - app relaunch gate

@@ -2,110 +2,83 @@ import SwiftUI
 
 struct AppSettingsView: View {
   @EnvironmentObject private var appState: AppState
-  @State private var isChangingGraph = false
-  @State private var isInstallingHelperPlugin = false
+  @State private var isChangingObsidianVault = false
 
   var body: some View {
     VStack(alignment: .leading, spacing: 18) {
       Text("설정")
         .font(.title2.bold())
 
-      GroupBox("Logseq 그래프 폴더") {
+      GroupBox("Obsidian vault") {
         VStack(alignment: .leading, spacing: 10) {
-          Text("프로젝트 페이지가 들어 있는 Logseq graph 루트를 선택합니다.")
+          Text("`.obsidian` 폴더가 이미 있는 vault 루트를 선택합니다.")
             .foregroundStyle(.secondary)
 
-          LabeledContent("현재 그래프") {
-            Text(graphRootPath)
+          LabeledContent("현재 vault") {
+            Text(obsidianVaultPath)
               .font(.system(.caption, design: .monospaced))
               .textSelection(.enabled)
           }
 
           LabeledContent("앱 지원 폴더") {
-            Text(bufFolderPath)
+            Text(obsidianBufFolderPath)
+              .font(.system(.caption, design: .monospaced))
+              .textSelection(.enabled)
+          }
+
+          LabeledContent("프로젝트 노트") {
+            Text(obsidianProjectsFolderPath)
               .font(.system(.caption, design: .monospaced))
               .textSelection(.enabled)
           }
 
           HStack(spacing: 10) {
-            Button("Logseq 그래프 변경...") {
-              chooseLogseqGraph()
+            Button("Obsidian vault 변경...") {
+              chooseObsidianVault()
             }
-            .disabled(isChangingGraph)
+            .disabled(isChangingObsidianVault)
 
-            if isChangingGraph {
+            if isChangingObsidianVault {
               ProgressView()
                 .controlSize(.small)
             }
           }
 
-          Text("`.buf`는 직접 선택하지 않습니다. 선택한 graph 안에 자동으로 준비됩니다.")
+          Text("선택 직후 첫 sync는 Reminders -> Obsidian `raw/projects/` 방향입니다.")
             .font(.footnote)
             .foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
       }
 
-      GroupBox("Logseq helper plugin") {
-        VStack(alignment: .leading, spacing: 10) {
-          Text("Logseq 블록 우클릭 메뉴에서 date:: / duration:: 입력 팝업을 제공합니다.")
-            .foregroundStyle(.secondary)
-
-          LabeledContent("상태") {
-            Text(appState.logseqHelperPluginInstallStatus)
-              .font(.system(.caption, design: .monospaced))
-              .textSelection(.enabled)
-          }
-
-          if let installPath = appState.logseqHelperPluginInstallPath {
-            LabeledContent("설치 위치") {
-              Text(installPath)
-                .font(.system(.caption, design: .monospaced))
-                .textSelection(.enabled)
-            }
-          }
-
-          HStack(spacing: 10) {
-            Button("Helper plugin 다시 설치") {
-              reinstallHelperPlugin()
-            }
-            .disabled(isInstallingHelperPlugin)
-
-            if isInstallingHelperPlugin {
-              ProgressView()
-                .controlSize(.small)
-            }
-          }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-      }
     }
     .padding(24)
     .frame(width: 560)
   }
 
-  private var graphRootPath: String {
-    appState.logseqGraphRootURL?.path ?? "선택되지 않음"
+  private var obsidianVaultPath: String {
+    appState.obsidianVaultRootURL?.path ?? "선택되지 않음"
   }
 
-  private var bufFolderPath: String {
-    guard let rootURL = appState.logseqGraphRootURL else { return "선택되지 않음" }
+  private var obsidianBufFolderPath: String {
+    guard let rootURL = appState.obsidianVaultRootURL else { return "선택되지 않음" }
     return rootURL.appendingPathComponent(".buf", isDirectory: true).path
   }
 
-  private func chooseLogseqGraph() {
-    isChangingGraph = true
+  private var obsidianProjectsFolderPath: String {
+    guard let rootURL = appState.obsidianVaultRootURL else { return "선택되지 않음" }
+    return rootURL
+      .appendingPathComponent("raw", isDirectory: true)
+      .appendingPathComponent("projects", isDirectory: true)
+      .path
+  }
+
+  private func chooseObsidianVault() {
+    isChangingObsidianVault = true
     Task { @MainActor in
-      await appState.chooseLogseqGraphRootWithPicker(activateWhenReady: true)
-      isChangingGraph = false
+      await appState.chooseObsidianVaultWithPicker(activateWhenReady: true)
+      isChangingObsidianVault = false
     }
   }
 
-  private func reinstallHelperPlugin() {
-    isInstallingHelperPlugin = true
-    Task { @MainActor in
-      appState.reinstallLogseqHelperPlugin()
-      isInstallingHelperPlugin = false
-    }
-  }
 }

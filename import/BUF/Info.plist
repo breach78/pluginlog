@@ -26,8 +26,8 @@
   <key>NSContactsUsageDescription</key>
   <string>Brain Unfog may need contacts access when macOS resolves calendar participant metadata.</string>
   <key>NSRemindersFullAccessUsageDescription</key>
-  <string>Brain Unfog needs reminders access to sync Logseq project tasks with Apple Reminders.</string>
+  <string>Brain Unfog needs reminders access to sync Obsidian project tasks with Apple Reminders.</string>
   <key>NSRemindersUsageDescription</key>
-  <string>Brain Unfog needs reminders access to sync Logseq project tasks with Apple Reminders.</string>
+  <string>Brain Unfog needs reminders access to sync Obsidian project tasks with Apple Reminders.</string>
 </dict>
 </plist>

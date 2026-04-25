@@ -35,23 +35,10 @@ extension AppState {
     isArchiveVisible = false
   }
 
-  func setShowsCompletedLogseqTasks(_ showsCompleted: Bool) {
-    guard showsCompletedLogseqTasks != showsCompleted else { return }
-    showsCompletedLogseqTasks = showsCompleted
-    UserDefaults.standard.set(showsCompleted, forKey: Self.showCompletedLogseqTasksKey)
-    updateLogseqCompletedTaskFilterCSS()
-  }
-
-  func updateLogseqCompletedTaskFilterCSS() {
-    guard let logseqGraphRootURL else { return }
-    do {
-      try LogseqGraphConfigStore(graphRootURL: logseqGraphRootURL)
-        .ensureInternalIdentityPropertiesHidden(
-          hideCompletedTasks: !showsCompletedLogseqTasks
-        )
-    } catch {
-      reportError(error, logMessage: "updateLogseqCompletedTaskFilterCSS failed")
-    }
+  func setShowsCompletedTasks(_ showsCompleted: Bool) {
+    guard showsCompletedTasks != showsCompleted else { return }
+    showsCompletedTasks = showsCompleted
+    UserDefaults.standard.set(showsCompleted, forKey: Self.showCompletedTasksKey)
   }
 
   func handleViewMenuSelection(_ mode: ViewMode) {

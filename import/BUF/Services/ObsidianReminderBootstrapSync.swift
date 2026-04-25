@@ -34,7 +34,8 @@ enum ObsidianReminderBootstrapSync {
 
   static func sync(
     batch: ReminderImportSnapshotBatch,
-    store: ObsidianProjectMarkdownStore
+    store: ObsidianProjectMarkdownStore,
+    now: Date = .now
   ) async throws -> SyncResult {
     let existingSnapshots = try await store.loadProjectNotesInScope()
     try validateExistingNotes(existingSnapshots.map(\.note))
@@ -66,6 +67,17 @@ enum ObsidianReminderBootstrapSync {
         note,
         preferredFileName: preferredFileName,
         expectedBaseline: baseline
+      )
+      ReminderSyncBaselineStore.upsertMany(
+        items.compactMap { item in
+          let taskID = normalized(item.externalIdentifier) ?? normalized(item.identifier)
+          return ReminderSyncTaskBaselineUpdate(
+            reminderExternalIdentifier: taskID,
+            state: ReminderSyncTaskState(importedItem: item),
+            remoteModifiedAt: item.modifiedAt,
+            now: now
+          )
+        }
       )
       importedProjectCount += 1
       importedTaskCount += note.tasks.count

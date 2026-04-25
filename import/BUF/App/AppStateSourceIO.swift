@@ -2,40 +2,33 @@ import Foundation
 import SwiftData
 
 extension AppState {
-  func logseqProjectPageStore() -> LogseqProjectPageStore? {
-    guard let logseqGraphRootURL else { return nil }
-    return LogseqProjectPageStore(
-      pagesRootURL: logseqGraphRootURL.appendingPathComponent("pages", isDirectory: true)
-    )
-  }
-
   func prepareProjectNoteStore() async {
-    guard let pageStore = logseqProjectPageStore() else { return }
+    guard let obsidianVaultRootURL else { return }
     do {
-      try await pageStore.preparePagesDirectory()
-      configureLogseqPagesDirectoryWatcher()
+      try await ObsidianProjectMarkdownStore(vaultRootURL: obsidianVaultRootURL)
+        .prepareProjectDirectory()
+      configureObsidianProjectDirectoryWatcher()
     } catch {
-      reportError(error, logMessage: "prepareProjectNoteStore failed")
+      reportError(error, logMessage: "prepareObsidianProjectNoteStore failed")
     }
   }
 
-  func configureLogseqPagesDirectoryWatcher() {
-    logseqPagesDirectoryWatcher?.stop()
-    guard let logseqGraphRootURL else {
-      logseqPagesDirectoryWatcher = nil
+  func configureObsidianProjectDirectoryWatcher() {
+    obsidianProjectDirectoryWatcher?.stop()
+    guard let obsidianVaultRootURL else {
+      obsidianProjectDirectoryWatcher = nil
       return
     }
-    let pagesRootURL = logseqGraphRootURL.appendingPathComponent("pages", isDirectory: true)
-    let watcher = LogseqPagesDirectoryWatcher(
-      pagesRootURL: pagesRootURL,
+    let watcher = ObsidianProjectDirectoryWatcher(
+      vaultRootURL: obsidianVaultRootURL,
       fastHandler: { [weak self] in
         self?.bumpWorkspaceTreeRevision()
       },
       handler: { [weak self] changedFiles in
-        await self?.handleLogseqPagesDirectoryChange(changedFiles)
+        await self?.handleObsidianProjectDirectoryChange(changedFiles)
       }
     )
-    logseqPagesDirectoryWatcher = watcher
+    obsidianProjectDirectoryWatcher = watcher
     watcher.start()
   }
 
@@ -58,17 +51,21 @@ extension AppState {
     }
   }
 
-  func stopLogseqPagesDirectoryWatcher() {
-    logseqPagesDirectoryWatcher?.stop()
-    logseqPagesDirectoryWatcher = nil
+  func stopObsidianProjectDirectoryWatcher() {
+    obsidianProjectDirectoryWatcher?.stop()
+    obsidianProjectDirectoryWatcher = nil
   }
 
   func loadProjectNoteFromSource(projectID: UUID, context: ModelContext) async -> String? {
     _ = context
-    guard let pageStore = logseqProjectPageStore() else { return nil }
+    guard let obsidianVaultRootURL else { return nil }
     do {
-      let pages = try await pageStore.loadProjectPagesInScope()
-      return pages.first(where: { $0.projectID == projectID })?.noteMarkdown
+      let snapshots = try await ObsidianProjectMarkdownStore(vaultRootURL: obsidianVaultRootURL)
+        .loadProjectNotesInScope()
+      return snapshots.first { snapshot in
+        guard let listID = snapshot.note.reminderListExternalIdentifier else { return false }
+        return RetainedProjectionBuilder.derivedProjectID(for: listID) == projectID
+      }?.note.bodyMarkdown
     } catch {
       reportError(error, logMessage: "loadProjectNoteFromSource failed")
       return nil
@@ -76,33 +73,19 @@ extension AppState {
   }
 
   func persistProjectNoteToSource(_ note: String, projectID: UUID, context: ModelContext) async {
+    _ = note
+    _ = projectID
     _ = context
-    guard let pageStore = logseqProjectPageStore() else { return }
-    do {
-      let pages = try await pageStore.loadProjectPagesInScope()
-      guard let page = pages.first(where: { $0.projectID == projectID }) else { return }
-      try await pageStore.upsertPage(
-        .init(
-          projectID: projectID,
-          title: page.title,
-          reminderListExternalIdentifier: page.reminderListExternalIdentifier
-        ),
-        noteMarkdown: note,
-        managedTasks: page.managedTasks
-      )
-      bumpWorkspaceTreeRevision()
-    } catch {
-      reportError(error, logMessage: "persistProjectNoteToSource failed")
-    }
+    errorMessage = RetainedSurfaceMutationGate.block(.timeline, feature: "project-note-direct-edit")
   }
 
   func refreshAllProjectNotesFromSource(context: ModelContext) async {
     _ = context
   }
 
-  func reconcileManagedLogseqPagesWithReminderSource(reason: SyncReason) async {
-    guard let pageStore = logseqProjectPageStore() else {
-      syncStatus = "Logseq graph not configured"
+  func reconcileObsidianVaultWithReminderSource(reason: SyncReason) async {
+    guard let obsidianVaultRootURL else {
+      syncStatus = "Obsidian vault not configured"
       return
     }
     guard let gateway = reminderProjectProvider.reminderGateway else {
@@ -118,117 +101,86 @@ extension AppState {
       let snapshotProvider = ReminderGatewayImportSnapshotProvider(gateway: gateway)
       let lists = try await snapshotProvider.fetchAllLists()
       let itemsByListIdentifier = try await snapshotProvider.fetchItemsByList(for: lists)
-      let result = try await RetainedReminderImportSync.sync(
-        batch: ReminderImportSnapshotBatch(
-          lists: lists,
-          itemsByListIdentifier: itemsByListIdentifier
-        ),
-        store: pageStore,
-        conflictPolicy: reminderImportConflictPolicy(for: reason)
+      let batch = ReminderImportSnapshotBatch(
+        lists: lists,
+        itemsByListIdentifier: itemsByListIdentifier
       )
-      let provisioningResult: RetainedLogseqProjectProvisioningSync.SyncResult
-      if let provisioningMode = logseqProvisioningModeAfterImport(reason: reason) {
-        provisioningResult = try await RetainedLogseqProjectProvisioningSync.sync(
-          store: pageStore,
-          reminderProjectProvider: reminderProjectProvider,
-          mode: provisioningMode
+      if reason == .bootstrap {
+        let result = try await ObsidianReminderBootstrapSync.sync(
+          batch: batch,
+          store: ObsidianProjectMarkdownStore(vaultRootURL: obsidianVaultRootURL)
         )
+        syncStatus = "Synced \(result.importedProjectCount) lists / \(result.importedTaskCount) tasks to Obsidian"
       } else {
-        provisioningResult = RetainedLogseqProjectProvisioningSync.SyncResult(
-          createdProjectCount: 0,
-          createdTaskCount: 0,
-          projectRecords: [],
-          taskRecords: []
+        let result = try await ObsidianReminderImportSync.sync(
+          batch: batch,
+          store: ObsidianProjectMarkdownStore(vaultRootURL: obsidianVaultRootURL)
         )
+        applyObsidianImportResult(result)
+        syncStatus = "Imported Obsidian \(result.importedProjectCount) lists / \(result.importedTaskCount) tasks / updated \(result.updatedTaskCount) / deleted \(result.deletedTaskCount)"
       }
-      TaskIdentityBridgeStore.replaceAll(
-        projects: result.projectRecords + provisioningResult.projectRecords,
-        tasks: result.taskRecords + provisioningResult.taskRecords
-      )
-      let syncedProjectCount = result.importedProjectCount + provisioningResult.createdProjectCount
-      let syncedTaskCount = result.importedTaskCount + provisioningResult.createdTaskCount
-      syncStatus = provisioningResult.deletedTaskCount > 0
-        ? "Synced \(syncedProjectCount) lists / \(syncedTaskCount) tasks / deleted \(provisioningResult.deletedTaskCount)"
-        : "Synced \(syncedProjectCount) lists / \(syncedTaskCount) tasks"
       bumpWorkspaceTreeRevision()
     } catch {
-      reportError(error, logMessage: "reconcileManagedLogseqPagesWithReminderSource failed")
+      reportError(error, logMessage: "reconcileObsidianVaultWithReminderSource failed")
       syncStatus = "Reminder sync failed"
     }
   }
 
-  func reminderImportConflictPolicy(
-    for reason: SyncReason
-  ) -> LogseqProjectPageStore.ReminderImportConflictPolicy {
-    switch reason {
-    case .bootstrap, .eventStoreChanged, .manual, .periodic:
-      return .mergeWithBaseline
-    }
-  }
-
-  func shouldProvisionFromLogseqAfterImport(reason: SyncReason) -> Bool {
-    logseqProvisioningModeAfterImport(reason: reason) == .fullPush
-  }
-
-  func logseqProvisioningModeAfterImport(
-    reason: SyncReason
-  ) -> RetainedLogseqProjectProvisioningSync.SyncMode? {
-    switch reason {
-    case .bootstrap, .manual:
-      return .fullPush
-    case .eventStoreChanged, .periodic:
-      return nil
-    }
-  }
-
-  func handleLogseqPagesDirectoryChange(_ changedFiles: [URL]) async {
+  func handleObsidianProjectDirectoryChange(_ changedFiles: [URL]) async {
     AppLogger.sync.info(
-      "logseq page change detected files=\(changedFiles.count, privacy: .public) initialSync=\(self.isInitialSyncRunning, privacy: .public)"
+      "obsidian project note change detected files=\(changedFiles.count, privacy: .public) initialSync=\(self.isInitialSyncRunning, privacy: .public)"
     )
     guard !isInitialSyncRunning else {
-      queueReminderSourceRefresh(reason: .manual)
+      bumpWorkspaceTreeRevision()
       return
     }
-    guard !changedFiles.isEmpty, let pageStore = logseqProjectPageStore() else { return }
+    guard !changedFiles.isEmpty, let obsidianVaultRootURL else { return }
+
     do {
-      let filesToSync = uniqueLogseqPageFileURLs(changedFiles)
+      let store = ObsidianProjectMarkdownStore(vaultRootURL: obsidianVaultRootURL)
+      let result = try await ObsidianChangedProjectProjectionRefresh.refresh(
+        changedFileURLs: changedFiles,
+        store: store,
+        projectIDs: []
+      )
+      switch result {
+      case .loaded:
+        syncStatus = "Obsidian changes ready"
+      case .blocked(let blocker):
+        syncStatus = "Obsidian refresh blocked"
+        if blocker.shouldPresentGlobalError {
+          errorMessage = blocker.userMessage
+        }
+      }
+
       guard try await reminderProjectProvider.requestAccess() else {
-        AppLogger.sync.error("logseq page change skipped because reminders access is denied")
+        AppLogger.sync.error("obsidian project change skipped because reminders access is denied")
         syncStatus = "Reminders access denied"
+        bumpWorkspaceTreeRevision()
         return
       }
-      let result = try await RetainedLogseqProjectProvisioningSync.syncChangedPages(
-        fileURLs: filesToSync,
-        store: pageStore,
+      let provisioningResult = try await ObsidianReminderProvisioningSync.syncChangedNotes(
+        fileURLs: changedFiles,
+        store: store,
         reminderProjectProvider: reminderProjectProvider
       )
-      applyRetainedLogseqProvisioningResult(result)
-      AppLogger.sync.info(
-        "logseq page change synced createdProjects=\(result.createdProjectCount, privacy: .public) createdTasks=\(result.createdTaskCount, privacy: .public) deletedTasks=\(result.deletedTaskCount, privacy: .public) taskRecords=\(result.taskRecords.count, privacy: .public)"
-      )
-      if result.createdProjectCount > 0
-        || result.createdTaskCount > 0
-        || result.deletedTaskCount > 0
-        || !result.projectRecords.isEmpty
-        || !result.taskRecords.isEmpty
+      applyObsidianProvisioningResult(provisioningResult)
+      if provisioningResult.createdProjectCount > 0
+        || provisioningResult.createdTaskCount > 0
+        || provisioningResult.updatedTaskCount > 0
+        || provisioningResult.deletedTaskCount > 0
       {
-        recordLogseqAuthoredReminderPush()
-      }
-      if result.createdProjectCount > 0 || result.createdTaskCount > 0 || result.deletedTaskCount > 0 {
-        syncStatus = result.deletedTaskCount > 0
-          ? "Synced \(result.createdProjectCount) lists / \(result.createdTaskCount) tasks / deleted \(result.deletedTaskCount)"
-          : "Synced \(result.createdProjectCount) lists / \(result.createdTaskCount) tasks"
+        recordAppAuthoredReminderPush()
+        syncStatus = "Synced Obsidian \(provisioningResult.createdProjectCount) lists / \(provisioningResult.createdTaskCount) tasks / updated \(provisioningResult.updatedTaskCount) / deleted \(provisioningResult.deletedTaskCount)"
       }
       bumpWorkspaceTreeRevision()
     } catch {
-      reportError(error, logMessage: "handleLogseqPagesDirectoryChange failed")
-      syncStatus = "Logseq sync failed"
+      reportError(error, logMessage: "handleObsidianProjectDirectoryChange failed")
+      syncStatus = "Obsidian refresh failed"
     }
   }
 
-  func applyRetainedLogseqProvisioningResult(
-    _ result: RetainedLogseqProjectProvisioningSync.SyncResult
-  ) {
+  func applyObsidianProvisioningResult(_ result: ObsidianReminderProvisioningSync.SyncResult) {
     for projectRecord in result.projectRecords {
       TaskIdentityBridgeStore.upsertProject(
         projectID: projectRecord.projectID,
@@ -246,20 +198,25 @@ extension AppState {
     }
   }
 
-  func uniqueLogseqPageFileURLs(_ fileURLs: [URL]) -> [URL] {
-    Array(
-      Set(
-        fileURLs
-          .filter { $0.pathExtension.lowercased() == "md" }
-          .map { $0.resolvingSymlinksInPath().standardizedFileURL }
+  func applyObsidianImportResult(_ result: ObsidianReminderImportSync.SyncResult) {
+    for projectRecord in result.projectRecords {
+      TaskIdentityBridgeStore.upsertProject(
+        projectID: projectRecord.projectID,
+        title: projectRecord.title,
+        reminderListExternalIdentifier: projectRecord.reminderListExternalIdentifier
       )
-    )
-    .sorted {
-      $0.lastPathComponent.localizedStandardCompare($1.lastPathComponent) == .orderedAscending
+    }
+    for taskRecord in result.taskRecords {
+      TaskIdentityBridgeStore.upsertTask(
+        taskID: taskRecord.taskID,
+        title: taskRecord.title,
+        reminderExternalIdentifier: taskRecord.reminderExternalIdentifier,
+        ownerProjectID: taskRecord.ownerProjectID
+      )
     }
   }
 
-  func persistManagedLogseqPages(for projectIDs: Set<UUID>) async {
+  func persistManagedProjectNotes(for projectIDs: Set<UUID>) async {
     _ = projectIDs
     bumpWorkspaceTreeRevision()
   }

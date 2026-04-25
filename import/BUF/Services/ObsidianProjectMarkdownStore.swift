@@ -94,7 +94,8 @@ actor ObsidianProjectMarkdownStore: ProjectMarkdownStore {
   func writeProjectNote(
     _ note: ObsidianProjectNote,
     preferredFileName: String,
-    expectedBaseline: WriteBaseline? = nil
+    expectedBaseline: WriteBaseline? = nil,
+    allowClaimingUnownedProject: Bool = false
   ) async throws -> Snapshot {
     try prepareProjectDirectorySync()
     let fileURL = projectsRootURL.appendingPathComponent(
@@ -113,7 +114,11 @@ actor ObsidianProjectMarkdownStore: ProjectMarkdownStore {
         return existingSnapshot
       }
 
-      try validateExistingFileIdentity(existingSnapshot, requestedNote: note)
+      try validateExistingFileIdentity(
+        existingSnapshot,
+        requestedNote: note,
+        allowClaimingUnownedProject: allowClaimingUnownedProject
+      )
       guard let expectedBaseline else {
         throw StoreError.missingExpectedBaseline
       }
@@ -124,7 +129,13 @@ actor ObsidianProjectMarkdownStore: ProjectMarkdownStore {
       }
     }
     try rendered.write(to: fileURL, atomically: true, encoding: .utf8)
-    return try loadSnapshot(at: fileURL)
+    let snapshot = try loadSnapshot(at: fileURL)
+    NotificationCenter.default.post(
+      name: .obsidianProjectMarkdownStoreDidWriteMarkdown,
+      object: nil,
+      userInfo: [ObsidianProjectMarkdownStoreWriteNotification.fileURLKey: snapshot.fileURL]
+    )
+    return snapshot
   }
 
   private func prepareProjectDirectorySync() throws {
@@ -188,10 +199,18 @@ actor ObsidianProjectMarkdownStore: ProjectMarkdownStore {
 
   private func validateExistingFileIdentity(
     _ existingSnapshot: Snapshot,
-    requestedNote: ObsidianProjectNote
+    requestedNote: ObsidianProjectNote,
+    allowClaimingUnownedProject: Bool
   ) throws {
     let requestedListID = normalized(requestedNote.reminderListExternalIdentifier)
     let existingListID = normalized(existingSnapshot.note.reminderListExternalIdentifier)
+    if allowClaimingUnownedProject,
+      existingListID == nil,
+      requestedListID != nil,
+      existingSnapshot.note.isProjectTagged
+    {
+      return
+    }
     guard requestedListID == nil || requestedListID == existingListID else {
       throw StoreError.conflictingReminderListIdentity(
         existing: existingListID,

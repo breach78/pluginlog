@@ -21,20 +21,6 @@
         }
       ]
     },
-    "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/pluginlog-harness_BrainUnfogHarness.bundle/LogseqHelperPlugin" : {
-      "inputs" : [
-        {
-          "kind" : "directory",
-          "name" : "/Users/three/app_build/logseq plugin/import/BUF/Resources/LogseqHelperPlugin"
-        }
-      ],
-      "outputs" : [
-        {
-          "kind" : "directory",
-          "name" : "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/pluginlog-harness_BrainUnfogHarness.bundle/LogseqHelperPlugin"
-        }
-      ]
-    },
     "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/pluginlog-harness_BrainUnfogHarness.bundle/ObsidianHelperPlugin" : {
       "inputs" : [
         {
@@ -122,10 +108,6 @@
         {
           "kind" : "file",
           "name" : "/Users/three/app_build/logseq plugin/import/BUF/App/ExternalOwnerChangeCommand.swift"
-        },
-        {
-          "kind" : "file",
-          "name" : "/Users/three/app_build/logseq plugin/import/BUF/App/LogseqGraphRootPreferenceResolver.swift"
         },
         {
           "kind" : "file",
@@ -309,39 +291,15 @@
         },
         {
           "kind" : "file",
-          "name" : "/Users/three/app_build/logseq plugin/import/BUF/Services/LogseqGraphConfigStore.swift"
-        },
-        {
-          "kind" : "file",
-          "name" : "/Users/three/app_build/logseq plugin/import/BUF/Services/LogseqHelperPluginInstaller.swift"
-        },
-        {
-          "kind" : "file",
-          "name" : "/Users/three/app_build/logseq plugin/import/BUF/Services/LogseqPageFilenameCodec.swift"
-        },
-        {
-          "kind" : "file",
-          "name" : "/Users/three/app_build/logseq plugin/import/BUF/Services/LogseqPagesDirectoryWatcher.swift"
-        },
-        {
-          "kind" : "file",
-          "name" : "/Users/three/app_build/logseq plugin/import/BUF/Services/LogseqProjectMarkdownStoreAdapter.swift"
-        },
-        {
-          "kind" : "file",
-          "name" : "/Users/three/app_build/logseq plugin/import/BUF/Services/LogseqProjectPageStore.swift"
-        },
-        {
-          "kind" : "file",
-          "name" : "/Users/three/app_build/logseq plugin/import/BUF/Services/LogseqReminderPropertyCodec.swift"
-        },
-        {
-          "kind" : "file",
-          "name" : "/Users/three/app_build/logseq plugin/import/BUF/Services/ManagedLogseqSyncHardening.swift"
+          "name" : "/Users/three/app_build/logseq plugin/import/BUF/Services/ObsidianChangedProjectProjectionRefresh.swift"
         },
         {
           "kind" : "file",
           "name" : "/Users/three/app_build/logseq plugin/import/BUF/Services/ObsidianHelperPluginInstaller.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/three/app_build/logseq plugin/import/BUF/Services/ObsidianProjectDirectoryWatcher.swift"
         },
         {
           "kind" : "file",
@@ -362,6 +320,34 @@
         {
           "kind" : "file",
           "name" : "/Users/three/app_build/logseq plugin/import/BUF/Services/ObsidianReminderBootstrapSync.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/three/app_build/logseq plugin/import/BUF/Services/ObsidianReminderDeletionSync.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/three/app_build/logseq plugin/import/BUF/Services/ObsidianReminderImportFormatting.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/three/app_build/logseq plugin/import/BUF/Services/ObsidianReminderImportSync.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/three/app_build/logseq plugin/import/BUF/Services/ObsidianReminderProvisioningSync.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/three/app_build/logseq plugin/import/BUF/Services/ObsidianRetainedProjectionAdapter.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/three/app_build/logseq plugin/import/BUF/Services/ObsidianRetainedTaskCommandService.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/three/app_build/logseq plugin/import/BUF/Services/ObsidianTaskOpenService.swift"
         },
         {
           "kind" : "file",
@@ -417,6 +403,10 @@
         },
         {
           "kind" : "file",
+          "name" : "/Users/three/app_build/logseq plugin/import/BUF/Services/ReminderScheduleMetadataCodec.swift"
+        },
+        {
+          "kind" : "file",
           "name" : "/Users/three/app_build/logseq plugin/import/BUF/Services/ReminderSourceObserver.swift"
         },
         {
@@ -433,15 +423,7 @@
         },
         {
           "kind" : "file",
-          "name" : "/Users/three/app_build/logseq plugin/import/BUF/Services/RetainedCalendarEventKitBridge.swift"
-        },
-        {
-          "kind" : "file",
           "name" : "/Users/three/app_build/logseq plugin/import/BUF/Services/RetainedCompatibilityTypes.swift"
-        },
-        {
-          "kind" : "file",
-          "name" : "/Users/three/app_build/logseq plugin/import/BUF/Services/RetainedLogseqProjectProvisioningSync.swift"
         },
         {
           "kind" : "file",
@@ -450,10 +432,6 @@
         {
           "kind" : "file",
           "name" : "/Users/three/app_build/logseq plugin/import/BUF/Services/RetainedProjectionModels.swift"
-        },
-        {
-          "kind" : "file",
-          "name" : "/Users/three/app_build/logseq plugin/import/BUF/Services/RetainedReminderImportSync.swift"
         },
         {
           "kind" : "file",
@@ -490,10 +468,6 @@
         {
           "kind" : "file",
           "name" : "/Users/three/app_build/logseq plugin/import/BUF/Utilities/DragPayloadCodec.swift"
-        },
-        {
-          "kind" : "file",
-          "name" : "/Users/three/app_build/logseq plugin/import/BUF/Utilities/LogseqDeepLinking.swift"
         },
         {
           "kind" : "file",
@@ -558,7 +532,6 @@
         "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarness.build/AppStateSyncAndPersistence.swift.o",
         "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarness.build/AppStateWorkspaceUI.swift.o",
         "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarness.build/ExternalOwnerChangeCommand.swift.o",
-        "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarness.build/LogseqGraphRootPreferenceResolver.swift.o",
         "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarness.build/MainAppWindowPresenter.swift.o",
         "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarness.build/ObsidianVaultPreferenceResolver.swift.o",
         "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarness.build/OwnershipTypes.swift.o",
@@ -604,20 +577,21 @@
         "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarness.build/Enums.swift.o",
         "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarness.build/ContainerPaths.swift.o",
         "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarness.build/StorageCoordinator.swift.o",
-        "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarness.build/LogseqGraphConfigStore.swift.o",
-        "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarness.build/LogseqHelperPluginInstaller.swift.o",
-        "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarness.build/LogseqPageFilenameCodec.swift.o",
-        "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarness.build/LogseqPagesDirectoryWatcher.swift.o",
-        "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarness.build/LogseqProjectMarkdownStoreAdapter.swift.o",
-        "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarness.build/LogseqProjectPageStore.swift.o",
-        "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarness.build/LogseqReminderPropertyCodec.swift.o",
-        "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarness.build/ManagedLogseqSyncHardening.swift.o",
+        "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarness.build/ObsidianChangedProjectProjectionRefresh.swift.o",
         "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarness.build/ObsidianHelperPluginInstaller.swift.o",
+        "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarness.build/ObsidianProjectDirectoryWatcher.swift.o",
         "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarness.build/ObsidianProjectMarkdownStore.swift.o",
         "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarness.build/ObsidianProjectNoteModels.swift.o",
         "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarness.build/ObsidianProjectNoteParser.swift.o",
         "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarness.build/ObsidianProjectNoteRenderer.swift.o",
         "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarness.build/ObsidianReminderBootstrapSync.swift.o",
+        "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarness.build/ObsidianReminderDeletionSync.swift.o",
+        "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarness.build/ObsidianReminderImportFormatting.swift.o",
+        "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarness.build/ObsidianReminderImportSync.swift.o",
+        "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarness.build/ObsidianReminderProvisioningSync.swift.o",
+        "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarness.build/ObsidianRetainedProjectionAdapter.swift.o",
+        "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarness.build/ObsidianRetainedTaskCommandService.swift.o",
+        "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarness.build/ObsidianTaskOpenService.swift.o",
         "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarness.build/ObsidianVaultLayout.swift.o",
         "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarness.build/OwnedScheduleCalendarInvalidationPolicy.swift.o",
         "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarness.build/OwnedScheduleCalendarSupport.swift.o",
@@ -631,16 +605,14 @@
         "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarness.build/ReminderPendingBindingStore.swift.o",
         "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarness.build/ReminderProjectionSidecarReadService.swift.o",
         "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarness.build/ReminderRecurrenceCodec.swift.o",
+        "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarness.build/ReminderScheduleMetadataCodec.swift.o",
         "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarness.build/ReminderSourceObserver.swift.o",
         "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarness.build/ReminderSyncHardening.swift.o",
         "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarness.build/ReminderTaskAdoptionPolicy.swift.o",
         "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarness.build/RetainedCalendarBridgePolicy.swift.o",
-        "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarness.build/RetainedCalendarEventKitBridge.swift.o",
         "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarness.build/RetainedCompatibilityTypes.swift.o",
-        "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarness.build/RetainedLogseqProjectProvisioningSync.swift.o",
         "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarness.build/RetainedProjectionBuilder.swift.o",
         "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarness.build/RetainedProjectionModels.swift.o",
-        "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarness.build/RetainedReminderImportSync.swift.o",
         "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarness.build/RetainedTaskCommandService.swift.o",
         "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarness.build/RetainedWorkspaceRecords.swift.o",
         "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarness.build/RetainedWorkspaceSurfaceProjection.swift.o",
@@ -650,7 +622,6 @@
         "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarness.build/AppNotifications.swift.o",
         "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarness.build/ColorHexCodec.swift.o",
         "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarness.build/DragPayloadCodec.swift.o",
-        "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarness.build/LogseqDeepLinking.swift.o",
         "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarness.build/MotionSystem.swift.o",
         "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarness.build/MotionTransaction.swift.o",
         "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarness.build/OverlaySurfaceStyle.swift.o",
@@ -772,10 +743,6 @@
         {
           "kind" : "file",
           "name" : "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarness.build/ExternalOwnerChangeCommand.swift.o"
-        },
-        {
-          "kind" : "file",
-          "name" : "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarness.build/LogseqGraphRootPreferenceResolver.swift.o"
         },
         {
           "kind" : "file",
@@ -959,39 +926,15 @@
         },
         {
           "kind" : "file",
-          "name" : "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarness.build/LogseqGraphConfigStore.swift.o"
-        },
-        {
-          "kind" : "file",
-          "name" : "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarness.build/LogseqHelperPluginInstaller.swift.o"
-        },
-        {
-          "kind" : "file",
-          "name" : "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarness.build/LogseqPageFilenameCodec.swift.o"
-        },
-        {
-          "kind" : "file",
-          "name" : "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarness.build/LogseqPagesDirectoryWatcher.swift.o"
-        },
-        {
-          "kind" : "file",
-          "name" : "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarness.build/LogseqProjectMarkdownStoreAdapter.swift.o"
-        },
-        {
-          "kind" : "file",
-          "name" : "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarness.build/LogseqProjectPageStore.swift.o"
-        },
-        {
-          "kind" : "file",
-          "name" : "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarness.build/LogseqReminderPropertyCodec.swift.o"
-        },
-        {
-          "kind" : "file",
-          "name" : "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarness.build/ManagedLogseqSyncHardening.swift.o"
+          "name" : "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarness.build/ObsidianChangedProjectProjectionRefresh.swift.o"
         },
         {
           "kind" : "file",
           "name" : "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarness.build/ObsidianHelperPluginInstaller.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarness.build/ObsidianProjectDirectoryWatcher.swift.o"
         },
         {
           "kind" : "file",
@@ -1012,6 +955,34 @@
         {
           "kind" : "file",
           "name" : "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarness.build/ObsidianReminderBootstrapSync.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarness.build/ObsidianReminderDeletionSync.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarness.build/ObsidianReminderImportFormatting.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarness.build/ObsidianReminderImportSync.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarness.build/ObsidianReminderProvisioningSync.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarness.build/ObsidianRetainedProjectionAdapter.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarness.build/ObsidianRetainedTaskCommandService.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarness.build/ObsidianTaskOpenService.swift.o"
         },
         {
           "kind" : "file",
@@ -1067,6 +1038,10 @@
         },
         {
           "kind" : "file",
+          "name" : "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarness.build/ReminderScheduleMetadataCodec.swift.o"
+        },
+        {
+          "kind" : "file",
           "name" : "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarness.build/ReminderSourceObserver.swift.o"
         },
         {
@@ -1083,15 +1058,7 @@
         },
         {
           "kind" : "file",
-          "name" : "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarness.build/RetainedCalendarEventKitBridge.swift.o"
-        },
-        {
-          "kind" : "file",
           "name" : "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarness.build/RetainedCompatibilityTypes.swift.o"
-        },
-        {
-          "kind" : "file",
-          "name" : "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarness.build/RetainedLogseqProjectProvisioningSync.swift.o"
         },
         {
           "kind" : "file",
@@ -1100,10 +1067,6 @@
         {
           "kind" : "file",
           "name" : "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarness.build/RetainedProjectionModels.swift.o"
-        },
-        {
-          "kind" : "file",
-          "name" : "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarness.build/RetainedReminderImportSync.swift.o"
         },
         {
           "kind" : "file",
@@ -1140,10 +1103,6 @@
         {
           "kind" : "file",
           "name" : "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarness.build/DragPayloadCodec.swift.o"
-        },
-        {
-          "kind" : "file",
-          "name" : "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarness.build/LogseqDeepLinking.swift.o"
         },
         {
           "kind" : "file",
@@ -1198,7 +1157,6 @@
         "/Users/three/app_build/logseq plugin/import/BUF/App/AppStateSyncAndPersistence.swift",
         "/Users/three/app_build/logseq plugin/import/BUF/App/AppStateWorkspaceUI.swift",
         "/Users/three/app_build/logseq plugin/import/BUF/App/ExternalOwnerChangeCommand.swift",
-        "/Users/three/app_build/logseq plugin/import/BUF/App/LogseqGraphRootPreferenceResolver.swift",
         "/Users/three/app_build/logseq plugin/import/BUF/App/MainAppWindowPresenter.swift",
         "/Users/three/app_build/logseq plugin/import/BUF/App/ObsidianVaultPreferenceResolver.swift",
         "/Users/three/app_build/logseq plugin/import/BUF/App/OwnershipTypes.swift",
@@ -1244,20 +1202,21 @@
         "/Users/three/app_build/logseq plugin/import/BUF/Models/Enums.swift",
         "/Users/three/app_build/logseq plugin/import/BUF/Persistence/ContainerPaths.swift",
         "/Users/three/app_build/logseq plugin/import/BUF/Persistence/StorageCoordinator.swift",
-        "/Users/three/app_build/logseq plugin/import/BUF/Services/LogseqGraphConfigStore.swift",
-        "/Users/three/app_build/logseq plugin/import/BUF/Services/LogseqHelperPluginInstaller.swift",
-        "/Users/three/app_build/logseq plugin/import/BUF/Services/LogseqPageFilenameCodec.swift",
-        "/Users/three/app_build/logseq plugin/import/BUF/Services/LogseqPagesDirectoryWatcher.swift",
-        "/Users/three/app_build/logseq plugin/import/BUF/Services/LogseqProjectMarkdownStoreAdapter.swift",
-        "/Users/three/app_build/logseq plugin/import/BUF/Services/LogseqProjectPageStore.swift",
-        "/Users/three/app_build/logseq plugin/import/BUF/Services/LogseqReminderPropertyCodec.swift",
-        "/Users/three/app_build/logseq plugin/import/BUF/Services/ManagedLogseqSyncHardening.swift",
+        "/Users/three/app_build/logseq plugin/import/BUF/Services/ObsidianChangedProjectProjectionRefresh.swift",
         "/Users/three/app_build/logseq plugin/import/BUF/Services/ObsidianHelperPluginInstaller.swift",
+        "/Users/three/app_build/logseq plugin/import/BUF/Services/ObsidianProjectDirectoryWatcher.swift",
         "/Users/three/app_build/logseq plugin/import/BUF/Services/ObsidianProjectMarkdownStore.swift",
         "/Users/three/app_build/logseq plugin/import/BUF/Services/ObsidianProjectNoteModels.swift",
         "/Users/three/app_build/logseq plugin/import/BUF/Services/ObsidianProjectNoteParser.swift",
         "/Users/three/app_build/logseq plugin/import/BUF/Services/ObsidianProjectNoteRenderer.swift",
         "/Users/three/app_build/logseq plugin/import/BUF/Services/ObsidianReminderBootstrapSync.swift",
+        "/Users/three/app_build/logseq plugin/import/BUF/Services/ObsidianReminderDeletionSync.swift",
+        "/Users/three/app_build/logseq plugin/import/BUF/Services/ObsidianReminderImportFormatting.swift",
+        "/Users/three/app_build/logseq plugin/import/BUF/Services/ObsidianReminderImportSync.swift",
+        "/Users/three/app_build/logseq plugin/import/BUF/Services/ObsidianReminderProvisioningSync.swift",
+        "/Users/three/app_build/logseq plugin/import/BUF/Services/ObsidianRetainedProjectionAdapter.swift",
+        "/Users/three/app_build/logseq plugin/import/BUF/Services/ObsidianRetainedTaskCommandService.swift",
+        "/Users/three/app_build/logseq plugin/import/BUF/Services/ObsidianTaskOpenService.swift",
         "/Users/three/app_build/logseq plugin/import/BUF/Services/ObsidianVaultLayout.swift",
         "/Users/three/app_build/logseq plugin/import/BUF/Services/OwnedScheduleCalendarInvalidationPolicy.swift",
         "/Users/three/app_build/logseq plugin/import/BUF/Services/OwnedScheduleCalendarSupport.swift",
@@ -1271,16 +1230,14 @@
         "/Users/three/app_build/logseq plugin/import/BUF/Services/ReminderPendingBindingStore.swift",
         "/Users/three/app_build/logseq plugin/import/BUF/Services/ReminderProjectionSidecarReadService.swift",
         "/Users/three/app_build/logseq plugin/import/BUF/Services/ReminderRecurrenceCodec.swift",
+        "/Users/three/app_build/logseq plugin/import/BUF/Services/ReminderScheduleMetadataCodec.swift",
         "/Users/three/app_build/logseq plugin/import/BUF/Services/ReminderSourceObserver.swift",
         "/Users/three/app_build/logseq plugin/import/BUF/Services/ReminderSyncHardening.swift",
         "/Users/three/app_build/logseq plugin/import/BUF/Services/ReminderTaskAdoptionPolicy.swift",
         "/Users/three/app_build/logseq plugin/import/BUF/Services/RetainedCalendarBridgePolicy.swift",
-        "/Users/three/app_build/logseq plugin/import/BUF/Services/RetainedCalendarEventKitBridge.swift",
         "/Users/three/app_build/logseq plugin/import/BUF/Services/RetainedCompatibilityTypes.swift",
-        "/Users/three/app_build/logseq plugin/import/BUF/Services/RetainedLogseqProjectProvisioningSync.swift",
         "/Users/three/app_build/logseq plugin/import/BUF/Services/RetainedProjectionBuilder.swift",
         "/Users/three/app_build/logseq plugin/import/BUF/Services/RetainedProjectionModels.swift",
-        "/Users/three/app_build/logseq plugin/import/BUF/Services/RetainedReminderImportSync.swift",
         "/Users/three/app_build/logseq plugin/import/BUF/Services/RetainedTaskCommandService.swift",
         "/Users/three/app_build/logseq plugin/import/BUF/Services/RetainedWorkspaceRecords.swift",
         "/Users/three/app_build/logseq plugin/import/BUF/Services/RetainedWorkspaceSurfaceProjection.swift",
@@ -1290,7 +1247,6 @@
         "/Users/three/app_build/logseq plugin/import/BUF/Utilities/AppNotifications.swift",
         "/Users/three/app_build/logseq plugin/import/BUF/Utilities/ColorHexCodec.swift",
         "/Users/three/app_build/logseq plugin/import/BUF/Utilities/DragPayloadCodec.swift",
-        "/Users/three/app_build/logseq plugin/import/BUF/Utilities/LogseqDeepLinking.swift",
         "/Users/three/app_build/logseq plugin/import/BUF/Utilities/MotionSystem.swift",
         "/Users/three/app_build/logseq plugin/import/BUF/Utilities/MotionTransaction.swift",
         "/Users/three/app_build/logseq plugin/import/BUF/Utilities/OverlaySurfaceStyle.swift",
@@ -1318,39 +1274,15 @@
         },
         {
           "kind" : "file",
-          "name" : "/Users/three/app_build/logseq plugin/Tests/BrainUnfogHarnessTests/LogseqGraphConfigStoreTests.swift"
-        },
-        {
-          "kind" : "file",
-          "name" : "/Users/three/app_build/logseq plugin/Tests/BrainUnfogHarnessTests/LogseqGraphRootPreferenceResolverTests.swift"
-        },
-        {
-          "kind" : "file",
-          "name" : "/Users/three/app_build/logseq plugin/Tests/BrainUnfogHarnessTests/LogseqHelperPluginInstallerTests.swift"
-        },
-        {
-          "kind" : "file",
-          "name" : "/Users/three/app_build/logseq plugin/Tests/BrainUnfogHarnessTests/LogseqPagesChangeTrackerTests.swift"
-        },
-        {
-          "kind" : "file",
-          "name" : "/Users/three/app_build/logseq plugin/Tests/BrainUnfogHarnessTests/LogseqProjectMarkdownStoreAdapterTests.swift"
-        },
-        {
-          "kind" : "file",
-          "name" : "/Users/three/app_build/logseq plugin/Tests/BrainUnfogHarnessTests/LogseqProjectPageStoreTests.swift"
-        },
-        {
-          "kind" : "file",
-          "name" : "/Users/three/app_build/logseq plugin/Tests/BrainUnfogHarnessTests/LogseqReminderPropertyCodecTests.swift"
-        },
-        {
-          "kind" : "file",
-          "name" : "/Users/three/app_build/logseq plugin/Tests/BrainUnfogHarnessTests/ManagedLogseqSyncHardeningTests.swift"
+          "name" : "/Users/three/app_build/logseq plugin/Tests/BrainUnfogHarnessTests/ObsidianChangedProjectProjectionRefreshTests.swift"
         },
         {
           "kind" : "file",
           "name" : "/Users/three/app_build/logseq plugin/Tests/BrainUnfogHarnessTests/ObsidianHelperPluginInstallerTests.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/three/app_build/logseq plugin/Tests/BrainUnfogHarnessTests/ObsidianProjectDirectoryWatcherTests.swift"
         },
         {
           "kind" : "file",
@@ -1367,6 +1299,30 @@
         {
           "kind" : "file",
           "name" : "/Users/three/app_build/logseq plugin/Tests/BrainUnfogHarnessTests/ObsidianReminderBootstrapSyncTests.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/three/app_build/logseq plugin/Tests/BrainUnfogHarnessTests/ObsidianReminderDeletionSyncTests.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/three/app_build/logseq plugin/Tests/BrainUnfogHarnessTests/ObsidianReminderImportSyncTests.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/three/app_build/logseq plugin/Tests/BrainUnfogHarnessTests/ObsidianReminderProvisioningSyncTests.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/three/app_build/logseq plugin/Tests/BrainUnfogHarnessTests/ObsidianRetainedProjectionAdapterTests.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/three/app_build/logseq plugin/Tests/BrainUnfogHarnessTests/ObsidianRetainedTaskCommandServiceTests.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/three/app_build/logseq plugin/Tests/BrainUnfogHarnessTests/ObsidianTaskOpenServiceTests.swift"
         },
         {
           "kind" : "file",
@@ -1410,27 +1366,7 @@
         },
         {
           "kind" : "file",
-          "name" : "/Users/three/app_build/logseq plugin/Tests/BrainUnfogHarnessTests/RetainedCalendarEventKitBridgeTests.swift"
-        },
-        {
-          "kind" : "file",
-          "name" : "/Users/three/app_build/logseq plugin/Tests/BrainUnfogHarnessTests/RetainedLogseqProjectProvisioningSyncTests.swift"
-        },
-        {
-          "kind" : "file",
-          "name" : "/Users/three/app_build/logseq plugin/Tests/BrainUnfogHarnessTests/RetainedProjectionBuilderTests.swift"
-        },
-        {
-          "kind" : "file",
-          "name" : "/Users/three/app_build/logseq plugin/Tests/BrainUnfogHarnessTests/RetainedReminderImportSyncTests.swift"
-        },
-        {
-          "kind" : "file",
           "name" : "/Users/three/app_build/logseq plugin/Tests/BrainUnfogHarnessTests/RetainedSetupFlowTests.swift"
-        },
-        {
-          "kind" : "file",
-          "name" : "/Users/three/app_build/logseq plugin/Tests/BrainUnfogHarnessTests/RetainedTaskCommandServiceTests.swift"
         },
         {
           "kind" : "file",
@@ -1467,19 +1403,19 @@
       "objects" : [
         "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarnessTests.build/AppBundleMetadataTests.swift.o",
         "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarnessTests.build/AppSettingsWindowPresenterTests.swift.o",
-        "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarnessTests.build/LogseqGraphConfigStoreTests.swift.o",
-        "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarnessTests.build/LogseqGraphRootPreferenceResolverTests.swift.o",
-        "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarnessTests.build/LogseqHelperPluginInstallerTests.swift.o",
-        "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarnessTests.build/LogseqPagesChangeTrackerTests.swift.o",
-        "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarnessTests.build/LogseqProjectMarkdownStoreAdapterTests.swift.o",
-        "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarnessTests.build/LogseqProjectPageStoreTests.swift.o",
-        "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarnessTests.build/LogseqReminderPropertyCodecTests.swift.o",
-        "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarnessTests.build/ManagedLogseqSyncHardeningTests.swift.o",
+        "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarnessTests.build/ObsidianChangedProjectProjectionRefreshTests.swift.o",
         "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarnessTests.build/ObsidianHelperPluginInstallerTests.swift.o",
+        "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarnessTests.build/ObsidianProjectDirectoryWatcherTests.swift.o",
         "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarnessTests.build/ObsidianProjectMarkdownStoreTests.swift.o",
         "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarnessTests.build/ObsidianProjectNoteParserTests.swift.o",
         "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarnessTests.build/ObsidianProjectNoteRendererTests.swift.o",
         "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarnessTests.build/ObsidianReminderBootstrapSyncTests.swift.o",
+        "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarnessTests.build/ObsidianReminderDeletionSyncTests.swift.o",
+        "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarnessTests.build/ObsidianReminderImportSyncTests.swift.o",
+        "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarnessTests.build/ObsidianReminderProvisioningSyncTests.swift.o",
+        "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarnessTests.build/ObsidianRetainedProjectionAdapterTests.swift.o",
+        "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarnessTests.build/ObsidianRetainedTaskCommandServiceTests.swift.o",
+        "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarnessTests.build/ObsidianTaskOpenServiceTests.swift.o",
         "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarnessTests.build/ObsidianVaultLayoutTests.swift.o",
         "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarnessTests.build/ObsidianVaultPreferenceResolverTests.swift.o",
         "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarnessTests.build/OwnedScheduleCalendarInvalidationPolicyTests.swift.o",
@@ -1490,12 +1426,7 @@
         "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarnessTests.build/ReminderSyncBaselineStoreTests.swift.o",
         "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarnessTests.build/ReminderTaskAdoptionPolicyTests.swift.o",
         "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarnessTests.build/RetainedCalendarBridgePolicyTests.swift.o",
-        "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarnessTests.build/RetainedCalendarEventKitBridgeTests.swift.o",
-        "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarnessTests.build/RetainedLogseqProjectProvisioningSyncTests.swift.o",
-        "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarnessTests.build/RetainedProjectionBuilderTests.swift.o",
-        "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarnessTests.build/RetainedReminderImportSyncTests.swift.o",
         "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarnessTests.build/RetainedSetupFlowTests.swift.o",
-        "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarnessTests.build/RetainedTaskCommandServiceTests.swift.o",
         "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarnessTests.build/RetainedWorkspaceSurfaceProjectionTests.swift.o",
         "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarnessTests.build/ScheduleCalendarAccessPromptPolicyTests.swift.o",
         "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarnessTests.build/TaskIdentityBridgeStoreTests.swift.o",
@@ -1567,39 +1498,15 @@
         },
         {
           "kind" : "file",
-          "name" : "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarnessTests.build/LogseqGraphConfigStoreTests.swift.o"
-        },
-        {
-          "kind" : "file",
-          "name" : "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarnessTests.build/LogseqGraphRootPreferenceResolverTests.swift.o"
-        },
-        {
-          "kind" : "file",
-          "name" : "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarnessTests.build/LogseqHelperPluginInstallerTests.swift.o"
-        },
-        {
-          "kind" : "file",
-          "name" : "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarnessTests.build/LogseqPagesChangeTrackerTests.swift.o"
-        },
-        {
-          "kind" : "file",
-          "name" : "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarnessTests.build/LogseqProjectMarkdownStoreAdapterTests.swift.o"
-        },
-        {
-          "kind" : "file",
-          "name" : "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarnessTests.build/LogseqProjectPageStoreTests.swift.o"
-        },
-        {
-          "kind" : "file",
-          "name" : "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarnessTests.build/LogseqReminderPropertyCodecTests.swift.o"
-        },
-        {
-          "kind" : "file",
-          "name" : "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarnessTests.build/ManagedLogseqSyncHardeningTests.swift.o"
+          "name" : "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarnessTests.build/ObsidianChangedProjectProjectionRefreshTests.swift.o"
         },
         {
           "kind" : "file",
           "name" : "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarnessTests.build/ObsidianHelperPluginInstallerTests.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarnessTests.build/ObsidianProjectDirectoryWatcherTests.swift.o"
         },
         {
           "kind" : "file",
@@ -1616,6 +1523,30 @@
         {
           "kind" : "file",
           "name" : "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarnessTests.build/ObsidianReminderBootstrapSyncTests.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarnessTests.build/ObsidianReminderDeletionSyncTests.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarnessTests.build/ObsidianReminderImportSyncTests.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarnessTests.build/ObsidianReminderProvisioningSyncTests.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarnessTests.build/ObsidianRetainedProjectionAdapterTests.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarnessTests.build/ObsidianRetainedTaskCommandServiceTests.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarnessTests.build/ObsidianTaskOpenServiceTests.swift.o"
         },
         {
           "kind" : "file",
@@ -1659,27 +1590,7 @@
         },
         {
           "kind" : "file",
-          "name" : "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarnessTests.build/RetainedCalendarEventKitBridgeTests.swift.o"
-        },
-        {
-          "kind" : "file",
-          "name" : "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarnessTests.build/RetainedLogseqProjectProvisioningSyncTests.swift.o"
-        },
-        {
-          "kind" : "file",
-          "name" : "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarnessTests.build/RetainedProjectionBuilderTests.swift.o"
-        },
-        {
-          "kind" : "file",
-          "name" : "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarnessTests.build/RetainedReminderImportSyncTests.swift.o"
-        },
-        {
-          "kind" : "file",
           "name" : "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarnessTests.build/RetainedSetupFlowTests.swift.o"
-        },
-        {
-          "kind" : "file",
-          "name" : "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarnessTests.build/RetainedTaskCommandServiceTests.swift.o"
         },
         {
           "kind" : "file",
@@ -1706,19 +1617,19 @@
       "sources" : [
         "/Users/three/app_build/logseq plugin/Tests/BrainUnfogHarnessTests/AppBundleMetadataTests.swift",
         "/Users/three/app_build/logseq plugin/Tests/BrainUnfogHarnessTests/AppSettingsWindowPresenterTests.swift",
-        "/Users/three/app_build/logseq plugin/Tests/BrainUnfogHarnessTests/LogseqGraphConfigStoreTests.swift",
-        "/Users/three/app_build/logseq plugin/Tests/BrainUnfogHarnessTests/LogseqGraphRootPreferenceResolverTests.swift",
-        "/Users/three/app_build/logseq plugin/Tests/BrainUnfogHarnessTests/LogseqHelperPluginInstallerTests.swift",
-        "/Users/three/app_build/logseq plugin/Tests/BrainUnfogHarnessTests/LogseqPagesChangeTrackerTests.swift",
-        "/Users/three/app_build/logseq plugin/Tests/BrainUnfogHarnessTests/LogseqProjectMarkdownStoreAdapterTests.swift",
-        "/Users/three/app_build/logseq plugin/Tests/BrainUnfogHarnessTests/LogseqProjectPageStoreTests.swift",
-        "/Users/three/app_build/logseq plugin/Tests/BrainUnfogHarnessTests/LogseqReminderPropertyCodecTests.swift",
-        "/Users/three/app_build/logseq plugin/Tests/BrainUnfogHarnessTests/ManagedLogseqSyncHardeningTests.swift",
+        "/Users/three/app_build/logseq plugin/Tests/BrainUnfogHarnessTests/ObsidianChangedProjectProjectionRefreshTests.swift",
         "/Users/three/app_build/logseq plugin/Tests/BrainUnfogHarnessTests/ObsidianHelperPluginInstallerTests.swift",
+        "/Users/three/app_build/logseq plugin/Tests/BrainUnfogHarnessTests/ObsidianProjectDirectoryWatcherTests.swift",
         "/Users/three/app_build/logseq plugin/Tests/BrainUnfogHarnessTests/ObsidianProjectMarkdownStoreTests.swift",
         "/Users/three/app_build/logseq plugin/Tests/BrainUnfogHarnessTests/ObsidianProjectNoteParserTests.swift",
         "/Users/three/app_build/logseq plugin/Tests/BrainUnfogHarnessTests/ObsidianProjectNoteRendererTests.swift",
         "/Users/three/app_build/logseq plugin/Tests/BrainUnfogHarnessTests/ObsidianReminderBootstrapSyncTests.swift",
+        "/Users/three/app_build/logseq plugin/Tests/BrainUnfogHarnessTests/ObsidianReminderDeletionSyncTests.swift",
+        "/Users/three/app_build/logseq plugin/Tests/BrainUnfogHarnessTests/ObsidianReminderImportSyncTests.swift",
+        "/Users/three/app_build/logseq plugin/Tests/BrainUnfogHarnessTests/ObsidianReminderProvisioningSyncTests.swift",
+        "/Users/three/app_build/logseq plugin/Tests/BrainUnfogHarnessTests/ObsidianRetainedProjectionAdapterTests.swift",
+        "/Users/three/app_build/logseq plugin/Tests/BrainUnfogHarnessTests/ObsidianRetainedTaskCommandServiceTests.swift",
+        "/Users/three/app_build/logseq plugin/Tests/BrainUnfogHarnessTests/ObsidianTaskOpenServiceTests.swift",
         "/Users/three/app_build/logseq plugin/Tests/BrainUnfogHarnessTests/ObsidianVaultLayoutTests.swift",
         "/Users/three/app_build/logseq plugin/Tests/BrainUnfogHarnessTests/ObsidianVaultPreferenceResolverTests.swift",
         "/Users/three/app_build/logseq plugin/Tests/BrainUnfogHarnessTests/OwnedScheduleCalendarInvalidationPolicyTests.swift",
@@ -1729,12 +1640,7 @@
         "/Users/three/app_build/logseq plugin/Tests/BrainUnfogHarnessTests/ReminderSyncBaselineStoreTests.swift",
         "/Users/three/app_build/logseq plugin/Tests/BrainUnfogHarnessTests/ReminderTaskAdoptionPolicyTests.swift",
         "/Users/three/app_build/logseq plugin/Tests/BrainUnfogHarnessTests/RetainedCalendarBridgePolicyTests.swift",
-        "/Users/three/app_build/logseq plugin/Tests/BrainUnfogHarnessTests/RetainedCalendarEventKitBridgeTests.swift",
-        "/Users/three/app_build/logseq plugin/Tests/BrainUnfogHarnessTests/RetainedLogseqProjectProvisioningSyncTests.swift",
-        "/Users/three/app_build/logseq plugin/Tests/BrainUnfogHarnessTests/RetainedProjectionBuilderTests.swift",
-        "/Users/three/app_build/logseq plugin/Tests/BrainUnfogHarnessTests/RetainedReminderImportSyncTests.swift",
         "/Users/three/app_build/logseq plugin/Tests/BrainUnfogHarnessTests/RetainedSetupFlowTests.swift",
-        "/Users/three/app_build/logseq plugin/Tests/BrainUnfogHarnessTests/RetainedTaskCommandServiceTests.swift",
         "/Users/three/app_build/logseq plugin/Tests/BrainUnfogHarnessTests/RetainedWorkspaceSurfaceProjectionTests.swift",
         "/Users/three/app_build/logseq plugin/Tests/BrainUnfogHarnessTests/ScheduleCalendarAccessPromptPolicyTests.swift",
         "/Users/three/app_build/logseq plugin/Tests/BrainUnfogHarnessTests/TaskIdentityBridgeStoreTests.swift",
@@ -1870,7 +1776,6 @@
       "/Users/three/app_build/logseq plugin/import/BUF/App/AppStateSyncAndPersistence.swift",
       "/Users/three/app_build/logseq plugin/import/BUF/App/AppStateWorkspaceUI.swift",
       "/Users/three/app_build/logseq plugin/import/BUF/App/ExternalOwnerChangeCommand.swift",
-      "/Users/three/app_build/logseq plugin/import/BUF/App/LogseqGraphRootPreferenceResolver.swift",
       "/Users/three/app_build/logseq plugin/import/BUF/App/MainAppWindowPresenter.swift",
       "/Users/three/app_build/logseq plugin/import/BUF/App/ObsidianVaultPreferenceResolver.swift",
       "/Users/three/app_build/logseq plugin/import/BUF/App/OwnershipTypes.swift",
@@ -1916,20 +1821,21 @@
       "/Users/three/app_build/logseq plugin/import/BUF/Models/Enums.swift",
       "/Users/three/app_build/logseq plugin/import/BUF/Persistence/ContainerPaths.swift",
       "/Users/three/app_build/logseq plugin/import/BUF/Persistence/StorageCoordinator.swift",
-      "/Users/three/app_build/logseq plugin/import/BUF/Services/LogseqGraphConfigStore.swift",
-      "/Users/three/app_build/logseq plugin/import/BUF/Services/LogseqHelperPluginInstaller.swift",
-      "/Users/three/app_build/logseq plugin/import/BUF/Services/LogseqPageFilenameCodec.swift",
-      "/Users/three/app_build/logseq plugin/import/BUF/Services/LogseqPagesDirectoryWatcher.swift",
-      "/Users/three/app_build/logseq plugin/import/BUF/Services/LogseqProjectMarkdownStoreAdapter.swift",
-      "/Users/three/app_build/logseq plugin/import/BUF/Services/LogseqProjectPageStore.swift",
-      "/Users/three/app_build/logseq plugin/import/BUF/Services/LogseqReminderPropertyCodec.swift",
-      "/Users/three/app_build/logseq plugin/import/BUF/Services/ManagedLogseqSyncHardening.swift",
+      "/Users/three/app_build/logseq plugin/import/BUF/Services/ObsidianChangedProjectProjectionRefresh.swift",
       "/Users/three/app_build/logseq plugin/import/BUF/Services/ObsidianHelperPluginInstaller.swift",
+      "/Users/three/app_build/logseq plugin/import/BUF/Services/ObsidianProjectDirectoryWatcher.swift",
       "/Users/three/app_build/logseq plugin/import/BUF/Services/ObsidianProjectMarkdownStore.swift",
       "/Users/three/app_build/logseq plugin/import/BUF/Services/ObsidianProjectNoteModels.swift",
       "/Users/three/app_build/logseq plugin/import/BUF/Services/ObsidianProjectNoteParser.swift",
       "/Users/three/app_build/logseq plugin/import/BUF/Services/ObsidianProjectNoteRenderer.swift",
       "/Users/three/app_build/logseq plugin/import/BUF/Services/ObsidianReminderBootstrapSync.swift",
+      "/Users/three/app_build/logseq plugin/import/BUF/Services/ObsidianReminderDeletionSync.swift",
+      "/Users/three/app_build/logseq plugin/import/BUF/Services/ObsidianReminderImportFormatting.swift",
+      "/Users/three/app_build/logseq plugin/import/BUF/Services/ObsidianReminderImportSync.swift",
+      "/Users/three/app_build/logseq plugin/import/BUF/Services/ObsidianReminderProvisioningSync.swift",
+      "/Users/three/app_build/logseq plugin/import/BUF/Services/ObsidianRetainedProjectionAdapter.swift",
+      "/Users/three/app_build/logseq plugin/import/BUF/Services/ObsidianRetainedTaskCommandService.swift",
+      "/Users/three/app_build/logseq plugin/import/BUF/Services/ObsidianTaskOpenService.swift",
       "/Users/three/app_build/logseq plugin/import/BUF/Services/ObsidianVaultLayout.swift",
       "/Users/three/app_build/logseq plugin/import/BUF/Services/OwnedScheduleCalendarInvalidationPolicy.swift",
       "/Users/three/app_build/logseq plugin/import/BUF/Services/OwnedScheduleCalendarSupport.swift",
@@ -1943,16 +1849,14 @@
       "/Users/three/app_build/logseq plugin/import/BUF/Services/ReminderPendingBindingStore.swift",
       "/Users/three/app_build/logseq plugin/import/BUF/Services/ReminderProjectionSidecarReadService.swift",
       "/Users/three/app_build/logseq plugin/import/BUF/Services/ReminderRecurrenceCodec.swift",
+      "/Users/three/app_build/logseq plugin/import/BUF/Services/ReminderScheduleMetadataCodec.swift",
       "/Users/three/app_build/logseq plugin/import/BUF/Services/ReminderSourceObserver.swift",
       "/Users/three/app_build/logseq plugin/import/BUF/Services/ReminderSyncHardening.swift",
       "/Users/three/app_build/logseq plugin/import/BUF/Services/ReminderTaskAdoptionPolicy.swift",
       "/Users/three/app_build/logseq plugin/import/BUF/Services/RetainedCalendarBridgePolicy.swift",
-      "/Users/three/app_build/logseq plugin/import/BUF/Services/RetainedCalendarEventKitBridge.swift",
       "/Users/three/app_build/logseq plugin/import/BUF/Services/RetainedCompatibilityTypes.swift",
-      "/Users/three/app_build/logseq plugin/import/BUF/Services/RetainedLogseqProjectProvisioningSync.swift",
       "/Users/three/app_build/logseq plugin/import/BUF/Services/RetainedProjectionBuilder.swift",
       "/Users/three/app_build/logseq plugin/import/BUF/Services/RetainedProjectionModels.swift",
-      "/Users/three/app_build/logseq plugin/import/BUF/Services/RetainedReminderImportSync.swift",
       "/Users/three/app_build/logseq plugin/import/BUF/Services/RetainedTaskCommandService.swift",
       "/Users/three/app_build/logseq plugin/import/BUF/Services/RetainedWorkspaceRecords.swift",
       "/Users/three/app_build/logseq plugin/import/BUF/Services/RetainedWorkspaceSurfaceProjection.swift",
@@ -1962,7 +1866,6 @@
       "/Users/three/app_build/logseq plugin/import/BUF/Utilities/AppNotifications.swift",
       "/Users/three/app_build/logseq plugin/import/BUF/Utilities/ColorHexCodec.swift",
       "/Users/three/app_build/logseq plugin/import/BUF/Utilities/DragPayloadCodec.swift",
-      "/Users/three/app_build/logseq plugin/import/BUF/Utilities/LogseqDeepLinking.swift",
       "/Users/three/app_build/logseq plugin/import/BUF/Utilities/MotionSystem.swift",
       "/Users/three/app_build/logseq plugin/import/BUF/Utilities/MotionTransaction.swift",
       "/Users/three/app_build/logseq plugin/import/BUF/Utilities/OverlaySurfaceStyle.swift",
@@ -2038,19 +1941,19 @@
       "-c",
       "/Users/three/app_build/logseq plugin/Tests/BrainUnfogHarnessTests/AppBundleMetadataTests.swift",
       "/Users/three/app_build/logseq plugin/Tests/BrainUnfogHarnessTests/AppSettingsWindowPresenterTests.swift",
-      "/Users/three/app_build/logseq plugin/Tests/BrainUnfogHarnessTests/LogseqGraphConfigStoreTests.swift",
-      "/Users/three/app_build/logseq plugin/Tests/BrainUnfogHarnessTests/LogseqGraphRootPreferenceResolverTests.swift",
-      "/Users/three/app_build/logseq plugin/Tests/BrainUnfogHarnessTests/LogseqHelperPluginInstallerTests.swift",
-      "/Users/three/app_build/logseq plugin/Tests/BrainUnfogHarnessTests/LogseqPagesChangeTrackerTests.swift",
-      "/Users/three/app_build/logseq plugin/Tests/BrainUnfogHarnessTests/LogseqProjectMarkdownStoreAdapterTests.swift",
-      "/Users/three/app_build/logseq plugin/Tests/BrainUnfogHarnessTests/LogseqProjectPageStoreTests.swift",
-      "/Users/three/app_build/logseq plugin/Tests/BrainUnfogHarnessTests/LogseqReminderPropertyCodecTests.swift",
-      "/Users/three/app_build/logseq plugin/Tests/BrainUnfogHarnessTests/ManagedLogseqSyncHardeningTests.swift",
+      "/Users/three/app_build/logseq plugin/Tests/BrainUnfogHarnessTests/ObsidianChangedProjectProjectionRefreshTests.swift",
       "/Users/three/app_build/logseq plugin/Tests/BrainUnfogHarnessTests/ObsidianHelperPluginInstallerTests.swift",
+      "/Users/three/app_build/logseq plugin/Tests/BrainUnfogHarnessTests/ObsidianProjectDirectoryWatcherTests.swift",
       "/Users/three/app_build/logseq plugin/Tests/BrainUnfogHarnessTests/ObsidianProjectMarkdownStoreTests.swift",
       "/Users/three/app_build/logseq plugin/Tests/BrainUnfogHarnessTests/ObsidianProjectNoteParserTests.swift",
       "/Users/three/app_build/logseq plugin/Tests/BrainUnfogHarnessTests/ObsidianProjectNoteRendererTests.swift",
       "/Users/three/app_build/logseq plugin/Tests/BrainUnfogHarnessTests/ObsidianReminderBootstrapSyncTests.swift",
+      "/Users/three/app_build/logseq plugin/Tests/BrainUnfogHarnessTests/ObsidianReminderDeletionSyncTests.swift",
+      "/Users/three/app_build/logseq plugin/Tests/BrainUnfogHarnessTests/ObsidianReminderImportSyncTests.swift",
+      "/Users/three/app_build/logseq plugin/Tests/BrainUnfogHarnessTests/ObsidianReminderProvisioningSyncTests.swift",
+      "/Users/three/app_build/logseq plugin/Tests/BrainUnfogHarnessTests/ObsidianRetainedProjectionAdapterTests.swift",
+      "/Users/three/app_build/logseq plugin/Tests/BrainUnfogHarnessTests/ObsidianRetainedTaskCommandServiceTests.swift",
+      "/Users/three/app_build/logseq plugin/Tests/BrainUnfogHarnessTests/ObsidianTaskOpenServiceTests.swift",
       "/Users/three/app_build/logseq plugin/Tests/BrainUnfogHarnessTests/ObsidianVaultLayoutTests.swift",
       "/Users/three/app_build/logseq plugin/Tests/BrainUnfogHarnessTests/ObsidianVaultPreferenceResolverTests.swift",
       "/Users/three/app_build/logseq plugin/Tests/BrainUnfogHarnessTests/OwnedScheduleCalendarInvalidationPolicyTests.swift",
@@ -2061,12 +1964,7 @@
       "/Users/three/app_build/logseq plugin/Tests/BrainUnfogHarnessTests/ReminderSyncBaselineStoreTests.swift",
       "/Users/three/app_build/logseq plugin/Tests/BrainUnfogHarnessTests/ReminderTaskAdoptionPolicyTests.swift",
       "/Users/three/app_build/logseq plugin/Tests/BrainUnfogHarnessTests/RetainedCalendarBridgePolicyTests.swift",
-      "/Users/three/app_build/logseq plugin/Tests/BrainUnfogHarnessTests/RetainedCalendarEventKitBridgeTests.swift",
-      "/Users/three/app_build/logseq plugin/Tests/BrainUnfogHarnessTests/RetainedLogseqProjectProvisioningSyncTests.swift",
-      "/Users/three/app_build/logseq plugin/Tests/BrainUnfogHarnessTests/RetainedProjectionBuilderTests.swift",
-      "/Users/three/app_build/logseq plugin/Tests/BrainUnfogHarnessTests/RetainedReminderImportSyncTests.swift",
       "/Users/three/app_build/logseq plugin/Tests/BrainUnfogHarnessTests/RetainedSetupFlowTests.swift",
-      "/Users/three/app_build/logseq plugin/Tests/BrainUnfogHarnessTests/RetainedTaskCommandServiceTests.swift",
       "/Users/three/app_build/logseq plugin/Tests/BrainUnfogHarnessTests/RetainedWorkspaceSurfaceProjectionTests.swift",
       "/Users/three/app_build/logseq plugin/Tests/BrainUnfogHarnessTests/ScheduleCalendarAccessPromptPolicyTests.swift",
       "/Users/three/app_build/logseq plugin/Tests/BrainUnfogHarnessTests/TaskIdentityBridgeStoreTests.swift",
@@ -2308,10 +2206,6 @@
         },
         {
           "kind" : "file",
-          "name" : "/Users/three/app_build/logseq plugin/import/BUF/App/LogseqGraphRootPreferenceResolver.swift"
-        },
-        {
-          "kind" : "file",
           "name" : "/Users/three/app_build/logseq plugin/import/BUF/App/MainAppWindowPresenter.swift"
         },
         {
@@ -2492,39 +2386,15 @@
         },
         {
           "kind" : "file",
-          "name" : "/Users/three/app_build/logseq plugin/import/BUF/Services/LogseqGraphConfigStore.swift"
-        },
-        {
-          "kind" : "file",
-          "name" : "/Users/three/app_build/logseq plugin/import/BUF/Services/LogseqHelperPluginInstaller.swift"
-        },
-        {
-          "kind" : "file",
-          "name" : "/Users/three/app_build/logseq plugin/import/BUF/Services/LogseqPageFilenameCodec.swift"
-        },
-        {
-          "kind" : "file",
-          "name" : "/Users/three/app_build/logseq plugin/import/BUF/Services/LogseqPagesDirectoryWatcher.swift"
-        },
-        {
-          "kind" : "file",
-          "name" : "/Users/three/app_build/logseq plugin/import/BUF/Services/LogseqProjectMarkdownStoreAdapter.swift"
-        },
-        {
-          "kind" : "file",
-          "name" : "/Users/three/app_build/logseq plugin/import/BUF/Services/LogseqProjectPageStore.swift"
-        },
-        {
-          "kind" : "file",
-          "name" : "/Users/three/app_build/logseq plugin/import/BUF/Services/LogseqReminderPropertyCodec.swift"
-        },
-        {
-          "kind" : "file",
-          "name" : "/Users/three/app_build/logseq plugin/import/BUF/Services/ManagedLogseqSyncHardening.swift"
+          "name" : "/Users/three/app_build/logseq plugin/import/BUF/Services/ObsidianChangedProjectProjectionRefresh.swift"
         },
         {
           "kind" : "file",
           "name" : "/Users/three/app_build/logseq plugin/import/BUF/Services/ObsidianHelperPluginInstaller.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/three/app_build/logseq plugin/import/BUF/Services/ObsidianProjectDirectoryWatcher.swift"
         },
         {
           "kind" : "file",
@@ -2545,6 +2415,34 @@
         {
           "kind" : "file",
           "name" : "/Users/three/app_build/logseq plugin/import/BUF/Services/ObsidianReminderBootstrapSync.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/three/app_build/logseq plugin/import/BUF/Services/ObsidianReminderDeletionSync.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/three/app_build/logseq plugin/import/BUF/Services/ObsidianReminderImportFormatting.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/three/app_build/logseq plugin/import/BUF/Services/ObsidianReminderImportSync.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/three/app_build/logseq plugin/import/BUF/Services/ObsidianReminderProvisioningSync.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/three/app_build/logseq plugin/import/BUF/Services/ObsidianRetainedProjectionAdapter.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/three/app_build/logseq plugin/import/BUF/Services/ObsidianRetainedTaskCommandService.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/three/app_build/logseq plugin/import/BUF/Services/ObsidianTaskOpenService.swift"
         },
         {
           "kind" : "file",
@@ -2600,6 +2498,10 @@
         },
         {
           "kind" : "file",
+          "name" : "/Users/three/app_build/logseq plugin/import/BUF/Services/ReminderScheduleMetadataCodec.swift"
+        },
+        {
+          "kind" : "file",
           "name" : "/Users/three/app_build/logseq plugin/import/BUF/Services/ReminderSourceObserver.swift"
         },
         {
@@ -2616,15 +2518,7 @@
         },
         {
           "kind" : "file",
-          "name" : "/Users/three/app_build/logseq plugin/import/BUF/Services/RetainedCalendarEventKitBridge.swift"
-        },
-        {
-          "kind" : "file",
           "name" : "/Users/three/app_build/logseq plugin/import/BUF/Services/RetainedCompatibilityTypes.swift"
-        },
-        {
-          "kind" : "file",
-          "name" : "/Users/three/app_build/logseq plugin/import/BUF/Services/RetainedLogseqProjectProvisioningSync.swift"
         },
         {
           "kind" : "file",
@@ -2633,10 +2527,6 @@
         {
           "kind" : "file",
           "name" : "/Users/three/app_build/logseq plugin/import/BUF/Services/RetainedProjectionModels.swift"
-        },
-        {
-          "kind" : "file",
-          "name" : "/Users/three/app_build/logseq plugin/import/BUF/Services/RetainedReminderImportSync.swift"
         },
         {
           "kind" : "file",
@@ -2673,10 +2563,6 @@
         {
           "kind" : "file",
           "name" : "/Users/three/app_build/logseq plugin/import/BUF/Utilities/DragPayloadCodec.swift"
-        },
-        {
-          "kind" : "file",
-          "name" : "/Users/three/app_build/logseq plugin/import/BUF/Utilities/LogseqDeepLinking.swift"
         },
         {
           "kind" : "file",
@@ -2818,42 +2704,6 @@
         },
         {
           "kind" : "file",
-          "name" : "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarness.build/LogseqDeepLinking.swift.o"
-        },
-        {
-          "kind" : "file",
-          "name" : "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarness.build/LogseqGraphConfigStore.swift.o"
-        },
-        {
-          "kind" : "file",
-          "name" : "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarness.build/LogseqGraphRootPreferenceResolver.swift.o"
-        },
-        {
-          "kind" : "file",
-          "name" : "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarness.build/LogseqHelperPluginInstaller.swift.o"
-        },
-        {
-          "kind" : "file",
-          "name" : "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarness.build/LogseqPageFilenameCodec.swift.o"
-        },
-        {
-          "kind" : "file",
-          "name" : "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarness.build/LogseqPagesDirectoryWatcher.swift.o"
-        },
-        {
-          "kind" : "file",
-          "name" : "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarness.build/LogseqProjectMarkdownStoreAdapter.swift.o"
-        },
-        {
-          "kind" : "file",
-          "name" : "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarness.build/LogseqProjectPageStore.swift.o"
-        },
-        {
-          "kind" : "file",
-          "name" : "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarness.build/LogseqReminderPropertyCodec.swift.o"
-        },
-        {
-          "kind" : "file",
           "name" : "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarness.build/MainAppWindowPresenter.swift.o"
         },
         {
@@ -2890,10 +2740,6 @@
         },
         {
           "kind" : "file",
-          "name" : "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarness.build/ManagedLogseqSyncHardening.swift.o"
-        },
-        {
-          "kind" : "file",
           "name" : "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarness.build/MotionSystem.swift.o"
         },
         {
@@ -2902,7 +2748,15 @@
         },
         {
           "kind" : "file",
+          "name" : "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarness.build/ObsidianChangedProjectProjectionRefresh.swift.o"
+        },
+        {
+          "kind" : "file",
           "name" : "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarness.build/ObsidianHelperPluginInstaller.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarness.build/ObsidianProjectDirectoryWatcher.swift.o"
         },
         {
           "kind" : "file",
@@ -2923,6 +2777,34 @@
         {
           "kind" : "file",
           "name" : "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarness.build/ObsidianReminderBootstrapSync.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarness.build/ObsidianReminderDeletionSync.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarness.build/ObsidianReminderImportFormatting.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarness.build/ObsidianReminderImportSync.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarness.build/ObsidianReminderProvisioningSync.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarness.build/ObsidianRetainedProjectionAdapter.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarness.build/ObsidianRetainedTaskCommandService.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarness.build/ObsidianTaskOpenService.swift.o"
         },
         {
           "kind" : "file",
@@ -2998,6 +2880,10 @@
         },
         {
           "kind" : "file",
+          "name" : "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarness.build/ReminderScheduleMetadataCodec.swift.o"
+        },
+        {
+          "kind" : "file",
           "name" : "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarness.build/ReminderSourceObserver.swift.o"
         },
         {
@@ -3018,15 +2904,7 @@
         },
         {
           "kind" : "file",
-          "name" : "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarness.build/RetainedCalendarEventKitBridge.swift.o"
-        },
-        {
-          "kind" : "file",
           "name" : "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarness.build/RetainedCompatibilityTypes.swift.o"
-        },
-        {
-          "kind" : "file",
-          "name" : "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarness.build/RetainedLogseqProjectProvisioningSync.swift.o"
         },
         {
           "kind" : "file",
@@ -3035,10 +2913,6 @@
         {
           "kind" : "file",
           "name" : "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarness.build/RetainedProjectionModels.swift.o"
-        },
-        {
-          "kind" : "file",
-          "name" : "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarness.build/RetainedReminderImportSync.swift.o"
         },
         {
           "kind" : "file",
@@ -3200,39 +3074,15 @@
         },
         {
           "kind" : "file",
-          "name" : "/Users/three/app_build/logseq plugin/Tests/BrainUnfogHarnessTests/LogseqGraphConfigStoreTests.swift"
-        },
-        {
-          "kind" : "file",
-          "name" : "/Users/three/app_build/logseq plugin/Tests/BrainUnfogHarnessTests/LogseqGraphRootPreferenceResolverTests.swift"
-        },
-        {
-          "kind" : "file",
-          "name" : "/Users/three/app_build/logseq plugin/Tests/BrainUnfogHarnessTests/LogseqHelperPluginInstallerTests.swift"
-        },
-        {
-          "kind" : "file",
-          "name" : "/Users/three/app_build/logseq plugin/Tests/BrainUnfogHarnessTests/LogseqPagesChangeTrackerTests.swift"
-        },
-        {
-          "kind" : "file",
-          "name" : "/Users/three/app_build/logseq plugin/Tests/BrainUnfogHarnessTests/LogseqProjectMarkdownStoreAdapterTests.swift"
-        },
-        {
-          "kind" : "file",
-          "name" : "/Users/three/app_build/logseq plugin/Tests/BrainUnfogHarnessTests/LogseqProjectPageStoreTests.swift"
-        },
-        {
-          "kind" : "file",
-          "name" : "/Users/three/app_build/logseq plugin/Tests/BrainUnfogHarnessTests/LogseqReminderPropertyCodecTests.swift"
-        },
-        {
-          "kind" : "file",
-          "name" : "/Users/three/app_build/logseq plugin/Tests/BrainUnfogHarnessTests/ManagedLogseqSyncHardeningTests.swift"
+          "name" : "/Users/three/app_build/logseq plugin/Tests/BrainUnfogHarnessTests/ObsidianChangedProjectProjectionRefreshTests.swift"
         },
         {
           "kind" : "file",
           "name" : "/Users/three/app_build/logseq plugin/Tests/BrainUnfogHarnessTests/ObsidianHelperPluginInstallerTests.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/three/app_build/logseq plugin/Tests/BrainUnfogHarnessTests/ObsidianProjectDirectoryWatcherTests.swift"
         },
         {
           "kind" : "file",
@@ -3249,6 +3099,30 @@
         {
           "kind" : "file",
           "name" : "/Users/three/app_build/logseq plugin/Tests/BrainUnfogHarnessTests/ObsidianReminderBootstrapSyncTests.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/three/app_build/logseq plugin/Tests/BrainUnfogHarnessTests/ObsidianReminderDeletionSyncTests.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/three/app_build/logseq plugin/Tests/BrainUnfogHarnessTests/ObsidianReminderImportSyncTests.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/three/app_build/logseq plugin/Tests/BrainUnfogHarnessTests/ObsidianReminderProvisioningSyncTests.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/three/app_build/logseq plugin/Tests/BrainUnfogHarnessTests/ObsidianRetainedProjectionAdapterTests.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/three/app_build/logseq plugin/Tests/BrainUnfogHarnessTests/ObsidianRetainedTaskCommandServiceTests.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/three/app_build/logseq plugin/Tests/BrainUnfogHarnessTests/ObsidianTaskOpenServiceTests.swift"
         },
         {
           "kind" : "file",
@@ -3292,27 +3166,7 @@
         },
         {
           "kind" : "file",
-          "name" : "/Users/three/app_build/logseq plugin/Tests/BrainUnfogHarnessTests/RetainedCalendarEventKitBridgeTests.swift"
-        },
-        {
-          "kind" : "file",
-          "name" : "/Users/three/app_build/logseq plugin/Tests/BrainUnfogHarnessTests/RetainedLogseqProjectProvisioningSyncTests.swift"
-        },
-        {
-          "kind" : "file",
-          "name" : "/Users/three/app_build/logseq plugin/Tests/BrainUnfogHarnessTests/RetainedProjectionBuilderTests.swift"
-        },
-        {
-          "kind" : "file",
-          "name" : "/Users/three/app_build/logseq plugin/Tests/BrainUnfogHarnessTests/RetainedReminderImportSyncTests.swift"
-        },
-        {
-          "kind" : "file",
           "name" : "/Users/three/app_build/logseq plugin/Tests/BrainUnfogHarnessTests/RetainedSetupFlowTests.swift"
-        },
-        {
-          "kind" : "file",
-          "name" : "/Users/three/app_build/logseq plugin/Tests/BrainUnfogHarnessTests/RetainedTaskCommandServiceTests.swift"
         },
         {
           "kind" : "file",
@@ -3438,42 +3292,6 @@
         },
         {
           "kind" : "file",
-          "name" : "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarness.build/LogseqDeepLinking.swift.o"
-        },
-        {
-          "kind" : "file",
-          "name" : "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarness.build/LogseqGraphConfigStore.swift.o"
-        },
-        {
-          "kind" : "file",
-          "name" : "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarness.build/LogseqGraphRootPreferenceResolver.swift.o"
-        },
-        {
-          "kind" : "file",
-          "name" : "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarness.build/LogseqHelperPluginInstaller.swift.o"
-        },
-        {
-          "kind" : "file",
-          "name" : "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarness.build/LogseqPageFilenameCodec.swift.o"
-        },
-        {
-          "kind" : "file",
-          "name" : "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarness.build/LogseqPagesDirectoryWatcher.swift.o"
-        },
-        {
-          "kind" : "file",
-          "name" : "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarness.build/LogseqProjectMarkdownStoreAdapter.swift.o"
-        },
-        {
-          "kind" : "file",
-          "name" : "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarness.build/LogseqProjectPageStore.swift.o"
-        },
-        {
-          "kind" : "file",
-          "name" : "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarness.build/LogseqReminderPropertyCodec.swift.o"
-        },
-        {
-          "kind" : "file",
           "name" : "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarness.build/MainAppWindowPresenter.swift.o"
         },
         {
@@ -3510,10 +3328,6 @@
         },
         {
           "kind" : "file",
-          "name" : "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarness.build/ManagedLogseqSyncHardening.swift.o"
-        },
-        {
-          "kind" : "file",
           "name" : "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarness.build/MotionSystem.swift.o"
         },
         {
@@ -3522,7 +3336,15 @@
         },
         {
           "kind" : "file",
+          "name" : "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarness.build/ObsidianChangedProjectProjectionRefresh.swift.o"
+        },
+        {
+          "kind" : "file",
           "name" : "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarness.build/ObsidianHelperPluginInstaller.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarness.build/ObsidianProjectDirectoryWatcher.swift.o"
         },
         {
           "kind" : "file",
@@ -3543,6 +3365,34 @@
         {
           "kind" : "file",
           "name" : "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarness.build/ObsidianReminderBootstrapSync.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarness.build/ObsidianReminderDeletionSync.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarness.build/ObsidianReminderImportFormatting.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarness.build/ObsidianReminderImportSync.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarness.build/ObsidianReminderProvisioningSync.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarness.build/ObsidianRetainedProjectionAdapter.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarness.build/ObsidianRetainedTaskCommandService.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarness.build/ObsidianTaskOpenService.swift.o"
         },
         {
           "kind" : "file",
@@ -3618,6 +3468,10 @@
         },
         {
           "kind" : "file",
+          "name" : "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarness.build/ReminderScheduleMetadataCodec.swift.o"
+        },
+        {
+          "kind" : "file",
           "name" : "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarness.build/ReminderSourceObserver.swift.o"
         },
         {
@@ -3638,15 +3492,7 @@
         },
         {
           "kind" : "file",
-          "name" : "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarness.build/RetainedCalendarEventKitBridge.swift.o"
-        },
-        {
-          "kind" : "file",
           "name" : "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarness.build/RetainedCompatibilityTypes.swift.o"
-        },
-        {
-          "kind" : "file",
-          "name" : "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarness.build/RetainedLogseqProjectProvisioningSync.swift.o"
         },
         {
           "kind" : "file",
@@ -3655,10 +3501,6 @@
         {
           "kind" : "file",
           "name" : "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarness.build/RetainedProjectionModels.swift.o"
-        },
-        {
-          "kind" : "file",
-          "name" : "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarness.build/RetainedReminderImportSync.swift.o"
         },
         {
           "kind" : "file",
@@ -3810,39 +3652,15 @@
         },
         {
           "kind" : "file",
-          "name" : "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarnessTests.build/LogseqGraphConfigStoreTests.swift.o"
-        },
-        {
-          "kind" : "file",
-          "name" : "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarnessTests.build/LogseqGraphRootPreferenceResolverTests.swift.o"
-        },
-        {
-          "kind" : "file",
-          "name" : "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarnessTests.build/LogseqHelperPluginInstallerTests.swift.o"
-        },
-        {
-          "kind" : "file",
-          "name" : "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarnessTests.build/LogseqPagesChangeTrackerTests.swift.o"
-        },
-        {
-          "kind" : "file",
-          "name" : "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarnessTests.build/LogseqProjectMarkdownStoreAdapterTests.swift.o"
-        },
-        {
-          "kind" : "file",
-          "name" : "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarnessTests.build/LogseqProjectPageStoreTests.swift.o"
-        },
-        {
-          "kind" : "file",
-          "name" : "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarnessTests.build/LogseqReminderPropertyCodecTests.swift.o"
-        },
-        {
-          "kind" : "file",
-          "name" : "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarnessTests.build/ManagedLogseqSyncHardeningTests.swift.o"
+          "name" : "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarnessTests.build/ObsidianChangedProjectProjectionRefreshTests.swift.o"
         },
         {
           "kind" : "file",
           "name" : "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarnessTests.build/ObsidianHelperPluginInstallerTests.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarnessTests.build/ObsidianProjectDirectoryWatcherTests.swift.o"
         },
         {
           "kind" : "file",
@@ -3859,6 +3677,30 @@
         {
           "kind" : "file",
           "name" : "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarnessTests.build/ObsidianReminderBootstrapSyncTests.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarnessTests.build/ObsidianReminderDeletionSyncTests.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarnessTests.build/ObsidianReminderImportSyncTests.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarnessTests.build/ObsidianReminderProvisioningSyncTests.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarnessTests.build/ObsidianRetainedProjectionAdapterTests.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarnessTests.build/ObsidianRetainedTaskCommandServiceTests.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarnessTests.build/ObsidianTaskOpenServiceTests.swift.o"
         },
         {
           "kind" : "file",
@@ -3902,27 +3744,7 @@
         },
         {
           "kind" : "file",
-          "name" : "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarnessTests.build/RetainedCalendarEventKitBridgeTests.swift.o"
-        },
-        {
-          "kind" : "file",
-          "name" : "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarnessTests.build/RetainedLogseqProjectProvisioningSyncTests.swift.o"
-        },
-        {
-          "kind" : "file",
-          "name" : "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarnessTests.build/RetainedProjectionBuilderTests.swift.o"
-        },
-        {
-          "kind" : "file",
-          "name" : "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarnessTests.build/RetainedReminderImportSyncTests.swift.o"
-        },
-        {
-          "kind" : "file",
           "name" : "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarnessTests.build/RetainedSetupFlowTests.swift.o"
-        },
-        {
-          "kind" : "file",
-          "name" : "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarnessTests.build/RetainedTaskCommandServiceTests.swift.o"
         },
         {
           "kind" : "file",

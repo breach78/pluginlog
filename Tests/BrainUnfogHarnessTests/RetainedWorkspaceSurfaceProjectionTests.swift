@@ -125,17 +125,20 @@ final class RetainedWorkspaceSurfaceProjectionTests: XCTestCase {
   func testBuildBlocksIdentityFailuresWithoutFallback() {
     let projectID = UUID()
     let taskID = UUID()
-    let page = makePageSnapshot(
-      title: "Project",
-      projectID: projectID,
-      tasks: [
-        .init(taskID: taskID, title: "A", isCompleted: false),
-        .init(taskID: taskID, title: "B", isCompleted: false),
+    let snapshot = RetainedWorkspaceSnapshot(
+      projects: [
+        makeProject(
+          projectID: projectID,
+          tasks: [
+            makeTask(taskID: taskID, title: "A"),
+            makeTask(taskID: taskID, title: "B"),
+          ]
+        )
       ]
     )
 
     let result = RetainedWorkspaceSurfaceProjectionBuilder.build(
-      pages: [page],
+      snapshot: snapshot,
       projectIDs: [projectID],
       calendar: Self.calendar
     )
@@ -196,7 +199,7 @@ final class RetainedWorkspaceSurfaceProjectionTests: XCTestCase {
         makeProject(
           projectID: projectID,
           tasks: [
-            makeTask(taskID: nil, title: "Plain Logseq task"),
+            makeTask(taskID: nil, title: "Plain task"),
             makeTask(taskID: stableTaskID, title: "Reminder-backed task"),
           ]
         )
@@ -215,31 +218,21 @@ final class RetainedWorkspaceSurfaceProjectionTests: XCTestCase {
     XCTAssertEqual(surface.calendarBridgeDecisionsByTaskID[stableTaskID], .noAction)
   }
 
-  func testLoadAllowsFallbackWhenGraphIsNotConfigured() async {
-    let result = await RetainedWorkspaceSurfaceProjectionBuilder.load(
-      graphRootURL: nil,
-      projectIDs: [UUID()],
-      calendar: Self.calendar
-    )
-
-    XCTAssertEqual(result, .fallbackAllowed(.graphNotConfigured))
-  }
-
   func testResolveRetainedOnlyBlocksUnavailableRetainedLoadsWithoutFallbackData() {
-    let graphMissing = RetainedWorkspaceSurfaceProjectionBuilder.resolveRetainedOnly(
-      .fallbackAllowed(.graphNotConfigured)
+    let vaultMissing = RetainedWorkspaceSurfaceProjectionBuilder.resolveRetainedOnly(
+      .blocked(.obsidianVaultNotConfigured)
     )
-    XCTAssertEqual(graphMissing.source, .blocked(.graphNotConfigured))
+    XCTAssertEqual(vaultMissing.source, .blocked(.obsidianVaultNotConfigured))
     XCTAssertEqual(
-      graphMissing.errorMessage,
-      RetainedWorkspaceSurfaceProjectionBlocker.graphNotConfigured.userMessage
+      vaultMissing.errorMessage,
+      RetainedWorkspaceSurfaceProjectionBlocker.obsidianVaultNotConfigured.userMessage
     )
-    XCTAssertTrue(graphMissing.projectSnapshots.isEmpty)
-    XCTAssertTrue(graphMissing.scheduleEntriesByProjectID.isEmpty)
-    XCTAssertTrue(graphMissing.calendarBridgeDecisionsByTaskID.isEmpty)
+    XCTAssertTrue(vaultMissing.projectSnapshots.isEmpty)
+    XCTAssertTrue(vaultMissing.scheduleEntriesByProjectID.isEmpty)
+    XCTAssertTrue(vaultMissing.calendarBridgeDecisionsByTaskID.isEmpty)
 
     let loadFailed = RetainedWorkspaceSurfaceProjectionBuilder.resolveRetainedOnly(
-      .fallbackAllowed(.loadFailed("disk unavailable"))
+      .blocked(.loadFailed("disk unavailable"))
     )
     XCTAssertEqual(loadFailed.source, .blocked(.loadFailed("disk unavailable")))
     XCTAssertEqual(
@@ -255,12 +248,12 @@ final class RetainedWorkspaceSurfaceProjectionTests: XCTestCase {
     let projectID = UUID()
 
     let blockedRead = RetainedWorkspaceSurfaceProjectionBuilder.resolveRetainedOnly(
-      .blocked(.taskIdentityUnavailable(projectID: projectID, title: "Plain Logseq task"))
+      .blocked(.taskIdentityUnavailable(projectID: projectID, title: "Plain task"))
     )
 
     XCTAssertEqual(
       blockedRead.source,
-      .blocked(.taskIdentityUnavailable(projectID: projectID, title: "Plain Logseq task"))
+      .blocked(.taskIdentityUnavailable(projectID: projectID, title: "Plain task"))
     )
     XCTAssertNil(blockedRead.errorMessage)
     XCTAssertTrue(blockedRead.projectSnapshots.isEmpty)
@@ -289,17 +282,12 @@ final class RetainedWorkspaceSurfaceProjectionTests: XCTestCase {
     )
     XCTAssertTrue(
       RetainedWorkspaceSurfaceProjectionBuilder.shouldInvalidateConsumerCaches(
-        for: .blocked(.graphNotConfigured)
-      )
-    )
-    XCTAssertTrue(
-      RetainedWorkspaceSurfaceProjectionBuilder.shouldInvalidateConsumerCaches(
-        for: .legacyFallback(.graphNotConfigured)
+        for: .blocked(.obsidianVaultNotConfigured)
       )
     )
   }
 
-  func testResolveKeepsRetainedSuccessAndBlocksIdentityFailures() {
+  func testResolveRetainedOnlyKeepsRetainedSuccessAndBlocksIdentityFailures() {
     let projectID = UUID()
     let retainedProjection = RetainedWorkspaceSurfaceProjection(
       projectSnapshots: [projectID: makeWorkspaceProjectSnapshot(projectID: projectID)],
@@ -307,87 +295,17 @@ final class RetainedWorkspaceSurfaceProjectionTests: XCTestCase {
       scheduleEntriesByProjectID: [projectID: []],
       calendarBridgeDecisionsByTaskID: [:]
     )
-    let retainedRead = RetainedWorkspaceSurfaceProjectionBuilder.resolve(
+    let retainedRead = RetainedWorkspaceSurfaceProjectionBuilder.resolveRetainedOnly(
       .loaded(retainedProjection)
-    ) {
-      XCTFail("Retained success must not consult legacy fallback")
-      return ReminderWorkspaceSurfaceProjection(
-        projectSnapshots: [:],
-        projectSummaries: [:],
-        scheduleEntriesByProjectID: [:]
-      )
-    }
+    )
     XCTAssertEqual(retainedRead.source, .retained)
     XCTAssertEqual(retainedRead.projectSnapshots[projectID]?.title, "Project")
 
-    let blockedRead = RetainedWorkspaceSurfaceProjectionBuilder.resolve(
+    let blockedRead = RetainedWorkspaceSurfaceProjectionBuilder.resolveRetainedOnly(
       .blocked(.identityFailure(.duplicateTaskID(projectID)))
-    ) {
-      XCTFail("Blocked identity failures must not consult legacy fallback")
-      return ReminderWorkspaceSurfaceProjection(
-        projectSnapshots: [projectID: makeWorkspaceProjectSnapshot(projectID: projectID)],
-        projectSummaries: [:],
-        scheduleEntriesByProjectID: [projectID: []]
-      )
-    }
+    )
     XCTAssertEqual(blockedRead.source, .blocked(.identityFailure(.duplicateTaskID(projectID))))
     XCTAssertTrue(blockedRead.projectSnapshots.isEmpty)
-  }
-
-  func testResolveAllowsLegacyFallbackOnlyForUnavailableRetainedLoad() {
-    let projectID = UUID()
-    let resolved = RetainedWorkspaceSurfaceProjectionBuilder.resolve(
-      .fallbackAllowed(.graphNotConfigured)
-    ) {
-      ReminderWorkspaceSurfaceProjection(
-        projectSnapshots: [projectID: makeWorkspaceProjectSnapshot(projectID: projectID)],
-        projectSummaries: [:],
-        scheduleEntriesByProjectID: [projectID: []]
-      )
-    }
-
-    XCTAssertEqual(resolved.source, .legacyFallback(.graphNotConfigured))
-    XCTAssertEqual(resolved.projectSnapshots[projectID]?.id, projectID)
-    XCTAssertTrue(resolved.calendarBridgeDecisionsByTaskID.isEmpty)
-  }
-
-  func testLoadBuildsFromLogseqGraphRootWhenAvailable() async throws {
-    let graphRootURL = try makeGraphRoot(named: "RetainedSurfaceGraph")
-    let projectID = RetainedProjectionBuilder.derivedProjectID(for: "reminder-list-1")
-    let taskID = ReminderProjectionIdentity.taskID(for: "reminder-1")
-    let store = LogseqProjectPageStore(
-      pagesRootURL: graphRootURL.appendingPathComponent("pages", isDirectory: true)
-    )
-    _ = try await store.upsertPage(
-      .init(
-        projectID: projectID,
-        title: "Graph Project",
-        reminderListExternalIdentifier: "reminder-list-1"
-      ),
-      noteMarkdown: "Graph note",
-      managedTasks: [
-        .init(
-          taskID: taskID,
-          title: "Graph task",
-          isCompleted: false,
-          date: "2026-04-25 14:30",
-          duration: "45",
-          reminderExternalIdentifier: "reminder-1",
-          calendarEventExternalIdentifier: "event-1"
-        )
-      ]
-    )
-
-    let result = await RetainedWorkspaceSurfaceProjectionBuilder.load(
-      graphRootURL: graphRootURL,
-      projectIDs: [projectID],
-      calendar: Self.calendar
-    )
-    let surface = try XCTUnwrap(result.loadedProjection)
-
-    XCTAssertEqual(surface.projectSnapshots[projectID]?.title, "Graph Project")
-    XCTAssertEqual(surface.scheduleEntriesByProjectID[projectID]?.first?.taskID, taskID)
-    XCTAssertEqual(surface.calendarBridgeDecisionsByTaskID[taskID], .noAction)
   }
 
   private static let calendar: Calendar = {
@@ -452,8 +370,8 @@ final class RetainedWorkspaceSurfaceProjectionTests: XCTestCase {
       schedule: RetainedTaskSchedule(
         rawDate: parsedDate.map {
           hasExplicitTime
-            ? LogseqReminderPropertyCodec.encodeDate($0, hasExplicitTime: true) ?? ""
-            : LogseqReminderPropertyCodec.encodeDate($0, hasExplicitTime: false) ?? ""
+            ? ReminderScheduleMetadataCodec.encodeDate($0, hasExplicitTime: true) ?? ""
+            : ReminderScheduleMetadataCodec.encodeDate($0, hasExplicitTime: false) ?? ""
         },
         parsedDate: parsedDate,
         hasExplicitTime: hasExplicitTime,
@@ -466,32 +384,6 @@ final class RetainedWorkspaceSurfaceProjectionTests: XCTestCase {
     )
   }
 
-  private func makePageSnapshot(
-    title: String,
-    projectID: UUID?,
-    tasks: [LogseqProjectPageStore.TaskRecord]
-  ) -> LogseqProjectPageStore.PageSnapshot {
-    LogseqProjectPageStore.PageSnapshot(
-      fileURL: URL(fileURLWithPath: "/tmp/\(title).md"),
-      title: title,
-      projectID: projectID,
-      reminderListExternalIdentifier: nil,
-      usesProjectTag: true,
-      isBUFOwned: true,
-      hasManagedTaskSection: true,
-      noteMarkdown: "",
-      managedTasks: tasks,
-      externalTasks: [],
-      canSafelyPersistProjectNote: true
-    )
-  }
-
-  private func makeGraphRoot(named name: String) throws -> URL {
-    let root = FileManager.default.temporaryDirectory
-      .appendingPathComponent("\(name)-\(UUID().uuidString)", isDirectory: true)
-    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-    return root
-  }
 }
 
 private extension RetainedWorkspaceSurfaceProjectionLoadResult {

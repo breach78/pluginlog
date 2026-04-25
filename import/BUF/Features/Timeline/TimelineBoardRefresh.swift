@@ -140,7 +140,7 @@ extension TimelineBoardView {
     }
 
     let retainedResult = await RetainedWorkspaceSurfaceProjectionBuilder.load(
-      graphRootURL: appState.logseqGraphRootURL,
+      obsidianVaultRootURL: appState.obsidianVaultRootURL,
       projectIDs: requestedProjectIDs
     )
     let resolvedRead = RetainedWorkspaceSurfaceProjectionBuilder.resolveRetainedOnly(retainedResult)

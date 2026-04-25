@@ -8,16 +8,15 @@ extension AppState {
     defer { isLaunching = false }
 
     applySetupPendingState()
-    installLogseqHelperPluginIfPossible()
-    restoreLogseqGraphRootIfPossible()
-    if let logseqGraphRootURL {
+    restoreObsidianVaultIfPossible()
+    if let obsidianVaultRootURL {
       do {
-        try await prepareGraphLocalContainer(for: logseqGraphRootURL)
+        try await prepareObsidianLocalContainer(for: obsidianVaultRootURL)
       } catch {
         storageCoordinator.clearActiveContainer()
         refreshContainerRootURL()
         errorMessage = error.localizedDescription
-        syncStatus = "Graph storage failed"
+        syncStatus = "Obsidian storage failed"
       }
     }
     refreshContainerRootURL()
@@ -42,87 +41,66 @@ extension AppState {
     await initializeContainer(at: url)
   }
 
-  func chooseLogseqGraphRootWithPicker(activateWhenReady: Bool = true) async {
+  func chooseObsidianVaultWithPicker(activateWhenReady: Bool = true) async {
     do {
       let urls = try await platformUIFoundation.pathPicker.pick(
         request: PlatformPathPickerRequest(
           kind: .directory,
-          message: "Logseq 그래프 루트를 선택해 주세요."
+          message: "Obsidian vault 루트를 선택해 주세요."
         )
       )
       guard let rootURL = urls.first else { return }
-      await configureLogseqGraphRoot(at: rootURL, activateWhenReady: activateWhenReady)
+      await configureObsidianVault(at: rootURL, activateWhenReady: activateWhenReady)
     } catch {
       errorMessage = error.localizedDescription
     }
   }
 
-  func configureLogseqGraphRoot(at rootURL: URL, activateWhenReady: Bool = true) async {
+  func configureObsidianVault(at rootURL: URL, activateWhenReady: Bool = true) async {
+    let previousContainerRootURL = containerRootURL
+      let previousContainerPreferenceSnapshot = ContainerPreferenceSnapshot.capture()
     do {
       reminderSourceObserver?.stop()
       reminderSourceObserver = nil
-      stopLogseqPagesDirectoryWatcher()
+      stopObsidianProjectDirectoryWatcher()
+      _ = rootURL.startAccessingSecurityScopedResource()
+      try await prepareObsidianLocalContainer(for: rootURL)
       let bookmarkData = try rootURL.bookmarkData(
         options: [.withSecurityScope],
         includingResourceValuesForKeys: nil,
         relativeTo: nil
       )
-      UserDefaults.standard.set(bookmarkData, forKey: Self.logseqGraphBookmarkDataKey)
-      UserDefaults.standard.set(rootURL.path, forKey: Self.logseqGraphRootPathKey)
-      applyLogseqGraphRoot(rootURL)
-      try await prepareGraphLocalContainer(for: rootURL)
+      UserDefaults.standard.set(bookmarkData, forKey: Self.obsidianVaultBookmarkDataKey)
+      UserDefaults.standard.set(rootURL.path, forKey: Self.obsidianVaultRootPathKey)
+      applyObsidianVault(rootURL)
       enableRetainedSyncConsent()
+      await requestRetainedExternalAccess()
+      guard await performReminderSourceRefresh(reason: .bootstrap) else {
+        throw ObsidianVaultSetupError.bootstrapFailed(syncStatus)
+      }
       if activateWhenReady {
         await prepareWorkspaceIfSetupComplete(shouldRefreshHealth: true, startStartupSync: false)
       }
-      await requestRetainedExternalAccess()
-      if activateWhenReady {
-        _ = await performReminderSourceRefresh(reason: .bootstrap)
-      }
     } catch {
-      storageCoordinator.clearActiveContainer()
-      refreshContainerRootURL()
-      reportError(error, logMessage: "configureLogseqGraphRoot failed")
-    }
-  }
-
-  private func prepareGraphLocalContainer(for graphRootURL: URL) async throws {
-    let containerRootURL = graphRootURL.appendingPathComponent(".buf", isDirectory: true)
-    try await storageCoordinator.openOrInitializeContainer(at: containerRootURL)
-    do {
-      try LogseqGraphConfigStore(graphRootURL: graphRootURL)
-        .ensureInternalIdentityPropertiesHidden(
-          hideCompletedTasks: !showsCompletedLogseqTasks
-        )
-    } catch {
-      AppLogger.sync.error(
-        "logseq hidden property config update failed: \(error.localizedDescription, privacy: .public)"
-      )
-    }
-    installLogseqHelperPluginIfPossible()
-    refreshContainerRootURL()
-    enableRetainedSyncConsent()
-  }
-
-  func reinstallLogseqHelperPlugin() {
-    installLogseqHelperPluginIfPossible()
-  }
-
-  private func installLogseqHelperPluginIfPossible() {
-    do {
-      let result = try LogseqHelperPluginInstaller.installBundled()
-      logseqHelperPluginInstallPath = result.targetURL.path
-      if let version = result.version {
-        logseqHelperPluginInstallStatus = "Installed v\(version)"
+      obsidianVaultRootURL = nil
+      UserDefaults.standard.removeObject(forKey: Self.obsidianVaultBookmarkDataKey)
+      UserDefaults.standard.removeObject(forKey: Self.obsidianVaultRootPathKey)
+      previousContainerPreferenceSnapshot.restore()
+      if let previousContainerRootURL {
+        try? await storageCoordinator.openOrInitializeContainer(at: previousContainerRootURL)
       } else {
-        logseqHelperPluginInstallStatus = "Installed"
+        storageCoordinator.clearActiveContainer()
       }
-    } catch {
-      logseqHelperPluginInstallStatus = "Install failed"
-      AppLogger.storage.error(
-        "logseq helper plugin install failed: \(error.localizedDescription, privacy: .public)"
-      )
+      refreshContainerRootURL()
+      reportError(error, logMessage: "configureObsidianVault failed")
     }
+  }
+
+  private func prepareObsidianLocalContainer(for vaultRootURL: URL) async throws {
+    let layout = ObsidianVaultLayout(vaultRootURL: vaultRootURL)
+    try layout.prepareAppDirectories()
+    try await storageCoordinator.openOrInitializeContainer(at: layout.sidecarRootURL)
+    refreshContainerRootURL()
   }
 
   private func enableRetainedSyncConsent() {
@@ -184,22 +162,24 @@ extension AppState {
     refreshContainerRootURL()
     reminderSourceObserver?.stop()
     reminderSourceObserver = nil
-    stopLogseqPagesDirectoryWatcher()
+    stopObsidianProjectDirectoryWatcher()
     modelContainer = nil
     scheduleCalendarOverlayProjection = .empty
     isInitialSyncRunning = false
-    logseqAuthoredReminderEchoSuppressionDeadline = nil
-    logseqAuthoredReminderEchoRefreshTask?.cancel()
-    logseqAuthoredReminderEchoRefreshTask = nil
+    appAuthoredReminderEchoSuppressionDeadline = nil
+    appAuthoredReminderEchoRefreshTask?.cancel()
+    appAuthoredReminderEchoRefreshTask = nil
     syncStarted = false
     boardsLoaded = false
-    syncStatus = isLogseqGraphConfigured ? "Container not opened" : "Logseq graph not configured"
+    syncStatus = isObsidianVaultConfigured
+      ? "Container not opened"
+      : "Project store not configured"
   }
 
-  private func restoreLogseqGraphRootIfPossible() {
-    let bookmarkData = UserDefaults.standard.data(forKey: Self.logseqGraphBookmarkDataKey)
-    let resolution = LogseqGraphRootPreferenceResolver.resolve(
-      storedPath: UserDefaults.standard.string(forKey: Self.logseqGraphRootPathKey),
+  private func restoreObsidianVaultIfPossible() {
+    let bookmarkData = UserDefaults.standard.data(forKey: Self.obsidianVaultBookmarkDataKey)
+    let resolution = ObsidianVaultPreferenceResolver.resolve(
+      storedPath: UserDefaults.standard.string(forKey: Self.obsidianVaultRootPathKey),
       bookmarkData: bookmarkData,
       resolveBookmark: { bookmarkData in
         var isStale = false
@@ -214,22 +194,22 @@ extension AppState {
 
     guard let resolution else {
       if bookmarkData != nil {
-        AppLogger.storage.error("restoreLogseqGraphRoot bookmark failed and no stored path exists")
+        AppLogger.storage.error("restoreObsidianVault bookmark failed and no stored path exists")
       }
       return
     }
 
     if resolution.didPreferStoredPathOverBookmark {
       AppLogger.storage.error(
-        "restoreLogseqGraphRoot preferred stored path over mismatched bookmark path=\(resolution.url.path, privacy: .public)"
+        "restoreObsidianVault preferred stored path over mismatched bookmark path=\(resolution.url.path, privacy: .public)"
       )
     }
-    applyLogseqGraphRoot(resolution.url)
+    applyObsidianVault(resolution.url)
   }
 
-  private func applyLogseqGraphRoot(_ rootURL: URL) {
+  private func applyObsidianVault(_ rootURL: URL) {
     _ = rootURL.startAccessingSecurityScopedResource()
-    logseqGraphRootURL = rootURL
+    obsidianVaultRootURL = rootURL
   }
 
   private func prepareWorkspaceIfSetupComplete(
@@ -245,7 +225,8 @@ extension AppState {
       modelContainer = try ModelContainer(for: Schema([]), configurations: [])
       if shouldRefreshHealth { await refreshHealth() }
       await prepareProjectNoteStore()
-      configureReminderSourceObservation()
+      reminderSourceObserver?.stop()
+      reminderSourceObserver = nil
       boardsLoaded = true
       syncStatus = "Ready"
       if startStartupSync {
@@ -254,6 +235,46 @@ extension AppState {
     } catch {
       reportError(error, logMessage: "prepareWorkspaceIfSetupComplete failed")
       syncStatus = "Setup failed"
+    }
+  }
+}
+
+private enum ObsidianVaultSetupError: LocalizedError {
+  case bootstrapFailed(String)
+
+  var errorDescription: String? {
+    switch self {
+    case .bootstrapFailed(let status):
+      "Obsidian bootstrap failed before setup could complete: \(status)"
+    }
+  }
+}
+
+private struct ContainerPreferenceSnapshot {
+  private static let bookmarkDataKey = "container.bookmarkData"
+  private static let rootPathKey = "container.rootPath"
+
+  let bookmarkData: Data?
+  let rootPath: String?
+
+  static func capture(defaults: UserDefaults = .standard) -> ContainerPreferenceSnapshot {
+    ContainerPreferenceSnapshot(
+      bookmarkData: defaults.data(forKey: bookmarkDataKey),
+      rootPath: defaults.string(forKey: rootPathKey)
+    )
+  }
+
+  func restore(defaults: UserDefaults = .standard) {
+    if let bookmarkData {
+      defaults.set(bookmarkData, forKey: Self.bookmarkDataKey)
+    } else {
+      defaults.removeObject(forKey: Self.bookmarkDataKey)
+    }
+
+    if let rootPath {
+      defaults.set(rootPath, forKey: Self.rootPathKey)
+    } else {
+      defaults.removeObject(forKey: Self.rootPathKey)
     }
   }
 }

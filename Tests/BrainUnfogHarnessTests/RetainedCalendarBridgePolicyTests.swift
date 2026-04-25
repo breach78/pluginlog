@@ -150,7 +150,7 @@ final class RetainedCalendarBridgePolicyTests: XCTestCase {
         reminderExternalIdentifier: nil,
         calendarEventExternalIdentifier: nil
       ),
-      title: "Plain Logseq task",
+      title: "Plain task",
       isCompleted: false,
       schedule: RetainedTaskSchedule(
         rawDate: "2026-04-25 14:30",

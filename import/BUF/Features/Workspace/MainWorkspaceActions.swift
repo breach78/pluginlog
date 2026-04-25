@@ -49,8 +49,7 @@ extension MainWorkspaceView {
   }
 
   func revealTimelineTaskDetail(taskID: UUID, projectID: UUID) {
-    _ = taskID
-    openProjectPage(for: projectID)
+    openProjectTaskInSource(projectID: projectID, taskID: taskID)
   }
 
   func completeTimelineTask(_ taskID: UUID, projectID: UUID) {

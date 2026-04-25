@@ -9,34 +9,34 @@ struct SetupContainerView: View {
       Text("Brain Unfog")
         .font(.largeTitle.bold())
 
-      Text("Logseq 그래프 폴더만 선택하세요. 앱 지원 파일은 그래프 안의 숨김 `.buf` 폴더에 자동으로 준비됩니다.")
+      Text("Obsidian vault를 선택하세요. 앱 지원 파일은 vault 안의 숨김 `.buf` 폴더에 준비됩니다.")
         .foregroundStyle(.secondary)
 
-      GroupBox("Logseq 그래프 폴더") {
+      GroupBox("Obsidian vault") {
         VStack(alignment: .leading, spacing: 8) {
-          if let root = appState.logseqGraphRootURL {
+          if let root = appState.obsidianVaultRootURL {
             Label("선택됨", systemImage: "checkmark.circle.fill")
               .foregroundStyle(.green)
             Text(root.path)
               .font(.system(.body, design: .monospaced))
               .textSelection(.enabled)
           } else {
-            Text("프로젝트 페이지가 들어 있는 Logseq graph 루트를 선택해 주세요.")
+            Text("`.obsidian` 폴더가 이미 있는 vault 루트를 선택해 주세요.")
               .foregroundStyle(.secondary)
           }
 
-          Button(appState.isLogseqGraphConfigured ? "Logseq 그래프 변경" : "Logseq 그래프 선택") {
+          Button(appState.isObsidianVaultConfigured ? "Obsidian vault 변경" : "Obsidian vault 선택") {
             runSetupAction {
-              await appState.chooseLogseqGraphRootWithPicker(activateWhenReady: true)
+              await appState.chooseObsidianVaultWithPicker(activateWhenReady: true)
             }
           }
           .buttonStyle(.borderedProminent)
           .disabled(isInitializing)
 
-          Text("선택 후 Reminders와 Calendar 권한을 자동으로 한 번 요청합니다.")
+          Text("첫 sync는 Reminders에서 Obsidian `raw/projects/`로 가져오는 방향으로만 실행됩니다.")
             .font(.footnote)
             .foregroundStyle(.secondary)
-          Text("별도 저장소, Journal, Compass 설정은 없습니다.")
+          Text("`.obsidian`은 만들지 않고, `.buf`와 `raw/projects`만 준비합니다.")
             .font(.footnote)
             .foregroundStyle(.secondary)
         }

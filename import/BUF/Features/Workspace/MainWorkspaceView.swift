@@ -617,10 +617,10 @@ struct MainWorkspaceView: View {
     )
   }
 
-  var completedLogseqTasksVisibleBinding: Binding<Bool> {
+  var completedTasksVisibleBinding: Binding<Bool> {
     Binding(
-      get: { appState.showsCompletedLogseqTasks },
-      set: { appState.setShowsCompletedLogseqTasks($0) }
+      get: { appState.showsCompletedTasks },
+      set: { appState.setShowsCompletedTasks($0) }
     )
   }
 
@@ -644,29 +644,40 @@ struct MainWorkspaceView: View {
     selectProjectContext(projectID)
     inspectorSelection = nil
 
-    let resolvedTitle =
-      workspaceProjectDescriptorsByID[projectID]?.title
-      ?? fallbackTitle?.trimmingCharacters(in: .whitespacesAndNewlines)
-      ?? ""
-
-    guard !resolvedTitle.isEmpty else {
-      appState.errorMessage = "열 프로젝트 페이지 제목을 찾지 못했습니다."
-      return
+    Task { @MainActor in
+      do {
+        try await ObsidianTaskOpenService.openProjectNote(
+          vaultRootURL: appState.obsidianVaultRootURL,
+          projectID: projectID,
+          documentOpener: appState.platformUIFoundation.documentOpener
+        )
+      } catch {
+        appState.errorMessage = error.localizedDescription
+      }
     }
+    _ = fallbackTitle
+  }
 
-    do {
-      let url = try LogseqDeepLinking.projectPageURL(
-        graphRootURL: appState.logseqGraphRootURL,
-        pageTitle: resolvedTitle
-      )
-      try appState.platformUIFoundation.documentOpener.open(url)
-    } catch {
-      appState.errorMessage = error.localizedDescription
+  func openProjectTaskInSource(projectID: UUID, taskID: UUID) {
+    showArchive = false
+    selectProjectContext(projectID)
+    inspectorSelection = nil
+
+    Task { @MainActor in
+      do {
+        try await ObsidianTaskOpenService.openTask(
+          vaultRootURL: appState.obsidianVaultRootURL,
+          projectID: projectID,
+          taskID: taskID,
+          documentOpener: appState.platformUIFoundation.documentOpener
+        )
+      } catch {
+        appState.errorMessage = error.localizedDescription
+      }
     }
   }
 
   func presentInspector(for projectID: UUID) {
-    _ = WorkspaceProjectSelectionRouting.consume()
     openProjectPage(for: projectID)
   }
 

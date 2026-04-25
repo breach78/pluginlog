@@ -169,7 +169,7 @@ enum WorkspaceSearchService {
         entityKind: .project,
         matchKind: .projectTitle,
         title: item.title,
-        subtitle: item.breadcrumbText.isEmpty ? "Logseq page" : item.breadcrumbText,
+        subtitle: item.breadcrumbText.isEmpty ? "Project note" : item.breadcrumbText,
         preview: "",
         navigationTarget: .projectTop(projectID: projectID),
         disposition: WorkspaceSearchDisposition(
@@ -252,19 +252,4 @@ struct CalendarEventFieldsWrite {
 
   let event: ScheduleCalendarEvent
   let mutation: Mutation
-}
-
-extension AppState {
-  struct RuntimeLogseqTaskBinding: Equatable {
-    let taskID: UUID
-    let reminderIdentifier: String?
-    let reminderExternalIdentifier: String?
-    let title: String
-    let isCompleted: Bool
-    let dueDate: Date?
-    let hasExplicitTime: Bool
-    let recurrenceRuleRaw: String?
-    let durationMinutes: Int?
-    let calendarEventExternalIdentifier: String?
-  }
 }

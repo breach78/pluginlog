@@ -7,6 +7,11 @@ extension TimelineBoardView {
     return false
   }
 
+  func allowTimelineRetainedWrite(_ feature: String) -> Bool {
+    _ = feature
+    return true
+  }
+
   func submitNewProject(_ rawTitle: String) {
     let title = rawTitle.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !title.isEmpty else { return }
@@ -20,9 +25,19 @@ extension TimelineBoardView {
   }
 
   func revealTimelineTaskDetail(taskID: UUID, projectID: UUID) {
-    _ = taskID
     appState.selectedProjectID = projectID
-    onSelectProject(projectID)
+    Task { @MainActor in
+      do {
+        try await ObsidianTaskOpenService.openTask(
+          vaultRootURL: appState.obsidianVaultRootURL,
+          projectID: projectID,
+          taskID: taskID,
+          documentOpener: appState.platformUIFoundation.documentOpener
+        )
+      } catch {
+        appState.errorMessage = error.localizedDescription
+      }
+    }
     cancelTimelineTaskBadgeOverlay()
     cancelTimelineDayHeaderOverlay()
   }
@@ -46,6 +61,7 @@ extension TimelineBoardView {
     targetState: TimelineTaskCompletionUndoSnapshot?,
     registerUndo: Bool
   ) {
+    guard allowTimelineRetainedWrite("task-completion") else { return }
     guard let previousState = timelineTaskCompletionState(taskID: taskID, projectID: projectID) else {
       return
     }
@@ -63,8 +79,8 @@ extension TimelineBoardView {
     guard previousState != nextState else { return }
     Task { @MainActor in
       do {
-        let result = try await RetainedTaskCommandService.setTaskCompletion(
-          graphRootURL: appState.logseqGraphRootURL,
+        let result = try await ObsidianRetainedTaskCommandService.setTaskCompletion(
+          vaultRootURL: appState.obsidianVaultRootURL,
           projectID: projectID,
           taskID: taskID,
           isCompleted: nextState.isCompleted,

@@ -1,0 +1,464 @@
+import Foundation
+
+@MainActor
+enum ObsidianRetainedTaskCommandService {
+  static func setTaskCompletion(
+    vaultRootURL: URL?,
+    projectID: UUID,
+    taskID: UUID,
+    isCompleted: Bool,
+    completionDate: Date?,
+    reminderProjectProvider: ReminderProjectProvider
+  ) async throws -> RetainedTaskCommandResult {
+    let context = try await commandContext(
+      vaultRootURL: vaultRootURL,
+      projectID: projectID,
+      taskID: taskID
+    )
+    let reminderReference = try reminderReference(for: context.task, taskID: taskID)
+    let originalBaseline = try assertReminderWriteAllowed(
+      reference: reminderReference,
+      field: .isCompleted,
+      reminderProjectProvider: reminderProjectProvider
+    )
+    let writtenSnapshot = try await writeTask(
+      using: context,
+      mutate: { task, bodyLines in
+        var nextState = ObsidianReminderImportFormatting.taskState(task, calendar: .autoupdatingCurrent)
+        nextState.isCompleted = isCompleted
+        applyTaskState(nextState, to: task, in: &bodyLines, calendar: .autoupdatingCurrent)
+      }
+    )
+
+    do {
+      guard let metadata = try reminderProjectProvider.setTaskCompletion(
+        for: reminderReference,
+        isCompleted: isCompleted,
+        completionDate: isCompleted ? (completionDate ?? .now) : nil
+      ) else {
+        throw RetainedTaskCommandError.reminderOwnerUnresolved(taskID)
+      }
+      try updateBaseline(
+        from: writtenSnapshot,
+        taskID: taskID,
+        reminderExternalIdentifier: reminderReference.reminderExternalIdentifier,
+        remoteModifiedAt: metadata.modifiedAt,
+        pushedFields: [.isCompleted],
+        previousBaseline: originalBaseline
+      )
+    } catch {
+      try await rollbackObsidianWrite(
+        context: context,
+        writtenSnapshot: writtenSnapshot,
+        writeError: error
+      )
+    }
+
+    return try result(projectID: projectID, taskID: taskID, snapshot: writtenSnapshot)
+  }
+
+  static func setTaskSchedule(
+    vaultRootURL: URL?,
+    projectID: UUID,
+    taskID: UUID,
+    day: Date?,
+    timeMinutes: Int?,
+    durationMinutes: Int?,
+    calendar: Calendar = .autoupdatingCurrent,
+    reminderProjectProvider: ReminderProjectProvider
+  ) async throws -> RetainedTaskCommandResult {
+    let context = try await commandContext(
+      vaultRootURL: vaultRootURL,
+      projectID: projectID,
+      taskID: taskID
+    )
+    let reminderReference = try reminderReference(for: context.task, taskID: taskID)
+    let previousState = ObsidianReminderImportFormatting.taskState(
+      context.task,
+      calendar: calendar
+    )
+    let dueDate = scheduledDate(day: day, timeMinutes: timeMinutes, calendar: calendar)
+    let hasExplicitTime = dueDate != nil && timeMinutes != nil
+    let nextDate = ReminderScheduleMetadataCodec.encodeDate(
+      dueDate,
+      hasExplicitTime: hasExplicitTime
+    )
+
+    let originalBaseline: ReminderSyncTaskBaselineRecord?
+    if previousState.date != nextDate {
+      originalBaseline = try assertReminderWriteAllowed(
+        reference: reminderReference,
+        field: .date,
+        reminderProjectProvider: reminderProjectProvider
+      )
+    } else {
+      originalBaseline = ReminderSyncBaselineStore.baseline(
+        for: context.task.reminderExternalIdentifier
+      )
+    }
+
+    let writtenSnapshot = try await writeTask(
+      using: context,
+      mutate: { task, bodyLines in
+        let metadata = scheduleMetadata(
+          existing: task.metadata,
+          reminderExternalIdentifier: task.reminderExternalIdentifier,
+          day: day,
+          timeMinutes: timeMinutes,
+          durationMinutes: durationMinutes,
+          calendar: calendar
+        )
+        applyMetadata(metadata, to: task, in: &bodyLines)
+      }
+    )
+
+    if previousState.date != nextDate {
+      do {
+        guard let metadata = try reminderProjectProvider.setTaskSchedule(
+          for: reminderReference,
+          dueDate: dueDate,
+          hasExplicitTime: hasExplicitTime
+        ) else {
+          throw RetainedTaskCommandError.reminderOwnerUnresolved(taskID)
+        }
+        try updateBaseline(
+          from: writtenSnapshot,
+          taskID: taskID,
+          reminderExternalIdentifier: reminderReference.reminderExternalIdentifier,
+          remoteModifiedAt: metadata.modifiedAt,
+          pushedFields: [.date],
+          previousBaseline: originalBaseline
+        )
+      } catch {
+        try await rollbackObsidianWrite(
+          context: context,
+          writtenSnapshot: writtenSnapshot,
+          writeError: error
+        )
+      }
+    }
+
+    return try result(projectID: projectID, taskID: taskID, snapshot: writtenSnapshot)
+  }
+
+  private struct CommandContext {
+    let store: ObsidianProjectMarkdownStore
+    let snapshot: ObsidianProjectMarkdownStore.Snapshot
+    let task: ObsidianProjectTask
+    let retainedTask: RetainedTask
+  }
+
+  private static func commandContext(
+    vaultRootURL: URL?,
+    projectID: UUID,
+    taskID: UUID
+  ) async throws -> CommandContext {
+    guard let vaultRootURL else {
+      throw RetainedTaskCommandError.obsidianVaultNotConfigured
+    }
+    let store = ObsidianProjectMarkdownStore(vaultRootURL: vaultRootURL)
+    let snapshots = try await store.loadProjectNotesInScope()
+    try validateNotes(snapshots.map(\.note))
+    let retainedSnapshot = try ObsidianRetainedProjectionAdapter.build(snapshots: snapshots)
+    guard let project = retainedSnapshot.projects.first(where: { $0.identity.projectID == projectID }) else {
+      throw RetainedTaskCommandError.projectNotFound(projectID)
+    }
+    guard let retainedTask = project.tasks.first(where: { $0.identity.taskID == taskID }) else {
+      throw RetainedTaskCommandError.taskNotFound(taskID)
+    }
+    guard retainedTask.identity.reminderExternalIdentifier != nil else {
+      throw RetainedTaskCommandError.missingReminderExternalIdentifier(taskID)
+    }
+    guard let snapshot = snapshots.first(where: { retainedProjectID(for: $0) == projectID }) else {
+      throw RetainedTaskCommandError.projectNotFound(projectID)
+    }
+    guard let task = snapshot.note.tasks.first(where: { retainedTaskID(for: $0) == taskID }) else {
+      throw RetainedTaskCommandError.unmanagedTask(taskID)
+    }
+    guard snapshot.note.reminderListExternalIdentifier != nil else {
+      throw RetainedTaskCommandError.unsafeProjectNote(projectID)
+    }
+    return CommandContext(
+      store: store,
+      snapshot: snapshot,
+      task: task,
+      retainedTask: retainedTask
+    )
+  }
+
+  private static func writeTask(
+    using context: CommandContext,
+    mutate: (ObsidianProjectTask, inout [String]) -> Void
+  ) async throws -> ObsidianProjectMarkdownStore.Snapshot {
+    var bodyLines = context.snapshot.note.bodyMarkdown.components(separatedBy: "\n")
+    guard bodyLines.indices.contains(context.task.bodyLineIndex) else {
+      throw RetainedTaskCommandError.unmanagedTask(context.retainedTask.identity.taskID ?? UUID())
+    }
+    mutate(context.task, &bodyLines)
+    let note = ObsidianReminderImportFormatting.reparsedNote(
+      from: context.snapshot.note,
+      bodyLines: bodyLines
+    )
+    try validateNotes([note])
+    return try await context.store.writeProjectNote(
+      note,
+      preferredFileName: context.snapshot.fileURL.lastPathComponent,
+      expectedBaseline: ObsidianProjectMarkdownStore.WriteBaseline(snapshot: context.snapshot)
+    )
+  }
+
+  private static func rollbackObsidianWrite(
+    context: CommandContext,
+    writtenSnapshot: ObsidianProjectMarkdownStore.Snapshot,
+    writeError: Error
+  ) async throws -> Never {
+    do {
+      let currentSnapshot = try await context.store.loadProjectNotesInScope(
+        at: [writtenSnapshot.fileURL]
+      ).first
+      guard let currentSnapshot,
+        currentSnapshot.rawMarkdown == writtenSnapshot.rawMarkdown
+      else {
+        throw RetainedTaskCommandError.rollbackFailed(
+          writeError: writeError.localizedDescription,
+          rollbackError: "Obsidian note changed after command write"
+        )
+      }
+      _ = try await context.store.writeProjectNote(
+        context.snapshot.note,
+        preferredFileName: context.snapshot.fileURL.lastPathComponent,
+        expectedBaseline: ObsidianProjectMarkdownStore.WriteBaseline(snapshot: currentSnapshot)
+      )
+    } catch {
+      throw RetainedTaskCommandError.rollbackFailed(
+        writeError: writeError.localizedDescription,
+        rollbackError: error.localizedDescription
+      )
+    }
+    throw writeError
+  }
+
+  private static func applyTaskState(
+    _ state: ReminderSyncTaskState,
+    to task: ObsidianProjectTask,
+    in bodyLines: inout [String],
+    calendar: Calendar
+  ) {
+    bodyLines[task.bodyLineIndex] = ObsidianReminderImportFormatting.taskLine(
+      state,
+      existing: task
+    )
+    let metadata = ObsidianReminderImportFormatting.metadata(
+      existing: task.metadata,
+      reminderExternalIdentifier: task.reminderExternalIdentifier,
+      state: state,
+      calendar: calendar
+    )
+    applyMetadata(metadata, to: task, in: &bodyLines)
+  }
+
+  private static func applyMetadata(
+    _ metadata: ObsidianTaskMetadata,
+    to task: ObsidianProjectTask,
+    in bodyLines: inout [String]
+  ) {
+    let metadataLine = ObsidianReminderImportFormatting.renderMetadataLine(
+      metadata,
+      indentation: task.indentation + "  "
+    )
+    if let metadataLineIndex = task.metadataLineIndex,
+      bodyLines.indices.contains(metadataLineIndex)
+    {
+      bodyLines[metadataLineIndex] = metadataLine
+    } else {
+      bodyLines.insert(metadataLine, at: min(task.bodyLineIndex + 1, bodyLines.count))
+    }
+  }
+
+  private static func updateBaseline(
+    from snapshot: ObsidianProjectMarkdownStore.Snapshot,
+    taskID: UUID,
+    reminderExternalIdentifier: String?,
+    remoteModifiedAt: Date?,
+    pushedFields: [ReminderSyncTaskField],
+    previousBaseline: ReminderSyncTaskBaselineRecord?
+  ) throws {
+    guard let task = snapshot.note.tasks.first(where: { retainedTaskID(for: $0) == taskID }) else {
+      throw RetainedTaskCommandError.taskNotFound(taskID)
+    }
+    let local = ObsidianReminderImportFormatting.taskState(task, calendar: .autoupdatingCurrent)
+    var next = previousBaseline?.state ?? local
+    var conflicts = previousBaseline?.conflictedFields ?? []
+    for field in pushedFields {
+      next = next.replacing(field: field, with: local)
+      conflicts.removeAll { $0 == field }
+    }
+    ReminderSyncBaselineStore.upsert(
+      reminderExternalIdentifier: reminderExternalIdentifier,
+      state: next,
+      remoteModifiedAt: remoteModifiedAt,
+      conflictedFields: conflicts,
+      now: .now
+    )
+  }
+
+  private static func assertReminderWriteAllowed(
+    reference: ReminderTaskReference,
+    field: ReminderSyncTaskField,
+    reminderProjectProvider: ReminderProjectProvider
+  ) throws -> ReminderSyncTaskBaselineRecord {
+    guard let baseline = ReminderSyncBaselineStore.baseline(
+      for: reference.reminderExternalIdentifier
+    ) else {
+      throw RetainedTaskCommandError.retainedProjectionFailed("missing reminder sync baseline")
+    }
+    guard let baselineRemoteModifiedAt = baseline.remoteModifiedAt else {
+      throw RetainedTaskCommandError.retainedProjectionFailed("missing reminder baseline timestamp")
+    }
+    guard let remoteSnapshot = try reminderProjectProvider.taskSnapshot(for: reference) else {
+      throw RetainedTaskCommandError.reminderOwnerUnresolved(reference.taskID)
+    }
+    guard remoteSnapshot.modifiedAt.timeIntervalSince(baselineRemoteModifiedAt) <= 0.5 else {
+      throw RetainedTaskCommandError.retainedProjectionFailed("stale reminder sync baseline")
+    }
+    let remoteState = ReminderSyncTaskState(remoteSnapshot: remoteSnapshot)
+    guard remoteState.value(for: field) == baseline.state.value(for: field) else {
+      throw RetainedTaskCommandError.retainedProjectionFailed("remote reminder changed \(field.rawValue)")
+    }
+    return baseline
+  }
+
+  private static func result(
+    projectID: UUID,
+    taskID: UUID,
+    snapshot: ObsidianProjectMarkdownStore.Snapshot
+  ) throws -> RetainedTaskCommandResult {
+    let retainedSnapshot = try ObsidianRetainedProjectionAdapter.build(snapshots: [snapshot])
+    guard let task = retainedSnapshot.tasks.first(where: { $0.identity.taskID == taskID }) else {
+      throw RetainedTaskCommandError.taskNotFound(taskID)
+    }
+    let calendarBridgeDecision = RetainedCalendarBridgePolicy.decision(for: task)
+    return RetainedTaskCommandResult(
+      projectID: projectID,
+      taskID: taskID,
+      calendarBridgeDecision: calendarBridgeDecision,
+      calendarWriteMarker: RetainedCalendarBridgeWriteLoopGuard.marker(
+        taskID: taskID,
+        decision: calendarBridgeDecision
+      )
+    )
+  }
+
+  private static func reminderReference(
+    for task: ObsidianProjectTask,
+    taskID: UUID
+  ) throws -> ReminderTaskReference {
+    guard let reminderExternalIdentifier = normalized(task.reminderExternalIdentifier) else {
+      throw RetainedTaskCommandError.missingReminderExternalIdentifier(taskID)
+    }
+    return ReminderTaskReference(
+      taskID: taskID,
+      reminderIdentifier: nil,
+      reminderExternalIdentifier: reminderExternalIdentifier
+    )
+  }
+
+  private static func scheduleMetadata(
+    existing: ObsidianTaskMetadata?,
+    reminderExternalIdentifier: String?,
+    day: Date?,
+    timeMinutes: Int?,
+    durationMinutes: Int?,
+    calendar: Calendar
+  ) -> ObsidianTaskMetadata {
+    let hasExplicitTime = day != nil && timeMinutes != nil
+    return ObsidianTaskMetadata(
+      reminderExternalIdentifier: normalized(reminderExternalIdentifier)
+        ?? existing?.reminderExternalIdentifier,
+      date: day.map { dayFormatter.string(from: calendar.startOfDay(for: $0)) },
+      time: timeMinutes.map(timeString),
+      durationMinutes: hasExplicitTime ? normalizedDuration(durationMinutes) : nil,
+      repeatRule: existing?.repeatRule
+    )
+  }
+
+  private static func scheduledDate(
+    day: Date?,
+    timeMinutes: Int?,
+    calendar: Calendar
+  ) -> Date? {
+    guard let day else { return nil }
+    let normalizedDay = calendar.startOfDay(for: day)
+    guard let timeMinutes else { return normalizedDay }
+    let boundedMinutes = min(max(0, timeMinutes), 23 * 60 + 59)
+    return calendar.date(
+      bySettingHour: boundedMinutes / 60,
+      minute: boundedMinutes % 60,
+      second: 0,
+      of: normalizedDay
+    ) ?? normalizedDay
+  }
+
+  private static func normalizedDuration(_ durationMinutes: Int?) -> Int? {
+    guard let durationMinutes, durationMinutes > 0 else { return nil }
+    return durationMinutes
+  }
+
+  private static func timeString(_ minutes: Int) -> String {
+    let bounded = min(max(0, minutes), 23 * 60 + 59)
+    return String(format: "%02d:%02d", bounded / 60, bounded % 60)
+  }
+
+  private static func retainedProjectID(
+    for snapshot: ObsidianProjectMarkdownStore.Snapshot
+  ) -> UUID? {
+    guard let listID = normalized(snapshot.note.reminderListExternalIdentifier) else {
+      return nil
+    }
+    return RetainedProjectionBuilder.derivedProjectID(for: listID)
+  }
+
+  private static func retainedTaskID(for task: ObsidianProjectTask) -> UUID? {
+    guard let reminderExternalIdentifier = normalized(task.reminderExternalIdentifier) else {
+      return nil
+    }
+    return ReminderProjectionIdentity.taskID(for: reminderExternalIdentifier)
+  }
+
+  private static func validateNotes(_ notes: [ObsidianProjectNote]) throws {
+    for issue in ObsidianProjectNoteValidation.issues(in: notes) {
+      switch issue {
+      case .duplicateReminderListExternalIdentifier(let identifier):
+        throw RetainedTaskCommandError.retainedProjectionFailed(
+          "duplicate reminder_list_external_id \(identifier)"
+        )
+      case .duplicateReminderExternalIdentifier(let identifier):
+        throw RetainedTaskCommandError.retainedProjectionFailed(
+          "duplicate reminder_external_id \(identifier)"
+        )
+      case .damagedTaskMetadata(let line, let rawLine):
+        throw RetainedTaskCommandError.retainedProjectionFailed(
+          "damaged metadata line \(line): \(rawLine)"
+        )
+      }
+    }
+  }
+
+  private static let dayFormatter: DateFormatter = {
+    let formatter = DateFormatter()
+    formatter.calendar = Calendar(identifier: .gregorian)
+    formatter.locale = Locale(identifier: "en_US_POSIX")
+    formatter.timeZone = .autoupdatingCurrent
+    formatter.dateFormat = "yyyy-MM-dd"
+    return formatter
+  }()
+
+  private static func normalized(_ value: String?) -> String? {
+    guard let value = value?.trimmingCharacters(in: .whitespacesAndNewlines),
+      !value.isEmpty
+    else {
+      return nil
+    }
+    return value
+  }
+}

@@ -39,7 +39,7 @@ extension AppState {
       }
     }
 
-    await reconcileManagedLogseqPagesWithReminderSource(reason: reason)
+    await reconcileObsidianVaultWithReminderSource(reason: reason)
     syncStarted = true
     if syncStatus != "Reminders access denied", syncStatus != "Reminder sync failed" {
       syncStatus = "Refreshed (\(reason.rawValue))"
@@ -49,39 +49,39 @@ extension AppState {
 
   func shouldSuppressReminderSourceRefresh(reason: SyncReason, now: Date = .now) -> Bool {
     guard reason == .eventStoreChanged,
-      let deadline = logseqAuthoredReminderEchoSuppressionDeadline,
+      let deadline = appAuthoredReminderEchoSuppressionDeadline,
       now < deadline
     else {
       return false
     }
     scheduleReminderEchoRepairRefresh(after: deadline, now: now)
-    AppLogger.sync.info("suppressed reminder event-store echo after Logseq-authored push")
+    AppLogger.sync.info("suppressed reminder event-store echo after app-authored push")
     return true
   }
 
-  func recordLogseqAuthoredReminderPush(now: Date = .now) {
-    let deadline = now.addingTimeInterval(logseqAuthoredReminderEchoSuppressionInterval)
-    logseqAuthoredReminderEchoSuppressionDeadline = max(
-      logseqAuthoredReminderEchoSuppressionDeadline ?? deadline,
+  func recordAppAuthoredReminderPush(now: Date = .now) {
+    let deadline = now.addingTimeInterval(appAuthoredReminderEchoSuppressionInterval)
+    appAuthoredReminderEchoSuppressionDeadline = max(
+      appAuthoredReminderEchoSuppressionDeadline ?? deadline,
       deadline
     )
   }
 
   private func scheduleReminderEchoRepairRefresh(after deadline: Date, now: Date) {
-    logseqAuthoredReminderEchoRefreshTask?.cancel()
+    appAuthoredReminderEchoRefreshTask?.cancel()
     let delay = max(0, deadline.timeIntervalSince(now))
-    logseqAuthoredReminderEchoRefreshTask = Task { @MainActor [weak self] in
+    appAuthoredReminderEchoRefreshTask = Task { @MainActor [weak self] in
       let nanoseconds = UInt64(min(delay, Double(UInt64.max) / 1_000_000_000) * 1_000_000_000)
       try? await Task.sleep(nanoseconds: nanoseconds)
       guard let self, !Task.isCancelled else { return }
-      if let currentDeadline = self.logseqAuthoredReminderEchoSuppressionDeadline,
+      if let currentDeadline = self.appAuthoredReminderEchoSuppressionDeadline,
         Date() < currentDeadline
       {
         self.scheduleReminderEchoRepairRefresh(after: currentDeadline, now: .now)
         return
       }
-      self.logseqAuthoredReminderEchoSuppressionDeadline = nil
-      self.logseqAuthoredReminderEchoRefreshTask = nil
+      self.appAuthoredReminderEchoSuppressionDeadline = nil
+      self.appAuthoredReminderEchoRefreshTask = nil
       _ = await self.performReminderSourceRefresh(reason: .periodic)
     }
   }

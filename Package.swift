@@ -24,7 +24,6 @@ let package = Package(
       ],
       resources: [
         .process("Assets.xcassets"),
-        .copy("Resources/LogseqHelperPlugin"),
         .copy("Resources/ObsidianHelperPlugin"),
       ],
       linkerSettings: [

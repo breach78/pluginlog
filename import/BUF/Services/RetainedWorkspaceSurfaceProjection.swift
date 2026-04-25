@@ -14,16 +14,11 @@ struct RetainedWorkspaceSurfaceProjection: Equatable {
   )
 }
 
-enum RetainedWorkspaceSurfaceProjectionFallbackReason: Equatable {
-  case graphNotConfigured
-  case loadFailed(String)
-}
-
 enum RetainedWorkspaceSurfaceProjectionBlocker: Equatable {
   case identityFailure(RetainedProjectionBuilder.Error)
   case partialProjectCoverage(missingProjectIDs: [UUID])
   case taskIdentityUnavailable(projectID: UUID, title: String)
-  case graphNotConfigured
+  case obsidianVaultNotConfigured
   case loadFailed(String)
 
   var userMessage: String {
@@ -34,8 +29,8 @@ enum RetainedWorkspaceSurfaceProjectionBlocker: Equatable {
       return "Retained projection is missing \(missingProjectIDs.count) requested project(s)."
     case .taskIdentityUnavailable(_, let title):
       return "Retained task cannot be shown in Schedule/Timeline without a stable task id: \(title)"
-    case .graphNotConfigured:
-      return "Logseq graph is not configured for Schedule/Timeline retained projection."
+    case .obsidianVaultNotConfigured:
+      return "Obsidian vault is not configured for Schedule/Timeline retained projection."
     case .loadFailed(let message):
       return "Retained projection load failed: \(message)"
     }
@@ -45,7 +40,7 @@ enum RetainedWorkspaceSurfaceProjectionBlocker: Equatable {
     switch self {
     case .partialProjectCoverage, .taskIdentityUnavailable:
       return false
-    case .identityFailure, .graphNotConfigured, .loadFailed:
+    case .identityFailure, .obsidianVaultNotConfigured, .loadFailed:
       return true
     }
   }
@@ -53,14 +48,12 @@ enum RetainedWorkspaceSurfaceProjectionBlocker: Equatable {
 
 enum RetainedWorkspaceSurfaceProjectionLoadResult: Equatable {
   case loaded(RetainedWorkspaceSurfaceProjection)
-  case fallbackAllowed(RetainedWorkspaceSurfaceProjectionFallbackReason)
   case blocked(RetainedWorkspaceSurfaceProjectionBlocker)
 }
 
 struct RetainedWorkspaceSurfaceProjectionResolvedRead: Equatable {
   enum Source: Equatable {
     case retained
-    case legacyFallback(RetainedWorkspaceSurfaceProjectionFallbackReason)
     case blocked(RetainedWorkspaceSurfaceProjectionBlocker)
   }
 
@@ -79,38 +72,26 @@ struct RetainedWorkspaceSurfaceProjectionResolvedRead: Equatable {
 
 enum RetainedWorkspaceSurfaceProjectionBuilder {
   static func load(
-    graphRootURL: URL?,
+    obsidianVaultRootURL: URL?,
     projectIDs: [UUID],
     calendar: Calendar = .autoupdatingCurrent
   ) async -> RetainedWorkspaceSurfaceProjectionLoadResult {
-    guard let graphRootURL else {
-      return .fallbackAllowed(.graphNotConfigured)
+    guard let obsidianVaultRootURL else {
+      return .blocked(.obsidianVaultNotConfigured)
     }
 
-    let pageStore = LogseqProjectPageStore(
-      pagesRootURL: graphRootURL.appendingPathComponent("pages", isDirectory: true)
-    )
-
+    let store = ObsidianProjectMarkdownStore(vaultRootURL: obsidianVaultRootURL)
     do {
-      let pages = try await pageStore.loadProjectPagesInScope()
-      return build(pages: pages, projectIDs: projectIDs, calendar: calendar)
-    } catch {
-      return .fallbackAllowed(.loadFailed(error.localizedDescription))
-    }
-  }
-
-  static func build(
-    pages: [LogseqProjectPageStore.PageSnapshot],
-    projectIDs: [UUID],
-    calendar: Calendar = .autoupdatingCurrent
-  ) -> RetainedWorkspaceSurfaceProjectionLoadResult {
-    do {
-      let snapshot = try RetainedProjectionBuilder.build(.init(pages: pages))
+      let snapshots = try await store.loadProjectNotesInScope()
+      let snapshot = try ObsidianRetainedProjectionAdapter.build(
+        snapshots: snapshots,
+        calendar: calendar
+      )
       return build(snapshot: snapshot, projectIDs: projectIDs, calendar: calendar)
     } catch let error as RetainedProjectionBuilder.Error {
       return .blocked(.identityFailure(error))
     } catch {
-      return .fallbackAllowed(.loadFailed(error.localizedDescription))
+      return .blocked(.loadFailed(error.localizedDescription))
     }
   }
 
@@ -182,39 +163,6 @@ enum RetainedWorkspaceSurfaceProjectionBuilder {
     )
   }
 
-  static func resolve(
-    _ result: RetainedWorkspaceSurfaceProjectionLoadResult,
-    legacyFallback: () -> ReminderWorkspaceSurfaceProjection
-  ) -> RetainedWorkspaceSurfaceProjectionResolvedRead {
-    switch result {
-    case .loaded(let projection):
-      return RetainedWorkspaceSurfaceProjectionResolvedRead(
-        projectSnapshots: projection.projectSnapshots,
-        projectSummaries: projection.projectSummaries,
-        scheduleEntriesByProjectID: projection.scheduleEntriesByProjectID,
-        calendarBridgeDecisionsByTaskID: projection.calendarBridgeDecisionsByTaskID,
-        source: .retained
-      )
-    case .fallbackAllowed(let reason):
-      let projection = legacyFallback()
-      return RetainedWorkspaceSurfaceProjectionResolvedRead(
-        projectSnapshots: projection.projectSnapshots,
-        projectSummaries: projection.projectSummaries,
-        scheduleEntriesByProjectID: projection.scheduleEntriesByProjectID,
-        calendarBridgeDecisionsByTaskID: [:],
-        source: .legacyFallback(reason)
-      )
-    case .blocked(let blocker):
-      return RetainedWorkspaceSurfaceProjectionResolvedRead(
-        projectSnapshots: [:],
-        projectSummaries: [:],
-        scheduleEntriesByProjectID: [:],
-        calendarBridgeDecisionsByTaskID: [:],
-        source: .blocked(blocker)
-      )
-    }
-  }
-
   static func resolveRetainedOnly(
     _ result: RetainedWorkspaceSurfaceProjectionLoadResult
   ) -> RetainedWorkspaceSurfaceProjectionResolvedRead {
@@ -227,10 +175,6 @@ enum RetainedWorkspaceSurfaceProjectionBuilder {
         calendarBridgeDecisionsByTaskID: projection.calendarBridgeDecisionsByTaskID,
         source: .retained
       )
-    case .fallbackAllowed(.graphNotConfigured):
-      return blockedRead(.graphNotConfigured)
-    case .fallbackAllowed(.loadFailed(let message)):
-      return blockedRead(.loadFailed(message))
     case .blocked(let blocker):
       return blockedRead(blocker)
     }
@@ -242,7 +186,7 @@ enum RetainedWorkspaceSurfaceProjectionBuilder {
     switch source {
     case .retained:
       return true
-    case .legacyFallback, .blocked:
+    case .blocked:
       return true
     }
   }

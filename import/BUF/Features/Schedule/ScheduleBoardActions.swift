@@ -144,6 +144,11 @@ extension ScheduleBoardView {
     return false
   }
 
+  func allowScheduleRetainedWrite(_ feature: String) -> Bool {
+    _ = feature
+    return true
+  }
+
   func recordWorkspaceLoadFallback(_ fallback: ScheduleWorkspaceLoadFallback?) {
     if workspaceLoadFallback != fallback {
       workspaceLoadFallback = fallback
@@ -218,11 +223,9 @@ extension ScheduleBoardView {
       return
     }
 
-    let graphRootURL = await MainActor.run {
-      appState.logseqGraphRootURL
-    }
+    let obsidianVaultRootURL = await MainActor.run { appState.obsidianVaultRootURL }
     let retainedResult = await RetainedWorkspaceSurfaceProjectionBuilder.load(
-      graphRootURL: graphRootURL,
+      obsidianVaultRootURL: obsidianVaultRootURL,
       projectIDs: requestedProjectIDs
     )
 
@@ -243,9 +246,6 @@ extension ScheduleBoardView {
 
       switch resolvedRead.source {
       case .retained:
-        recordWorkspaceLoadFallback(nil)
-      case .legacyFallback:
-        assertionFailure("Schedule retained-only read must not resolve legacy fallback.")
         recordWorkspaceLoadFallback(nil)
       case .blocked:
         appState.errorMessage = resolvedRead.errorMessage
@@ -914,10 +914,20 @@ extension ScheduleBoardView {
   }
 
   func revealScheduleTask(taskID: UUID, projectID: UUID) {
-    _ = taskID
     selectedScheduleTaskID = taskID
     appState.selectedProjectID = projectID
-    onSelectProject(projectID)
+    Task { @MainActor in
+      do {
+        try await ObsidianTaskOpenService.openTask(
+          vaultRootURL: appState.obsidianVaultRootURL,
+          projectID: projectID,
+          taskID: taskID,
+          documentOpener: appState.platformUIFoundation.documentOpener
+        )
+      } catch {
+        appState.errorMessage = error.localizedDescription
+      }
+    }
   }
 
   func selectScheduleTask(_ taskID: UUID) {
@@ -994,6 +1004,7 @@ extension ScheduleBoardView {
     registerUndo: Bool,
     actionName: String
   ) {
+    guard allowScheduleRetainedWrite("task-schedule") else { return }
     guard let taskDescriptor = scheduleTaskDescriptor(for: taskID) else { return }
 
     let previousDay = WorkspaceTaskScheduleEventStore.scheduledDay(
@@ -1014,8 +1025,8 @@ extension ScheduleBoardView {
     selectedScheduleTaskID = taskID
     Task { @MainActor in
       do {
-        let result = try await RetainedTaskCommandService.setTaskSchedule(
-          graphRootURL: appState.logseqGraphRootURL,
+        let result = try await ObsidianRetainedTaskCommandService.setTaskSchedule(
+          vaultRootURL: appState.obsidianVaultRootURL,
           projectID: projectID,
           taskID: taskID,
           day: day,
@@ -1223,6 +1234,7 @@ extension ScheduleBoardView {
     completionDate: Date?,
     registerUndo: Bool
   ) {
+    guard allowScheduleRetainedWrite("task-completion") else { return }
     guard let taskDescriptor = scheduleTaskDescriptor(for: taskID) else { return }
     let previousState = scheduleCompletionState(for: taskDescriptor.taskRow)
     let nextState = ScheduleTaskCompletionState(
@@ -1236,8 +1248,8 @@ extension ScheduleBoardView {
     }
     Task { @MainActor in
       do {
-        let result = try await RetainedTaskCommandService.setTaskCompletion(
-          graphRootURL: appState.logseqGraphRootURL,
+        let result = try await ObsidianRetainedTaskCommandService.setTaskCompletion(
+          vaultRootURL: appState.obsidianVaultRootURL,
           projectID: projectID,
           taskID: taskID,
           isCompleted: nextState.isCompleted,

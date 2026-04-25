@@ -91,13 +91,13 @@ extension MainWorkspaceView {
   }
 
   var completedTaskVisibilityToggle: some View {
-    Toggle(isOn: completedLogseqTasksVisibleBinding) {
+    Toggle(isOn: completedTasksVisibleBinding) {
       Text("완료")
         .font(.caption.weight(.semibold))
     }
     .toggleStyle(.switch)
     .controlSize(.small)
-    .help("Logseq 완료항목 표시/숨김")
+    .help("완료항목 표시/숨김")
     .accessibilityLabel("완료항목 표시")
   }
 

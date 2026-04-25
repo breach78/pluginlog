@@ -1,4 +1,5 @@
 import Combine
+@preconcurrency import EventKit
 import XCTest
 @testable import BrainUnfogHarness
 
@@ -20,7 +21,7 @@ final class RetainedSetupFlowTests: XCTestCase {
     try await super.tearDown()
   }
 
-  func testHarnessEntitlementsAllowGraphFolderSelectionAndPersistence() throws {
+  func testHarnessEntitlementsAllowVaultFolderSelectionAndPersistence() throws {
     let entitlementsURL = URL(fileURLWithPath: #filePath)
       .deletingLastPathComponent()
       .deletingLastPathComponent()
@@ -36,106 +37,143 @@ final class RetainedSetupFlowTests: XCTestCase {
     XCTAssertEqual(plist["com.apple.security.files.bookmarks.app-scope"], true)
   }
 
-  func testLaunchDoesNotFallbackToOldContainerWhenGraphLocalBufIsDamaged() async throws {
-    let storageCoordinator = LocalStorageCoordinator()
-    let oldContainerRoot = try makeTemporaryDirectory(named: "old-container")
-    try await storageCoordinator.initializeContainer(at: oldContainerRoot)
+  func testConfigureObsidianVaultCreatesBufRawProjectsAndRunsReminderFirstBootstrap() async throws {
+    let vaultRoot = try makeVaultRoot()
+    let gateway = SetupReminderGateway()
+    let calendarService = RecordingScheduleCalendarService()
+    let appState = makeAppState(reminderGateway: gateway, calendarService: calendarService)
 
-    let graphRoot = try makeTemporaryDirectory(named: "graph")
-    let damagedBufRoot = graphRoot.appendingPathComponent(".buf", isDirectory: true)
-    try FileManager.default.createDirectory(
-      at: damagedBufRoot.appendingPathComponent("data", isDirectory: true),
-      withIntermediateDirectories: true
+    await appState.configureObsidianVault(at: vaultRoot, activateWhenReady: true)
+
+    let expectedContainerRoot = vaultRoot.appendingPathComponent(".buf", isDirectory: true)
+    let projectsRoot = vaultRoot
+      .appendingPathComponent("raw", isDirectory: true)
+      .appendingPathComponent("projects", isDirectory: true)
+    XCTAssertEqual(appState.obsidianVaultRootURL?.standardizedFileURL, vaultRoot.standardizedFileURL)
+    XCTAssertEqual(appState.containerRootURL?.standardizedFileURL, expectedContainerRoot.standardizedFileURL)
+    XCTAssertTrue(FileManager.default.fileExists(atPath: expectedContainerRoot.path))
+    XCTAssertTrue(FileManager.default.fileExists(atPath: projectsRoot.path))
+    XCTAssertFalse(
+      FileManager.default.fileExists(
+        atPath: vaultRoot
+          .appendingPathComponent(".obsidian", isDirectory: true)
+          .appendingPathComponent("plugins", isDirectory: true)
+          .path
+      )
     )
-    FileManager.default.createFile(
-      atPath: damagedBufRoot.appendingPathComponent("data/main.sqlite").path,
-      contents: nil
+    XCTAssertNil(appState.reminderSourceObserver)
+    XCTAssertNotNil(appState.obsidianProjectDirectoryWatcher)
+    XCTAssertTrue(appState.hasCompletedInitialSetup)
+    XCTAssertTrue(appState.syncStarted)
+    XCTAssertEqual(calendarService.requestAccessCallCount, 1)
+    XCTAssertEqual(gateway.writeCallCount, 0)
+    XCTAssertEqual(UserDefaults.standard.string(forKey: AppState.obsidianVaultRootPathKey), vaultRoot.path)
+
+    let projectFiles = try FileManager.default.contentsOfDirectory(
+      at: projectsRoot,
+      includingPropertiesForKeys: nil
     )
-    UserDefaults.standard.set(graphRoot.path, forKey: AppState.logseqGraphRootPathKey)
+    let projectFile = try XCTUnwrap(projectFiles.first { $0.pathExtension == "md" })
+    let markdown = try String(contentsOf: projectFile, encoding: .utf8)
+    XCTAssertTrue(markdown.contains("reminder_list_external_id:"))
+    XCTAssertTrue(markdown.contains("reminder_external_id"))
+    XCTAssertTrue(markdown.contains("- [ ] Imported task"))
+    XCTAssertTrue(markdown.contains("note line"))
+  }
 
-    let appState = makeAppState(storageCoordinator: storageCoordinator)
+  func testConfigureObsidianVaultRejectsCandidateWithoutObsidianDirectoryWithoutDirtyingFolder()
+    async throws
+  {
+    let vaultRoot = try makeTemporaryDirectory(named: "not-a-vault")
+    let appState = makeAppState(reminderGateway: SetupReminderGateway())
 
-    await appState.launch()
+    await appState.configureObsidianVault(at: vaultRoot, activateWhenReady: true)
 
+    XCTAssertNil(appState.obsidianVaultRootURL)
     XCTAssertNil(appState.containerRootURL)
-    XCTAssertNil(appState.modelContainer)
-    XCTAssertNotEqual(appState.containerRootURL?.standardizedFileURL, oldContainerRoot.standardizedFileURL)
-    XCTAssertEqual(appState.logseqGraphRootURL?.standardizedFileURL, graphRoot.standardizedFileURL)
+    XCTAssertFalse(FileManager.default.fileExists(atPath: vaultRoot.appendingPathComponent(".obsidian").path))
+    XCTAssertFalse(FileManager.default.fileExists(atPath: vaultRoot.appendingPathComponent(".buf").path))
+    XCTAssertFalse(FileManager.default.fileExists(atPath: vaultRoot.appendingPathComponent("raw").path))
+    XCTAssertNil(UserDefaults.standard.string(forKey: AppState.obsidianVaultRootPathKey))
+    XCTAssertNil(UserDefaults.standard.string(forKey: "container.rootPath"))
     XCTAssertNotNil(appState.errorMessage)
   }
 
-  func testConfigureGraphCreatesBufAndRunsReminderFirstBootstrap() async throws {
-    let graphRoot = try makeTemporaryDirectory(named: "graph")
-    let calendarService = RecordingScheduleCalendarService()
-    let appState = makeAppState(calendarService: calendarService)
+  func testConfigureObsidianVaultDoesNotCompleteWhenBootstrapAccessDenied() async throws {
+    let vaultRoot = try makeVaultRoot()
+    let appState = makeAppState(reminderGateway: SetupReminderGateway(accessGranted: false))
 
-    await appState.configureLogseqGraphRoot(at: graphRoot, activateWhenReady: true)
+    await appState.configureObsidianVault(at: vaultRoot, activateWhenReady: true)
 
-    let expectedContainerRoot = graphRoot.appendingPathComponent(".buf", isDirectory: true)
-    XCTAssertEqual(appState.containerRootURL?.standardizedFileURL, expectedContainerRoot.standardizedFileURL)
-    for legacyDirectoryName in ["attachments", "notes", "cache", "exports"] {
-      XCTAssertFalse(
-        FileManager.default.fileExists(
-          atPath: expectedContainerRoot.appendingPathComponent(legacyDirectoryName).path
-        ),
-        "Retained setup must not create legacy \(legacyDirectoryName) storage."
-      )
-    }
-    XCTAssertNotNil(appState.modelContainer)
-    XCTAssertTrue(appState.hasInitialSyncConsent)
-    XCTAssertTrue(appState.hasSyncConsentDecision)
-    XCTAssertTrue(appState.syncStarted)
-    XCTAssertFalse(appState.isInitialSyncRunning)
-    XCTAssertNotNil(appState.reminderSourceObserver)
-    XCTAssertEqual(calendarService.requestAccessCallCount, 1)
-    XCTAssertEqual(appState.syncStatus, "Refreshed (\(SyncReason.bootstrap.rawValue))")
-
-    let configURL = graphRoot.appendingPathComponent("logseq/config.edn", isDirectory: false)
-    let configContents = try String(contentsOf: configURL, encoding: .utf8)
-    XCTAssertTrue(configContents.contains(":reminder_list_external_id"))
-    XCTAssertTrue(configContents.contains(":reminder_external_id"))
-
-    let cssURL = graphRoot.appendingPathComponent("logseq/custom.css", isDirectory: false)
-    let cssContents = try String(contentsOf: cssURL, encoding: .utf8)
-    XCTAssertTrue(cssContents.contains("a[data-ref=\"reminder_list_external_id\" i]"))
-    XCTAssertTrue(cssContents.contains("a[data-ref=\"reminder_external_id\" i]"))
-    XCTAssertTrue(cssContents.contains("Brain Unfog completed task filter"))
-    XCTAssertFalse(appState.showsCompletedLogseqTasks)
-
-    appState.setShowsCompletedLogseqTasks(true)
-    let visibleCompletedCSS = try String(contentsOf: cssURL, encoding: .utf8)
-    XCTAssertFalse(visibleCompletedCSS.contains("Brain Unfog completed task filter"))
+    XCTAssertNil(appState.obsidianVaultRootURL)
+    XCTAssertNil(appState.containerRootURL)
+    XCTAssertFalse(appState.hasCompletedInitialSetup)
+    XCTAssertNil(UserDefaults.standard.string(forKey: AppState.obsidianVaultRootPathKey))
+    XCTAssertNil(UserDefaults.standard.string(forKey: "container.rootPath"))
+    XCTAssertNotNil(appState.errorMessage)
   }
 
-  func testConfigureGraphCanSwitchRootWithoutDeletingPreviousGraphData() async throws {
-    let oldGraphRoot = try makeTemporaryDirectory(named: "old-graph")
-    let newGraphRoot = try makeTemporaryDirectory(named: "new-graph")
-    let oldPageURL = oldGraphRoot
-      .appendingPathComponent("pages", isDirectory: true)
-      .appendingPathComponent("Keep.md", isDirectory: false)
-    try FileManager.default.createDirectory(
-      at: oldPageURL.deletingLastPathComponent(),
-      withIntermediateDirectories: true
+  func testConfigureObsidianVaultLeavesConflictingRawProjectNoteUnchanged() async throws {
+    let vaultRoot = try makeVaultRoot()
+    let projectsRoot = vaultRoot
+      .appendingPathComponent("raw", isDirectory: true)
+      .appendingPathComponent("projects", isDirectory: true)
+    try FileManager.default.createDirectory(at: projectsRoot, withIntermediateDirectories: true)
+    let conflictingNoteURL = projectsRoot.appendingPathComponent("Imported list.md", isDirectory: false)
+    let originalMarkdown = """
+      ---
+      tags:
+        - 프로젝트
+      reminder_list_external_id: other-list
+      ---
+      - [ ] Local task
+
+      """
+    try originalMarkdown.write(to: conflictingNoteURL, atomically: true, encoding: .utf8)
+    let appState = makeAppState(reminderGateway: SetupReminderGateway())
+
+    await appState.configureObsidianVault(at: vaultRoot, activateWhenReady: true)
+
+    let afterMarkdown = try String(contentsOf: conflictingNoteURL, encoding: .utf8)
+    XCTAssertEqual(afterMarkdown, originalMarkdown)
+    XCTAssertNil(appState.obsidianVaultRootURL)
+    XCTAssertNil(appState.containerRootURL)
+    XCTAssertFalse(appState.hasCompletedInitialSetup)
+    XCTAssertNil(UserDefaults.standard.string(forKey: "container.rootPath"))
+    XCTAssertNotNil(appState.errorMessage)
+  }
+
+  func testLaunchRestoresObsidianVaultFromStoredPath() async throws {
+    let vaultRoot = try makeVaultRoot()
+    UserDefaults.standard.set(vaultRoot.path, forKey: AppState.obsidianVaultRootPathKey)
+    UserDefaults.standard.set(true, forKey: AppState.initialSyncConsentGrantedKey)
+    UserDefaults.standard.set(true, forKey: AppState.initialSyncConsentDecidedKey)
+    let appState = makeAppState(reminderGateway: SetupReminderGateway())
+
+    await appState.launch()
+    try await Task.sleep(nanoseconds: 120_000_000)
+
+    XCTAssertEqual(appState.obsidianVaultRootURL?.standardizedFileURL, vaultRoot.standardizedFileURL)
+    XCTAssertEqual(
+      appState.containerRootURL?.standardizedFileURL,
+      vaultRoot.appendingPathComponent(".buf", isDirectory: true).standardizedFileURL
     )
-    try "tags:: 프로젝트\n".write(to: oldPageURL, atomically: true, encoding: .utf8)
-
-    let appState = makeAppState()
-
-    await appState.configureLogseqGraphRoot(at: oldGraphRoot, activateWhenReady: true)
-    await appState.configureLogseqGraphRoot(at: newGraphRoot, activateWhenReady: true)
-
-    let expectedContainerRoot = newGraphRoot.appendingPathComponent(".buf", isDirectory: true)
-    XCTAssertEqual(appState.logseqGraphRootURL?.standardizedFileURL, newGraphRoot.standardizedFileURL)
-    XCTAssertEqual(appState.containerRootURL?.standardizedFileURL, expectedContainerRoot.standardizedFileURL)
-    XCTAssertEqual(UserDefaults.standard.string(forKey: AppState.logseqGraphRootPathKey), newGraphRoot.path)
-    XCTAssertTrue(FileManager.default.fileExists(atPath: oldPageURL.path))
+    XCTAssertTrue(
+      FileManager.default.fileExists(
+        atPath: vaultRoot
+          .appendingPathComponent("raw", isDirectory: true)
+          .appendingPathComponent("projects", isDirectory: true)
+          .path
+      )
+    )
+    XCTAssertNil(appState.reminderSourceObserver)
   }
 
   func testDeniedInitialSyncConsentBlocksStartupSync() async throws {
-    let graphRoot = try makeTemporaryDirectory(named: "graph")
+    let vaultRoot = try makeVaultRoot()
     let appState = makeAppState()
 
-    await appState.configureLogseqGraphRoot(at: graphRoot, activateWhenReady: true)
+    await appState.configureObsidianVault(at: vaultRoot, activateWhenReady: true)
     appState.setInitialSyncConsentPreference(granted: false, activateWhenReady: false)
 
     appState.requestStartupSyncIfNeeded()
@@ -148,10 +186,10 @@ final class RetainedSetupFlowTests: XCTestCase {
   }
 
   func testStartupSyncRunsBootstrapReconciliation() async throws {
-    let graphRoot = try makeTemporaryDirectory(named: "graph")
+    let vaultRoot = try makeVaultRoot()
     let appState = makeAppState()
 
-    await appState.configureLogseqGraphRoot(at: graphRoot, activateWhenReady: true)
+    await appState.configureObsidianVault(at: vaultRoot, activateWhenReady: true)
     appState.syncStatus = "Ready"
     appState.syncStarted = false
 
@@ -160,27 +198,6 @@ final class RetainedSetupFlowTests: XCTestCase {
 
     XCTAssertTrue(appState.syncStarted)
     XCTAssertEqual(appState.syncStatus, "Refreshed (\(SyncReason.bootstrap.rawValue))")
-  }
-
-  func testBootstrapSyncPolicyMergesWithBaselineAndPushesLogseqCatchup() {
-    let appState = makeAppState()
-
-    XCTAssertEqual(
-      appState.reminderImportConflictPolicy(for: .bootstrap),
-      .mergeWithBaseline
-    )
-    XCTAssertEqual(
-      appState.reminderImportConflictPolicy(for: .eventStoreChanged),
-      .mergeWithBaseline
-    )
-    XCTAssertEqual(
-      appState.reminderImportConflictPolicy(for: .manual),
-      .mergeWithBaseline
-    )
-    XCTAssertTrue(appState.shouldProvisionFromLogseqAfterImport(reason: .bootstrap))
-    XCTAssertFalse(appState.shouldProvisionFromLogseqAfterImport(reason: .eventStoreChanged))
-    XCTAssertTrue(appState.shouldProvisionFromLogseqAfterImport(reason: .manual))
-    XCTAssertFalse(appState.shouldProvisionFromLogseqAfterImport(reason: .periodic))
   }
 
   func testQueuedSyncRequestsCoalesceToHighestPriorityReason() {
@@ -194,11 +211,11 @@ final class RetainedSetupFlowTests: XCTestCase {
     XCTAssertEqual(appState.pendingReminderSourceRefreshReason, .manual)
   }
 
-  func testLogseqAuthoredReminderPushSuppressesImmediateEventStoreEchoOnly() {
+  func testAppAuthoredReminderPushSuppressesImmediateEventStoreEchoOnly() {
     let appState = makeAppState()
     let now = Date(timeIntervalSince1970: 1_000)
 
-    appState.recordLogseqAuthoredReminderPush(now: now)
+    appState.recordAppAuthoredReminderPush(now: now)
 
     XCTAssertTrue(
       appState.shouldSuppressReminderSourceRefresh(
@@ -218,14 +235,14 @@ final class RetainedSetupFlowTests: XCTestCase {
         now: now.addingTimeInterval(30)
       )
     )
-    appState.logseqAuthoredReminderEchoRefreshTask?.cancel()
+    appState.appAuthoredReminderEchoRefreshTask?.cancel()
   }
 
   func testExternalReminderInvalidationRunsRetainedReconciliation() async throws {
-    let graphRoot = try makeTemporaryDirectory(named: "graph")
+    let vaultRoot = try makeVaultRoot()
     let appState = makeAppState()
 
-    await appState.configureLogseqGraphRoot(at: graphRoot, activateWhenReady: true)
+    await appState.configureObsidianVault(at: vaultRoot, activateWhenReady: true)
     let didRefresh = await appState.handleExternalReminderTaskInvalidation(
       ownerIDs: ["task-ext-1"],
       changedFields: [.title],
@@ -239,13 +256,23 @@ final class RetainedSetupFlowTests: XCTestCase {
 
   private func makeAppState(
     storageCoordinator: LocalStorageCoordinator = LocalStorageCoordinator(),
+    reminderGateway: ReminderGateway? = nil,
     calendarService: RecordingScheduleCalendarService = RecordingScheduleCalendarService()
   ) -> AppState {
     AppState(
       storageCoordinator: storageCoordinator,
-      reminderGateway: PreviewReminderGateway(),
+      reminderGateway: reminderGateway ?? PreviewReminderGateway(),
       calendarServiceRegistry: .live(scheduleCalendarService: calendarService)
     )
+  }
+
+  private func makeVaultRoot() throws -> URL {
+    let vaultRoot = try makeTemporaryDirectory(named: "obsidian-vault")
+    try FileManager.default.createDirectory(
+      at: vaultRoot.appendingPathComponent(".obsidian", isDirectory: true),
+      withIntermediateDirectories: true
+    )
+    return vaultRoot
   }
 
   private func makeTemporaryDirectory(named name: String) throws -> URL {
@@ -262,9 +289,9 @@ final class RetainedSetupFlowTests: XCTestCase {
     [
       AppState.initialSyncConsentGrantedKey,
       AppState.initialSyncConsentDecidedKey,
-      AppState.showCompletedLogseqTasksKey,
-      AppState.logseqGraphBookmarkDataKey,
-      AppState.logseqGraphRootPathKey,
+      AppState.showCompletedTasksKey,
+      AppState.obsidianVaultBookmarkDataKey,
+      AppState.obsidianVaultRootPathKey,
       "container.bookmarkData",
       "container.rootPath",
     ].forEach(defaults.removeObject(forKey:))
@@ -272,10 +299,89 @@ final class RetainedSetupFlowTests: XCTestCase {
 }
 
 @MainActor
+private final class SetupReminderGateway: ReminderGateway {
+  let eventStore = EKEventStore()
+  let calendar: EKCalendar
+  let reminder: EKReminder
+  private let accessGranted: Bool
+  private(set) var writeCallCount = 0
+
+  init(accessGranted: Bool = true) {
+    self.accessGranted = accessGranted
+    calendar = EKCalendar(for: .reminder, eventStore: eventStore)
+    calendar.title = "Imported list"
+
+    reminder = EKReminder(eventStore: eventStore)
+    reminder.calendar = calendar
+    reminder.title = "Imported task"
+    reminder.notes = "note line"
+  }
+
+  func requestAccess() async throws -> Bool { accessGranted }
+  func fetchAllCalendars() async throws -> [EKCalendar] { [calendar] }
+  func fetchReminders(in calendar: EKCalendar, scope: ReminderFetchScope) async throws -> [EKReminder] {
+    _ = scope
+    return calendar.calendarIdentifier == self.calendar.calendarIdentifier ? [reminder] : []
+  }
+  func fetchReminders(in calendars: [EKCalendar], scope: ReminderFetchScope) async throws -> [EKReminder] {
+    _ = scope
+    return calendars.contains { $0.calendarIdentifier == calendar.calendarIdentifier } ? [reminder] : []
+  }
+  func defaultCalendarIdentifierForNewReminders() -> String? { calendar.calendarIdentifier }
+  func calendar(withIdentifier identifier: String) -> EKCalendar? {
+    identifier == calendar.calendarIdentifier ? calendar : nil
+  }
+  func reminder(withIdentifier identifier: String) -> EKReminder? {
+    identifier == reminder.calendarItemIdentifier ? reminder : nil
+  }
+  func reminders(withExternalIdentifier externalIdentifier: String) -> [EKReminder] {
+    _ = externalIdentifier
+    return []
+  }
+  func lastModifiedDate(for reminder: EKReminder) -> Date? {
+    _ = reminder
+    return Date(timeIntervalSince1970: 1_700_000_000)
+  }
+  func makeReminder(in calendar: EKCalendar) -> EKReminder {
+    let reminder = EKReminder(eventStore: eventStore)
+    reminder.calendar = calendar
+    return reminder
+  }
+  func createCalendar(title: String) throws -> EKCalendar {
+    _ = title
+    writeCallCount += 1
+    throw SetupReminderGatewayError.unexpectedWrite
+  }
+  func save(_ reminder: EKReminder) throws {
+    _ = reminder
+    writeCallCount += 1
+    throw SetupReminderGatewayError.unexpectedWrite
+  }
+  func remove(_ reminder: EKReminder) throws {
+    _ = reminder
+    writeCallCount += 1
+    throw SetupReminderGatewayError.unexpectedWrite
+  }
+  func save(_ calendar: EKCalendar) throws {
+    _ = calendar
+    writeCallCount += 1
+    throw SetupReminderGatewayError.unexpectedWrite
+  }
+  func remove(_ calendar: EKCalendar) throws {
+    _ = calendar
+    writeCallCount += 1
+    throw SetupReminderGatewayError.unexpectedWrite
+  }
+}
+
+private enum SetupReminderGatewayError: Error {
+  case unexpectedWrite
+}
+
+@MainActor
 private final class RecordingScheduleCalendarService: ScheduleCalendarServicing {
   private let overlaySubject = CurrentValueSubject<ScheduleCalendarOverlayProjection, Never>(.empty)
   private let invalidationSubject = PassthroughSubject<[String], Never>()
-
   private(set) var requestAccessCallCount = 0
 
   var overlayProjection: ScheduleCalendarOverlayProjection { .empty }
@@ -296,69 +402,65 @@ private final class RecordingScheduleCalendarService: ScheduleCalendarServicing 
     requestAccessCallCount += 1
     return true
   }
-
   func filteredEvents() -> [ScheduleCalendarEvent] { [] }
-  func isCalendarVisible(_ calendarIdentifier: String) -> Bool { true }
-  func isCalendarBackgroundOnly(_ calendarIdentifier: String) -> Bool { false }
-  func toggleCalendarVisibility(_ calendarIdentifier: String) {}
-  func toggleCalendarBackgroundOnly(_ calendarIdentifier: String) {}
+  func isCalendarVisible(_ calendarIdentifier: String) -> Bool { _ = calendarIdentifier; return true }
+  func isCalendarBackgroundOnly(_ calendarIdentifier: String) -> Bool { _ = calendarIdentifier; return false }
+  func toggleCalendarVisibility(_ calendarIdentifier: String) { _ = calendarIdentifier }
+  func toggleCalendarBackgroundOnly(_ calendarIdentifier: String) { _ = calendarIdentifier }
   func foregroundVisibleEvents() -> [ScheduleCalendarEvent] { [] }
   func backgroundVisibleEvents() -> [ScheduleCalendarEvent] { [] }
-  func refresh(visibleRange: ClosedRange<Date>) async {}
-  func refresh(visibleRange: ClosedRange<Date>, force: Bool) async {}
-  func reveal(_ event: ScheduleCalendarEvent) {}
-
+  func refresh(visibleRange: ClosedRange<Date>) async { _ = visibleRange }
+  func refresh(visibleRange: ClosedRange<Date>, force: Bool) async { _ = visibleRange; _ = force }
+  func reveal(_ event: ScheduleCalendarEvent) { _ = event }
   func applyTimingChange(
     to event: ScheduleCalendarEvent,
     preview: ScheduleInteractionPreview,
     scope: ScheduleCalendarRecurringEditScope
   ) async throws -> ScheduleCalendarEvent {
-    event
+    _ = preview
+    _ = scope
+    return event
   }
-
   func delete(
     _ event: ScheduleCalendarEvent,
     scope: ScheduleCalendarRecurringEditScope
   ) async throws -> DeletedScheduleCalendarEventSnapshot {
+    _ = event
+    _ = scope
     throw ScheduleCalendarEditError.eventNotFound
   }
-
   func restoreDeletedEvent(_ snapshot: DeletedScheduleCalendarEventSnapshot) async throws
     -> ScheduleCalendarEvent
   {
+    _ = snapshot
     throw ScheduleCalendarEditError.eventNotFound
   }
-
   func applyOwnerFieldWrite(_ write: CalendarEventFieldsWrite) async throws -> ScheduleCalendarEvent {
     write.event
   }
-
   func ensureOwnedCalendar() async throws -> OwnedScheduleCalendarDescriptor {
     OwnedScheduleCalendarDescriptor(calendarIdentifier: "owned", title: "Owned", colorHex: nil)
   }
-
-  func resolveOwnedEvent(
-    externalIdentifier: String,
-    calendarIdentifier: String?
-  ) async -> ScheduleCalendarEvent? {
-    nil
+  func resolveOwnedEvent(externalIdentifier: String, calendarIdentifier: String?) async -> ScheduleCalendarEvent? {
+    _ = externalIdentifier
+    _ = calendarIdentifier
+    return nil
   }
-
   func upsertOwnedEvent(
     _ request: OwnedScheduleCalendarEventUpsertRequest,
     calendarIdentifier: String
   ) async throws -> ScheduleCalendarEvent {
+    _ = request
+    _ = calendarIdentifier
     throw ScheduleCalendarEditError.eventNotFound
   }
-
-  func removeOwnedEvent(
-    externalIdentifier: String,
-    calendarIdentifier: String
-  ) async throws -> Bool {
-    false
+  func removeOwnedEvent(externalIdentifier: String, calendarIdentifier: String) async throws -> Bool {
+    _ = externalIdentifier
+    _ = calendarIdentifier
+    return false
   }
-
   func resolveEvent(ownerID: String) async -> ScheduleCalendarEvent? {
-    nil
+    _ = ownerID
+    return nil
   }
 }

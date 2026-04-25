@@ -83,8 +83,8 @@ extension AppState {
     _ = context
     let title = rawTitle.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !title.isEmpty else { return nil }
-    guard let pageStore = logseqProjectPageStore() else {
-      errorMessage = "Logseq graph is not configured."
+    guard let obsidianVaultRootURL else {
+      errorMessage = "Obsidian vault is not configured."
       return nil
     }
 
@@ -93,15 +93,21 @@ extension AppState {
       let projectID = RetainedProjectionBuilder.derivedProjectID(
         for: reminderList.externalIdentifier
       )
-      try await pageStore.upsertPage(
-        .init(
-          projectID: projectID,
-          title: title,
-          reminderListExternalIdentifier: reminderList.externalIdentifier
-        ),
-        noteMarkdown: "",
-        managedTasks: []
-      )
+      _ = try await ObsidianProjectMarkdownStore(vaultRootURL: obsidianVaultRootURL)
+        .writeProjectNote(
+          ObsidianProjectNote(
+            frontmatter: ObsidianProjectFrontmatter(
+              tags: ["프로젝트"],
+              reminderListExternalIdentifier: reminderList.externalIdentifier,
+              preservedLines: []
+            ),
+            bodyMarkdown: "",
+            tasks: [],
+            diagnostics: [],
+            normalizedContentHash: ""
+          ),
+          preferredFileName: title
+        )
       TaskIdentityBridgeStore.upsertProject(
         projectID: projectID,
         title: title,
@@ -126,17 +132,21 @@ extension AppState {
     _ = context
     let title = rawTitle.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !title.isEmpty else { return nil }
-    guard let pageStore = logseqProjectPageStore() else {
-      errorMessage = "Logseq graph is not configured."
+    guard let obsidianVaultRootURL else {
+      errorMessage = "Obsidian vault is not configured."
       return nil
     }
 
     do {
-      let pages = try await pageStore.loadProjectPagesInScope()
-      guard let page = pages.first(where: { $0.projectID == projectID }),
-        let reminderListIdentifier = page.reminderListExternalIdentifier
+      let store = ObsidianProjectMarkdownStore(vaultRootURL: obsidianVaultRootURL)
+      let snapshots = try await store.loadProjectNotesInScope()
+      guard let snapshot = snapshots.first(where: { snapshot in
+        guard let listID = snapshot.note.reminderListExternalIdentifier else { return false }
+        return RetainedProjectionBuilder.derivedProjectID(for: listID) == projectID
+      }),
+        let reminderListIdentifier = snapshot.note.reminderListExternalIdentifier
       else {
-        errorMessage = "할일을 추가할 Logseq 프로젝트 페이지를 찾지 못했습니다."
+        errorMessage = "할일을 추가할 Obsidian 프로젝트 노트를 찾지 못했습니다."
         return nil
       }
 
@@ -148,33 +158,47 @@ extension AppState {
         hasExplicitTime: hasExplicitTime,
         noteText: ""
       )
-      let taskID = UUID()
-      var tasks = page.managedTasks
-      tasks.append(
-        .init(
-          taskID: taskID,
+      guard let reminderExternalIdentifier = remote?.externalIdentifier else {
+        errorMessage = "생성된 Reminder task external id를 확인하지 못했습니다."
+        return nil
+      }
+      let taskID = ReminderProjectionIdentity.taskID(for: reminderExternalIdentifier)
+      let note = noteByAppendingTask(
+        title: title,
+        reminderExternalIdentifier: reminderExternalIdentifier,
+        startDate: startDate,
+        hasExplicitTime: hasExplicitTime,
+        durationMinutes: durationMinutes,
+        to: snapshot.note
+      )
+      _ = try await store.writeProjectNote(
+        note,
+        preferredFileName: snapshot.fileURL.lastPathComponent,
+        expectedBaseline: ObsidianProjectMarkdownStore.WriteBaseline(snapshot: snapshot)
+      )
+      ReminderSyncBaselineStore.upsert(
+        reminderExternalIdentifier: reminderExternalIdentifier,
+        state: ReminderSyncTaskState(
           title: title,
           isCompleted: false,
-          date: LogseqReminderPropertyCodec.encodeDate(startDate, hasExplicitTime: hasExplicitTime),
-          duration: durationMinutes.map(String.init),
+          date: ReminderScheduleMetadataCodec.encodeDate(
+            startDate,
+            hasExplicitTime: hasExplicitTime
+          ),
           repeatRule: nil,
-          reminderExternalIdentifier: remote?.externalIdentifier,
-          calendarEventExternalIdentifier: nil
-        )
-      )
-      try await pageStore.upsertPage(
-        .init(
-          projectID: projectID,
-          title: page.title,
-          reminderListExternalIdentifier: page.reminderListExternalIdentifier
+          noteText: nil
         ),
-        noteMarkdown: page.noteMarkdown,
-        managedTasks: tasks
+        remoteModifiedAt: remote?.modifiedAt
+      )
+      TaskIdentityBridgeStore.upsertProject(
+        projectID: projectID,
+        title: snapshot.fileURL.deletingPathExtension().lastPathComponent,
+        reminderListExternalIdentifier: reminderListIdentifier
       )
       TaskIdentityBridgeStore.upsertTask(
         taskID: taskID,
         title: title,
-        reminderExternalIdentifier: remote?.externalIdentifier,
+        reminderExternalIdentifier: reminderExternalIdentifier,
         ownerProjectID: projectID
       )
       bumpWorkspaceTreeRevision()
@@ -195,8 +219,8 @@ extension AppState {
     _ = context
     guard let projectID = TaskIdentityBridgeStore.projectID(for: taskID) else { return false }
     do {
-      _ = try await RetainedTaskCommandService.setTaskCompletion(
-        graphRootURL: logseqGraphRootURL,
+      _ = try await ObsidianRetainedTaskCommandService.setTaskCompletion(
+        vaultRootURL: obsidianVaultRootURL,
         projectID: projectID,
         taskID: taskID,
         isCompleted: isCompleted,
@@ -237,8 +261,8 @@ extension AppState {
   ) async -> Bool {
     _ = context
     do {
-      _ = try await RetainedTaskCommandService.setTaskSchedule(
-        graphRootURL: logseqGraphRootURL,
+      _ = try await ObsidianRetainedTaskCommandService.setTaskSchedule(
+        vaultRootURL: obsidianVaultRootURL,
         projectID: projectID,
         taskID: taskID,
         day: day,
@@ -252,6 +276,57 @@ extension AppState {
       reportError(error, logMessage: "writeProjectDetailTaskSchedule failed")
       return false
     }
+  }
+
+  private func noteByAppendingTask(
+    title: String,
+    reminderExternalIdentifier: String,
+    startDate: Date?,
+    hasExplicitTime: Bool,
+    durationMinutes: Int?,
+    to note: ObsidianProjectNote
+  ) -> ObsidianProjectNote {
+    var bodyLines = note.bodyMarkdown.isEmpty ? [] : note.bodyMarkdown.components(separatedBy: "\n")
+    bodyLines.append("- [ ] \(title)")
+    let metadata = ObsidianTaskMetadata(
+      reminderExternalIdentifier: reminderExternalIdentifier,
+      date: startDate.map { formatObsidianDate($0) },
+      time: hasExplicitTime ? startDate.map { formatObsidianTime($0) } : nil,
+      durationMinutes: durationMinutes,
+      repeatRule: nil
+    )
+    bodyLines.append(
+      ObsidianReminderImportFormatting.renderMetadataLine(metadata, indentation: "  ")
+    )
+    return ObsidianProjectNoteParser.parse(
+      ObsidianProjectNoteRenderer.render(
+        ObsidianProjectNote(
+          frontmatter: note.frontmatter,
+          bodyMarkdown: bodyLines.joined(separator: "\n"),
+          tasks: [],
+          diagnostics: [],
+          normalizedContentHash: ""
+        )
+      )
+    )
+  }
+
+  private func formatObsidianDate(_ date: Date) -> String {
+    let formatter = DateFormatter()
+    formatter.calendar = Calendar(identifier: .gregorian)
+    formatter.locale = Locale(identifier: "en_US_POSIX")
+    formatter.timeZone = .autoupdatingCurrent
+    formatter.dateFormat = "yyyy-MM-dd"
+    return formatter.string(from: date)
+  }
+
+  private func formatObsidianTime(_ date: Date) -> String {
+    let formatter = DateFormatter()
+    formatter.calendar = Calendar(identifier: .gregorian)
+    formatter.locale = Locale(identifier: "en_US_POSIX")
+    formatter.timeZone = .autoupdatingCurrent
+    formatter.dateFormat = "HH:mm"
+    return formatter.string(from: date)
   }
 
   @discardableResult

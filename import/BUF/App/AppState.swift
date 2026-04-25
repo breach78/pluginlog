@@ -16,9 +16,9 @@ final class AppState: ObservableObject {
   static let includeCompletedSyncEnabledKey = "sync.includeCompletedRemindersEnabled"
   static let initialSyncConsentGrantedKey = "sync.initialConsentGranted"
   static let initialSyncConsentDecidedKey = "sync.initialConsentDecided"
-  static let showCompletedLogseqTasksKey = "logseq.showCompletedTasks"
-  static let logseqGraphBookmarkDataKey = "logseq.graphRoot.bookmarkData"
-  static let logseqGraphRootPathKey = "logseq.graphRoot.path"
+  static let showCompletedTasksKey = "workspace.showCompletedTasks"
+  static let obsidianVaultBookmarkDataKey = "obsidian.vault.bookmarkData"
+  static let obsidianVaultRootPathKey = "obsidian.vault.path"
   static let timelineDayColumnWidthKey = "timeline.dayColumnWidth"
   static let calendarDayChangedNotification = Notification.Name("NSCalendarDayChanged")
   static let systemClockDidChangeNotification = Notification.Name("NSSystemClockDidChange")
@@ -47,13 +47,11 @@ final class AppState: ObservableObject {
   @Published var isHoveringTimelineDayHeaderOverlay = false
   @Published var workspaceNavigationRequest: WorkspaceNavigationRequest?
   @Published var includeCompletedSyncEnabled = true
-  @Published var showsCompletedLogseqTasks = false
+  @Published var showsCompletedTasks = false
   @Published var hasInitialSyncConsent = false
   @Published var hasSyncConsentDecision = false
-  @Published var logseqGraphRootURL: URL?
+  @Published var obsidianVaultRootURL: URL?
   @Published var containerRootURL: URL?
-  @Published var logseqHelperPluginInstallStatus = "Logseq helper plugin not installed"
-  @Published var logseqHelperPluginInstallPath: String?
   @Published var timelineDayColumnWidth: CGFloat = 44
   @Published var isEditorActive = false
   @Published var isEditorMotionSuppressed = false
@@ -83,11 +81,11 @@ final class AppState: ObservableObject {
   var reminderSyncEditGate: ReminderSyncEditGate?
   var reminderSyncRecoveryJournal: ReminderSyncRecoveryJournalStore?
   var reminderSourceObserver: ReminderSourceObserver?
-  var logseqPagesDirectoryWatcher: LogseqPagesDirectoryWatcher?
+  var obsidianProjectDirectoryWatcher: ObsidianProjectDirectoryWatcher?
   var pendingReminderSourceRefreshReason: SyncReason?
-  var logseqAuthoredReminderEchoSuppressionDeadline: Date?
-  var logseqAuthoredReminderEchoRefreshTask: Task<Void, Never>?
-  let logseqAuthoredReminderEchoSuppressionInterval: TimeInterval = 8
+  var appAuthoredReminderEchoSuppressionDeadline: Date?
+  var appAuthoredReminderEchoRefreshTask: Task<Void, Never>?
+  let appAuthoredReminderEchoSuppressionInterval: TimeInterval = 8
 
   let storageCoordinator: LocalStorageCoordinator
   let platformUIFoundation: PlatformUIFoundation
@@ -115,7 +113,7 @@ final class AppState: ObservableObject {
     case "idle": "리마인더 대기"
     case "ready", "preview": "리마인더 준비됨"
     case "refresh paused": "리마인더 새로고침 일시중지"
-    case "logseq graph not configured": "Logseq 그래프 미설정"
+    case "obsidian vault not configured": "Obsidian vault 미설정"
     case "container not opened": "컨테이너 미열림"
     case "reminders access denied": "리마인더 접근 권한 필요"
     default: syncStatus
@@ -184,8 +182,8 @@ final class AppState: ObservableObject {
 
     UserDefaults.standard.set(true, forKey: Self.includeCompletedSyncEnabledKey)
     includeCompletedSyncEnabled = true
-    showsCompletedLogseqTasks =
-      UserDefaults.standard.object(forKey: Self.showCompletedLogseqTasksKey) as? Bool
+    showsCompletedTasks =
+      UserDefaults.standard.object(forKey: Self.showCompletedTasksKey) as? Bool
       ?? false
     hasInitialSyncConsent = UserDefaults.standard.bool(forKey: Self.initialSyncConsentGrantedKey)
     hasSyncConsentDecision =
@@ -207,10 +205,10 @@ final class AppState: ObservableObject {
   deinit {
     editorIdleTask?.cancel()
     editorMotionReleaseTask?.cancel()
-    logseqAuthoredReminderEchoRefreshTask?.cancel()
+    appAuthoredReminderEchoRefreshTask?.cancel()
     scheduleCalendarOverlayProjectionCancellable?.cancel()
     scheduleCalendarOwnedEventInvalidationCancellable?.cancel()
-    logseqPagesDirectoryWatcher?.stop()
+    obsidianProjectDirectoryWatcher?.stop()
     editorStateChangeContinuations.values.forEach { $0.finish() }
   }
 
@@ -221,9 +219,9 @@ final class AppState: ObservableObject {
   }
 
   var isContainerConfigured: Bool { containerRootURL != nil }
-  var isLogseqGraphConfigured: Bool { logseqGraphRootURL != nil }
+  var isObsidianVaultConfigured: Bool { obsidianVaultRootURL != nil }
   var hasCompletedInitialSetup: Bool {
-    isContainerConfigured && isLogseqGraphConfigured && hasSyncConsentDecision
+    isContainerConfigured && isObsidianVaultConfigured && hasSyncConsentDecision
   }
 
   var isUndoRedoInFlight: Bool { false }

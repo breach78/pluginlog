@@ -113,14 +113,13 @@ enum ReminderPendingBindingStore {
     pageFileURL: URL,
     listExternalIdentifier: String,
     taskIndex: Int,
-    task: LogseqProjectPageStore.TaskRecord,
+    taskFingerprint: String,
     now: Date
   ) -> ReminderPendingTaskBinding? {
     lock.lock()
     defer { lock.unlock() }
     pruneExpiredLocked(now: now)
     let pagePath = pageKey(for: pageFileURL)
-    let taskFingerprint = fingerprint(for: task)
     return payload.taskBindings.first {
       $0.pagePath == pagePath
         && $0.listExternalIdentifier == listExternalIdentifier
@@ -150,7 +149,8 @@ enum ReminderPendingBindingStore {
     pageFileURL: URL,
     listExternalIdentifier: String,
     taskIndex: Int,
-    task: LogseqProjectPageStore.TaskRecord,
+    taskTitle: String,
+    taskFingerprint: String,
     reminderExternalIdentifier: String,
     now: Date
   ) {
@@ -161,8 +161,8 @@ enum ReminderPendingBindingStore {
       pagePath: pageKey(for: pageFileURL),
       listExternalIdentifier: listExternalIdentifier,
       taskIndex: taskIndex,
-      taskTitleFingerprint: fingerprint(task.title),
-      taskFingerprint: fingerprint(for: task),
+      taskTitleFingerprint: fingerprint(taskTitle),
+      taskFingerprint: taskFingerprint,
       reminderExternalIdentifier: reminderExternalIdentifier,
       createdAt: now
     )
@@ -180,12 +180,11 @@ enum ReminderPendingBindingStore {
     pageFileURL: URL,
     listExternalIdentifier: String,
     taskIndex: Int,
-    task: LogseqProjectPageStore.TaskRecord
+    taskFingerprint: String
   ) {
     lock.lock()
     defer { lock.unlock() }
     let pagePath = pageKey(for: pageFileURL)
-    let taskFingerprint = fingerprint(for: task)
     payload.taskBindings.removeAll {
       $0.pagePath == pagePath
         && $0.listExternalIdentifier == listExternalIdentifier
@@ -240,13 +239,4 @@ enum ReminderPendingBindingStore {
       .lowercased()
   }
 
-  private static func fingerprint(for task: LogseqProjectPageStore.TaskRecord) -> String {
-    [
-      fingerprint(task.title),
-      task.isCompleted ? "done" : "todo",
-      fingerprint(task.date ?? ""),
-      fingerprint(task.repeatRule ?? ""),
-      fingerprint(task.noteText ?? ""),
-    ].joined(separator: "|")
-  }
 }
