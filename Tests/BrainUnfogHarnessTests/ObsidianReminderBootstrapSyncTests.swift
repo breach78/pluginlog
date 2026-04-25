@@ -37,6 +37,10 @@ final class ObsidianReminderBootstrapSyncTests: XCTestCase {
 
     XCTAssertEqual(result.importedProjectCount, 1)
     XCTAssertEqual(result.importedTaskCount, 1)
+    XCTAssertEqual(result.projectRecords.map(\.title), ["2026"])
+    XCTAssertEqual(result.projectRecords.map(\.reminderListExternalIdentifier), ["list-1"])
+    XCTAssertEqual(result.taskRecords.map(\.title), ["Pay tax"])
+    XCTAssertEqual(result.taskRecords.map(\.reminderExternalIdentifier), ["task-1"])
     XCTAssertEqual(snapshots.count, 1)
     XCTAssertEqual(snapshots[0].vaultRelativePath, "raw/projects/2026.md")
     XCTAssertEqual(snapshots[0].note.reminderListExternalIdentifier, "list-1")

@@ -122,6 +122,8 @@ final class ObsidianReminderImportSyncTests: XCTestCase {
       .loadProjectNotesInScope()
     let raw = try XCTUnwrap(snapshots.first?.rawMarkdown)
     XCTAssertEqual(result.updatedTaskCount, 1)
+    XCTAssertEqual(result.projectRecords.map(\.title), ["Project"])
+    XCTAssertEqual(result.projectRecords.map(\.reminderListExternalIdentifier), ["list-1"])
     XCTAssertTrue(raw.contains("Local prose remains."))
     XCTAssertTrue(raw.contains("- [x] Remote title"))
     XCTAssertTrue(raw.contains(#""date":"2026-04-25","time":"10:15","duration":45,"repeat":"reminder""#))

@@ -98,6 +98,15 @@ enum ObsidianReminderImportSync {
         importedTaskCount += merge.importedTaskCount
         updatedTaskCount += merge.updatedTaskCount
         deletedTaskCount += merge.deletedTaskCount
+        projectRecords.append(
+          ProjectIdentityBridgeRecord(
+            projectID: projectID,
+            title: projectTitle(from: snapshot),
+            reminderListExternalIdentifier: list.externalIdentifier,
+            createdAt: now,
+            updatedAt: items.map(\.item.modifiedAt).max() ?? now
+          )
+        )
         taskRecords.append(contentsOf: taskRecordsForItems(items, projectID: projectID, now: now))
       } else {
         let note = makeNote(for: list, items: items)
@@ -694,6 +703,10 @@ enum ObsidianReminderImportSync {
   ) -> Bool {
     guard let remoteModifiedAt, let baselineRemoteModifiedAt else { return false }
     return baselineRemoteModifiedAt.timeIntervalSince(remoteModifiedAt) > 0.5
+  }
+
+  private static func projectTitle(from snapshot: ObsidianProjectMarkdownStore.Snapshot) -> String {
+    snapshot.fileURL.deletingPathExtension().lastPathComponent
   }
 
   private static func duplicateTitleCounts(

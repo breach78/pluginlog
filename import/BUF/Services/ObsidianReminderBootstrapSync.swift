@@ -4,6 +4,8 @@ enum ObsidianReminderBootstrapSync {
   struct SyncResult: Equatable {
     var importedProjectCount: Int
     var importedTaskCount: Int
+    var projectRecords: [ProjectIdentityBridgeRecord]
+    var taskRecords: [TaskIdentityBridgeRecord]
   }
 
   enum BootstrapError: LocalizedError, Equatable {
@@ -47,10 +49,13 @@ enum ObsidianReminderBootstrapSync {
 
     var importedProjectCount = 0
     var importedTaskCount = 0
+    var projectRecords: [ProjectIdentityBridgeRecord] = []
+    var taskRecords: [TaskIdentityBridgeRecord] = []
 
     for list in normalizedLists {
       let items = batch.itemsByListIdentifier[list.list.identifier] ?? []
       let note = try makeNote(for: list, items: items)
+      let projectID = RetainedProjectionBuilder.derivedProjectID(for: list.externalIdentifier)
       if let existingSnapshot = snapshotsByListID[list.externalIdentifier] {
         try validateExistingNoteIsSafeForBootstrapOverwrite(
           existingSnapshot,
@@ -81,11 +86,23 @@ enum ObsidianReminderBootstrapSync {
       )
       importedProjectCount += 1
       importedTaskCount += note.tasks.count
+      projectRecords.append(
+        ProjectIdentityBridgeRecord(
+          projectID: projectID,
+          title: list.title,
+          reminderListExternalIdentifier: list.externalIdentifier,
+          createdAt: now,
+          updatedAt: items.map(\.modifiedAt).max() ?? now
+        )
+      )
+      taskRecords.append(contentsOf: taskRecordsForItems(items, projectID: projectID, now: now))
     }
 
     return SyncResult(
       importedProjectCount: importedProjectCount,
-      importedTaskCount: importedTaskCount
+      importedTaskCount: importedTaskCount,
+      projectRecords: projectRecords,
+      taskRecords: taskRecords
     )
   }
 
@@ -251,6 +268,28 @@ enum ObsidianReminderBootstrapSync {
       return list.title
     }
     return "\(list.title) - \(shortIdentifier(list.externalIdentifier))"
+  }
+
+  private static func taskRecordsForItems(
+    _ items: [ReminderItemImportSnapshot],
+    projectID: UUID,
+    now: Date
+  ) -> [TaskIdentityBridgeRecord] {
+    items.compactMap { item in
+      guard let title = normalized(item.title),
+        let taskID = normalized(item.externalIdentifier) ?? normalized(item.identifier)
+      else {
+        return nil
+      }
+      return TaskIdentityBridgeRecord(
+        taskID: ReminderProjectionIdentity.taskID(for: taskID),
+        title: title,
+        reminderExternalIdentifier: taskID,
+        ownerProjectID: projectID,
+        createdAt: item.createdAt,
+        updatedAt: item.modifiedAt > item.createdAt ? item.modifiedAt : now
+      )
+    }
   }
 
   private static func shortIdentifier(_ identifier: String) -> String {

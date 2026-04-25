@@ -229,6 +229,9 @@ extension AppState {
       await prepareProjectNoteStore()
       reminderSourceObserver?.stop()
       reminderSourceObserver = nil
+      if hasInitialSyncConsent {
+        configureReminderSourceObservation()
+      }
       boardsLoaded = true
       syncStatus = "Ready"
       if startStartupSync {

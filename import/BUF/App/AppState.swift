@@ -91,6 +91,7 @@ final class AppState: ObservableObject {
   let calendarServiceRegistry: AppStateCalendarServiceRegistry
   let reminderGateway: ReminderGateway
   let reminderProjectProvider: ReminderProjectProvider
+  let reminderAuthorizationStatusProvider: () -> EKAuthorizationStatus
   let timelineService: TimelineService
 
   var defaultReminderCalendarIdentifier: String? {
@@ -143,6 +144,9 @@ final class AppState: ObservableObject {
     reminderGateway: ReminderGateway? = nil,
     timelineService: TimelineService? = nil,
     calendarServiceRegistry: AppStateCalendarServiceRegistry? = nil,
+    reminderAuthorizationStatusProvider: @escaping () -> EKAuthorizationStatus = {
+      EKEventStore.authorizationStatus(for: .reminder)
+    },
     isPreviewAppState: Bool = false
   ) {
     let usesPreviewRuntimeSetup = isPreviewAppState || AppRuntimeEnvironment.isRunningPreview
@@ -156,6 +160,7 @@ final class AppState: ObservableObject {
     )
     self.reminderGateway = resolvedReminderGateway
     self.reminderProjectProvider = EventKitReminderProjectProvider(gateway: resolvedReminderGateway)
+    self.reminderAuthorizationStatusProvider = reminderAuthorizationStatusProvider
     self.timelineService = timelineService ?? DefaultTimelineService()
     self.calendarServiceRegistry =
       calendarServiceRegistry ?? AppStateCalendarServiceRegistry.live()

@@ -9,11 +9,13 @@ final class RetainedSetupFlowTests: XCTestCase {
 
   override func setUp() async throws {
     try await super.setUp()
+    TaskIdentityBridgeStore.reset()
     clearRetainedSetupDefaults()
   }
 
   override func tearDown() async throws {
     clearRetainedSetupDefaults()
+    TaskIdentityBridgeStore.reset()
     for root in temporaryRoots {
       try? FileManager.default.removeItem(at: root)
     }
@@ -73,7 +75,7 @@ final class RetainedSetupFlowTests: XCTestCase {
           .path
       )
     )
-    XCTAssertNil(appState.reminderSourceObserver)
+    XCTAssertNotNil(appState.reminderSourceObserver)
     XCTAssertNotNil(appState.obsidianProjectDirectoryWatcher)
     XCTAssertTrue(appState.hasCompletedInitialSetup)
     XCTAssertTrue(appState.syncStarted)
@@ -87,10 +89,17 @@ final class RetainedSetupFlowTests: XCTestCase {
     )
     let projectFile = try XCTUnwrap(projectFiles.first { $0.pathExtension == "md" })
     let markdown = try String(contentsOf: projectFile, encoding: .utf8)
+    let taskIdentifier = try XCTUnwrap(
+      gateway.reminder.calendarItemExternalIdentifier ?? gateway.reminder.calendarItemIdentifier
+    )
+    let projectID = RetainedProjectionBuilder.derivedProjectID(for: gateway.calendar.calendarIdentifier)
+    let taskID = ReminderProjectionIdentity.taskID(for: taskIdentifier)
     XCTAssertTrue(markdown.contains("reminder_list_external_id:"))
     XCTAssertTrue(markdown.contains("reminder_external_id"))
     XCTAssertTrue(markdown.contains("- [ ] Imported task"))
     XCTAssertTrue(markdown.contains("note line"))
+    XCTAssertEqual(TaskIdentityBridgeStore.projectTitle(for: projectID), "Imported list")
+    XCTAssertEqual(TaskIdentityBridgeStore.taskRecord(for: taskID)?.title, "Imported task")
   }
 
   func testConfigureObsidianVaultRejectsCandidateWithoutObsidianDirectoryWithoutDirtyingFolder()
@@ -215,7 +224,20 @@ final class RetainedSetupFlowTests: XCTestCase {
           .path
       )
     )
+    XCTAssertNotNil(appState.reminderSourceObserver)
+  }
+
+  func testDeniedInitialSyncConsentStopsReminderSourceObservation() async throws {
+    let vaultRoot = try makeVaultRoot()
+    UserDefaults.standard.set(vaultRoot.path, forKey: AppState.obsidianVaultRootPathKey)
+    UserDefaults.standard.set(false, forKey: AppState.initialSyncConsentGrantedKey)
+    UserDefaults.standard.set(true, forKey: AppState.initialSyncConsentDecidedKey)
+    let appState = makeAppState(reminderGateway: SetupReminderGateway())
+
+    await appState.launch()
+
     XCTAssertNil(appState.reminderSourceObserver)
+    XCTAssertEqual(appState.syncStatus, "Refresh paused")
   }
 
   func testDeniedInitialSyncConsentBlocksStartupSync() async throws {
@@ -311,7 +333,8 @@ final class RetainedSetupFlowTests: XCTestCase {
     AppState(
       storageCoordinator: storageCoordinator,
       reminderGateway: reminderGateway ?? PreviewReminderGateway(),
-      calendarServiceRegistry: .live(scheduleCalendarService: calendarService)
+      calendarServiceRegistry: .live(scheduleCalendarService: calendarService),
+      reminderAuthorizationStatusProvider: { .fullAccess }
     )
   }
 

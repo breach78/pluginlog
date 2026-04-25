@@ -43,7 +43,8 @@ extension AppState {
       handleExternalOwnerChange: { [weak self] command in
         guard let self else { return false }
         return await self.send(command, waitForEditorIdle: false)
-      }
+      },
+      authorizationStatusProvider: reminderAuthorizationStatusProvider
     )
     reminderSourceObserver = observer
     Task { @MainActor [weak observer] in
@@ -106,6 +107,7 @@ extension AppState {
           batch: batch,
           store: store
         )
+        applyObsidianBootstrapResult(result)
         syncStatus = "Synced \(result.importedProjectCount) lists / \(result.importedTaskCount) tasks to Obsidian"
       } else {
         let result = try await ObsidianReminderImportSync.sync(
@@ -190,6 +192,13 @@ extension AppState {
   }
 
   func applyObsidianImportResult(_ result: ObsidianReminderImportSync.SyncResult) {
+    TaskIdentityBridgeStore.upsertAll(
+      projects: result.projectRecords,
+      tasks: result.taskRecords
+    )
+  }
+
+  func applyObsidianBootstrapResult(_ result: ObsidianReminderBootstrapSync.SyncResult) {
     TaskIdentityBridgeStore.upsertAll(
       projects: result.projectRecords,
       tasks: result.taskRecords
