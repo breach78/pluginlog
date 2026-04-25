@@ -2,7 +2,10 @@
 
 ## Status
 
-Proposed on 2026-04-24.
+Superseded for current execution by `PLAN-006-obsidian-migration.md`.
+
+Proposed on 2026-04-24. This plan remains sync-policy background, but the
+active storage migration plan is Obsidian-based.
 
 Related decisions:
 

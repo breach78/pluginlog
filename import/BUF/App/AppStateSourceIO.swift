@@ -145,8 +145,11 @@ extension AppState {
         projects: result.projectRecords + provisioningResult.projectRecords,
         tasks: result.taskRecords + provisioningResult.taskRecords
       )
-      syncStatus =
-        "Synced \(result.importedProjectCount + provisioningResult.createdProjectCount) lists / \(result.importedTaskCount + provisioningResult.createdTaskCount) tasks"
+      let syncedProjectCount = result.importedProjectCount + provisioningResult.createdProjectCount
+      let syncedTaskCount = result.importedTaskCount + provisioningResult.createdTaskCount
+      syncStatus = provisioningResult.deletedTaskCount > 0
+        ? "Synced \(syncedProjectCount) lists / \(syncedTaskCount) tasks / deleted \(provisioningResult.deletedTaskCount)"
+        : "Synced \(syncedProjectCount) lists / \(syncedTaskCount) tasks"
       bumpWorkspaceTreeRevision()
     } catch {
       reportError(error, logMessage: "reconcileManagedLogseqPagesWithReminderSource failed")
@@ -158,9 +161,7 @@ extension AppState {
     for reason: SyncReason
   ) -> LogseqProjectPageStore.ReminderImportConflictPolicy {
     switch reason {
-    case .bootstrap:
-      return .remindersAuthoritative
-    case .eventStoreChanged, .manual, .periodic:
+    case .bootstrap, .eventStoreChanged, .manual, .periodic:
       return .mergeWithBaseline
     }
   }
@@ -173,10 +174,8 @@ extension AppState {
     reason: SyncReason
   ) -> RetainedLogseqProjectProvisioningSync.SyncMode? {
     switch reason {
-    case .manual:
+    case .bootstrap, .manual:
       return .fullPush
-    case .bootstrap:
-      return .missingBindingsOnly
     case .eventStoreChanged, .periodic:
       return nil
     }
@@ -205,17 +204,20 @@ extension AppState {
       )
       applyRetainedLogseqProvisioningResult(result)
       AppLogger.sync.info(
-        "logseq page change synced createdProjects=\(result.createdProjectCount, privacy: .public) createdTasks=\(result.createdTaskCount, privacy: .public) taskRecords=\(result.taskRecords.count, privacy: .public)"
+        "logseq page change synced createdProjects=\(result.createdProjectCount, privacy: .public) createdTasks=\(result.createdTaskCount, privacy: .public) deletedTasks=\(result.deletedTaskCount, privacy: .public) taskRecords=\(result.taskRecords.count, privacy: .public)"
       )
       if result.createdProjectCount > 0
         || result.createdTaskCount > 0
+        || result.deletedTaskCount > 0
         || !result.projectRecords.isEmpty
         || !result.taskRecords.isEmpty
       {
         recordLogseqAuthoredReminderPush()
       }
-      if result.createdProjectCount > 0 || result.createdTaskCount > 0 {
-        syncStatus = "Synced \(result.createdProjectCount) lists / \(result.createdTaskCount) tasks"
+      if result.createdProjectCount > 0 || result.createdTaskCount > 0 || result.deletedTaskCount > 0 {
+        syncStatus = result.deletedTaskCount > 0
+          ? "Synced \(result.createdProjectCount) lists / \(result.createdTaskCount) tasks / deleted \(result.deletedTaskCount)"
+          : "Synced \(result.createdProjectCount) lists / \(result.createdTaskCount) tasks"
       }
       bumpWorkspaceTreeRevision()
     } catch {

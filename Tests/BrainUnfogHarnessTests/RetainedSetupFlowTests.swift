@@ -147,7 +147,7 @@ final class RetainedSetupFlowTests: XCTestCase {
     XCTAssertEqual(appState.syncStatus, "Refresh paused")
   }
 
-  func testStartupSyncUsesReminderFirstBootstrapPolicy() async throws {
+  func testStartupSyncRunsBootstrapReconciliation() async throws {
     let graphRoot = try makeTemporaryDirectory(named: "graph")
     let appState = makeAppState()
 
@@ -162,12 +162,12 @@ final class RetainedSetupFlowTests: XCTestCase {
     XCTAssertEqual(appState.syncStatus, "Refreshed (\(SyncReason.bootstrap.rawValue))")
   }
 
-  func testBootstrapSyncPolicyIsReminderAuthoritativeButEventSyncUsesBaselineMerge() {
+  func testBootstrapSyncPolicyMergesWithBaselineAndPushesLogseqCatchup() {
     let appState = makeAppState()
 
     XCTAssertEqual(
       appState.reminderImportConflictPolicy(for: .bootstrap),
-      .remindersAuthoritative
+      .mergeWithBaseline
     )
     XCTAssertEqual(
       appState.reminderImportConflictPolicy(for: .eventStoreChanged),
@@ -177,7 +177,7 @@ final class RetainedSetupFlowTests: XCTestCase {
       appState.reminderImportConflictPolicy(for: .manual),
       .mergeWithBaseline
     )
-    XCTAssertFalse(appState.shouldProvisionFromLogseqAfterImport(reason: .bootstrap))
+    XCTAssertTrue(appState.shouldProvisionFromLogseqAfterImport(reason: .bootstrap))
     XCTAssertFalse(appState.shouldProvisionFromLogseqAfterImport(reason: .eventStoreChanged))
     XCTAssertTrue(appState.shouldProvisionFromLogseqAfterImport(reason: .manual))
     XCTAssertFalse(appState.shouldProvisionFromLogseqAfterImport(reason: .periodic))

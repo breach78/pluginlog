@@ -37,6 +37,13 @@ enum RetainedReminderImportSync {
         else {
           return nil
         }
+        guard !ReminderDeletedTaskTombstoneStore.shouldSuppressImport(
+          reminderExternalIdentifier: taskIdentifier,
+          remoteModifiedAt: item.modifiedAt,
+          now: now
+        ) else {
+          return nil
+        }
         remoteModifiedAtByReminderIdentifier[taskIdentifier] = item.modifiedAt
 
         let taskID = ReminderProjectionIdentity.taskID(for: taskIdentifier)

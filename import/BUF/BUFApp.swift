@@ -36,19 +36,24 @@ struct BUFApplication: App {
     let appState = AppState()
     _appState = StateObject(wrappedValue: appState)
     AppSettingsWindowPresenter.shared.register(appState: appState)
+    Task { @MainActor in
+      guard !AppRuntimeEnvironment.isRunningPreview else { return }
+      await appState.launch()
+      MainAppWindowPresenter.shared.show(appState: appState)
+      AppSettingsWindowPresenter.shared.installAppMenuItem(appState: appState)
+      appState.scheduleDebugPhase0AutoExportIfNeeded()
+      MainAppWindowPresenter.shared.reassertSingleWindow(appState: appState)
+    }
   }
 
   var body: some Scene {
-    WindowGroup(id: "main") {
+    WindowGroup("Brain Unfog", id: "main") {
       RootSceneView()
         .environmentObject(appState)
         .navigationTitle("Brain Unfog")
         .task {
           guard !AppRuntimeEnvironment.isRunningPreview else { return }
           installSettingsMenuCommand()
-          await appState.launch()
-          installSettingsMenuCommand()
-          appState.scheduleDebugPhase0AutoExportIfNeeded()
         }
     }
     .commands {

@@ -8,6 +8,7 @@ extension AppState {
     defer { isLaunching = false }
 
     applySetupPendingState()
+    installLogseqHelperPluginIfPossible()
     restoreLogseqGraphRootIfPossible()
     if let logseqGraphRootURL {
       do {
@@ -19,9 +20,10 @@ extension AppState {
         syncStatus = "Graph storage failed"
       }
     }
-    await requestRetainedExternalAccess()
     refreshContainerRootURL()
-    await prepareWorkspaceIfSetupComplete(shouldRefreshHealth: true)
+    await prepareWorkspaceIfSetupComplete(shouldRefreshHealth: true, startStartupSync: false)
+    await requestRetainedExternalAccess()
+    requestStartupSyncIfNeeded()
   }
 
   func initializeContainer(at rootURL: URL, activateWhenReady: Bool = true) async {
@@ -70,9 +72,11 @@ extension AppState {
       applyLogseqGraphRoot(rootURL)
       try await prepareGraphLocalContainer(for: rootURL)
       enableRetainedSyncConsent()
-      await requestRetainedExternalAccess()
       if activateWhenReady {
         await prepareWorkspaceIfSetupComplete(shouldRefreshHealth: true, startStartupSync: false)
+      }
+      await requestRetainedExternalAccess()
+      if activateWhenReady {
         _ = await performReminderSourceRefresh(reason: .bootstrap)
       }
     } catch {
@@ -172,6 +176,7 @@ extension AppState {
     containerRootURL = storageCoordinator.paths?.root
     TaskIdentityBridgeStore.install(dataDirectory: storageCoordinator.paths?.dataDirectory)
     ReminderPendingBindingStore.install(dataDirectory: storageCoordinator.paths?.dataDirectory)
+    ReminderDeletedTaskTombstoneStore.install(dataDirectory: storageCoordinator.paths?.dataDirectory)
     ReminderSyncBaselineStore.install(dataDirectory: storageCoordinator.paths?.dataDirectory)
   }
 
@@ -192,27 +197,34 @@ extension AppState {
   }
 
   private func restoreLogseqGraphRootIfPossible() {
-    if let bookmarkData = UserDefaults.standard.data(forKey: Self.logseqGraphBookmarkDataKey) {
-      do {
+    let bookmarkData = UserDefaults.standard.data(forKey: Self.logseqGraphBookmarkDataKey)
+    let resolution = LogseqGraphRootPreferenceResolver.resolve(
+      storedPath: UserDefaults.standard.string(forKey: Self.logseqGraphRootPathKey),
+      bookmarkData: bookmarkData,
+      resolveBookmark: { bookmarkData in
         var isStale = false
-        let resolvedURL = try URL(
+        return try URL(
           resolvingBookmarkData: bookmarkData,
           options: [.withSecurityScope],
           relativeTo: nil,
           bookmarkDataIsStale: &isStale
         )
-        applyLogseqGraphRoot(resolvedURL)
-        return
-      } catch {
-        AppLogger.storage.error(
-          "restoreLogseqGraphRoot bookmark failed: \(error.localizedDescription, privacy: .public)"
-        )
       }
+    )
+
+    guard let resolution else {
+      if bookmarkData != nil {
+        AppLogger.storage.error("restoreLogseqGraphRoot bookmark failed and no stored path exists")
+      }
+      return
     }
 
-    if let path = UserDefaults.standard.string(forKey: Self.logseqGraphRootPathKey), !path.isEmpty {
-      applyLogseqGraphRoot(URL(fileURLWithPath: path, isDirectory: true))
+    if resolution.didPreferStoredPathOverBookmark {
+      AppLogger.storage.error(
+        "restoreLogseqGraphRoot preferred stored path over mismatched bookmark path=\(resolution.url.path, privacy: .public)"
+      )
     }
+    applyLogseqGraphRoot(resolution.url)
   }
 
   private func applyLogseqGraphRoot(_ rootURL: URL) {

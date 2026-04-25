@@ -107,6 +107,15 @@ enum TaskIdentityBridgeStore {
     lock.unlock()
   }
 
+  static func removeTask(taskID: UUID) {
+    lock.lock()
+    let didRemove = tasksByID.removeValue(forKey: taskID) != nil
+    if didRemove {
+      persistLocked()
+    }
+    lock.unlock()
+  }
+
   static func replaceAll(
     projects: [ProjectIdentityBridgeRecord],
     tasks: [TaskIdentityBridgeRecord]

@@ -1,6 +1,7 @@
 '/Users/three/app_build/logseq plugin/Tests/BrainUnfogHarnessTests/AppBundleMetadataTests.swift'
 '/Users/three/app_build/logseq plugin/Tests/BrainUnfogHarnessTests/AppSettingsWindowPresenterTests.swift'
 '/Users/three/app_build/logseq plugin/Tests/BrainUnfogHarnessTests/LogseqGraphConfigStoreTests.swift'
+'/Users/three/app_build/logseq plugin/Tests/BrainUnfogHarnessTests/LogseqGraphRootPreferenceResolverTests.swift'
 '/Users/three/app_build/logseq plugin/Tests/BrainUnfogHarnessTests/LogseqHelperPluginInstallerTests.swift'
 '/Users/three/app_build/logseq plugin/Tests/BrainUnfogHarnessTests/LogseqPagesChangeTrackerTests.swift'
 '/Users/three/app_build/logseq plugin/Tests/BrainUnfogHarnessTests/LogseqProjectPageStoreTests.swift'

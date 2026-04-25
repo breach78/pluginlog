@@ -1,0 +1,15 @@
+{
+  "name": "brain-unfog-logseq-helper",
+  "version": "0.1.0",
+  "author": "Brain Unfog",
+  "main": "index.html",
+  "description": "Date, time, and duration helper for Brain Unfog retained Logseq tasks.",
+  "license": "MIT",
+  "browserslist": [
+    "chrome 100"
+  ],
+  "logseq": {
+    "id": "brain-unfog-logseq-helper",
+    "icon": "icon.svg"
+  }
+}

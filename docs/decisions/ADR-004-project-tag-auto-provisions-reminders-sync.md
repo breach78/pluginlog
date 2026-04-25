@@ -2,7 +2,11 @@
 
 ## Status
 
-Accepted
+Superseded for current execution by
+`ADR-005-obsidian-vault-retained-architecture.md`.
+
+This ADR remains historical background for project-tag auto-provisioning, but
+the active user-facing Markdown surface is now Obsidian, not Logseq.
 
 ## Date
 

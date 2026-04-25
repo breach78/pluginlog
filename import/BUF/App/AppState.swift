@@ -152,6 +152,7 @@ final class AppState: ObservableObject {
     self.storageCoordinator = storageCoordinator ?? LocalStorageCoordinator()
     TaskIdentityBridgeStore.install(dataDirectory: self.storageCoordinator.paths?.dataDirectory)
     ReminderPendingBindingStore.install(dataDirectory: self.storageCoordinator.paths?.dataDirectory)
+    ReminderDeletedTaskTombstoneStore.install(dataDirectory: self.storageCoordinator.paths?.dataDirectory)
     self.platformUIFoundation = .shared
     let resolvedReminderGateway = reminderGateway ?? (
       usesPreviewRuntimeSetup ? PreviewReminderGateway() : EventKitReminderGateway()

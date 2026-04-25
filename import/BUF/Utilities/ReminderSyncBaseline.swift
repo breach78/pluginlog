@@ -280,6 +280,20 @@ enum ReminderSyncBaselineStore {
     lock.unlock()
   }
 
+  static func remove(reminderExternalIdentifier: String?) {
+    guard let key = normalizedIdentifier(reminderExternalIdentifier) else { return }
+    lock.lock()
+    guard fileURL != nil else {
+      lock.unlock()
+      return
+    }
+    let didRemove = baselinesByReminderExternalIdentifier.removeValue(forKey: key) != nil
+    if didRemove {
+      persistLocked()
+    }
+    lock.unlock()
+  }
+
   private static func loadLocked() {
     guard let fileURL,
       let data = try? Data(contentsOf: fileURL),

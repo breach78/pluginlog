@@ -16,6 +16,7 @@ enum RetainedLogseqProjectProvisioningSync {
   struct SyncResult: Equatable {
     var createdProjectCount: Int
     var createdTaskCount: Int
+    var deletedTaskCount: Int = 0
     var projectRecords: [ProjectIdentityBridgeRecord]
     var taskRecords: [TaskIdentityBridgeRecord]
   }
@@ -62,6 +63,7 @@ enum RetainedLogseqProjectProvisioningSync {
   ) async throws -> SyncResult {
     var createdProjectCount = 0
     var createdTaskCount = 0
+    var deletedTaskCount = 0
     var projectRecords: [ProjectIdentityBridgeRecord] = []
     var taskRecords: [TaskIdentityBridgeRecord] = []
 
@@ -260,6 +262,24 @@ enum RetainedLogseqProjectProvisioningSync {
         createdTaskCount += 1
       }
 
+      if mode == .fullPush {
+        if blockedReminderIdentifiers.isEmpty,
+          let prefetchedRemoteSnapshotsByExternalIdentifier
+        {
+          deletedTaskCount += try deleteMissingReminderBackedTasks(
+            page: page,
+            listIdentifier: listIdentifier,
+            remoteSnapshotsByExternalIdentifier: prefetchedRemoteSnapshotsByExternalIdentifier,
+            reminderProjectProvider: reminderProjectProvider,
+            now: now
+          )
+        } else if !blockedReminderIdentifiers.isEmpty {
+          AppLogger.sync.error(
+            "logseq reminder delete skipped page with duplicate reminder ids page=\(page.title, privacy: .public)"
+          )
+        }
+      }
+
       if page.reminderListExternalIdentifier == nil || !taskIdentifiersByIndex.isEmpty {
         try await store.writeReminderProvisioning(
           to: page,
@@ -298,9 +318,68 @@ enum RetainedLogseqProjectProvisioningSync {
     return SyncResult(
       createdProjectCount: createdProjectCount,
       createdTaskCount: createdTaskCount,
+      deletedTaskCount: deletedTaskCount,
       projectRecords: projectRecords,
       taskRecords: taskRecords
     )
+  }
+
+  private static func deleteMissingReminderBackedTasks(
+    page: LogseqProjectPageStore.PageSnapshot,
+    listIdentifier: String,
+    remoteSnapshotsByExternalIdentifier: [String: ReminderTaskRemoteSnapshot],
+    reminderProjectProvider: ReminderProjectProvider,
+    now: Date
+  ) throws -> Int {
+    let localReminderIdentifiers = Set(
+      page.externalTasks.compactMap { normalized($0.reminderExternalIdentifier) }
+    )
+    var deletedCount = 0
+    for reminderExternalIdentifier in remoteSnapshotsByExternalIdentifier.keys.sorted() {
+      guard !localReminderIdentifiers.contains(reminderExternalIdentifier),
+        let remoteSnapshot = remoteSnapshotsByExternalIdentifier[reminderExternalIdentifier],
+        remoteSnapshot.calendarIdentifier == listIdentifier,
+        let baseline = ReminderSyncBaselineStore.baseline(for: reminderExternalIdentifier),
+        shouldDeleteMissingLocalTask(remoteSnapshot: remoteSnapshot, baseline: baseline)
+      else {
+        continue
+      }
+      guard !ReminderDeletedTaskTombstoneStore.shouldSuppressImport(
+        reminderExternalIdentifier: reminderExternalIdentifier,
+        remoteModifiedAt: remoteSnapshot.modifiedAt,
+        now: now
+      ) else {
+        continue
+      }
+
+      let taskID = ReminderProjectionIdentity.taskID(for: reminderExternalIdentifier)
+      let reference = ReminderTaskReference(
+        taskID: taskID,
+        reminderIdentifier: remoteSnapshot.identifier,
+        reminderExternalIdentifier: reminderExternalIdentifier
+      )
+      guard try reminderProjectProvider.removeTaskReminder(for: reference) else {
+        continue
+      }
+      ReminderDeletedTaskTombstoneStore.upsertTaskDeletion(
+        reminderExternalIdentifier: reminderExternalIdentifier,
+        deletedAt: now
+      )
+      ReminderSyncBaselineStore.remove(reminderExternalIdentifier: reminderExternalIdentifier)
+      TaskIdentityBridgeStore.removeTask(taskID: taskID)
+      deletedCount += 1
+    }
+    return deletedCount
+  }
+
+  private static func shouldDeleteMissingLocalTask(
+    remoteSnapshot: ReminderTaskRemoteSnapshot,
+    baseline: ReminderSyncTaskBaselineRecord
+  ) -> Bool {
+    guard let baselineRemoteModifiedAt = baseline.remoteModifiedAt else {
+      return true
+    }
+    return remoteSnapshot.modifiedAt.timeIntervalSince(baselineRemoteModifiedAt) <= 0.5
   }
 
   private static func applyExistingReminderUpdates(

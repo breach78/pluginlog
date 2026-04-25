@@ -8,6 +8,7 @@ final class RetainedLogseqProjectProvisioningSyncTests: XCTestCase {
   override func tearDown() async throws {
     ReminderPendingBindingStore.reset()
     ReminderSyncBaselineStore.reset()
+    ReminderDeletedTaskTombstoneStore.reset()
     for root in temporaryRoots {
       try? FileManager.default.removeItem(at: root)
     }
@@ -1323,12 +1324,247 @@ final class RetainedLogseqProjectProvisioningSyncTests: XCTestCase {
     XCTAssertEqual(provider.taskSnapshotsByExternalIdentifier["task-ext-1"]?.title, "Remote title")
   }
 
+  func testDeletedLogseqTaskRemovesMatchingReminderWhenBaselineIsStable() async throws {
+    let graphRoot = try makeTemporaryDirectory()
+    let pagesRoot = graphRoot.appendingPathComponent("pages", isDirectory: true)
+    let dataRoot = graphRoot.appendingPathComponent(".buf/data", isDirectory: true)
+    try FileManager.default.createDirectory(at: pagesRoot, withIntermediateDirectories: true)
+    ReminderSyncBaselineStore.install(dataDirectory: dataRoot)
+    ReminderDeletedTaskTombstoneStore.install(dataDirectory: dataRoot)
+    defer { ReminderSyncBaselineStore.reset() }
+    defer { ReminderDeletedTaskTombstoneStore.reset() }
+
+    let projectPageURL = pagesRoot.appendingPathComponent("Launch.md", isDirectory: false)
+    try """
+    tags:: 프로젝트
+    reminder_list_external_id:: list-ext-1
+
+    - TODO Kept task
+      reminder_external_id:: task-ext-kept
+    """.write(to: projectPageURL, atomically: true, encoding: .utf8)
+    let remoteModifiedAt = Date(timeIntervalSince1970: 1_000)
+    ReminderSyncBaselineStore.upsert(
+      reminderExternalIdentifier: "task-ext-kept",
+      state: ReminderSyncTaskState(
+        title: "Kept task",
+        isCompleted: false,
+        date: nil,
+        repeatRule: nil,
+        noteText: nil
+      ),
+      remoteModifiedAt: remoteModifiedAt,
+      now: remoteModifiedAt
+    )
+    ReminderSyncBaselineStore.upsert(
+      reminderExternalIdentifier: "task-ext-deleted",
+      state: ReminderSyncTaskState(
+        title: "Deleted task",
+        isCompleted: false,
+        date: nil,
+        repeatRule: nil,
+        noteText: nil
+      ),
+      remoteModifiedAt: remoteModifiedAt,
+      now: remoteModifiedAt
+    )
+    let provider = ProvisioningFakeReminderProjectProvider()
+    provider.importBatch = ReminderImportSnapshotBatch(
+      lists: [
+        .init(
+          identifier: "list-ext-1",
+          externalIdentifier: "list-ext-1",
+          title: "Launch",
+          colorHex: nil
+        ),
+      ],
+      itemsByListIdentifier: [
+        "list-ext-1": [
+          makeImportItem(
+            identifier: "task-local-kept",
+            externalIdentifier: "task-ext-kept",
+            title: "Kept task",
+            listIdentifier: "list-ext-1",
+            listTitle: "Launch",
+            modifiedAt: remoteModifiedAt
+          ),
+          makeImportItem(
+            identifier: "task-local-deleted",
+            externalIdentifier: "task-ext-deleted",
+            title: "Deleted task",
+            listIdentifier: "list-ext-1",
+            listTitle: "Launch",
+            modifiedAt: remoteModifiedAt
+          ),
+        ],
+      ]
+    )
+
+    let result = try await RetainedLogseqProjectProvisioningSync.syncChangedPages(
+      fileURLs: [projectPageURL],
+      store: LogseqProjectPageStore(pagesRootURL: pagesRoot),
+      reminderProjectProvider: provider
+    )
+
+    XCTAssertEqual(result.deletedTaskCount, 1)
+    XCTAssertEqual(provider.removedTaskReferences.map(\.reminderExternalIdentifier), ["task-ext-deleted"])
+    XCTAssertNotNil(ReminderSyncBaselineStore.baseline(for: "task-ext-kept"))
+    XCTAssertNil(ReminderSyncBaselineStore.baseline(for: "task-ext-deleted"))
+    XCTAssertTrue(
+      ReminderDeletedTaskTombstoneStore.shouldSuppressImport(
+        reminderExternalIdentifier: "task-ext-deleted",
+        remoteModifiedAt: remoteModifiedAt,
+        now: remoteModifiedAt.addingTimeInterval(1)
+      )
+    )
+  }
+
+  func testDeletedLogseqTaskWithoutBaselineFailsClosed() async throws {
+    let graphRoot = try makeTemporaryDirectory()
+    let pagesRoot = graphRoot.appendingPathComponent("pages", isDirectory: true)
+    let dataRoot = graphRoot.appendingPathComponent(".buf/data", isDirectory: true)
+    try FileManager.default.createDirectory(at: pagesRoot, withIntermediateDirectories: true)
+    ReminderSyncBaselineStore.install(dataDirectory: dataRoot)
+    ReminderDeletedTaskTombstoneStore.install(dataDirectory: dataRoot)
+    defer { ReminderSyncBaselineStore.reset() }
+    defer { ReminderDeletedTaskTombstoneStore.reset() }
+
+    let projectPageURL = pagesRoot.appendingPathComponent("Launch.md", isDirectory: false)
+    try """
+    tags:: 프로젝트
+    reminder_list_external_id:: list-ext-1
+
+    Project notes only
+    """.write(to: projectPageURL, atomically: true, encoding: .utf8)
+    let remoteModifiedAt = Date(timeIntervalSince1970: 1_000)
+    let provider = ProvisioningFakeReminderProjectProvider()
+    provider.importBatch = ReminderImportSnapshotBatch(
+      lists: [
+        .init(
+          identifier: "list-ext-1",
+          externalIdentifier: "list-ext-1",
+          title: "Launch",
+          colorHex: nil
+        ),
+      ],
+      itemsByListIdentifier: [
+        "list-ext-1": [
+          makeImportItem(
+            identifier: "task-local-1",
+            externalIdentifier: "task-ext-1",
+            title: "Remote-only task",
+            listIdentifier: "list-ext-1",
+            listTitle: "Launch",
+            modifiedAt: remoteModifiedAt
+          ),
+        ],
+      ]
+    )
+
+    let result = try await RetainedLogseqProjectProvisioningSync.syncChangedPages(
+      fileURLs: [projectPageURL],
+      store: LogseqProjectPageStore(pagesRootURL: pagesRoot),
+      reminderProjectProvider: provider
+    )
+
+    XCTAssertEqual(result.deletedTaskCount, 0)
+    XCTAssertEqual(provider.removedTaskReferences.count, 0)
+  }
+
+  func testDeletedLogseqTaskTombstoneSuppressesStaleReminderImport() async throws {
+    let graphRoot = try makeTemporaryDirectory()
+    let pagesRoot = graphRoot.appendingPathComponent("pages", isDirectory: true)
+    let dataRoot = graphRoot.appendingPathComponent(".buf/data", isDirectory: true)
+    try FileManager.default.createDirectory(at: pagesRoot, withIntermediateDirectories: true)
+    ReminderSyncBaselineStore.install(dataDirectory: dataRoot)
+    ReminderDeletedTaskTombstoneStore.install(dataDirectory: dataRoot)
+    defer { ReminderSyncBaselineStore.reset() }
+    defer { ReminderDeletedTaskTombstoneStore.reset() }
+
+    let projectPageURL = pagesRoot.appendingPathComponent("Launch.md", isDirectory: false)
+    try """
+    tags:: 프로젝트
+    reminder_list_external_id:: list-ext-1
+
+    Project notes only
+    """.write(to: projectPageURL, atomically: true, encoding: .utf8)
+    let deletedAt = Date(timeIntervalSince1970: 2_000)
+    let staleRemoteModifiedAt = Date(timeIntervalSince1970: 1_000)
+    ReminderDeletedTaskTombstoneStore.upsertTaskDeletion(
+      reminderExternalIdentifier: "task-ext-deleted",
+      deletedAt: deletedAt
+    )
+
+    _ = try await RetainedReminderImportSync.sync(
+      batch: ReminderImportSnapshotBatch(
+        lists: [
+          .init(
+            identifier: "list-ext-1",
+            externalIdentifier: "list-ext-1",
+            title: "Launch",
+            colorHex: nil
+          ),
+        ],
+        itemsByListIdentifier: [
+          "list-ext-1": [
+            makeImportItem(
+              identifier: "task-local-deleted",
+              externalIdentifier: "task-ext-deleted",
+              title: "Deleted task",
+              listIdentifier: "list-ext-1",
+              listTitle: "Launch",
+              modifiedAt: staleRemoteModifiedAt
+            ),
+          ],
+        ]
+      ),
+      store: LogseqProjectPageStore(pagesRootURL: pagesRoot),
+      conflictPolicy: .mergeWithBaseline,
+      now: deletedAt.addingTimeInterval(1)
+    )
+
+    let markdown = try String(contentsOf: projectPageURL, encoding: .utf8)
+    XCTAssertFalse(markdown.contains("Deleted task"))
+    XCTAssertFalse(markdown.contains("task-ext-deleted"))
+  }
+
   private func makeTemporaryDirectory() throws -> URL {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("RetainedLogseqProjectProvisioningSyncTests-\(UUID().uuidString)", isDirectory: true)
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
     temporaryRoots.append(root)
     return root
+  }
+
+  private func makeImportItem(
+    identifier: String,
+    externalIdentifier: String,
+    title: String,
+    listIdentifier: String,
+    listTitle: String,
+    modifiedAt: Date
+  ) -> ReminderItemImportSnapshot {
+    ReminderItemImportSnapshot(
+      identifier: identifier,
+      externalIdentifier: externalIdentifier,
+      parentExternalIdentifier: nil,
+      sourceListIdentifier: listIdentifier,
+      sourceListTitle: listTitle,
+      title: title,
+      notes: "",
+      attachmentCount: 0,
+      isCompleted: false,
+      completionDate: nil,
+      startDate: nil,
+      dueDate: nil,
+      scheduleHasExplicitTime: false,
+      scheduledDurationMinutes: nil,
+      priority: 0,
+      recurrenceRuleRaw: nil,
+      isFlagged: false,
+      requiredWorkDays: 0,
+      createdAt: modifiedAt,
+      modifiedAt: modifiedAt
+    )
   }
 }
 
@@ -1379,6 +1615,7 @@ private final class ProvisioningFakeReminderProjectProvider: ReminderProjectProv
   var scheduleWrites: [ScheduleWrite] = []
   var titleWrites: [TitleWrite] = []
   var noteWrites: [NoteWrite] = []
+  var removedTaskReferences: [ReminderTaskReference] = []
   var taskSnapshotsByExternalIdentifier: [String: ReminderTaskRemoteSnapshot] = [:]
   var importBatch: ReminderImportSnapshotBatch?
   var nextCreatedTaskNumber = 1
@@ -1443,8 +1680,12 @@ private final class ProvisioningFakeReminderProjectProvider: ReminderProjectProv
   }
 
   func removeTaskReminder(for task: ReminderTaskReference) throws -> Bool {
-    _ = task
-    return false
+    removedTaskReferences.append(task)
+    guard let reminderExternalIdentifier = task.reminderExternalIdentifier else {
+      return false
+    }
+    taskSnapshotsByExternalIdentifier.removeValue(forKey: reminderExternalIdentifier)
+    return true
   }
 
   func taskSnapshot(for task: ReminderTaskReference) throws -> ReminderTaskRemoteSnapshot? {
