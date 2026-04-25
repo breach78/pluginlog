@@ -26,9 +26,15 @@ extension AppState {
       return
     }
     let pagesRootURL = logseqGraphRootURL.appendingPathComponent("pages", isDirectory: true)
-    let watcher = LogseqPagesDirectoryWatcher(pagesRootURL: pagesRootURL) { [weak self] changedFiles in
-      await self?.handleLogseqPagesDirectoryChange(changedFiles)
-    }
+    let watcher = LogseqPagesDirectoryWatcher(
+      pagesRootURL: pagesRootURL,
+      fastHandler: { [weak self] in
+        self?.bumpWorkspaceTreeRevision()
+      },
+      handler: { [weak self] changedFiles in
+        await self?.handleLogseqPagesDirectoryChange(changedFiles)
+      }
+    )
     logseqPagesDirectoryWatcher = watcher
     watcher.start()
   }
@@ -120,18 +126,21 @@ extension AppState {
         store: pageStore,
         conflictPolicy: reminderImportConflictPolicy(for: reason)
       )
-      let shouldProvisionFromLogseq = shouldProvisionFromLogseqAfterImport(reason: reason)
-      let provisioningResult = shouldProvisionFromLogseq
-        ? try await RetainedLogseqProjectProvisioningSync.sync(
+      let provisioningResult: RetainedLogseqProjectProvisioningSync.SyncResult
+      if let provisioningMode = logseqProvisioningModeAfterImport(reason: reason) {
+        provisioningResult = try await RetainedLogseqProjectProvisioningSync.sync(
           store: pageStore,
-          reminderProjectProvider: reminderProjectProvider
+          reminderProjectProvider: reminderProjectProvider,
+          mode: provisioningMode
         )
-        : RetainedLogseqProjectProvisioningSync.SyncResult(
+      } else {
+        provisioningResult = RetainedLogseqProjectProvisioningSync.SyncResult(
           createdProjectCount: 0,
           createdTaskCount: 0,
           projectRecords: [],
           taskRecords: []
         )
+      }
       TaskIdentityBridgeStore.replaceAll(
         projects: result.projectRecords + provisioningResult.projectRecords,
         tasks: result.taskRecords + provisioningResult.taskRecords
@@ -157,11 +166,19 @@ extension AppState {
   }
 
   func shouldProvisionFromLogseqAfterImport(reason: SyncReason) -> Bool {
+    logseqProvisioningModeAfterImport(reason: reason) == .fullPush
+  }
+
+  func logseqProvisioningModeAfterImport(
+    reason: SyncReason
+  ) -> RetainedLogseqProjectProvisioningSync.SyncMode? {
     switch reason {
+    case .manual:
+      return .fullPush
     case .bootstrap:
-      return false
-    case .eventStoreChanged, .manual, .periodic:
-      return true
+      return .missingBindingsOnly
+    case .eventStoreChanged, .periodic:
+      return nil
     }
   }
 
@@ -175,10 +192,7 @@ extension AppState {
     }
     guard !changedFiles.isEmpty, let pageStore = logseqProjectPageStore() else { return }
     do {
-      let cascadeChangedFiles = try await pageStore.completeDescendantTasksUnderCompletedParents(
-        in: changedFiles
-      )
-      let filesToSync = uniqueLogseqPageFileURLs(changedFiles + cascadeChangedFiles)
+      let filesToSync = uniqueLogseqPageFileURLs(changedFiles)
       guard try await reminderProjectProvider.requestAccess() else {
         AppLogger.sync.error("logseq page change skipped because reminders access is denied")
         syncStatus = "Reminders access denied"
@@ -193,10 +207,15 @@ extension AppState {
       AppLogger.sync.info(
         "logseq page change synced createdProjects=\(result.createdProjectCount, privacy: .public) createdTasks=\(result.createdTaskCount, privacy: .public) taskRecords=\(result.taskRecords.count, privacy: .public)"
       )
+      if result.createdProjectCount > 0
+        || result.createdTaskCount > 0
+        || !result.projectRecords.isEmpty
+        || !result.taskRecords.isEmpty
+      {
+        recordLogseqAuthoredReminderPush()
+      }
       if result.createdProjectCount > 0 || result.createdTaskCount > 0 {
         syncStatus = "Synced \(result.createdProjectCount) lists / \(result.createdTaskCount) tasks"
-      } else if !cascadeChangedFiles.isEmpty {
-        syncStatus = "Synced completed subtasks"
       }
       bumpWorkspaceTreeRevision()
     } catch {

@@ -136,17 +136,19 @@ final class LogseqProjectPageStoreTests: XCTestCase {
     XCTAssertTrue(fileContents.contains("tags:: 프로젝트"))
   }
 
-  func testLoadsHyphenatedReminderPropertyAliases() async throws {
-    let graphRootURL = try makeGraphRoot(named: "HyphenatedReminderPropertyGraph")
+  func testLoadsReminderPropertyAliases() async throws {
+    let graphRootURL = try makeGraphRoot(named: "ReminderPropertyAliasGraph")
     let pagesRootURL = graphRootURL.appendingPathComponent("pages", isDirectory: true)
     try FileManager.default.createDirectory(at: pagesRootURL, withIntermediateDirectories: true)
     let pageURL = pagesRootURL.appendingPathComponent("Aliases.md", isDirectory: false)
     try """
     tags:: 프로젝트
-    reminder-list-external-id:: list-ext-1
+    reminder list external id:: list-ext-1
 
     - TODO Aliased task
       reminder-external-id:: task-ext-1
+    - TODO Space aliased task
+      reminder external id:: task-ext-2
     """.write(to: pageURL, atomically: true, encoding: .utf8)
     let store = LogseqProjectPageStore(pagesRootURL: pagesRootURL)
 
@@ -155,8 +157,67 @@ final class LogseqProjectPageStoreTests: XCTestCase {
     XCTAssertEqual(pages.count, 1)
     let page = try XCTUnwrap(pages.first)
     XCTAssertEqual(page.reminderListExternalIdentifier, "list-ext-1")
-    XCTAssertEqual(page.externalTasks.count, 1)
-    XCTAssertEqual(page.externalTasks.first?.reminderExternalIdentifier, "task-ext-1")
+    XCTAssertEqual(page.externalTasks.count, 2)
+    XCTAssertEqual(page.externalTasks.map(\.reminderExternalIdentifier), ["task-ext-1", "task-ext-2"])
+  }
+
+  func testNoOpWriteDoesNotTouchMTimeOrPostAppAuthoredNotificationForLineEndingOnlyDiff() async throws {
+    let graphRootURL = try makeGraphRoot(named: "NoOpWriteGuardGraph")
+    let pagesRootURL = graphRootURL.appendingPathComponent("pages", isDirectory: true)
+    let store = LogseqProjectPageStore(pagesRootURL: pagesRootURL)
+    let identity = LogseqProjectPageStore.ProjectIdentity(
+      projectID: UUID(),
+      title: "NoOp",
+      reminderListExternalIdentifier: "list-ext-1"
+    )
+    let tasks = [
+      LogseqProjectPageStore.TaskRecord(
+        title: "Keep content",
+        isCompleted: false,
+        reminderExternalIdentifier: "task-ext-1"
+      ),
+    ]
+
+    _ = try await store.upsertPage(
+      identity,
+      noteMarkdown: "Intro",
+      managedTasks: tasks
+    )
+    let pageURL = pagesRootURL.appendingPathComponent("NoOp.md", isDirectory: false)
+    let lfContents = try String(contentsOf: pageURL, encoding: .utf8)
+    try lfContents
+      .replacingOccurrences(of: "\n", with: "\r\n")
+      .write(to: pageURL, atomically: true, encoding: .utf8)
+    let beforeMTime = try XCTUnwrap(
+      pageURL.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate
+    )
+    let noNotification = expectation(description: "no app-authored write notification")
+    noNotification.isInverted = true
+    let token = NotificationCenter.default.addObserver(
+      forName: .logseqProjectPageStoreDidWriteMarkdown,
+      object: nil,
+      queue: nil
+    ) { notification in
+      guard let fileURL = notification.userInfo?[LogseqProjectPageStoreWriteNotification.fileURLKey] as? URL,
+        fileURL.standardizedFileURL == pageURL.standardizedFileURL
+      else {
+        return
+      }
+      noNotification.fulfill()
+    }
+    defer { NotificationCenter.default.removeObserver(token) }
+
+    _ = try await store.upsertPage(
+      identity,
+      noteMarkdown: "Intro",
+      managedTasks: tasks
+    )
+    await fulfillment(of: [noNotification], timeout: 0.1)
+    let afterMTime = try XCTUnwrap(
+      pageURL.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate
+    )
+
+    XCTAssertEqual(afterMTime, beforeMTime)
   }
 
   func testLoadProjectPagesInScopeIncludesHiddenReminderBackedPage() async throws {

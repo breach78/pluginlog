@@ -6,6 +6,8 @@ final class RetainedLogseqProjectProvisioningSyncTests: XCTestCase {
   private var temporaryRoots: [URL] = []
 
   override func tearDown() async throws {
+    ReminderPendingBindingStore.reset()
+    ReminderSyncBaselineStore.reset()
     for root in temporaryRoots {
       try? FileManager.default.removeItem(at: root)
     }
@@ -107,6 +109,301 @@ final class RetainedLogseqProjectProvisioningSyncTests: XCTestCase {
     XCTAssertFalse(ordinaryMarkdown.contains("reminder_external_id::"))
     XCTAssertEqual(provider.createdLists.count, 1)
     XCTAssertEqual(provider.createdTasks.count, 2)
+  }
+
+  func testReminderIdentityAliasesDoNotCreateDuplicateReminderItemsOrCanonicalizeWithoutRealWrite() async throws {
+    let graphRoot = try makeTemporaryDirectory()
+    let pagesRoot = graphRoot.appendingPathComponent("pages", isDirectory: true)
+    try FileManager.default.createDirectory(at: pagesRoot, withIntermediateDirectories: true)
+    let projectPageURL = pagesRoot.appendingPathComponent("Aliases.md", isDirectory: false)
+    try """
+    tags:: 프로젝트
+    reminder list external id:: list-ext-1
+
+    - TODO Existing aliased task
+      reminder-external-id:: task-ext-1
+    """.write(to: projectPageURL, atomically: true, encoding: .utf8)
+    let beforeMTime = try XCTUnwrap(
+      projectPageURL.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate
+    )
+    let noNotification = expectation(description: "alias-only sync does not rewrite")
+    noNotification.isInverted = true
+    let token = NotificationCenter.default.addObserver(
+      forName: .logseqProjectPageStoreDidWriteMarkdown,
+      object: nil,
+      queue: nil
+    ) { notification in
+      guard let fileURL = notification.userInfo?[LogseqProjectPageStoreWriteNotification.fileURLKey] as? URL,
+        fileURL.standardizedFileURL == projectPageURL.standardizedFileURL
+      else {
+        return
+      }
+      noNotification.fulfill()
+    }
+    defer { NotificationCenter.default.removeObserver(token) }
+    let provider = ProvisioningFakeReminderProjectProvider()
+
+    let result = try await RetainedLogseqProjectProvisioningSync.syncChangedPages(
+      fileURLs: [projectPageURL],
+      store: LogseqProjectPageStore(pagesRootURL: pagesRoot),
+      reminderProjectProvider: provider
+    )
+    await fulfillment(of: [noNotification], timeout: 0.1)
+    let afterMTime = try XCTUnwrap(
+      projectPageURL.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate
+    )
+    let markdown = try String(contentsOf: projectPageURL, encoding: .utf8)
+
+    XCTAssertEqual(result.createdTaskCount, 0)
+    XCTAssertEqual(provider.createdTasks.count, 0)
+    XCTAssertEqual(afterMTime, beforeMTime)
+    XCTAssertTrue(markdown.contains("reminder list external id:: list-ext-1"))
+    XCTAssertTrue(markdown.contains("reminder-external-id:: task-ext-1"))
+  }
+
+  func testConflictingReminderIdentityAliasesFailClosedWithoutCreatingDuplicates() async throws {
+    let graphRoot = try makeTemporaryDirectory()
+    let pagesRoot = graphRoot.appendingPathComponent("pages", isDirectory: true)
+    try FileManager.default.createDirectory(at: pagesRoot, withIntermediateDirectories: true)
+    let ambiguousPageURL = pagesRoot.appendingPathComponent("Ambiguous List.md", isDirectory: false)
+    let ambiguousTaskURL = pagesRoot.appendingPathComponent("Ambiguous Task.md", isDirectory: false)
+    try """
+    tags:: 프로젝트
+    reminder_list_external_id:: list-ext-1
+    reminder-list-external-id:: list-ext-2
+
+    - TODO Should not create list
+    """.write(to: ambiguousPageURL, atomically: true, encoding: .utf8)
+    try """
+    tags:: 프로젝트
+    reminder_list_external_id:: list-ext-1
+
+    - TODO Should not create task
+      reminder_external_id:: task-ext-1
+      reminder-external-id:: task-ext-2
+    """.write(to: ambiguousTaskURL, atomically: true, encoding: .utf8)
+    let provider = ProvisioningFakeReminderProjectProvider()
+
+    let result = try await RetainedLogseqProjectProvisioningSync.sync(
+      store: LogseqProjectPageStore(pagesRootURL: pagesRoot),
+      reminderProjectProvider: provider
+    )
+
+    XCTAssertEqual(result.createdProjectCount, 0)
+    XCTAssertEqual(result.createdTaskCount, 0)
+    XCTAssertEqual(provider.createdLists.count, 0)
+    XCTAssertEqual(provider.createdTasks.count, 0)
+  }
+
+  func testPendingReminderTaskBindingPreventsDuplicateCreationOnNextSync() async throws {
+    let graphRoot = try makeTemporaryDirectory()
+    let pagesRoot = graphRoot.appendingPathComponent("pages", isDirectory: true)
+    let dataRoot = graphRoot.appendingPathComponent(".buf/data", isDirectory: true)
+    try FileManager.default.createDirectory(at: pagesRoot, withIntermediateDirectories: true)
+    ReminderPendingBindingStore.install(dataDirectory: dataRoot)
+    let projectPageURL = pagesRoot.appendingPathComponent("Launch.md", isDirectory: false)
+    try """
+    tags:: 프로젝트
+    reminder_list_external_id:: list-ext-1
+
+    - TODO Pending task
+    """.write(to: projectPageURL, atomically: true, encoding: .utf8)
+    let now = Date(timeIntervalSince1970: 2_000)
+    let pendingTask = LogseqProjectPageStore.TaskRecord(
+      title: "Pending task",
+      isCompleted: false
+    )
+    ReminderPendingBindingStore.upsertTaskBinding(
+      pageFileURL: projectPageURL,
+      listExternalIdentifier: "list-ext-1",
+      taskIndex: 0,
+      task: pendingTask,
+      reminderExternalIdentifier: "task-ext-pending",
+      now: now
+    )
+    let provider = ProvisioningFakeReminderProjectProvider()
+    provider.importBatch = ReminderImportSnapshotBatch(
+      lists: [
+        .init(
+          identifier: "list-ext-1",
+          externalIdentifier: "list-ext-1",
+          title: "Launch",
+          colorHex: nil
+        ),
+      ],
+      itemsByListIdentifier: [
+        "list-ext-1": [
+          ReminderItemImportSnapshot(
+            identifier: "task-local-pending",
+            externalIdentifier: "task-ext-pending",
+            parentExternalIdentifier: nil,
+            sourceListIdentifier: "list-ext-1",
+            sourceListTitle: "Launch",
+            title: "Pending task",
+            notes: "",
+            attachmentCount: 0,
+            isCompleted: false,
+            completionDate: nil,
+            startDate: nil,
+            dueDate: nil,
+            scheduleHasExplicitTime: false,
+            scheduledDurationMinutes: nil,
+            priority: 0,
+            recurrenceRuleRaw: nil,
+            isFlagged: false,
+            requiredWorkDays: 0,
+            createdAt: now,
+            modifiedAt: now
+          ),
+        ],
+      ]
+    )
+
+    let result = try await RetainedLogseqProjectProvisioningSync.sync(
+      store: LogseqProjectPageStore(pagesRootURL: pagesRoot),
+      reminderProjectProvider: provider,
+      now: now.addingTimeInterval(1)
+    )
+    let markdown = try String(contentsOf: projectPageURL, encoding: .utf8)
+
+    XCTAssertEqual(result.createdTaskCount, 0)
+    XCTAssertEqual(provider.createdTasks.count, 0)
+    XCTAssertTrue(markdown.contains("reminder_external_id:: task-ext-pending"))
+  }
+
+  func testChangedPendingTaskBindingFailsClosedInsteadOfCreatingDuplicateReminder() async throws {
+    let graphRoot = try makeTemporaryDirectory()
+    let pagesRoot = graphRoot.appendingPathComponent("pages", isDirectory: true)
+    let dataRoot = graphRoot.appendingPathComponent(".buf/data", isDirectory: true)
+    try FileManager.default.createDirectory(at: pagesRoot, withIntermediateDirectories: true)
+    ReminderPendingBindingStore.install(dataDirectory: dataRoot)
+    let projectPageURL = pagesRoot.appendingPathComponent("Launch.md", isDirectory: false)
+    try """
+    tags:: 프로젝트
+    reminder_list_external_id:: list-ext-1
+
+    - TODO Edited pending task
+    """.write(to: projectPageURL, atomically: true, encoding: .utf8)
+    let now = Date(timeIntervalSince1970: 2_000)
+    ReminderPendingBindingStore.upsertTaskBinding(
+      pageFileURL: projectPageURL,
+      listExternalIdentifier: "list-ext-1",
+      taskIndex: 0,
+      task: LogseqProjectPageStore.TaskRecord(title: "Original pending task", isCompleted: false),
+      reminderExternalIdentifier: "task-ext-pending",
+      now: now
+    )
+    let provider = ProvisioningFakeReminderProjectProvider()
+
+    let result = try await RetainedLogseqProjectProvisioningSync.sync(
+      store: LogseqProjectPageStore(pagesRootURL: pagesRoot),
+      reminderProjectProvider: provider,
+      now: now.addingTimeInterval(1)
+    )
+    let markdown = try String(contentsOf: projectPageURL, encoding: .utf8)
+
+    XCTAssertEqual(result.createdTaskCount, 0)
+    XCTAssertEqual(provider.createdTasks.count, 0)
+    XCTAssertFalse(markdown.contains("reminder_external_id::"))
+  }
+
+  func testPendingReminderListBindingPreventsDuplicateListCreationOnNextSync() async throws {
+    let graphRoot = try makeTemporaryDirectory()
+    let pagesRoot = graphRoot.appendingPathComponent("pages", isDirectory: true)
+    let dataRoot = graphRoot.appendingPathComponent(".buf/data", isDirectory: true)
+    try FileManager.default.createDirectory(at: pagesRoot, withIntermediateDirectories: true)
+    ReminderPendingBindingStore.install(dataDirectory: dataRoot)
+    let projectPageURL = pagesRoot.appendingPathComponent("Launch.md", isDirectory: false)
+    try """
+    tags:: 프로젝트
+
+    Project notes
+    """.write(to: projectPageURL, atomically: true, encoding: .utf8)
+    let now = Date(timeIntervalSince1970: 2_000)
+    ReminderPendingBindingStore.upsertProjectBinding(
+      pageFileURL: projectPageURL,
+      pageTitle: "Launch",
+      reminderListExternalIdentifier: "list-ext-pending",
+      now: now
+    )
+    let provider = ProvisioningFakeReminderProjectProvider()
+    provider.importBatch = ReminderImportSnapshotBatch(
+      lists: [
+        .init(
+          identifier: "list-ext-pending",
+          externalIdentifier: "list-ext-pending",
+          title: "Launch",
+          colorHex: nil
+        ),
+      ],
+      itemsByListIdentifier: ["list-ext-pending": []]
+    )
+
+    let result = try await RetainedLogseqProjectProvisioningSync.sync(
+      store: LogseqProjectPageStore(pagesRootURL: pagesRoot),
+      reminderProjectProvider: provider,
+      now: now.addingTimeInterval(1)
+    )
+    let markdown = try String(contentsOf: projectPageURL, encoding: .utf8)
+
+    XCTAssertEqual(result.createdProjectCount, 0)
+    XCTAssertEqual(provider.createdLists.count, 0)
+    XCTAssertTrue(markdown.contains("reminder_list_external_id:: list-ext-pending"))
+  }
+
+  func testBootstrapMissingBindingsOnlyDoesNotPushExistingLogseqTaskEditsOrCreateFreshReminders() async throws {
+    let graphRoot = try makeTemporaryDirectory()
+    let pagesRoot = graphRoot.appendingPathComponent("pages", isDirectory: true)
+    let dataRoot = graphRoot.appendingPathComponent(".buf/data", isDirectory: true)
+    try FileManager.default.createDirectory(at: pagesRoot, withIntermediateDirectories: true)
+    ReminderSyncBaselineStore.install(dataDirectory: dataRoot)
+    let projectPageURL = pagesRoot.appendingPathComponent("Launch.md", isDirectory: false)
+    try """
+    tags:: 프로젝트
+    reminder_list_external_id:: list-ext-1
+
+    - TODO Edited local title
+      reminder_external_id:: task-ext-1
+    - TODO Missing binding task
+    """.write(to: projectPageURL, atomically: true, encoding: .utf8)
+    let remoteModifiedAt = Date(timeIntervalSince1970: 1_000)
+    ReminderSyncBaselineStore.upsert(
+      reminderExternalIdentifier: "task-ext-1",
+      state: ReminderSyncTaskState(
+        title: "Remote title",
+        isCompleted: false,
+        date: nil,
+        repeatRule: nil,
+        noteText: nil
+      ),
+      remoteModifiedAt: remoteModifiedAt,
+      now: remoteModifiedAt
+    )
+    let provider = ProvisioningFakeReminderProjectProvider()
+    provider.taskSnapshotsByExternalIdentifier["task-ext-1"] = .init(
+      identifier: "task-local-1",
+      externalIdentifier: "task-ext-1",
+      calendarIdentifier: "list-ext-1",
+      title: "Remote title",
+      noteText: "",
+      dueDate: nil,
+      hasExplicitTime: false,
+      priority: 0,
+      modifiedAt: remoteModifiedAt
+    )
+
+    let result = try await RetainedLogseqProjectProvisioningSync.sync(
+      store: LogseqProjectPageStore(pagesRootURL: pagesRoot),
+      reminderProjectProvider: provider,
+      mode: .missingBindingsOnly
+    )
+    let markdown = try String(contentsOf: projectPageURL, encoding: .utf8)
+
+    XCTAssertEqual(result.createdTaskCount, 0)
+    XCTAssertEqual(provider.titleWrites.count, 0)
+    XCTAssertEqual(provider.createdTasks.count, 0)
+    XCTAssertTrue(markdown.contains("reminder_external_id:: task-ext-1"))
+    XCTAssertFalse(markdown.contains("reminder_external_id:: task-ext-2"))
   }
 
   func testNestedLogseqTaskMarkersCreateFlatReminderItems() async throws {
@@ -1084,6 +1381,7 @@ private final class ProvisioningFakeReminderProjectProvider: ReminderProjectProv
   var noteWrites: [NoteWrite] = []
   var taskSnapshotsByExternalIdentifier: [String: ReminderTaskRemoteSnapshot] = [:]
   var importBatch: ReminderImportSnapshotBatch?
+  var nextCreatedTaskNumber = 1
 
   var reminderGateway: ReminderGateway? { nil }
   var defaultCalendarIdentifierForNewReminders: String? { nil }
@@ -1126,6 +1424,8 @@ private final class ProvisioningFakeReminderProjectProvider: ReminderProjectProv
     hasExplicitTime: Bool,
     noteText: String
   ) throws -> ReminderTaskRemoteMetadata? {
+    let createdTaskNumber = nextCreatedTaskNumber
+    nextCreatedTaskNumber += 1
     createdTasks.append(
       CreatedTask(
         inProject: identifier,
@@ -1136,8 +1436,8 @@ private final class ProvisioningFakeReminderProjectProvider: ReminderProjectProv
       )
     )
     return ReminderTaskRemoteMetadata(
-      identifier: "task-local-\(createdTasks.count)",
-      externalIdentifier: "task-ext-\(createdTasks.count)",
+      identifier: "task-local-\(createdTaskNumber)",
+      externalIdentifier: "task-ext-\(createdTaskNumber)",
       modifiedAt: .now
     )
   }

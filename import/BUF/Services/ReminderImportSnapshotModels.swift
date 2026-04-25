@@ -116,16 +116,38 @@ struct ReminderGatewayImportSnapshotProvider {
   func fetchItemsByList(
     for lists: [ReminderListImportSnapshot]
   ) async throws -> [String: [ReminderItemImportSnapshot]] {
+    let calendarsByIdentifier = Dictionary(
+      uniqueKeysWithValues: lists.compactMap { list in
+        gateway.calendar(withIdentifier: list.identifier).map { (list.identifier, $0) }
+      }
+    )
+    return try await fetchItemsByList(for: lists, calendarsByIdentifier: calendarsByIdentifier)
+  }
+
+  private func fetchItemsByList(
+    for lists: [ReminderListImportSnapshot],
+    calendarsByIdentifier: [String: EKCalendar]
+  ) async throws -> [String: [ReminderItemImportSnapshot]] {
     var itemsByListIdentifier: [String: [ReminderItemImportSnapshot]] = [:]
+    let listsByIdentifier = Dictionary(uniqueKeysWithValues: lists.map { ($0.identifier, $0) })
+    let calendars = lists.compactMap { calendarsByIdentifier[$0.identifier] }
 
     for list in lists {
-      guard let calendar = gateway.calendar(withIdentifier: list.identifier) else {
+      guard calendarsByIdentifier[list.identifier] != nil else {
         itemsByListIdentifier[list.identifier] = []
         continue
       }
-      let reminders = try await gateway.fetchReminders(in: calendar, scope: .all)
-      itemsByListIdentifier[list.identifier] = reminders
-        .map { snapshot(for: $0, list: list) }
+    }
+
+    let reminders = try await gateway.fetchReminders(in: calendars, scope: .all)
+    for reminder in reminders {
+      let listIdentifier = reminder.calendar.calendarIdentifier
+      guard let list = listsByIdentifier[listIdentifier] else { continue }
+      itemsByListIdentifier[listIdentifier, default: []].append(snapshot(for: reminder, list: list))
+    }
+
+    for list in lists {
+      itemsByListIdentifier[list.identifier] = (itemsByListIdentifier[list.identifier] ?? [])
         .sorted(by: reminderComparator(_:_:))
     }
 
@@ -144,18 +166,18 @@ struct ReminderGatewayImportSnapshotProvider {
       )
     ) as? [String] ?? identifiers
 
-    var lists: [ReminderListImportSnapshot] = []
-    var itemsByListIdentifier: [String: [ReminderItemImportSnapshot]] = [:]
-
-    for identifier in normalizedIdentifiers {
-      guard let calendar = gateway.calendar(withIdentifier: identifier) else { continue }
-      let list = listSnapshot(for: calendar)
-      lists.append(list)
-      let reminders = try await gateway.fetchReminders(in: calendar, scope: .all)
-      itemsByListIdentifier[list.identifier] = reminders
-        .map { snapshot(for: $0, list: list) }
-        .sorted(by: reminderComparator(_:_:))
+    let calendarsByIdentifier = Dictionary(
+      uniqueKeysWithValues: normalizedIdentifiers.compactMap { identifier in
+        gateway.calendar(withIdentifier: identifier).map { (identifier, $0) }
+      }
+    )
+    let lists = normalizedIdentifiers.compactMap { identifier in
+      calendarsByIdentifier[identifier].map(listSnapshot(for:))
     }
+    let itemsByListIdentifier = try await fetchItemsByList(
+      for: lists,
+      calendarsByIdentifier: calendarsByIdentifier
+    )
 
     return ReminderImportSnapshotBatch(
       lists: lists.sorted { lhs, rhs in

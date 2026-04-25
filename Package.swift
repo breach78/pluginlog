@@ -24,6 +24,7 @@ let package = Package(
       ],
       resources: [
         .process("Assets.xcassets"),
+        .copy("Resources/LogseqHelperPlugin"),
       ],
       linkerSettings: [
         .linkedLibrary("sqlite3"),

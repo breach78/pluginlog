@@ -40,8 +40,19 @@ final class LogseqPagesChangeTrackerTests: XCTestCase {
     XCTAssertEqual(changedFiles.map(\.lastPathComponent), [".Hidden Project.md"])
   }
 
-  func testDefaultWatcherDebounceLeavesThreeSecondsForUndoBeforeSync() {
-    XCTAssertEqual(LogseqPagesDirectoryWatcher.defaultDebounceNanoseconds, 3_000_000_000)
+  func testDefaultWatcherDebounceLeavesTenSecondsOfIdleTimeBeforeSync() {
+    XCTAssertEqual(LogseqPagesDirectoryWatcher.defaultDebounceNanoseconds, 10_000_000_000)
+  }
+
+  func testDefaultWatcherFastRefreshRunsBeforeSyncDebounce() {
+    XCTAssertLessThan(
+      LogseqPagesDirectoryWatcher.defaultFastDebounceNanoseconds,
+      LogseqPagesDirectoryWatcher.defaultDebounceNanoseconds
+    )
+    XCTAssertLessThan(
+      LogseqPagesDirectoryWatcher.defaultFastPollingNanoseconds,
+      LogseqPagesDirectoryWatcher.defaultDebounceNanoseconds
+    )
   }
 
   @MainActor
@@ -53,7 +64,7 @@ final class LogseqPagesChangeTrackerTests: XCTestCase {
     let detected = expectation(description: "polling scan detects in-place markdown edit")
     let watcher = LogseqPagesDirectoryWatcher(
       pagesRootURL: pagesRoot,
-      debounceNanoseconds: 10_000_000_000,
+      debounceNanoseconds: 100_000_000,
       pollingNanoseconds: 50_000_000
     ) { changedFiles in
       if changedFiles.map(\.lastPathComponent).contains("Project.md") {
@@ -71,6 +82,41 @@ final class LogseqPagesChangeTrackerTests: XCTestCase {
     )
 
     await fulfillment(of: [detected], timeout: 2)
+  }
+
+  @MainActor
+  func testWatcherFastHandlerDetectsMarkdownEditWithoutConsumingSyncChange() async throws {
+    let pagesRoot = try makePagesRoot()
+    let markdownURL = pagesRoot.appendingPathComponent("Project.md", isDirectory: false)
+    try "tags:: 프로젝트\n- TODO Existing\n".write(to: markdownURL, atomically: true, encoding: .utf8)
+
+    let fastDetected = expectation(description: "fast preview scan detects markdown edit")
+    let syncDetected = expectation(description: "sync scan still receives markdown edit")
+    let watcher = LogseqPagesDirectoryWatcher(
+      pagesRootURL: pagesRoot,
+      debounceNanoseconds: 100_000_000,
+      fastDebounceNanoseconds: 10_000_000_000,
+      pollingNanoseconds: nil,
+      fastPollingNanoseconds: 40_000_000,
+      fastHandler: {
+        fastDetected.fulfill()
+      }
+    ) { changedFiles in
+      if changedFiles.map(\.lastPathComponent).contains("Project.md") {
+        syncDetected.fulfill()
+      }
+    }
+    watcher.start()
+    defer { watcher.stop() }
+
+    try await Task.sleep(nanoseconds: 120_000_000)
+    try "tags:: 프로젝트\n- TODO Existing\n  date:: 2026-04-25\n".write(
+      to: markdownURL,
+      atomically: true,
+      encoding: .utf8
+    )
+
+    await fulfillment(of: [fastDetected, syncDetected], timeout: 2)
   }
 
   func testAppAuthoredMarkdownWriteDoesNotReportChangeLoop() throws {

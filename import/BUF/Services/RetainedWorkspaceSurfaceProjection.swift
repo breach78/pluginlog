@@ -241,7 +241,7 @@ enum RetainedWorkspaceSurfaceProjectionBuilder {
   ) -> Bool {
     switch source {
     case .retained:
-      return false
+      return true
     case .legacyFallback, .blocked:
       return true
     }

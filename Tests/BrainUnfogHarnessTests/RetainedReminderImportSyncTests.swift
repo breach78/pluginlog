@@ -247,6 +247,73 @@ final class RetainedReminderImportSyncTests: XCTestCase {
     XCTAssertFalse(markdown.contains("stale trailing"))
   }
 
+  func testImportUpdatesManyExistingTasksWithoutLosingLinePositions() async throws {
+    let graphRoot = try makeTemporaryDirectory()
+    let pagesRoot = graphRoot.appendingPathComponent("pages", isDirectory: true)
+    try FileManager.default.createDirectory(at: pagesRoot, withIntermediateDirectories: true)
+    let pageURL = pagesRoot.appendingPathComponent("Bulk.md", isDirectory: false)
+    let taskCount = 80
+    var markdownLines = [
+      "tags:: 프로젝트",
+      "reminder_list_external_id:: list-external-1",
+      "",
+    ]
+    for index in 0..<taskCount {
+      markdownLines.append("- TODO Local task \(index)")
+      markdownLines.append("  reminder_external_id:: task-external-\(index)")
+      markdownLines.append("  - local note \(index)")
+    }
+    try markdownLines.joined(separator: "\n").write(to: pageURL, atomically: true, encoding: .utf8)
+
+    let now = Date(timeIntervalSince1970: 3_000)
+    let store = LogseqProjectPageStore(pagesRootURL: pagesRoot)
+    let list = ReminderListImportSnapshot(
+      identifier: "list-local-1",
+      externalIdentifier: "list-external-1",
+      title: "Bulk",
+      colorHex: nil
+    )
+    let importedItems = (0..<taskCount).map { index in
+      makeItem(
+        identifier: "task-local-\(index)",
+        externalIdentifier: "task-external-\(index)",
+        title: "Remote task \(index)",
+        notes: remoteBulkNote(for: index),
+        list: list,
+        now: now
+      )
+    }
+
+    _ = try await RetainedReminderImportSync.sync(
+      batch: ReminderImportSnapshotBatch(
+        lists: [list],
+        itemsByListIdentifier: [list.identifier: importedItems]
+      ),
+      store: store,
+      conflictPolicy: .remindersAuthoritative,
+      now: now
+    )
+
+    let markdown = try String(contentsOf: pageURL, encoding: .utf8)
+    XCTAssertEqual(markdown.components(separatedBy: "reminder_external_id::").count - 1, taskCount)
+    for index in 0..<taskCount {
+      XCTAssertTrue(markdown.contains("- TODO Remote task \(index)"))
+      XCTAssertTrue(
+        markdown.contains("reminder_external_id:: task-external-\(index)"),
+        "missing reminder id for task \(index)"
+      )
+      if index % 3 != 0 {
+        XCTAssertTrue(markdown.contains("  - remote note \(index)"))
+      }
+      if index % 3 == 2 {
+        XCTAssertTrue(markdown.contains("  - remote note \(index)-extra"))
+        XCTAssertTrue(markdown.contains("  - remote note \(index)-tail"))
+      }
+    }
+    XCTAssertFalse(markdown.contains("Local task"))
+    XCTAssertFalse(markdown.contains("local note"))
+  }
+
   func testReminderProjectionIdentityMatchesRetainedProjectionProjectIdentity() {
     XCTAssertEqual(
       ReminderProjectionIdentity.projectID(for: "list-external-1"),
@@ -726,6 +793,17 @@ final class RetainedReminderImportSyncTests: XCTestCase {
       createdAt: now,
       modifiedAt: now
     )
+  }
+
+  private func remoteBulkNote(for index: Int) -> String {
+    switch index % 3 {
+    case 0:
+      return ""
+    case 1:
+      return "remote note \(index)"
+    default:
+      return "remote note \(index)\nremote note \(index)-extra\nremote note \(index)-tail"
+    }
   }
 
   private func makeTemporaryDirectory() throws -> URL {

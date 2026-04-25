@@ -23,6 +23,7 @@ actor LogseqProjectPageStore {
     var reminderExternalIdentifier: String?
     var calendarEventExternalIdentifier: String?
     var noteText: String?
+    var hasAmbiguousReminderExternalIdentifier: Bool
 
     init(
       taskID: UUID? = nil,
@@ -33,7 +34,8 @@ actor LogseqProjectPageStore {
       repeatRule: String? = nil,
       reminderExternalIdentifier: String? = nil,
       calendarEventExternalIdentifier: String? = nil,
-      noteText: String? = nil
+      noteText: String? = nil,
+      hasAmbiguousReminderExternalIdentifier: Bool = false
     ) {
       self.taskID = taskID
       self.title = title
@@ -44,6 +46,7 @@ actor LogseqProjectPageStore {
       self.reminderExternalIdentifier = reminderExternalIdentifier
       self.calendarEventExternalIdentifier = calendarEventExternalIdentifier
       self.noteText = noteText
+      self.hasAmbiguousReminderExternalIdentifier = hasAmbiguousReminderExternalIdentifier
     }
   }
 
@@ -59,6 +62,7 @@ actor LogseqProjectPageStore {
     var managedTasks: [TaskRecord]
     var externalTasks: [TaskRecord]
     var canSafelyPersistProjectNote: Bool
+    var hasAmbiguousReminderListExternalIdentifier = false
   }
 
   enum UpsertDisposition: Equatable, Sendable {
@@ -108,6 +112,7 @@ actor LogseqProjectPageStore {
     var noteMarkdown: String
     var managedTasks: [TaskRecord]
     var externalTasks: [TaskRecord]
+    var hasAmbiguousReminderListExternalIdentifier: Bool
   }
 
   private static let managedSectionHeader = "## Brain Unfog Managed Tasks"
@@ -549,6 +554,11 @@ actor LogseqProjectPageStore {
     guard externalTaskReminderIdentifiersByIndex.keys.allSatisfy({ page.externalTasks.indices.contains($0) }) else {
       throw StoreError.externalTasksChangedSinceLoad
     }
+    if parsedPage.reminderListExternalIdentifier == normalizedReminderListExternalIdentifier,
+      externalTaskReminderIdentifiersByIndex.isEmpty
+    {
+      return .updated
+    }
 
     var lines = normalizedLineEndings(try readText(at: page.fileURL))
       .components(separatedBy: "\n")
@@ -712,6 +722,11 @@ actor LogseqProjectPageStore {
     let propertiesByKey = propertyLines.reduce(into: [String: String]()) { partialResult, line in
       partialResult[line.key] = partialResult[line.key] ?? line.value
     }
+    let reminderListIdentifierValues = uniqueNormalizedPropertyValues(
+      forKey: "reminder_list_external_id",
+      in: propertyLines
+    )
+    let hasAmbiguousReminderListExternalIdentifier = reminderListIdentifierValues.count > 1
 
     return ParsedPage(
       propertyLines: propertyLines,
@@ -721,13 +736,16 @@ actor LogseqProjectPageStore {
       ),
       projectID: UUID(uuidString: propertiesByKey["brain_unfog_project_id"] ?? ""),
       reminderListExternalIdentifier: normalizedOptionalValue(
-        propertiesByKey["reminder_list_external_id"]
+        hasAmbiguousReminderListExternalIdentifier
+          ? nil
+          : propertiesByKey["reminder_list_external_id"]
       ),
       usesProjectTag: pageUsesProjectScope(propertyLines),
       hasManagedTaskSection: managedRange != nil,
       noteMarkdown: trimmedMarkdown(from: bodyWithoutManagedSection),
       managedTasks: managedTasks,
-      externalTasks: externalTasks
+      externalTasks: externalTasks,
+      hasAmbiguousReminderListExternalIdentifier: hasAmbiguousReminderListExternalIdentifier
     )
   }
 
@@ -882,6 +900,7 @@ actor LogseqProjectPageStore {
       let taskLineIndex = index
       var task = parsedTask.task
       let taskIndent = parsedTask.indent
+      var reminderExternalIdentifierValues: [String] = []
       index += 1
 
       while index < lines.count {
@@ -907,7 +926,12 @@ actor LogseqProjectPageStore {
           case "brain_unfog_task_id":
             task.taskID = UUID(uuidString: property.value)
           case "reminder_external_id":
-            task.reminderExternalIdentifier = normalizedOptionalValue(property.value)
+            if let value = normalizedOptionalValue(property.value) {
+              reminderExternalIdentifierValues.append(value)
+              task.reminderExternalIdentifier = value
+            } else {
+              task.reminderExternalIdentifier = nil
+            }
           case "calendar_event_external_id":
             task.calendarEventExternalIdentifier = normalizedOptionalValue(property.value)
           case "date":
@@ -929,6 +953,11 @@ actor LogseqProjectPageStore {
         taskIndent: taskIndent,
         skipGeneratedComment: skipGeneratedComment
       )
+      let uniqueReminderExternalIdentifierValues = Set(reminderExternalIdentifierValues)
+      if uniqueReminderExternalIdentifierValues.count > 1 {
+        task.reminderExternalIdentifier = nil
+        task.hasAmbiguousReminderExternalIdentifier = true
+      }
       task.noteText = reminderNoteText.isEmpty ? nil : reminderNoteText
       tasks.append(task)
     }
@@ -1148,6 +1177,47 @@ actor LogseqProjectPageStore {
     return nil
   }
 
+  private func externalTaskLineIndexesByReminderIdentifier(
+    in lines: [String]
+  ) -> [String: Int] {
+    let propertyRange = leadingPropertyRange(in: lines)
+    let bodyStart = propertyRange.upperBound
+    let managedRange = managedSectionRange(in: Array(lines.dropFirst(bodyStart))).map {
+      (bodyStart + $0.lowerBound)..<(bodyStart + $0.upperBound)
+    }
+
+    var lineIndexesByReminderIdentifier: [String: Int] = [:]
+    var lineIndex = bodyStart
+    while lineIndex < lines.count {
+      if let managedRange, managedRange.contains(lineIndex) {
+        lineIndex = managedRange.upperBound
+        continue
+      }
+      guard let parsedTask = parseTaskLine(lines[lineIndex]) else {
+        lineIndex += 1
+        continue
+      }
+      let blockEndIndex = taskSubtreeEndIndex(
+        from: lineIndex,
+        taskIndent: parsedTask.indent,
+        skipGeneratedComment: false,
+        in: lines
+      )
+      if let reminderIdentifier = reminderIdentifierForTask(
+        at: lineIndex,
+        taskIndent: parsedTask.indent,
+        limit: blockEndIndex,
+        in: lines
+      ),
+        lineIndexesByReminderIdentifier[reminderIdentifier] == nil
+      {
+        lineIndexesByReminderIdentifier[reminderIdentifier] = lineIndex
+      }
+      lineIndex += 1
+    }
+    return lineIndexesByReminderIdentifier
+  }
+
   private func upsertReminderListExternalIdentifier(
     _ reminderListExternalIdentifier: String,
     into lines: inout [String]
@@ -1194,7 +1264,16 @@ actor LogseqProjectPageStore {
     let blockedReminderIdentifiers = duplicatedReminderIdentifiers(in: expectedExternalTasks)
       .union(imported.duplicatedIdentifiers)
     var updatedReminderIdentifiers = Set<String>()
-    for task in expectedExternalTasks {
+    var baselineUpdates: [ReminderSyncTaskBaselineUpdate] = []
+    let lineIndexesByReminderIdentifier = externalTaskLineIndexesByReminderIdentifier(in: lines)
+    let tasksOrderedForStableLineEdits = expectedExternalTasks.sorted { lhs, rhs in
+      let lhsLineIndex = normalizedOptionalValue(lhs.reminderExternalIdentifier)
+        .flatMap { lineIndexesByReminderIdentifier[$0] } ?? Int.min
+      let rhsLineIndex = normalizedOptionalValue(rhs.reminderExternalIdentifier)
+        .flatMap { lineIndexesByReminderIdentifier[$0] } ?? Int.min
+      return lhsLineIndex > rhsLineIndex
+    }
+    for task in tasksOrderedForStableLineEdits {
       guard let reminderIdentifier = normalizedOptionalValue(task.reminderExternalIdentifier),
         let importedTask = imported.tasksByIdentifier[reminderIdentifier]
       else {
@@ -1245,14 +1324,17 @@ actor LogseqProjectPageStore {
       }
       updateExternalTaskRecord(
         reminderExternalIdentifier: reminderIdentifier,
+        knownLineIndex: lineIndexesByReminderIdentifier[reminderIdentifier],
         with: taskToWrite,
         in: &lines
       )
-      ReminderSyncBaselineStore.upsert(
-        reminderExternalIdentifier: reminderIdentifier,
-        state: baselineState,
-        remoteModifiedAt: baselineRemoteModifiedAt,
-        conflictedFields: conflictedFields
+      baselineUpdates.append(
+        ReminderSyncTaskBaselineUpdate(
+          reminderExternalIdentifier: reminderIdentifier,
+          state: baselineState,
+          remoteModifiedAt: baselineRemoteModifiedAt,
+          conflictedFields: conflictedFields
+        )
       )
       updatedReminderIdentifiers.insert(reminderIdentifier)
     }
@@ -1264,9 +1346,11 @@ actor LogseqProjectPageStore {
         : imported.tasksByIdentifier[reminderIdentifier]
     }
     appendExternalTasks(missingImportedTasks, to: &lines)
-    recordImportedTaskBaselines(
-      missingImportedTasks,
-      remoteModifiedAtByReminderIdentifier: remoteModifiedAtByReminderIdentifier
+    baselineUpdates.append(
+      contentsOf: importedTaskBaselineUpdates(
+        missingImportedTasks,
+        remoteModifiedAtByReminderIdentifier: remoteModifiedAtByReminderIdentifier
+      )
     )
 
     var rendered = lines.joined(separator: "\n")
@@ -1274,24 +1358,38 @@ actor LogseqProjectPageStore {
       rendered += "\n"
     }
     let comparableOriginal = originalText.hasSuffix("\n") ? originalText : originalText + "\n"
-    guard rendered != comparableOriginal else { return }
-    try write(rendered, to: fileURL)
+    if rendered != comparableOriginal {
+      try write(rendered, to: fileURL)
+    }
+    ReminderSyncBaselineStore.upsertMany(baselineUpdates)
+  }
+
+  private func importedTaskBaselineUpdates(
+    _ importedTasks: [TaskRecord],
+    remoteModifiedAtByReminderIdentifier: [String: Date]
+  ) -> [ReminderSyncTaskBaselineUpdate] {
+    importedTasks.compactMap { task in
+      guard let reminderIdentifier = normalizedOptionalValue(task.reminderExternalIdentifier) else {
+        return nil
+      }
+      return ReminderSyncTaskBaselineUpdate(
+        reminderExternalIdentifier: reminderIdentifier,
+        state: ReminderSyncTaskState(task: task),
+        remoteModifiedAt: remoteModifiedAtByReminderIdentifier[reminderIdentifier]
+      )
+    }
   }
 
   private func recordImportedTaskBaselines(
     _ importedTasks: [TaskRecord],
     remoteModifiedAtByReminderIdentifier: [String: Date]
   ) {
-    for task in importedTasks {
-      guard let reminderIdentifier = normalizedOptionalValue(task.reminderExternalIdentifier) else {
-        continue
-      }
-      ReminderSyncBaselineStore.upsert(
-        reminderExternalIdentifier: reminderIdentifier,
-        state: ReminderSyncTaskState(task: task),
-        remoteModifiedAt: remoteModifiedAtByReminderIdentifier[reminderIdentifier]
+    ReminderSyncBaselineStore.upsertMany(
+      importedTaskBaselineUpdates(
+        importedTasks,
+        remoteModifiedAtByReminderIdentifier: remoteModifiedAtByReminderIdentifier
       )
-    }
+    )
   }
 
   private func importedTaskPreservingLocalNoteWhenRemoteIsEmpty(_ task: TaskRecord) -> TaskRecord {
@@ -1477,6 +1575,7 @@ actor LogseqProjectPageStore {
 
   private func updateExternalTaskRecord(
     reminderExternalIdentifier: String,
+    knownLineIndex: Int? = nil,
     with task: TaskRecord,
     in lines: inout [String]
   ) {
@@ -1484,6 +1583,33 @@ actor LogseqProjectPageStore {
     let bodyStart = propertyRange.upperBound
     let managedRange = managedSectionRange(in: Array(lines.dropFirst(bodyStart))).map {
       (bodyStart + $0.lowerBound)..<(bodyStart + $0.upperBound)
+    }
+
+    if let knownLineIndex,
+      knownLineIndex < lines.count,
+      let parsedTask = parseTaskLine(lines[knownLineIndex])
+    {
+      let blockEndIndex = taskSubtreeEndIndex(
+        from: knownLineIndex,
+        taskIndent: parsedTask.indent,
+        skipGeneratedComment: false,
+        in: lines
+      )
+      if reminderIdentifierForTask(
+        at: knownLineIndex,
+        taskIndent: parsedTask.indent,
+        limit: blockEndIndex,
+        in: lines
+      ) == reminderExternalIdentifier {
+        updateExternalTaskRecord(
+          atLineIndex: knownLineIndex,
+          parsedTask: parsedTask,
+          with: task,
+          managedRange: managedRange,
+          in: &lines
+        )
+        return
+      }
     }
 
     var lineIndex = bodyStart
@@ -1991,7 +2117,9 @@ actor LogseqProjectPageStore {
   }
 
   private func normalizedPropertyKey(_ rawKey: String) -> String {
-    rawKey.lowercased().replacingOccurrences(of: "-", with: "_")
+    rawKey.lowercased()
+      .replacingOccurrences(of: "-", with: "_")
+      .replacingOccurrences(of: " ", with: "_")
   }
 
   private func managedSectionRange(
@@ -2146,6 +2274,17 @@ actor LogseqProjectPageStore {
     lines.first(where: { $0.key == key })?.value
   }
 
+  private func uniqueNormalizedPropertyValues(
+    forKey key: String,
+    in lines: [PropertyLine]
+  ) -> Set<String> {
+    Set(
+      lines
+        .filter { $0.key == key }
+        .compactMap { normalizedOptionalValue($0.value) }
+    )
+  }
+
   private func decodedTitle(
     for fileURL: URL
   ) -> String {
@@ -2233,6 +2372,16 @@ actor LogseqProjectPageStore {
       .replacingOccurrences(of: "\r", with: "\n")
   }
 
+  private func normalizedForNoOpWriteComparison(
+    _ contents: String
+  ) -> String {
+    var normalized = normalizedLineEndings(contents)
+    if normalized.hasSuffix("\n") {
+      normalized.removeLast()
+    }
+    return normalized
+  }
+
   private func readText(
     at fileURL: URL
   ) throws -> String {
@@ -2262,7 +2411,9 @@ actor LogseqProjectPageStore {
       noteMarkdown: parsedPage.noteMarkdown,
       managedTasks: parsedPage.managedTasks,
       externalTasks: parsedPage.externalTasks,
-      canSafelyPersistProjectNote: hasRetainedIdentity && parsedPage.externalTasks.isEmpty
+      canSafelyPersistProjectNote: hasRetainedIdentity && parsedPage.externalTasks.isEmpty,
+      hasAmbiguousReminderListExternalIdentifier:
+        parsedPage.hasAmbiguousReminderListExternalIdentifier
     )
   }
 
@@ -2303,6 +2454,15 @@ actor LogseqProjectPageStore {
     _ contents: String,
     to fileURL: URL
   ) throws {
+    if fileManager.fileExists(atPath: fileURL.path) {
+      let currentContents = try readText(at: fileURL)
+      if normalizedForNoOpWriteComparison(currentContents)
+        == normalizedForNoOpWriteComparison(contents)
+      {
+        return
+      }
+    }
+
     let data = Data(contents.utf8)
     let tempURL = fileURL.deletingLastPathComponent()
       .appendingPathComponent(".\(UUID().uuidString).tmp", isDirectory: false)

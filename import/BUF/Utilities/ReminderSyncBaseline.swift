@@ -166,6 +166,28 @@ struct ReminderSyncTaskBaselineRecord: Codable, Equatable, Sendable {
   }
 }
 
+struct ReminderSyncTaskBaselineUpdate: Equatable, Sendable {
+  var reminderExternalIdentifier: String?
+  var state: ReminderSyncTaskState
+  var remoteModifiedAt: Date?
+  var conflictedFields: [ReminderSyncTaskField]
+  var now: Date
+
+  init(
+    reminderExternalIdentifier: String?,
+    state: ReminderSyncTaskState,
+    remoteModifiedAt: Date?,
+    conflictedFields: [ReminderSyncTaskField] = [],
+    now: Date = .now
+  ) {
+    self.reminderExternalIdentifier = reminderExternalIdentifier
+    self.state = state
+    self.remoteModifiedAt = remoteModifiedAt
+    self.conflictedFields = conflictedFields
+    self.now = now
+  }
+}
+
 private struct ReminderSyncBaselinePayload: Codable, Equatable {
   var schemaVersion: Int
   var taskBaselines: [ReminderSyncTaskBaselineRecord]
@@ -212,20 +234,49 @@ enum ReminderSyncBaselineStore {
     conflictedFields: [ReminderSyncTaskField] = [],
     now: Date = .now
   ) {
-    guard let key = normalizedIdentifier(reminderExternalIdentifier) else { return }
+    upsertMany([
+      ReminderSyncTaskBaselineUpdate(
+        reminderExternalIdentifier: reminderExternalIdentifier,
+        state: state,
+        remoteModifiedAt: remoteModifiedAt,
+        conflictedFields: conflictedFields,
+        now: now
+      ),
+    ])
+  }
+
+  static func upsertMany(_ updates: [ReminderSyncTaskBaselineUpdate]) {
+    guard !updates.isEmpty else { return }
     lock.lock()
     guard fileURL != nil else {
       lock.unlock()
       return
     }
-    baselinesByReminderExternalIdentifier[key] = ReminderSyncTaskBaselineRecord(
-      reminderExternalIdentifier: key,
-      state: state,
-      remoteModifiedAt: remoteModifiedAt,
-      conflictedFields: Array(Set(conflictedFields)).sorted { $0.rawValue < $1.rawValue },
-      updatedAt: now
-    )
-    persistLocked()
+    var didChange = false
+    for update in updates {
+      guard let key = normalizedIdentifier(update.reminderExternalIdentifier) else { continue }
+      let conflictedFields = Array(Set(update.conflictedFields)).sorted {
+        $0.rawValue < $1.rawValue
+      }
+      if let existing = baselinesByReminderExternalIdentifier[key],
+        existing.state == update.state,
+        existing.remoteModifiedAt == update.remoteModifiedAt,
+        existing.conflictedFields == conflictedFields
+      {
+        continue
+      }
+      baselinesByReminderExternalIdentifier[key] = ReminderSyncTaskBaselineRecord(
+        reminderExternalIdentifier: key,
+        state: update.state,
+        remoteModifiedAt: update.remoteModifiedAt,
+        conflictedFields: conflictedFields,
+        updatedAt: update.now
+      )
+      didChange = true
+    }
+    if didChange {
+      persistLocked()
+    }
     lock.unlock()
   }
 

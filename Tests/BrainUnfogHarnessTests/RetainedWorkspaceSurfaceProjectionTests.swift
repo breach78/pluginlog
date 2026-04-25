@@ -283,8 +283,8 @@ final class RetainedWorkspaceSurfaceProjectionTests: XCTestCase {
     XCTAssertTrue(blockedRead.scheduleEntriesByProjectID.isEmpty)
   }
 
-  func testRetainedOnlyBlockedReadsRequireConsumerCacheInvalidation() {
-    XCTAssertFalse(
+  func testRetainedOnlyReadsRequireConsumerCacheInvalidation() {
+    XCTAssertTrue(
       RetainedWorkspaceSurfaceProjectionBuilder.shouldInvalidateConsumerCaches(for: .retained)
     )
     XCTAssertTrue(

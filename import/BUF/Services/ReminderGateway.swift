@@ -217,6 +217,10 @@ final class EventKitReminderGateway: ReminderGateway {
             mergedReminders[reminderIdentifier] = reminder
           }
         }
+
+        if calendarIdentifiers.count == 1, !snapshot.reminders.isEmpty {
+          break
+        }
       } catch {
         lastError = error
         AppLogger.sync.error(
@@ -403,10 +407,9 @@ enum ReminderAccessPromptPolicy {
     authorizationStatus: EKAuthorizationStatus,
     promptAttempted: Bool
   ) -> Bool {
-    _ = promptAttempted
     switch authorizationStatus {
     case .notDetermined:
-      return true
+      return !promptAttempted
     case .fullAccess, .authorized, .writeOnly, .denied, .restricted:
       return false
     @unknown default:

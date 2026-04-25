@@ -2,6 +2,17 @@ import Foundation
 
 @MainActor
 enum RetainedLogseqProjectProvisioningSync {
+  enum SyncMode: Equatable {
+    case fullPush
+    case missingBindingsOnly
+  }
+
+  private enum RemoteBindingPresence {
+    case exists
+    case missing
+    case unavailable
+  }
+
   struct SyncResult: Equatable {
     var createdProjectCount: Int
     var createdTaskCount: Int
@@ -12,14 +23,16 @@ enum RetainedLogseqProjectProvisioningSync {
   static func sync(
     store: LogseqProjectPageStore,
     reminderProjectProvider: ReminderProjectProvider,
-    now: Date = .now
+    now: Date = .now,
+    mode: SyncMode = .fullPush
   ) async throws -> SyncResult {
     let pages = try await store.loadProjectPagesInScope()
     return try await sync(
       pages: pages,
       store: store,
       reminderProjectProvider: reminderProjectProvider,
-      now: now
+      now: now,
+      mode: mode
     )
   }
 
@@ -27,14 +40,16 @@ enum RetainedLogseqProjectProvisioningSync {
     fileURLs: [URL],
     store: LogseqProjectPageStore,
     reminderProjectProvider: ReminderProjectProvider,
-    now: Date = .now
+    now: Date = .now,
+    mode: SyncMode = .fullPush
   ) async throws -> SyncResult {
     let pages = try await store.loadProjectPagesInScope(at: fileURLs)
     return try await sync(
       pages: pages,
       store: store,
       reminderProjectProvider: reminderProjectProvider,
-      now: now
+      now: now,
+      mode: mode
     )
   }
 
@@ -42,7 +57,8 @@ enum RetainedLogseqProjectProvisioningSync {
     pages: [LogseqProjectPageStore.PageSnapshot],
     store: LogseqProjectPageStore,
     reminderProjectProvider: ReminderProjectProvider,
-    now: Date
+    now: Date,
+    mode: SyncMode
   ) async throws -> SyncResult {
     var createdProjectCount = 0
     var createdTaskCount = 0
@@ -51,14 +67,61 @@ enum RetainedLogseqProjectProvisioningSync {
 
     for page in pages {
       guard page.usesProjectTag || page.reminderListExternalIdentifier != nil else { continue }
+      guard !page.hasAmbiguousReminderListExternalIdentifier else {
+        AppLogger.sync.error(
+          "logseq provisioning skipped ambiguous reminder list id page=\(page.title, privacy: .public)"
+        )
+        continue
+      }
 
       let listIdentifier: String
-      if let existingIdentifier = normalized(page.reminderListExternalIdentifier) {
-        listIdentifier = existingIdentifier
+      var resolvedListIdentifier = normalized(page.reminderListExternalIdentifier)
+      if resolvedListIdentifier == nil,
+        let pendingBinding = ReminderPendingBindingStore.projectBinding(
+        pageFileURL: page.fileURL,
+        pageTitle: page.title,
+        now: now
+      ) {
+        switch await remoteListPresence(
+          pendingBinding,
+          pendingBinding.reminderListExternalIdentifier,
+          reminderProjectProvider: reminderProjectProvider
+        ) {
+        case .exists:
+          resolvedListIdentifier = pendingBinding.reminderListExternalIdentifier
+        case .missing:
+          break
+        case .unavailable:
+          AppLogger.sync.info(
+            "logseq provisioning skipped pending list until remote verification is available"
+          )
+          continue
+        }
+      } else if ReminderPendingBindingStore.hasProjectBindingForPage(
+        pageFileURL: page.fileURL,
+        now: now
+      ) {
+        AppLogger.sync.info(
+          "logseq provisioning skipped page with unmatched pending list binding"
+        )
+        continue
+      }
+
+      if let resolvedListIdentifier {
+        listIdentifier = resolvedListIdentifier
       } else {
+        guard mode == .fullPush else {
+          continue
+        }
         guard page.usesProjectTag else { continue }
         let createdList = try reminderProjectProvider.createProjectList(title: page.title)
         listIdentifier = createdList.externalIdentifier
+        ReminderPendingBindingStore.upsertProjectBinding(
+          pageFileURL: page.fileURL,
+          pageTitle: page.title,
+          reminderListExternalIdentifier: listIdentifier,
+          now: now
+        )
         createdProjectCount += 1
       }
 
@@ -72,8 +135,17 @@ enum RetainedLogseqProjectProvisioningSync {
       let blockedReminderIdentifiers = duplicatedReminderIdentifiers(in: page.externalTasks)
 
       for (taskIndex, task) in page.externalTasks.enumerated() {
+        guard !task.hasAmbiguousReminderExternalIdentifier else {
+          AppLogger.sync.error(
+            "logseq provisioning skipped ambiguous reminder task id title=\(task.title, privacy: .public)"
+          )
+          continue
+        }
         if let reminderExternalIdentifier = normalized(task.reminderExternalIdentifier) {
           guard !blockedReminderIdentifiers.contains(reminderExternalIdentifier) else {
+            continue
+          }
+          guard mode == .fullPush else {
             continue
           }
           try applyExistingReminderUpdates(
@@ -81,7 +153,7 @@ enum RetainedLogseqProjectProvisioningSync {
             projectID: projectID,
             reminderExternalIdentifier: reminderExternalIdentifier,
             prefetchedRemoteSnapshot:
-              prefetchedRemoteSnapshotsByExternalIdentifier[reminderExternalIdentifier],
+              prefetchedRemoteSnapshotsByExternalIdentifier?[reminderExternalIdentifier],
             reminderProjectProvider: reminderProjectProvider,
             taskRecords: &taskRecords,
             now: now
@@ -89,6 +161,53 @@ enum RetainedLogseqProjectProvisioningSync {
           continue
         }
 
+        if let pendingBinding = ReminderPendingBindingStore.taskBinding(
+          pageFileURL: page.fileURL,
+          listExternalIdentifier: listIdentifier,
+          taskIndex: taskIndex,
+          task: task,
+          now: now
+        ) {
+          guard let prefetchedRemoteSnapshotsByExternalIdentifier else {
+            AppLogger.sync.info(
+              "logseq provisioning skipped pending task until remote verification is available"
+            )
+            continue
+          }
+          if remoteTaskBindingMatches(
+            pendingBinding,
+            listIdentifier: listIdentifier,
+            snapshotsByExternalIdentifier: prefetchedRemoteSnapshotsByExternalIdentifier
+          ) {
+            let taskIdentifier = pendingBinding.reminderExternalIdentifier
+            taskIdentifiersByIndex[taskIndex] = taskIdentifier
+            taskRecords.append(
+              TaskIdentityBridgeRecord(
+                taskID: ReminderProjectionIdentity.taskID(for: taskIdentifier),
+                title: task.title,
+                reminderExternalIdentifier: taskIdentifier,
+                ownerProjectID: projectID,
+                createdAt: now,
+                updatedAt: now
+              )
+            )
+            continue
+          }
+        } else if ReminderPendingBindingStore.hasTaskBindingForPageListIndex(
+          pageFileURL: page.fileURL,
+          listExternalIdentifier: listIdentifier,
+          taskIndex: taskIndex,
+          now: now
+        ) {
+          AppLogger.sync.info(
+            "logseq provisioning skipped task with unmatched pending binding"
+          )
+          continue
+        }
+
+        guard mode == .fullPush else {
+          continue
+        }
         let decodedDate = LogseqReminderPropertyCodec.decodeDate(task.date)
         guard let metadata = try reminderProjectProvider.createTaskReminder(
           inProject: listIdentifier,
@@ -101,6 +220,14 @@ enum RetainedLogseqProjectProvisioningSync {
         }
         let taskIdentifier = metadata.externalIdentifier ?? metadata.identifier
         taskIdentifiersByIndex[taskIndex] = taskIdentifier
+        ReminderPendingBindingStore.upsertTaskBinding(
+          pageFileURL: page.fileURL,
+          listExternalIdentifier: listIdentifier,
+          taskIndex: taskIndex,
+          task: task,
+          reminderExternalIdentifier: taskIdentifier,
+          now: now
+        )
         let taskID = ReminderProjectionIdentity.taskID(for: taskIdentifier)
         try applyCompletionIfNeeded(
           task,
@@ -139,6 +266,20 @@ enum RetainedLogseqProjectProvisioningSync {
           reminderListExternalIdentifier: listIdentifier,
           externalTaskReminderIdentifiersByIndex: taskIdentifiersByIndex
         )
+        if page.reminderListExternalIdentifier == nil {
+          ReminderPendingBindingStore.removeProjectBinding(
+            pageFileURL: page.fileURL,
+            pageTitle: page.title
+          )
+        }
+        for (taskIndex, _) in taskIdentifiersByIndex {
+          ReminderPendingBindingStore.removeTaskBinding(
+            pageFileURL: page.fileURL,
+            listExternalIdentifier: listIdentifier,
+            taskIndex: taskIndex,
+            task: page.externalTasks[taskIndex]
+          )
+        }
       }
 
       if page.reminderListExternalIdentifier == nil {
@@ -299,11 +440,11 @@ enum RetainedLogseqProjectProvisioningSync {
   private static func remoteTaskSnapshotsByExternalIdentifier(
     inListIdentifier listIdentifier: String,
     reminderProjectProvider: ReminderProjectProvider
-  ) async -> [String: ReminderTaskRemoteSnapshot] {
+  ) async -> [String: ReminderTaskRemoteSnapshot]? {
     guard let batch = try? await reminderProjectProvider.fetchImportSnapshotBatch(
       forListIdentifiers: [listIdentifier]
     ) else {
-      return [:]
+      return nil
     }
 
     let items = batch.itemsByListIdentifier[listIdentifier] ?? []
@@ -342,6 +483,41 @@ enum RetainedLogseqProjectProvisioningSync {
     }
 
     return snapshotsByIdentifier
+  }
+
+  private static func remoteListPresence(
+    _ binding: ReminderPendingProjectBinding,
+    _ listIdentifier: String,
+    reminderProjectProvider: ReminderProjectProvider
+  ) async -> RemoteBindingPresence {
+    guard let batch = try? await reminderProjectProvider.fetchImportSnapshotBatch(
+      forListIdentifiers: [listIdentifier]
+    ) else {
+      return .unavailable
+    }
+    return batch.lists.contains {
+      ($0.identifier == listIdentifier || $0.externalIdentifier == listIdentifier)
+        && fingerprint($0.title) == binding.pageTitleFingerprint
+    } ? .exists : .missing
+  }
+
+  private static func remoteTaskBindingMatches(
+    _ binding: ReminderPendingTaskBinding,
+    listIdentifier: String,
+    snapshotsByExternalIdentifier: [String: ReminderTaskRemoteSnapshot]
+  ) -> Bool {
+    guard let snapshot = snapshotsByExternalIdentifier[binding.reminderExternalIdentifier] else {
+      return false
+    }
+    return snapshot.calendarIdentifier == listIdentifier
+      && fingerprint(snapshot.title) == binding.taskTitleFingerprint
+  }
+
+  private static func fingerprint(_ value: String) -> String {
+    value
+      .split(whereSeparator: \.isWhitespace)
+      .joined(separator: " ")
+      .lowercased()
   }
 
   private static func encodedDate(_ date: Date?, hasExplicitTime: Bool) -> String? {

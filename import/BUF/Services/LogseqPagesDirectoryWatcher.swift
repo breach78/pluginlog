@@ -90,33 +90,53 @@ final class LogseqPagesChangeTracker: @unchecked Sendable {
 
 final class LogseqPagesDirectoryWatcher: @unchecked Sendable {
   typealias ChangeHandler = @MainActor ([URL]) async -> Void
+  typealias FastChangeHandler = @MainActor () -> Void
 
-  static let defaultDebounceNanoseconds: UInt64 = 3_000_000_000
+  static let defaultDebounceNanoseconds: UInt64 = 10_000_000_000
+  static let defaultFastDebounceNanoseconds: UInt64 = 500_000_000
+  static let defaultFastPollingNanoseconds: UInt64 = 750_000_000
 
   private let pagesRootURL: URL
   private let debounceNanoseconds: UInt64
+  private let fastDebounceNanoseconds: UInt64
   private let pollingNanoseconds: UInt64?
+  private let fastPollingNanoseconds: UInt64?
   private let tracker: LogseqPagesChangeTracker
+  private let pollingTracker: LogseqPagesChangeTracker
+  private let fastTracker: LogseqPagesChangeTracker
   private let handler: ChangeHandler
+  private let fastHandler: FastChangeHandler?
   private let queue = DispatchQueue(label: "BrainUnfog.LogseqPagesDirectoryWatcher")
 
   private var fileDescriptor: CInt = -1
   private var source: DispatchSourceFileSystemObject?
   private var debounceWorkItem: DispatchWorkItem?
+  private var fastDebounceWorkItem: DispatchWorkItem?
   private var pollingTimer: DispatchSourceTimer?
+  private var fastPollingTimer: DispatchSourceTimer?
   private var writeObserver: NSObjectProtocol?
 
   init(
     pagesRootURL: URL,
     debounceNanoseconds: UInt64 = LogseqPagesDirectoryWatcher.defaultDebounceNanoseconds,
+    fastDebounceNanoseconds: UInt64 = LogseqPagesDirectoryWatcher.defaultFastDebounceNanoseconds,
     pollingNanoseconds: UInt64? = LogseqPagesDirectoryWatcher.defaultDebounceNanoseconds,
+    fastPollingNanoseconds: UInt64? = LogseqPagesDirectoryWatcher.defaultFastPollingNanoseconds,
     tracker: LogseqPagesChangeTracker = LogseqPagesChangeTracker(),
+    pollingTracker: LogseqPagesChangeTracker = LogseqPagesChangeTracker(),
+    fastTracker: LogseqPagesChangeTracker = LogseqPagesChangeTracker(),
+    fastHandler: FastChangeHandler? = nil,
     handler: @escaping ChangeHandler
   ) {
     self.pagesRootURL = pagesRootURL
     self.debounceNanoseconds = debounceNanoseconds
+    self.fastDebounceNanoseconds = fastDebounceNanoseconds
     self.pollingNanoseconds = pollingNanoseconds
+    self.fastPollingNanoseconds = fastPollingNanoseconds
     self.tracker = tracker
+    self.pollingTracker = pollingTracker
+    self.fastTracker = fastTracker
+    self.fastHandler = fastHandler
     self.handler = handler
   }
 
@@ -127,8 +147,11 @@ final class LogseqPagesDirectoryWatcher: @unchecked Sendable {
   func start() {
     stop()
     _ = tracker.changedMarkdownFiles(in: pagesRootURL)
+    _ = pollingTracker.changedMarkdownFiles(in: pagesRootURL)
+    _ = fastTracker.changedMarkdownFiles(in: pagesRootURL)
     registerWriteObserver()
     startPollingTimer()
+    startFastPollingTimer()
 
     fileDescriptor = open(pagesRootURL.path, O_EVTONLY)
     guard fileDescriptor >= 0 else { return }
@@ -139,6 +162,7 @@ final class LogseqPagesDirectoryWatcher: @unchecked Sendable {
       queue: queue
     )
     source.setEventHandler { [weak self] in
+      self?.scheduleFastScan()
       self?.scheduleDebouncedScan()
     }
     source.setCancelHandler { [fileDescriptor] in
@@ -153,8 +177,12 @@ final class LogseqPagesDirectoryWatcher: @unchecked Sendable {
   func stop() {
     debounceWorkItem?.cancel()
     debounceWorkItem = nil
+    fastDebounceWorkItem?.cancel()
+    fastDebounceWorkItem = nil
     pollingTimer?.cancel()
     pollingTimer = nil
+    fastPollingTimer?.cancel()
+    fastPollingTimer = nil
     if let writeObserver {
       NotificationCenter.default.removeObserver(writeObserver)
       self.writeObserver = nil
@@ -165,6 +193,7 @@ final class LogseqPagesDirectoryWatcher: @unchecked Sendable {
   }
 
   private func startPollingTimer() {
+    guard fastHandler == nil else { return }
     guard let pollingNanoseconds else { return }
     let interval = DispatchTimeInterval.nanoseconds(
       Int(min(pollingNanoseconds, UInt64(Int.max)))
@@ -172,9 +201,23 @@ final class LogseqPagesDirectoryWatcher: @unchecked Sendable {
     let timer = DispatchSource.makeTimerSource(queue: queue)
     timer.schedule(deadline: .now() + interval, repeating: interval)
     timer.setEventHandler { [weak self] in
-      self?.runScan()
+      self?.scheduleDebouncedScanIfPollingChanged()
     }
     pollingTimer = timer
+    timer.resume()
+  }
+
+  private func startFastPollingTimer() {
+    guard fastHandler != nil, let fastPollingNanoseconds else { return }
+    let interval = DispatchTimeInterval.nanoseconds(
+      Int(min(fastPollingNanoseconds, UInt64(Int.max)))
+    )
+    let timer = DispatchSource.makeTimerSource(queue: queue)
+    timer.schedule(deadline: .now() + interval, repeating: interval)
+    timer.setEventHandler { [weak self] in
+      self?.runFastScan()
+    }
+    fastPollingTimer = timer
     timer.resume()
   }
 
@@ -188,7 +231,22 @@ final class LogseqPagesDirectoryWatcher: @unchecked Sendable {
         return
       }
       self?.tracker.recordAppAuthoredWrite(to: fileURL)
+      self?.pollingTracker.recordAppAuthoredWrite(to: fileURL)
+      self?.fastTracker.recordAppAuthoredWrite(to: fileURL)
     }
+  }
+
+  private func scheduleFastScan() {
+    guard fastHandler != nil else { return }
+    fastDebounceWorkItem?.cancel()
+    let delay = DispatchTimeInterval.nanoseconds(
+      Int(min(fastDebounceNanoseconds, UInt64(Int.max)))
+    )
+    let workItem = DispatchWorkItem { [weak self] in
+      self?.runFastScan()
+    }
+    fastDebounceWorkItem = workItem
+    queue.asyncAfter(deadline: .now() + delay, execute: workItem)
   }
 
   private func scheduleDebouncedScan() {
@@ -201,6 +259,22 @@ final class LogseqPagesDirectoryWatcher: @unchecked Sendable {
     }
     debounceWorkItem = workItem
     queue.asyncAfter(deadline: .now() + delay, execute: workItem)
+  }
+
+  private func runFastScan() {
+    guard let fastHandler else { return }
+    let changedFiles = fastTracker.changedMarkdownFiles(in: pagesRootURL)
+    guard !changedFiles.isEmpty else { return }
+    scheduleDebouncedScan()
+    Task { @MainActor in
+      fastHandler()
+    }
+  }
+
+  private func scheduleDebouncedScanIfPollingChanged() {
+    let changedFiles = pollingTracker.changedMarkdownFiles(in: pagesRootURL)
+    guard !changedFiles.isEmpty else { return }
+    scheduleDebouncedScan()
   }
 
   private func runScan() {

@@ -95,8 +95,30 @@ extension AppState {
         "logseq hidden property config update failed: \(error.localizedDescription, privacy: .public)"
       )
     }
+    installLogseqHelperPluginIfPossible()
     refreshContainerRootURL()
     enableRetainedSyncConsent()
+  }
+
+  func reinstallLogseqHelperPlugin() {
+    installLogseqHelperPluginIfPossible()
+  }
+
+  private func installLogseqHelperPluginIfPossible() {
+    do {
+      let result = try LogseqHelperPluginInstaller.installBundled()
+      logseqHelperPluginInstallPath = result.targetURL.path
+      if let version = result.version {
+        logseqHelperPluginInstallStatus = "Installed v\(version)"
+      } else {
+        logseqHelperPluginInstallStatus = "Installed"
+      }
+    } catch {
+      logseqHelperPluginInstallStatus = "Install failed"
+      AppLogger.storage.error(
+        "logseq helper plugin install failed: \(error.localizedDescription, privacy: .public)"
+      )
+    }
   }
 
   private func enableRetainedSyncConsent() {
@@ -135,7 +157,7 @@ extension AppState {
       syncStatus = "Refresh paused"
       return
     }
-    refreshReminderSourceNow()
+    refreshReminderSourceNow(reason: .bootstrap)
   }
 
   func refreshHealth() async {
@@ -149,6 +171,7 @@ extension AppState {
   private func refreshContainerRootURL() {
     containerRootURL = storageCoordinator.paths?.root
     TaskIdentityBridgeStore.install(dataDirectory: storageCoordinator.paths?.dataDirectory)
+    ReminderPendingBindingStore.install(dataDirectory: storageCoordinator.paths?.dataDirectory)
     ReminderSyncBaselineStore.install(dataDirectory: storageCoordinator.paths?.dataDirectory)
   }
 
@@ -160,6 +183,9 @@ extension AppState {
     modelContainer = nil
     scheduleCalendarOverlayProjection = .empty
     isInitialSyncRunning = false
+    logseqAuthoredReminderEchoSuppressionDeadline = nil
+    logseqAuthoredReminderEchoRefreshTask?.cancel()
+    logseqAuthoredReminderEchoRefreshTask = nil
     syncStarted = false
     boardsLoaded = false
     syncStatus = isLogseqGraphConfigured ? "Container not opened" : "Logseq graph not configured"

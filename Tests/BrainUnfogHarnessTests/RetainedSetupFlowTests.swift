@@ -147,6 +147,21 @@ final class RetainedSetupFlowTests: XCTestCase {
     XCTAssertEqual(appState.syncStatus, "Refresh paused")
   }
 
+  func testStartupSyncUsesReminderFirstBootstrapPolicy() async throws {
+    let graphRoot = try makeTemporaryDirectory(named: "graph")
+    let appState = makeAppState()
+
+    await appState.configureLogseqGraphRoot(at: graphRoot, activateWhenReady: true)
+    appState.syncStatus = "Ready"
+    appState.syncStarted = false
+
+    appState.requestStartupSyncIfNeeded()
+    try await Task.sleep(nanoseconds: 120_000_000)
+
+    XCTAssertTrue(appState.syncStarted)
+    XCTAssertEqual(appState.syncStatus, "Refreshed (\(SyncReason.bootstrap.rawValue))")
+  }
+
   func testBootstrapSyncPolicyIsReminderAuthoritativeButEventSyncUsesBaselineMerge() {
     let appState = makeAppState()
 
@@ -163,9 +178,9 @@ final class RetainedSetupFlowTests: XCTestCase {
       .mergeWithBaseline
     )
     XCTAssertFalse(appState.shouldProvisionFromLogseqAfterImport(reason: .bootstrap))
-    XCTAssertTrue(appState.shouldProvisionFromLogseqAfterImport(reason: .eventStoreChanged))
+    XCTAssertFalse(appState.shouldProvisionFromLogseqAfterImport(reason: .eventStoreChanged))
     XCTAssertTrue(appState.shouldProvisionFromLogseqAfterImport(reason: .manual))
-    XCTAssertTrue(appState.shouldProvisionFromLogseqAfterImport(reason: .periodic))
+    XCTAssertFalse(appState.shouldProvisionFromLogseqAfterImport(reason: .periodic))
   }
 
   func testQueuedSyncRequestsCoalesceToHighestPriorityReason() {
@@ -177,6 +192,33 @@ final class RetainedSetupFlowTests: XCTestCase {
     appState.queueReminderSourceRefresh(reason: .periodic)
 
     XCTAssertEqual(appState.pendingReminderSourceRefreshReason, .manual)
+  }
+
+  func testLogseqAuthoredReminderPushSuppressesImmediateEventStoreEchoOnly() {
+    let appState = makeAppState()
+    let now = Date(timeIntervalSince1970: 1_000)
+
+    appState.recordLogseqAuthoredReminderPush(now: now)
+
+    XCTAssertTrue(
+      appState.shouldSuppressReminderSourceRefresh(
+        reason: .eventStoreChanged,
+        now: now.addingTimeInterval(1)
+      )
+    )
+    XCTAssertFalse(
+      appState.shouldSuppressReminderSourceRefresh(
+        reason: .manual,
+        now: now.addingTimeInterval(1)
+      )
+    )
+    XCTAssertFalse(
+      appState.shouldSuppressReminderSourceRefresh(
+        reason: .eventStoreChanged,
+        now: now.addingTimeInterval(30)
+      )
+    )
+    appState.logseqAuthoredReminderEchoRefreshTask?.cancel()
   }
 
   func testExternalReminderInvalidationRunsRetainedReconciliation() async throws {

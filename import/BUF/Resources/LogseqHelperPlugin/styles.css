@@ -1,0 +1,158 @@
+:root {
+  color-scheme: light;
+  --buf-bg: #ffffff;
+  --buf-ink: #19181b;
+  --buf-muted: #9b9b9b;
+  --buf-border: #e2ddd4;
+  --buf-soft: #f7f4ee;
+  --buf-accent: #ea5b4b;
+}
+
+html,
+body {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  background: transparent;
+  font-family: "Avenir Next", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+}
+
+button,
+input {
+  font: inherit;
+}
+
+.buf-overlay {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+}
+
+.buf-picker {
+  width: 392px;
+  border: 1px solid var(--buf-border);
+  border-radius: 16px;
+  background: var(--buf-bg);
+  box-shadow: 0 10px 28px rgba(31, 27, 22, 0.16);
+  padding: 20px 18px 22px;
+  box-sizing: border-box;
+  user-select: none;
+}
+
+.buf-month-row {
+  display: grid;
+  grid-template-columns: 46px 1fr 46px;
+  align-items: center;
+  margin-bottom: 20px;
+}
+
+.buf-month {
+  text-align: center;
+  color: var(--buf-ink);
+  font-size: 24px;
+  font-weight: 500;
+  line-height: 1.15;
+}
+
+.buf-nav {
+  border: 0;
+  background: transparent;
+  color: var(--buf-accent);
+  font-size: 24px;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.buf-weekdays,
+.buf-days {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+}
+
+.buf-weekdays {
+  margin-bottom: 12px;
+  color: #262321;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.buf-weekday,
+.buf-day-cell {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.buf-days {
+  row-gap: 8px;
+}
+
+.buf-day-cell {
+  height: 34px;
+}
+
+.buf-day {
+  width: 42px;
+  height: 42px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--buf-ink);
+  font-size: 24px;
+  font-weight: 500;
+  line-height: 42px;
+  text-align: center;
+  cursor: pointer;
+}
+
+.buf-day.is-outside {
+  color: var(--buf-muted);
+}
+
+.buf-day.is-selected {
+  background: var(--buf-accent);
+  color: #ffffff;
+}
+
+.buf-fields {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 13px;
+  margin-top: 22px;
+}
+
+.buf-input {
+  height: 34px;
+  border: 1px solid #ded8cb;
+  border-radius: 10px;
+  background: var(--buf-soft);
+  color: var(--buf-ink);
+  font-size: 24px;
+  font-weight: 500;
+  text-align: center;
+  outline: none;
+  box-sizing: border-box;
+}
+
+.buf-input::placeholder {
+  color: #b1aaa1;
+}
+
+.buf-time {
+  width: 94px;
+}
+
+.buf-duration {
+  width: 62px;
+}
+
+.buf-separator {
+  color: #a39b90;
+  font-size: 24px;
+  font-weight: 500;
+}

@@ -3,6 +3,7 @@ import SwiftUI
 struct AppSettingsView: View {
   @EnvironmentObject private var appState: AppState
   @State private var isChangingGraph = false
+  @State private var isInstallingHelperPlugin = false
 
   var body: some View {
     VStack(alignment: .leading, spacing: 18) {
@@ -44,6 +45,40 @@ struct AppSettingsView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
       }
+
+      GroupBox("Logseq helper plugin") {
+        VStack(alignment: .leading, spacing: 10) {
+          Text("Logseq 블록 우클릭 메뉴에서 date:: / duration:: 입력 팝업을 제공합니다.")
+            .foregroundStyle(.secondary)
+
+          LabeledContent("상태") {
+            Text(appState.logseqHelperPluginInstallStatus)
+              .font(.system(.caption, design: .monospaced))
+              .textSelection(.enabled)
+          }
+
+          if let installPath = appState.logseqHelperPluginInstallPath {
+            LabeledContent("설치 위치") {
+              Text(installPath)
+                .font(.system(.caption, design: .monospaced))
+                .textSelection(.enabled)
+            }
+          }
+
+          HStack(spacing: 10) {
+            Button("Helper plugin 다시 설치") {
+              reinstallHelperPlugin()
+            }
+            .disabled(isInstallingHelperPlugin)
+
+            if isInstallingHelperPlugin {
+              ProgressView()
+                .controlSize(.small)
+            }
+          }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+      }
     }
     .padding(24)
     .frame(width: 560)
@@ -63,6 +98,14 @@ struct AppSettingsView: View {
     Task { @MainActor in
       await appState.chooseLogseqGraphRootWithPicker(activateWhenReady: true)
       isChangingGraph = false
+    }
+  }
+
+  private func reinstallHelperPlugin() {
+    isInstallingHelperPlugin = true
+    Task { @MainActor in
+      appState.reinstallLogseqHelperPlugin()
+      isInstallingHelperPlugin = false
     }
   }
 }

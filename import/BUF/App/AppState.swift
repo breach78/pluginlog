@@ -52,6 +52,8 @@ final class AppState: ObservableObject {
   @Published var hasSyncConsentDecision = false
   @Published var logseqGraphRootURL: URL?
   @Published var containerRootURL: URL?
+  @Published var logseqHelperPluginInstallStatus = "Logseq helper plugin not installed"
+  @Published var logseqHelperPluginInstallPath: String?
   @Published var timelineDayColumnWidth: CGFloat = 44
   @Published var isEditorActive = false
   @Published var isEditorMotionSuppressed = false
@@ -83,6 +85,9 @@ final class AppState: ObservableObject {
   var reminderSourceObserver: ReminderSourceObserver?
   var logseqPagesDirectoryWatcher: LogseqPagesDirectoryWatcher?
   var pendingReminderSourceRefreshReason: SyncReason?
+  var logseqAuthoredReminderEchoSuppressionDeadline: Date?
+  var logseqAuthoredReminderEchoRefreshTask: Task<Void, Never>?
+  let logseqAuthoredReminderEchoSuppressionInterval: TimeInterval = 8
 
   let storageCoordinator: LocalStorageCoordinator
   let platformUIFoundation: PlatformUIFoundation
@@ -146,6 +151,7 @@ final class AppState: ObservableObject {
     let usesPreviewRuntimeSetup = isPreviewAppState || AppRuntimeEnvironment.isRunningPreview
     self.storageCoordinator = storageCoordinator ?? LocalStorageCoordinator()
     TaskIdentityBridgeStore.install(dataDirectory: self.storageCoordinator.paths?.dataDirectory)
+    ReminderPendingBindingStore.install(dataDirectory: self.storageCoordinator.paths?.dataDirectory)
     self.platformUIFoundation = .shared
     let resolvedReminderGateway = reminderGateway ?? (
       usesPreviewRuntimeSetup ? PreviewReminderGateway() : EventKitReminderGateway()
@@ -200,6 +206,7 @@ final class AppState: ObservableObject {
   deinit {
     editorIdleTask?.cancel()
     editorMotionReleaseTask?.cancel()
+    logseqAuthoredReminderEchoRefreshTask?.cancel()
     scheduleCalendarOverlayProjectionCancellable?.cancel()
     scheduleCalendarOwnedEventInvalidationCancellable?.cancel()
     logseqPagesDirectoryWatcher?.stop()

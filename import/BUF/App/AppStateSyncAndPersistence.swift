@@ -20,6 +20,10 @@ extension AppState {
 
   @discardableResult
   func performReminderSourceRefresh(reason: SyncReason) async -> Bool {
+    if shouldSuppressReminderSourceRefresh(reason: reason) {
+      syncStatus = "Refreshed (\(reason.rawValue))"
+      return false
+    }
     guard !isInitialSyncRunning else {
       queueReminderSourceRefresh(reason: reason)
       return false
@@ -41,6 +45,45 @@ extension AppState {
       syncStatus = "Refreshed (\(reason.rawValue))"
     }
     return syncStatus != "Reminders access denied" && syncStatus != "Reminder sync failed"
+  }
+
+  func shouldSuppressReminderSourceRefresh(reason: SyncReason, now: Date = .now) -> Bool {
+    guard reason == .eventStoreChanged,
+      let deadline = logseqAuthoredReminderEchoSuppressionDeadline,
+      now < deadline
+    else {
+      return false
+    }
+    scheduleReminderEchoRepairRefresh(after: deadline, now: now)
+    AppLogger.sync.info("suppressed reminder event-store echo after Logseq-authored push")
+    return true
+  }
+
+  func recordLogseqAuthoredReminderPush(now: Date = .now) {
+    let deadline = now.addingTimeInterval(logseqAuthoredReminderEchoSuppressionInterval)
+    logseqAuthoredReminderEchoSuppressionDeadline = max(
+      logseqAuthoredReminderEchoSuppressionDeadline ?? deadline,
+      deadline
+    )
+  }
+
+  private func scheduleReminderEchoRepairRefresh(after deadline: Date, now: Date) {
+    logseqAuthoredReminderEchoRefreshTask?.cancel()
+    let delay = max(0, deadline.timeIntervalSince(now))
+    logseqAuthoredReminderEchoRefreshTask = Task { @MainActor [weak self] in
+      let nanoseconds = UInt64(min(delay, Double(UInt64.max) / 1_000_000_000) * 1_000_000_000)
+      try? await Task.sleep(nanoseconds: nanoseconds)
+      guard let self, !Task.isCancelled else { return }
+      if let currentDeadline = self.logseqAuthoredReminderEchoSuppressionDeadline,
+        Date() < currentDeadline
+      {
+        self.scheduleReminderEchoRepairRefresh(after: currentDeadline, now: .now)
+        return
+      }
+      self.logseqAuthoredReminderEchoSuppressionDeadline = nil
+      self.logseqAuthoredReminderEchoRefreshTask = nil
+      _ = await self.performReminderSourceRefresh(reason: .periodic)
+    }
   }
 
   func queueReminderSourceRefresh(reason: SyncReason) {
