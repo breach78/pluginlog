@@ -378,6 +378,83 @@ final class RetainedLogseqProjectProvisioningSyncTests: XCTestCase {
     XCTAssertEqual(provider.taskSnapshotsByExternalIdentifier["task-ext-1"]?.title, "Edited title")
   }
 
+  func testExistingReminderBackedTaskTitleChangeUsesPrefetchedLocalIdentifierWhenExternalLookupMisses() async throws {
+    let graphRoot = try makeTemporaryDirectory()
+    let pagesRoot = graphRoot.appendingPathComponent("pages", isDirectory: true)
+    let dataRoot = graphRoot.appendingPathComponent(".buf/data", isDirectory: true)
+    try FileManager.default.createDirectory(at: pagesRoot, withIntermediateDirectories: true)
+    ReminderSyncBaselineStore.install(dataDirectory: dataRoot)
+    defer { ReminderSyncBaselineStore.reset() }
+    let projectPageURL = pagesRoot.appendingPathComponent("2026.md", isDirectory: false)
+    try """
+    tags:: 프로젝트
+    reminder_list_external_id:: list-ext-1
+
+    - TODO Edited Logseq title
+      reminder_external_id:: task-ext-1
+    """.write(to: projectPageURL, atomically: true, encoding: .utf8)
+    let remoteModifiedAt = Date(timeIntervalSince1970: 1_000)
+    ReminderSyncBaselineStore.upsert(
+      reminderExternalIdentifier: "task-ext-1",
+      state: ReminderSyncTaskState(
+        title: "Original title",
+        isCompleted: false,
+        date: nil,
+        repeatRule: nil,
+        noteText: nil
+      ),
+      remoteModifiedAt: remoteModifiedAt,
+      now: remoteModifiedAt
+    )
+    let provider = ProvisioningFakeReminderProjectProvider()
+    provider.importBatch = ReminderImportSnapshotBatch(
+      lists: [
+        .init(
+          identifier: "list-ext-1",
+          externalIdentifier: "list-ext-1",
+          title: "2026",
+          colorHex: nil
+        ),
+      ],
+      itemsByListIdentifier: [
+        "list-ext-1": [
+          ReminderItemImportSnapshot(
+            identifier: "task-local-1",
+            externalIdentifier: "task-ext-1",
+            parentExternalIdentifier: nil,
+            sourceListIdentifier: "list-ext-1",
+            sourceListTitle: "2026",
+            title: "Original title",
+            notes: "",
+            attachmentCount: 0,
+            isCompleted: false,
+            completionDate: nil,
+            startDate: nil,
+            dueDate: nil,
+            scheduleHasExplicitTime: false,
+            scheduledDurationMinutes: nil,
+            priority: 0,
+            recurrenceRuleRaw: nil,
+            isFlagged: false,
+            requiredWorkDays: 0,
+            createdAt: remoteModifiedAt,
+            modifiedAt: remoteModifiedAt
+          ),
+        ],
+      ]
+    )
+
+    _ = try await RetainedLogseqProjectProvisioningSync.syncChangedPages(
+      fileURLs: [projectPageURL],
+      store: LogseqProjectPageStore(pagesRootURL: pagesRoot),
+      reminderProjectProvider: provider
+    )
+
+    XCTAssertEqual(provider.titleWrites.map(\.title), ["Edited Logseq title"])
+    XCTAssertEqual(provider.titleWrites.first?.reference.reminderIdentifier, "task-local-1")
+    XCTAssertEqual(provider.titleWrites.first?.reference.reminderExternalIdentifier, "task-ext-1")
+  }
+
   func testExistingReminderBackedTaskChangesUpdateReminderInPlace() async throws {
     let graphRoot = try makeTemporaryDirectory()
     let pagesRoot = graphRoot.appendingPathComponent("pages", isDirectory: true)
@@ -1006,6 +1083,7 @@ private final class ProvisioningFakeReminderProjectProvider: ReminderProjectProv
   var titleWrites: [TitleWrite] = []
   var noteWrites: [NoteWrite] = []
   var taskSnapshotsByExternalIdentifier: [String: ReminderTaskRemoteSnapshot] = [:]
+  var importBatch: ReminderImportSnapshotBatch?
 
   var reminderGateway: ReminderGateway? { nil }
   var defaultCalendarIdentifierForNewReminders: String? { nil }
@@ -1015,8 +1093,16 @@ private final class ProvisioningFakeReminderProjectProvider: ReminderProjectProv
   func fetchImportSnapshotBatch(
     forListIdentifiers identifiers: [String]
   ) async throws -> ReminderImportSnapshotBatch? {
-    _ = identifiers
-    return nil
+    guard let importBatch else { return nil }
+    let requestedIdentifiers = Set(identifiers)
+    let lists = importBatch.lists.filter { requestedIdentifiers.contains($0.identifier) }
+    let itemsByListIdentifier = importBatch.itemsByListIdentifier.filter {
+      requestedIdentifiers.contains($0.key)
+    }
+    return ReminderImportSnapshotBatch(
+      lists: lists,
+      itemsByListIdentifier: itemsByListIdentifier
+    )
   }
 
   func createProjectList(title: String) throws -> ReminderProjectListSnapshot {

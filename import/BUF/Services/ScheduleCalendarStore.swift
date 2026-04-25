@@ -192,19 +192,32 @@ protocol ScheduleCalendarServicing: AnyObject, ScheduleCalendarMirrorFetching,
 
 enum ScheduleCalendarAccessPromptPolicy {
   static let promptAttemptedKey = "schedule.calendarAccessPromptAttempted"
+  static let promptAttemptedIdentityKey = "schedule.calendarAccessPromptAttemptedIdentity"
 
   static func shouldRequestAccess(
     authorizationStatus: EKAuthorizationStatus,
     promptAttempted: Bool
   ) -> Bool {
+    _ = promptAttempted
     switch authorizationStatus {
     case .notDetermined:
-      return !promptAttempted
+      return true
     case .fullAccess, .authorized, .writeOnly, .denied, .restricted:
       return false
     @unknown default:
       return false
     }
+  }
+
+  static func promptAttemptedForCurrentIdentity(
+    storedIdentity: String?,
+    currentIdentity: String?,
+    legacyPromptAttempted: Bool
+  ) -> Bool {
+    guard let currentIdentity else {
+      return legacyPromptAttempted
+    }
+    return storedIdentity == currentIdentity
   }
 
   static func hasStalePromptAttempt(
@@ -1273,7 +1286,15 @@ final class ScheduleCalendarStore: ObservableObject, ScheduleCalendarServicing,
       return false
     case .notDetermined:
       let promptAttemptedKey = ScheduleCalendarAccessPromptPolicy.promptAttemptedKey
-      let storedPromptAttempted = userDefaults.bool(forKey: promptAttemptedKey)
+      let currentIdentity = AppPermissionPromptIdentity.current()
+      let storedPromptAttempted =
+        ScheduleCalendarAccessPromptPolicy.promptAttemptedForCurrentIdentity(
+          storedIdentity: userDefaults.string(
+            forKey: ScheduleCalendarAccessPromptPolicy.promptAttemptedIdentityKey
+          ),
+          currentIdentity: currentIdentity,
+          legacyPromptAttempted: userDefaults.bool(forKey: promptAttemptedKey)
+        )
       guard ScheduleCalendarAccessPromptPolicy.shouldRequestAccess(
         authorizationStatus: authorizationStatus,
         promptAttempted: storedPromptAttempted
@@ -1281,6 +1302,12 @@ final class ScheduleCalendarStore: ObservableObject, ScheduleCalendarServicing,
         return false
       }
       userDefaults.set(true, forKey: promptAttemptedKey)
+      if let currentIdentity {
+        userDefaults.set(
+          currentIdentity,
+          forKey: ScheduleCalendarAccessPromptPolicy.promptAttemptedIdentityKey
+        )
+      }
       var granted = try await eventStore.requestFullAccessToEvents()
       if !granted && EKEventStore.authorizationStatus(for: .event) == .notDetermined {
         granted = try await requestFullAccessToEventsWithCompletionHandler()

@@ -3,7 +3,7 @@ import XCTest
 @testable import BrainUnfogHarness
 
 final class ScheduleCalendarAccessPromptPolicyTests: XCTestCase {
-  func testRequestsOnlyWhenAuthorizationIsNotDeterminedAndPromptWasNotAttempted() {
+  func testRequestsWhenAuthorizationIsNotDetermined() {
     XCTAssertTrue(
       ScheduleCalendarAccessPromptPolicy.shouldRequestAccess(
         authorizationStatus: .notDetermined,
@@ -12,8 +12,8 @@ final class ScheduleCalendarAccessPromptPolicyTests: XCTestCase {
     )
   }
 
-  func testDoesNotRequestAgainWhenAuthorizationIsStillNotDeterminedAfterPromptWasAttempted() {
-    XCTAssertFalse(
+  func testStillRequestsWhenAuthorizationRemainsNotDeterminedAfterPromptAttempt() {
+    XCTAssertTrue(
       ScheduleCalendarAccessPromptPolicy.shouldRequestAccess(
         authorizationStatus: .notDetermined,
         promptAttempted: true
@@ -54,6 +54,30 @@ final class ScheduleCalendarAccessPromptPolicyTests: XCTestCase {
     )
     XCTAssertTrue(
       ScheduleCalendarAccessPromptPolicy.shouldPersistPromptAttempt(after: .denied)
+    )
+  }
+
+  func testLegacyPromptAttemptDoesNotSuppressDifferentExecutableIdentity() {
+    XCTAssertFalse(
+      ScheduleCalendarAccessPromptPolicy.promptAttemptedForCurrentIdentity(
+        storedIdentity: nil,
+        currentIdentity: "build-2",
+        legacyPromptAttempted: true
+      )
+    )
+    XCTAssertFalse(
+      ScheduleCalendarAccessPromptPolicy.promptAttemptedForCurrentIdentity(
+        storedIdentity: "build-1",
+        currentIdentity: "build-2",
+        legacyPromptAttempted: true
+      )
+    )
+    XCTAssertTrue(
+      ScheduleCalendarAccessPromptPolicy.promptAttemptedForCurrentIdentity(
+        storedIdentity: "build-2",
+        currentIdentity: "build-2",
+        legacyPromptAttempted: false
+      )
     )
   }
 }

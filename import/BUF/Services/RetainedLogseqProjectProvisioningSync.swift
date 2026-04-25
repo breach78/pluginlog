@@ -63,6 +63,11 @@ enum RetainedLogseqProjectProvisioningSync {
       }
 
       let projectID = RetainedProjectionBuilder.derivedProjectID(for: listIdentifier)
+      let prefetchedRemoteSnapshotsByExternalIdentifier =
+        await remoteTaskSnapshotsByExternalIdentifier(
+          inListIdentifier: listIdentifier,
+          reminderProjectProvider: reminderProjectProvider
+        )
       var taskIdentifiersByIndex: [Int: String] = [:]
       let blockedReminderIdentifiers = duplicatedReminderIdentifiers(in: page.externalTasks)
 
@@ -75,6 +80,8 @@ enum RetainedLogseqProjectProvisioningSync {
             task,
             projectID: projectID,
             reminderExternalIdentifier: reminderExternalIdentifier,
+            prefetchedRemoteSnapshot:
+              prefetchedRemoteSnapshotsByExternalIdentifier[reminderExternalIdentifier],
             reminderProjectProvider: reminderProjectProvider,
             taskRecords: &taskRecords,
             now: now
@@ -159,6 +166,7 @@ enum RetainedLogseqProjectProvisioningSync {
     _ task: LogseqProjectPageStore.TaskRecord,
     projectID: UUID,
     reminderExternalIdentifier: String,
+    prefetchedRemoteSnapshot: ReminderTaskRemoteSnapshot?,
     reminderProjectProvider: ReminderProjectProvider,
     taskRecords: inout [TaskIdentityBridgeRecord],
     now: Date
@@ -166,14 +174,26 @@ enum RetainedLogseqProjectProvisioningSync {
     let taskID = ReminderProjectionIdentity.taskID(for: reminderExternalIdentifier)
     let reference = ReminderTaskReference(
       taskID: taskID,
-      reminderIdentifier: nil,
+      reminderIdentifier: prefetchedRemoteSnapshot?.identifier,
       reminderExternalIdentifier: reminderExternalIdentifier
     )
 
-    guard let snapshot = try reminderProjectProvider.taskSnapshot(for: reference) else {
+    let snapshot: ReminderTaskRemoteSnapshot?
+    if let prefetchedRemoteSnapshot {
+      snapshot = prefetchedRemoteSnapshot
+    } else {
+      snapshot = try reminderProjectProvider.taskSnapshot(for: reference)
+    }
+    guard let snapshot else {
+      AppLogger.sync.info(
+        "logseq reminder push skipped missing remote snapshot external=\(reminderExternalIdentifier, privacy: .public)"
+      )
       return
     }
     guard let baseline = ReminderSyncBaselineStore.baseline(for: reminderExternalIdentifier) else {
+      AppLogger.sync.info(
+        "logseq reminder push skipped missing baseline external=\(reminderExternalIdentifier, privacy: .public)"
+      )
       return
     }
     let fieldsToPush = ReminderSyncTaskMerge.fieldsToPush(
@@ -184,6 +204,10 @@ enum RetainedLogseqProjectProvisioningSync {
     guard !fieldsToPush.isEmpty else {
       return
     }
+    let pushedFieldNames = fieldsToPush.map(\.rawValue).joined(separator: ",")
+    AppLogger.sync.info(
+      "logseq reminder push fields=\(pushedFieldNames, privacy: .public) external=\(reminderExternalIdentifier, privacy: .public)"
+    )
 
     var updatedAt: Date?
     var pushedFields: [ReminderSyncTaskField] = []
@@ -270,6 +294,54 @@ enum RetainedLogseqProjectProvisioningSync {
         updatedAt: updatedAt
       )
     )
+  }
+
+  private static func remoteTaskSnapshotsByExternalIdentifier(
+    inListIdentifier listIdentifier: String,
+    reminderProjectProvider: ReminderProjectProvider
+  ) async -> [String: ReminderTaskRemoteSnapshot] {
+    guard let batch = try? await reminderProjectProvider.fetchImportSnapshotBatch(
+      forListIdentifiers: [listIdentifier]
+    ) else {
+      return [:]
+    }
+
+    let items = batch.itemsByListIdentifier[listIdentifier] ?? []
+    var snapshotsByIdentifier: [String: ReminderTaskRemoteSnapshot] = [:]
+    var duplicatedIdentifiers: Set<String> = []
+
+    for item in items {
+      guard let reminderExternalIdentifier = normalized(item.externalIdentifier)
+        ?? normalized(item.identifier)
+      else {
+        continue
+      }
+      if snapshotsByIdentifier[reminderExternalIdentifier] != nil {
+        duplicatedIdentifiers.insert(reminderExternalIdentifier)
+        snapshotsByIdentifier.removeValue(forKey: reminderExternalIdentifier)
+        continue
+      }
+      guard !duplicatedIdentifiers.contains(reminderExternalIdentifier) else {
+        continue
+      }
+      snapshotsByIdentifier[reminderExternalIdentifier] = ReminderTaskRemoteSnapshot(
+        identifier: item.identifier,
+        externalIdentifier: reminderExternalIdentifier,
+        calendarIdentifier: item.sourceListIdentifier,
+        title: item.title,
+        noteText: ReminderNoteSourceCodec.normalizeReminderRawNote(item.notes),
+        isCompleted: item.isCompleted,
+        completionDate: item.completionDate,
+        startDate: item.startDate,
+        dueDate: item.dueDate,
+        hasExplicitTime: item.scheduleHasExplicitTime,
+        priority: item.priority,
+        recurrenceRuleRaw: item.recurrenceRuleRaw,
+        modifiedAt: item.modifiedAt
+      )
+    }
+
+    return snapshotsByIdentifier
   }
 
   private static func encodedDate(_ date: Date?, hasExplicitTime: Bool) -> String? {

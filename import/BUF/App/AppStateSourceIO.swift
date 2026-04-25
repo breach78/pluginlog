@@ -166,6 +166,9 @@ extension AppState {
   }
 
   func handleLogseqPagesDirectoryChange(_ changedFiles: [URL]) async {
+    AppLogger.sync.info(
+      "logseq page change detected files=\(changedFiles.count, privacy: .public) initialSync=\(self.isInitialSyncRunning, privacy: .public)"
+    )
     guard !isInitialSyncRunning else {
       queueReminderSourceRefresh(reason: .manual)
       return
@@ -177,6 +180,7 @@ extension AppState {
       )
       let filesToSync = uniqueLogseqPageFileURLs(changedFiles + cascadeChangedFiles)
       guard try await reminderProjectProvider.requestAccess() else {
+        AppLogger.sync.error("logseq page change skipped because reminders access is denied")
         syncStatus = "Reminders access denied"
         return
       }
@@ -186,6 +190,9 @@ extension AppState {
         reminderProjectProvider: reminderProjectProvider
       )
       applyRetainedLogseqProvisioningResult(result)
+      AppLogger.sync.info(
+        "logseq page change synced createdProjects=\(result.createdProjectCount, privacy: .public) createdTasks=\(result.createdTaskCount, privacy: .public) taskRecords=\(result.taskRecords.count, privacy: .public)"
+      )
       if result.createdProjectCount > 0 || result.createdTaskCount > 0 {
         syncStatus = "Synced \(result.createdProjectCount) lists / \(result.createdTaskCount) tasks"
       } else if !cascadeChangedFiles.isEmpty {

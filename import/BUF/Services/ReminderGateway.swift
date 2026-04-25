@@ -86,13 +86,26 @@ final class EventKitReminderGateway: ReminderGateway {
       return false
     case .notDetermined:
       let promptAttemptedKey = ReminderAccessPromptPolicy.promptAttemptedKey
+      let currentIdentity = AppPermissionPromptIdentity.current()
       guard ReminderAccessPromptPolicy.shouldRequestAccess(
         authorizationStatus: authorizationStatus,
-        promptAttempted: userDefaults.bool(forKey: promptAttemptedKey)
+        promptAttempted: ReminderAccessPromptPolicy.promptAttemptedForCurrentIdentity(
+          storedIdentity: userDefaults.string(
+            forKey: ReminderAccessPromptPolicy.promptAttemptedIdentityKey
+          ),
+          currentIdentity: currentIdentity,
+          legacyPromptAttempted: userDefaults.bool(forKey: promptAttemptedKey)
+        )
       ) else {
         return false
       }
       userDefaults.set(true, forKey: promptAttemptedKey)
+      if let currentIdentity {
+        userDefaults.set(
+          currentIdentity,
+          forKey: ReminderAccessPromptPolicy.promptAttemptedIdentityKey
+        )
+      }
     @unknown default:
       return false
     }
@@ -384,19 +397,47 @@ final class EventKitReminderGateway: ReminderGateway {
 
 enum ReminderAccessPromptPolicy {
   static let promptAttemptedKey = "reminders.accessPromptAttempted"
+  static let promptAttemptedIdentityKey = "reminders.accessPromptAttemptedIdentity"
 
   static func shouldRequestAccess(
     authorizationStatus: EKAuthorizationStatus,
     promptAttempted: Bool
   ) -> Bool {
+    _ = promptAttempted
     switch authorizationStatus {
     case .notDetermined:
-      return !promptAttempted
+      return true
     case .fullAccess, .authorized, .writeOnly, .denied, .restricted:
       return false
     @unknown default:
       return false
     }
+  }
+
+  static func promptAttemptedForCurrentIdentity(
+    storedIdentity: String?,
+    currentIdentity: String?,
+    legacyPromptAttempted: Bool
+  ) -> Bool {
+    guard let currentIdentity else {
+      return legacyPromptAttempted
+    }
+    return storedIdentity == currentIdentity
+  }
+}
+
+enum AppPermissionPromptIdentity {
+  static func current(bundle: Bundle = .main) -> String? {
+    guard let executableURL = bundle.executableURL else {
+      return bundle.bundleIdentifier
+    }
+    let values = try? executableURL.resourceValues(
+      forKeys: [.contentModificationDateKey, .fileSizeKey]
+    )
+    let bundleIdentifier = bundle.bundleIdentifier ?? "unknown"
+    let fileSize = values?.fileSize ?? 0
+    let modifiedAt = values?.contentModificationDate?.timeIntervalSince1970 ?? 0
+    return "\(bundleIdentifier):\(fileSize):\(modifiedAt)"
   }
 }
 
