@@ -10,7 +10,8 @@
 - Create a Reminder list for a project-tagged note that has no `reminder_list_external_id`.
 - Create a Reminder item for a task inside a synced project note that has no `reminder_external_id`.
 - Write newly created canonical identities back to the same Obsidian note through `ObsidianProjectMarkdownStore` with a stale baseline.
-- Push existing task title, TODO/DONE, date/time, repeat, and subtree note changes to Reminders when baseline proves the local field changed and the remote field did not.
+- Push existing task title, TODO/DONE, date/time, and subtree note changes to Reminders when baseline proves the local field changed and the remote field did not.
+- Do not push `repeat` metadata to Reminders. Recurrence is Reminders-owned and inbound-only.
 - Keep `duration` Obsidian/BUF-only and never write it to Reminders.
 - Update `ReminderSyncBaselineStore` after successful create/update pushes.
 
@@ -41,7 +42,7 @@
 - Existing task title changes push to Reminders when baseline is safe.
 - Existing TODO/DONE changes push completion to Reminders when baseline is safe.
 - Existing date/time changes push Reminder due date/time when baseline is safe.
-- Existing repeat changes push Reminder recurrence when baseline is safe.
+- Existing repeat changes do not call any Reminder recurrence write.
 - Existing duration changes do not call any Reminder write.
 - Existing subtree changes push Reminder note when baseline is safe.
 - Duplicate identities fail closed without creating or updating Reminders.
@@ -54,7 +55,7 @@
 - `ObsidianReminderProvisioningSyncTests`
   - `testNewProjectNoteCreatesReminderListAndWritesCanonicalID`
   - `testNewTaskCreatesReminderItemAndWritesCanonicalID`
-  - `testExistingTaskTitleCompletionDateTimeRepeatAndNotePushToReminder`
+  - `testExistingTaskTitleCompletionDateTimeAndNotePushToReminderWithoutRecurrenceWrite`
   - `testDurationEditDoesNotWriteReminder`
   - `testDuplicateIDsFailClosedBeforeReminderWrites`
   - `testDamagedMetadataFailsClosedBeforeReminderWrites`

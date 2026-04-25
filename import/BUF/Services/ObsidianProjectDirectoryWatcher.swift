@@ -102,6 +102,7 @@ final class ObsidianProjectDirectoryWatcher: @unchecked Sendable {
   static let defaultDebounceNanoseconds: UInt64 = 10_000_000_000
   static let defaultFastDebounceNanoseconds: UInt64 = 500_000_000
   static let defaultFastPollingNanoseconds: UInt64 = 750_000_000
+  static let defaultFastPollingEnabled = false
 
   private let vaultRootURL: URL
   private let projectsRootURL: URL
@@ -129,7 +130,9 @@ final class ObsidianProjectDirectoryWatcher: @unchecked Sendable {
     debounceNanoseconds: UInt64 = ObsidianProjectDirectoryWatcher.defaultDebounceNanoseconds,
     fastDebounceNanoseconds: UInt64 = ObsidianProjectDirectoryWatcher.defaultFastDebounceNanoseconds,
     pollingNanoseconds: UInt64? = ObsidianProjectDirectoryWatcher.defaultDebounceNanoseconds,
-    fastPollingNanoseconds: UInt64? = ObsidianProjectDirectoryWatcher.defaultFastPollingNanoseconds,
+    fastPollingNanoseconds: UInt64? = ObsidianProjectDirectoryWatcher.defaultFastPollingEnabled
+      ? ObsidianProjectDirectoryWatcher.defaultFastPollingNanoseconds
+      : nil,
     tracker: ObsidianProjectChangeTracker = ObsidianProjectChangeTracker(),
     pollingTracker: ObsidianProjectChangeTracker = ObsidianProjectChangeTracker(),
     fastTracker: ObsidianProjectChangeTracker = ObsidianProjectChangeTracker(),

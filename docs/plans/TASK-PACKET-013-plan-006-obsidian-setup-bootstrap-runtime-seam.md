@@ -14,7 +14,9 @@ actual app setup path, without cutting Timeline/Schedule over to Obsidian yet.
 - Prepare only app-owned directories:
   - `<vault>/.buf`
   - `<vault>/raw/projects`
-- Run first sync as Reminders -> Obsidian bootstrap.
+- Run first sync as Reminders -> Obsidian bootstrap only when `raw/projects`
+  has no project notes. If project notes already exist, run safe
+  Reminders -> Obsidian reconciliation instead of bootstrap overwrite.
 - Use `ReminderGatewayImportSnapshotProvider` to fetch Reminders snapshots and
   `ObsidianReminderBootstrapSync` to write project notes.
 - Do not run Logseq import/provisioning when Obsidian mode is configured.
@@ -52,10 +54,12 @@ actual app setup path, without cutting Timeline/Schedule over to Obsidian yet.
 - `hasCompletedInitialSetup` may be true when either Logseq or Obsidian setup
   is configured, but Obsidian setup must only persist active state after
   Reminders-first bootstrap succeeds.
-- Obsidian bootstrap must fetch Reminders and write only under `raw/projects`.
+- Obsidian bootstrap/reconciliation must fetch Reminders and write only under
+  `raw/projects`.
 - Obsidian setup must call `ObsidianVaultLayout.prepareAppDirectories()` and
   therefore fail if `.obsidian` is missing.
-- Obsidian helper install remains explicit and is not called automatically.
+- Obsidian helper install/update is automatic for the selected vault, but helper
+  auto-enable remains out of scope.
 - When both legacy Logseq preferences and Obsidian preferences exist, Obsidian
   mode wins for setup/bootstrap. This slice does not delete Logseq preferences.
 

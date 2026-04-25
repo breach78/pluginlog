@@ -28,7 +28,8 @@ The mapping is:
 - `date:: YYYY-MM-DD HH:MM` = timed Reminder due date and timed Schedule task block.
 - `duration:: <minutes>` = Logseq/app-owned Schedule block length.
 - Missing `duration::` on a timed task uses a 15 minute default in Schedule.
-- `repeat::` syncs with Apple Reminders recurrence where supported.
+- `repeat::` is Reminders-owned and inbound-only. Brain Unfog may display that
+  recurrence exists, but must not write or simplify Apple Reminders recurrence.
 
 Brain Unfog must not create, update, or delete Apple Calendar events from Reminder-backed tasks.
 Apple Calendar events are read-only Schedule overlays for context.

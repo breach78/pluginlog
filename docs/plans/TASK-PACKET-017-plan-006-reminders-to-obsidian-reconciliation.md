@@ -14,7 +14,10 @@ Safely merge Reminders list/item changes into `<vault>/raw/projects/*.md` while 
 - Fetch Reminders snapshots through `ReminderImportSnapshotBatch`.
 - Create a project note when a Reminder list has no matching `reminder_list_external_id`.
 - Add a task when a Reminder item has no matching `reminder_external_id` in its project note.
-- Update existing task title, TODO/DONE, date/time, repeat, and subtree from Reminder note when baseline rules allow.
+- Update existing task title, TODO/DONE, date/time, repeat marker, and subtree
+  from Reminder note when baseline rules allow.
+- Store only `repeat:"reminder"` when Reminders reports any recurrence; never
+  import recurrence details that could later be written back as simplified rules.
 - Preserve Obsidian-only `duration`.
 - Preserve existing untracked note body lines and existing task order byte-for-byte outside targeted safe field/subtree edits.
 - Write back through `ObsidianProjectMarkdownStore` with expected baselines.

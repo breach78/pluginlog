@@ -1,8 +1,124 @@
-.brain-unfog-metadata-chip {
-  border-radius: 4px;
-  background: var(--background-modifier-hover);
+.metadata-property[data-property-key="brain_unfog_project_id"],
+.metadata-property[data-property-key="brain_unfog_task_id"],
+.metadata-property[data-property-key="calendar_event_external_id"],
+.metadata-property[data-property-key="reminder_external_id"],
+.metadata-property[data-property-key="reminder_list_external_id"],
+.cm-line.brain-unfog-hidden-line,
+.brain-unfog-hidden-rendered-metadata {
+  display: none !important;
+}
+
+body.brain-unfog-hide-completed-subtrees .cm-line.brain-unfog-completed-subtree-line,
+body.brain-unfog-hide-completed-subtrees .markdown-preview-view .task-list-item.is-checked,
+body.brain-unfog-hide-completed-subtrees .markdown-reading-view .task-list-item.is-checked {
+  display: none !important;
+}
+
+.brain-unfog-completed-toggle-status {
+  cursor: pointer;
   color: var(--text-muted);
-  padding: 0 6px;
-  font-size: 0.85em;
-  line-height: 1.6;
+}
+
+.brain-unfog-completed-toggle-status:hover {
+  color: var(--text-normal);
+}
+
+.modal.brain-unfog-schedule-modal {
+  width: auto;
+}
+
+.modal.brain-unfog-schedule-modal .modal-content {
+  padding: 0;
+}
+
+.brain-unfog-date-popover {
+  width: 210px;
+  padding: 10px;
+  border-radius: 12px;
+  background: var(--background-primary);
+}
+
+.brain-unfog-date-header {
+  display: grid;
+  grid-template-columns: 28px 1fr 28px;
+  align-items: center;
+  gap: 4px;
+  margin-bottom: 8px;
+}
+
+.brain-unfog-month-button {
+  border: 0;
+  box-shadow: none;
+  color: var(--text-accent);
+  font-size: 16px;
+  font-weight: 700;
+  background: transparent;
+}
+
+.brain-unfog-month-title {
+  text-align: center;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.brain-unfog-weekdays,
+.brain-unfog-day-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 3px;
+}
+
+.brain-unfog-weekday {
+  color: var(--text-muted);
+  text-align: center;
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.brain-unfog-day {
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  box-shadow: none;
+  color: var(--text-normal);
+  background: transparent;
+  font-size: 15px;
+  line-height: 26px;
+}
+
+.brain-unfog-day.is-outside-month {
+  color: var(--text-faint);
+}
+
+.brain-unfog-day.is-today {
+  color: var(--text-accent);
+}
+
+.brain-unfog-day.is-selected {
+  color: var(--text-on-accent);
+  background: var(--interactive-accent);
+}
+
+.brain-unfog-schedule-row {
+  display: grid;
+  grid-template-columns: 1fr 14px 1fr;
+  align-items: center;
+  gap: 4px;
+  margin-top: 8px;
+}
+
+.brain-unfog-schedule-row input {
+  width: 100%;
+  height: 26px;
+  padding: 0 4px;
+  text-align: center;
+  font-size: 15px;
+}
+
+.brain-unfog-time-separator {
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 15px;
 }

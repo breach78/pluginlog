@@ -113,6 +113,11 @@ struct ReminderGatewayImportSnapshotProvider {
       }
   }
 
+  func fetchAllBatch() async throws -> ReminderImportSnapshotBatch {
+    let calendars = try await gateway.fetchAllCalendars()
+    return try await batch(for: calendars)
+  }
+
   func fetchItemsByList(
     for lists: [ReminderListImportSnapshot]
   ) async throws -> [String: [ReminderItemImportSnapshot]] {
@@ -174,17 +179,7 @@ struct ReminderGatewayImportSnapshotProvider {
     let lists = normalizedIdentifiers.compactMap { identifier in
       calendarsByIdentifier[identifier].map(listSnapshot(for:))
     }
-    let itemsByListIdentifier = try await fetchItemsByList(
-      for: lists,
-      calendarsByIdentifier: calendarsByIdentifier
-    )
-
-    return ReminderImportSnapshotBatch(
-      lists: lists.sorted { lhs, rhs in
-        lhs.title.localizedStandardCompare(rhs.title) == .orderedAscending
-      },
-      itemsByListIdentifier: itemsByListIdentifier
-    )
+    return try await batch(for: lists, calendarsByIdentifier: calendarsByIdentifier)
   }
 
   func listSnapshot(for calendar: EKCalendar) -> ReminderListImportSnapshot {
@@ -195,6 +190,31 @@ struct ReminderGatewayImportSnapshotProvider {
       colorHex: calendar.cgColor.flatMap { cgColor in
         ColorHexCodec.hexString(from: NSColor(cgColor: cgColor))
       }
+    )
+  }
+
+  private func batch(for calendars: [EKCalendar]) async throws -> ReminderImportSnapshotBatch {
+    var calendarsByIdentifier: [String: EKCalendar] = [:]
+    for calendar in calendars {
+      calendarsByIdentifier[calendar.calendarIdentifier] = calendar
+    }
+    let lists = calendars.map(listSnapshot(for:))
+    return try await batch(for: lists, calendarsByIdentifier: calendarsByIdentifier)
+  }
+
+  private func batch(
+    for lists: [ReminderListImportSnapshot],
+    calendarsByIdentifier: [String: EKCalendar]
+  ) async throws -> ReminderImportSnapshotBatch {
+    let itemsByListIdentifier = try await fetchItemsByList(
+      for: lists,
+      calendarsByIdentifier: calendarsByIdentifier
+    )
+    return ReminderImportSnapshotBatch(
+      lists: lists.sorted { lhs, rhs in
+        lhs.title.localizedStandardCompare(rhs.title) == .orderedAscending
+      },
+      itemsByListIdentifier: itemsByListIdentifier
     )
   }
 

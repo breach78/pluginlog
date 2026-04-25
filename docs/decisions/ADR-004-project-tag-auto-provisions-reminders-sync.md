@@ -37,7 +37,8 @@ TODO/DONE blocks on those ordinary pages remain Logseq-only.
 - Task text is the Reminders item title.
 - TODO/DONE state syncs with Reminder completion.
 - `date::` syncs with Reminder due date or due date-time.
-- `repeat::` syncs with Reminder recurrence where supported.
+- `repeat::` is an inbound-only marker that shows a Reminder has recurrence;
+  Brain Unfog must not write, simplify, or clear Reminder recurrence.
 - `duration::` stays in Logseq/app state for Schedule block length.
 - Bullet order, nesting, and non-task bullets remain Logseq-only.
 - If creating the Reminders list or item fails, the Logseq page/task remains unlinked and is reported as sync-needed or repair-needed.

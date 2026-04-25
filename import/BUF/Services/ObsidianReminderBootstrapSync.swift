@@ -312,12 +312,7 @@ enum ObsidianReminderBootstrapSync {
   }
 
   private static func encodeRepeat(_ rawValue: String?) -> String? {
-    guard let value = normalized(rawValue)?.lowercased() else { return nil }
-    if value == "daily" || value.hasPrefix("daily|") { return "daily" }
-    if value == "weekly" || value.hasPrefix("weekly|") { return "weekly" }
-    if value == "monthly" || value.hasPrefix("monthly|") { return "monthly" }
-    if value == "yearly" || value.hasPrefix("yearly|") { return "yearly" }
-    return nil
+    ReminderScheduleMetadataCodec.encodeRepeat(rawValue)
   }
 
   private static let dateOnlyFormatter: DateFormatter = {

@@ -15,9 +15,14 @@ Updated 2026-04-25 after TASK-PACKET-021.
 - Phase 2 project Markdown store seam: complete.
 - Phase 3 Obsidian vault setup and Reminders-first bootstrap runtime seam:
   complete.
-- Phase 4 helper installer/resource seam: complete, but helper auto-enable and
-  required runtime dependence remain out of scope.
+- Phase 4 helper installer/resource seam: complete. The app installs/updates
+  the helper into the selected vault on launch/vault configure and exposes a
+  settings retry button; helper auto-enable and required runtime dependence
+  remain out of scope.
 - Phase 5 Reminders-first Obsidian bootstrap: complete.
+- Reminders-first bootstrap is only used when `raw/projects` has no existing
+  project notes. Existing project notes use reconciliation so local-only prose
+  is preserved and setup/startup does not repeatedly raise overwrite alerts.
 - Phase 6 Obsidian -> Reminders create/update/delete sync: complete for
   project notes/tasks, task fields, subtree notes, duration-only metadata, and
   safe task deletion.
@@ -125,7 +130,9 @@ Rules:
 - `date` is stored as `yyyy-mm-dd` and maps to Reminder due date.
 - `time` is optional `HH:mm` local time and maps to Reminder due time when
   present.
-- `repeat` maps to Reminder recurrence where supported.
+- `repeat` is inbound-only. Reminders recurrence is represented as
+  `repeat:"reminder"` for display, and Obsidian/BUF never writes recurrence
+  changes back to Reminders.
 - `duration` is app/Obsidian-only Schedule block length.
 - The whole task subtree syncs with the Reminder note.
 - Task subtree and Reminder note sync must preserve `t:<id>` child-task markers
@@ -523,7 +530,9 @@ Likely files:
 
 Tasks:
 
-- Install helper into `<vault>/.obsidian/plugins/brain-unfog-obsidian-helper`.
+- Install helper into `<vault>/.obsidian/plugins/brain-unfog-helper`.
+- Install/update the helper automatically for the selected vault on launch and
+  vault change, with a settings button for manual retry.
 - Do not silently enable the helper by editing Obsidian config; expose this as
   a setup step unless explicit auto-enable approval exists.
 - Observe vault changes only after Obsidian layout is ready.
@@ -542,7 +551,8 @@ Tasks:
 
 Acceptance:
 
-- Plugin can be installed by the app.
+- Plugin can be installed/updated by the app without modifying Obsidian
+  enablement config.
 - Plugin enablement state is visible in setup/status UI.
 - Plugin can focus/highlight a known task.
 - Plugin can apply a metadata update without creating an Obsidian conflict.
@@ -602,7 +612,9 @@ Tasks:
 - Project-tagged Obsidian note under `raw/projects/` without
   `reminder_list_external_id` creates a Reminders list.
 - Task inside a synced note without `reminder_external_id` creates a Reminder.
-- Task title/completion/date/repeat updates push to Reminders.
+- Task title/completion/date updates push to Reminders.
+- Repeat metadata never pushes to Reminders; Reminders recurrence remains
+  source-owned and is only mirrored as `repeat:"reminder"`.
 - Task deletion deletes or tombstones the Reminder only when identity and
   baseline rules are unambiguous.
 - Duration updates remain Obsidian/app only.

@@ -48,7 +48,8 @@ The policy below keeps those risks bounded by reducing symmetry and making BUF t
 - project page title syncs with BUF project title
 - BUF project title syncs with Apple Reminders list title
 - Logseq task blocks sync with Apple Reminders items
-- Logseq `date::`, `duration::`, `repeat::` sync with BUF scheduling fields
+- Logseq `date::`, `duration::`, and inbound-only `repeat::` markers sync with
+  BUF scheduling fields
 - Reminder-backed tasks render in Schedule with Logseq/app-owned duration blocks
 - Apple Calendar events render as read-only overlays in BUF
 - project selection in BUF opens the corresponding Logseq page
@@ -252,7 +253,8 @@ Field fan-out in V1:
 - `completion state` syncs across Logseq, BUF, and Reminders
 - `date::` is the shared task time field and syncs to Reminders due date/date-time
 - `duration::` stays in Logseq/app state and controls Schedule task block length
-- `repeat::` syncs to Reminders only in V1
+- `repeat::` is Reminders-owned and inbound-only in V1; BUF may display that a
+  Reminder recurrence exists but must not write or simplify recurrence.
 
 ### Logseq-Only Fields
 

@@ -12,6 +12,7 @@ extension AppState {
     if let obsidianVaultRootURL {
       do {
         try await prepareObsidianLocalContainer(for: obsidianVaultRootURL)
+        installObsidianHelperPluginForCurrentVault()
       } catch {
         storageCoordinator.clearActiveContainer()
         refreshContainerRootURL()
@@ -73,6 +74,7 @@ extension AppState {
       UserDefaults.standard.set(bookmarkData, forKey: Self.obsidianVaultBookmarkDataKey)
       UserDefaults.standard.set(rootURL.path, forKey: Self.obsidianVaultRootPathKey)
       applyObsidianVault(rootURL)
+      installObsidianHelperPluginForCurrentVault()
       enableRetainedSyncConsent()
       await requestRetainedExternalAccess()
       guard await performReminderSourceRefresh(reason: .bootstrap) else {

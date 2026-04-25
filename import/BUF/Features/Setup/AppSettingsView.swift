@@ -3,6 +3,7 @@ import SwiftUI
 struct AppSettingsView: View {
   @EnvironmentObject private var appState: AppState
   @State private var isChangingObsidianVault = false
+  @State private var isInstallingHelperPlugin = false
 
   var body: some View {
     VStack(alignment: .leading, spacing: 18) {
@@ -44,6 +45,33 @@ struct AppSettingsView: View {
             }
           }
 
+          Divider()
+
+          VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 10) {
+              Button("Helper plugin 설치/업데이트") {
+                installHelperPlugin()
+              }
+              .disabled(appState.obsidianVaultRootURL == nil || isInstallingHelperPlugin)
+
+              if isInstallingHelperPlugin {
+                ProgressView()
+                  .controlSize(.small)
+              }
+            }
+
+            Text("설치 후 Obsidian의 Community plugins에서 `Brain Unfog Helper`를 한 번 활성화해야 합니다.")
+              .font(.footnote)
+              .foregroundStyle(.secondary)
+
+            if let status = appState.obsidianHelperPluginInstallStatus {
+              Text(status)
+                .font(.footnote)
+                .foregroundStyle(status.contains("실패") ? .red : .secondary)
+                .textSelection(.enabled)
+            }
+          }
+
           Text("선택 직후 첫 sync는 Reminders -> Obsidian `raw/projects/` 방향입니다.")
             .font(.footnote)
             .foregroundStyle(.secondary)
@@ -81,4 +109,11 @@ struct AppSettingsView: View {
     }
   }
 
+  private func installHelperPlugin() {
+    isInstallingHelperPlugin = true
+    Task { @MainActor in
+      appState.installObsidianHelperPluginForCurrentVault()
+      isInstallingHelperPlugin = false
+    }
+  }
 }

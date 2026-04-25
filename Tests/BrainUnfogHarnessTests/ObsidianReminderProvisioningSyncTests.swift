@@ -69,6 +69,7 @@ final class ObsidianReminderProvisioningSyncTests: XCTestCase {
       reminder_list_external_id: list-1
       ---
       - [ ] Task one
+        %% brain-unfog: {"repeat":"monthly"} %%
         - child note
       """
     )
@@ -91,13 +92,14 @@ final class ObsidianReminderProvisioningSyncTests: XCTestCase {
     XCTAssertEqual(result.createdTaskCount, 1)
     XCTAssertEqual(provider.createdTasks.map(\.title), ["Task one"])
     XCTAssertEqual(provider.createdTasks.first?.noteText, "child note")
+    XCTAssertTrue(provider.updatedRecurrences.isEmpty)
     let snapshots = try await store.loadProjectNotesInScope()
     let task = try XCTUnwrap(snapshots.first?.note.tasks.first)
     XCTAssertEqual(task.reminderExternalIdentifier, "task-1")
     XCTAssertEqual(ReminderSyncBaselineStore.baseline(for: "task-1")?.state.title, "Task one")
   }
 
-  func testExistingTaskTitleCompletionDateTimeRepeatAndNotePushToReminder() async throws {
+  func testExistingTaskTitleCompletionDateTimeAndNotePushToReminderWithoutRecurrenceWrite() async throws {
     let vault = try makeTemporaryVault()
     let dataRoot = try makeTemporaryDirectory()
     ReminderSyncBaselineStore.install(dataDirectory: dataRoot)
@@ -160,7 +162,7 @@ final class ObsidianReminderProvisioningSyncTests: XCTestCase {
       },
       "2026-04-25 09:30"
     )
-    XCTAssertEqual(provider.updatedRecurrences, ["task-1": "monthly|1"])
+    XCTAssertTrue(provider.updatedRecurrences.isEmpty)
   }
 
   func testDurationEditDoesNotWriteReminder() async throws {

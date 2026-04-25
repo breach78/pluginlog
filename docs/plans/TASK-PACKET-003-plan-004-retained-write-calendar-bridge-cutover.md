@@ -60,7 +60,9 @@ Calendar work is limited to lightweight orchestration seam state: policy decisio
   - `date::` is explicit timestamp when time exists
   - `duration::` is stored only when explicit time exists and duration is positive
   - `repeat::` is preserved by schedule edits and not expanded into Calendar recurrence
-- `repeat::` editing itself is out of scope for this slice. A later retained command must update both Logseq `repeat::` and Reminder recurrence when repeat editing is reintroduced.
+- `repeat::` editing itself is out of scope for this slice. Recurrence remains
+  Reminders-owned; later retained commands must preserve the display marker
+  without writing Reminder recurrence.
 - If Reminder write fails after Logseq write, rollback the Logseq managed task record to the pre-write state.
 
 ## Calendar Bridge Write Orchestration Scope

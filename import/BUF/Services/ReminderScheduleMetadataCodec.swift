@@ -7,6 +7,7 @@ enum ReminderScheduleMetadataCodec {
   }
 
   private static let localCalendar = Calendar.autoupdatingCurrent
+  private static let recurrenceDisplayMarker = "reminder"
 
   static func decodeDate(_ rawValue: String?) -> DecodedDate? {
     guard let normalized = normalized(rawValue) else { return nil }
@@ -27,34 +28,15 @@ enum ReminderScheduleMetadataCodec {
   }
 
   static func decodeRepeat(_ rawValue: String?) -> String? {
-    guard let normalized = normalized(rawValue) else { return nil }
-    let value = normalized.lowercased()
-    if value == "daily" || value.hasPrefix("daily|") { return "daily|1" }
-    if value == "weekly" || value.hasPrefix("weekly|") { return "weekly|1|" }
-    if value == "monthly" || value.hasPrefix("monthly|") { return "monthly|1" }
-    if value == "yearly" || value.hasPrefix("yearly|") { return "yearly|1" }
+    // Recurrence is an inbound-only display marker. Never decode Obsidian
+    // metadata into an EventKit recurrence rule because that can simplify and
+    // overwrite custom Reminder recurrence schedules.
     return nil
   }
 
   static func encodeRepeat(_ rawValue: String?) -> String? {
-    guard let normalized = normalized(rawValue) else { return nil }
-    let value = normalized.lowercased()
-    switch value {
-    case "daily":
-      return "daily"
-    case "weekly":
-      return "weekly"
-    case "monthly":
-      return "monthly"
-    case "yearly":
-      return "yearly"
-    default:
-      if value.hasPrefix("daily|") { return "daily" }
-      if value.hasPrefix("weekly|") { return "weekly" }
-      if value.hasPrefix("monthly|") { return "monthly" }
-      if value.hasPrefix("yearly|") { return "yearly" }
-      return nil
-    }
+    guard normalized(rawValue) != nil else { return nil }
+    return recurrenceDisplayMarker
   }
 
   private static func normalized(_ rawValue: String?) -> String? {

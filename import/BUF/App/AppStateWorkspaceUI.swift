@@ -35,12 +35,6 @@ extension AppState {
     isArchiveVisible = false
   }
 
-  func setShowsCompletedTasks(_ showsCompleted: Bool) {
-    guard showsCompletedTasks != showsCompleted else { return }
-    showsCompletedTasks = showsCompleted
-    UserDefaults.standard.set(showsCompleted, forKey: Self.showCompletedTasksKey)
-  }
-
   func handleViewMenuSelection(_ mode: ViewMode) {
     selectViewMode(mode)
   }

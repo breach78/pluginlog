@@ -617,13 +617,6 @@ struct MainWorkspaceView: View {
     )
   }
 
-  var completedTasksVisibleBinding: Binding<Bool> {
-    Binding(
-      get: { appState.showsCompletedTasks },
-      set: { appState.setShowsCompletedTasks($0) }
-    )
-  }
-
   var showArchive: Bool {
     get { false }
     nonmutating set { _ = newValue }

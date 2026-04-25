@@ -152,11 +152,11 @@ final class ReminderSourceObserver: ObservableObject {
 
   private func loadReminderOwnerStates() async -> ReminderOwnerStates? {
     let provider = ReminderGatewayImportSnapshotProvider(gateway: gateway)
-    guard let lists = try? await provider.fetchAllLists(),
-      let itemsByListIdentifier = try? await provider.fetchItemsByList(for: lists)
-    else {
+    guard let batch = try? await provider.fetchAllBatch() else {
       return nil
     }
+    let lists = batch.lists
+    let itemsByListIdentifier = batch.itemsByListIdentifier
 
     let listsByIdentifier = Dictionary(
       uniqueKeysWithValues: lists.map { list in

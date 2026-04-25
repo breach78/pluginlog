@@ -16,7 +16,6 @@ final class AppState: ObservableObject {
   static let includeCompletedSyncEnabledKey = "sync.includeCompletedRemindersEnabled"
   static let initialSyncConsentGrantedKey = "sync.initialConsentGranted"
   static let initialSyncConsentDecidedKey = "sync.initialConsentDecided"
-  static let showCompletedTasksKey = "workspace.showCompletedTasks"
   static let obsidianVaultBookmarkDataKey = "obsidian.vault.bookmarkData"
   static let obsidianVaultRootPathKey = "obsidian.vault.path"
   static let timelineDayColumnWidthKey = "timeline.dayColumnWidth"
@@ -47,10 +46,10 @@ final class AppState: ObservableObject {
   @Published var isHoveringTimelineDayHeaderOverlay = false
   @Published var workspaceNavigationRequest: WorkspaceNavigationRequest?
   @Published var includeCompletedSyncEnabled = true
-  @Published var showsCompletedTasks = false
   @Published var hasInitialSyncConsent = false
   @Published var hasSyncConsentDecision = false
   @Published var obsidianVaultRootURL: URL?
+  @Published var obsidianHelperPluginInstallStatus: String?
   @Published var containerRootURL: URL?
   @Published var timelineDayColumnWidth: CGFloat = 44
   @Published var isEditorActive = false
@@ -182,9 +181,6 @@ final class AppState: ObservableObject {
 
     UserDefaults.standard.set(true, forKey: Self.includeCompletedSyncEnabledKey)
     includeCompletedSyncEnabled = true
-    showsCompletedTasks =
-      UserDefaults.standard.object(forKey: Self.showCompletedTasksKey) as? Bool
-      ?? false
     hasInitialSyncConsent = UserDefaults.standard.bool(forKey: Self.initialSyncConsentGrantedKey)
     hasSyncConsentDecision =
       UserDefaults.standard.object(forKey: Self.initialSyncConsentDecidedKey) as? Bool

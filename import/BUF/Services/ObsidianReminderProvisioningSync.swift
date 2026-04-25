@@ -301,12 +301,6 @@ enum ObsidianReminderProvisioningSync {
         completionDate: nil
       )
     }
-    if let recurrence = decodeRepeat(task.metadata?.repeatRule) {
-      _ = try reminderProjectProvider.setTaskRecurrence(
-        for: reference,
-        recurrenceRuleRaw: recurrence
-      )
-    }
     ReminderSyncBaselineStore.upsert(
       reminderExternalIdentifier: taskIdentifier,
       state: localState,
@@ -388,18 +382,6 @@ enum ObsidianReminderProvisioningSync {
         pushedFields.append(.date)
       }
     }
-    if fieldsToPush.contains(.repeatRule) {
-      let desiredRecurrence = decodeRepeat(task.metadata?.repeatRule)
-      let remoteRecurrence = encodeRepeat(snapshot.recurrenceRuleRaw)
-      if encodeRepeat(desiredRecurrence) != remoteRecurrence {
-        updatedAt = try reminderProjectProvider.setTaskRecurrence(
-          for: reference,
-          recurrenceRuleRaw: desiredRecurrence
-        )?.modifiedAt ?? updatedAt
-        pushedFields.append(.repeatRule)
-      }
-    }
-
     guard let updatedAt else { return false }
     let nextBaseline = baselineAfterPush(
       previous: baseline,
@@ -481,6 +463,7 @@ enum ObsidianReminderProvisioningSync {
       return []
     }
     return ReminderSyncTaskField.allCases.filter { field in
+      guard field != .repeatRule else { return false }
       guard !baseline.hasConflict(field) else { return false }
       let localChanged = local.value(for: field) != baseline.state.value(for: field)
       let remoteChanged = remote.value(for: field) != baseline.state.value(for: field)
@@ -632,24 +615,8 @@ enum ObsidianReminderProvisioningSync {
       : dayFormatter.string(from: Calendar.autoupdatingCurrent.startOfDay(for: date))
   }
 
-  private static func decodeRepeat(_ rawValue: String?) -> String? {
-    guard let normalized = normalized(rawValue) else { return nil }
-    let value = normalized.lowercased()
-    if value == "daily" || value.hasPrefix("daily|") { return "daily|1" }
-    if value == "weekly" || value.hasPrefix("weekly|") { return "weekly|1|" }
-    if value == "monthly" || value.hasPrefix("monthly|") { return "monthly|1" }
-    if value == "yearly" || value.hasPrefix("yearly|") { return "yearly|1" }
-    return nil
-  }
-
   private static func encodeRepeat(_ rawValue: String?) -> String? {
-    guard let normalized = normalized(rawValue) else { return nil }
-    let value = normalized.lowercased()
-    if value == "daily" || value.hasPrefix("daily|") { return "daily" }
-    if value == "weekly" || value.hasPrefix("weekly|") { return "weekly" }
-    if value == "monthly" || value.hasPrefix("monthly|") { return "monthly" }
-    if value == "yearly" || value.hasPrefix("yearly|") { return "yearly" }
-    return nil
+    ReminderScheduleMetadataCodec.encodeRepeat(rawValue)
   }
 
   private static let dayFormatter: DateFormatter = {

@@ -129,6 +129,25 @@ enum TaskIdentityBridgeStore {
     persistLocked()
   }
 
+  static func upsertAll(
+    projects: [ProjectIdentityBridgeRecord],
+    tasks: [TaskIdentityBridgeRecord]
+  ) {
+    lock.lock()
+    defer { lock.unlock() }
+    projectsByID = mergedProjectsByID(
+      projects,
+      existingProjects: projectsByID,
+      preservingExisting: true
+    )
+    tasksByID = mergedTasksByID(
+      tasks,
+      existingTasks: tasksByID,
+      preservingExisting: true
+    )
+    persistLocked()
+  }
+
   static func projectID(for taskID: UUID) -> UUID? {
     lock.lock()
     defer { lock.unlock() }
@@ -193,15 +212,24 @@ enum TaskIdentityBridgeStore {
       tasksByID = [:]
       return
     }
-    projectsByID = mergedProjectsByID(payload.projects, existingProjects: [:])
-    tasksByID = mergedTasksByID(payload.tasks, existingTasks: [:])
+    projectsByID = mergedProjectsByID(
+      payload.projects,
+      existingProjects: [:],
+      preservingExisting: false
+    )
+    tasksByID = mergedTasksByID(
+      payload.tasks,
+      existingTasks: [:],
+      preservingExisting: false
+    )
   }
 
   private static func mergedProjectsByID(
     _ records: [ProjectIdentityBridgeRecord],
-    existingProjects: [UUID: ProjectIdentityBridgeRecord]
+    existingProjects: [UUID: ProjectIdentityBridgeRecord],
+    preservingExisting: Bool = false
   ) -> [UUID: ProjectIdentityBridgeRecord] {
-    var merged: [UUID: ProjectIdentityBridgeRecord] = [:]
+    var merged: [UUID: ProjectIdentityBridgeRecord] = preservingExisting ? existingProjects : [:]
     for record in records {
       var next = record
       next.createdAt = existingProjects[record.projectID]?.createdAt
@@ -219,9 +247,10 @@ enum TaskIdentityBridgeStore {
 
   private static func mergedTasksByID(
     _ records: [TaskIdentityBridgeRecord],
-    existingTasks: [UUID: TaskIdentityBridgeRecord]
+    existingTasks: [UUID: TaskIdentityBridgeRecord],
+    preservingExisting: Bool = false
   ) -> [UUID: TaskIdentityBridgeRecord] {
-    var merged: [UUID: TaskIdentityBridgeRecord] = [:]
+    var merged: [UUID: TaskIdentityBridgeRecord] = preservingExisting ? existingTasks : [:]
     for record in records {
       var next = record
       next.createdAt = existingTasks[record.taskID]?.createdAt
@@ -248,9 +277,7 @@ enum TaskIdentityBridgeStore {
         projects: Array(projectsByID.values),
         tasks: Array(tasksByID.values)
       )
-      let encoder = JSONEncoder()
-      encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-      let data = try encoder.encode(payload)
+      let data = try JSONEncoder().encode(payload)
       try data.write(to: fileURL, options: .atomic)
     } catch {
       AppLogger.sync.error(

@@ -112,7 +112,9 @@ Rules:
 - `date` is stored as `yyyy-mm-dd` and syncs with Reminder due date.
 - `time` is optional `HH:mm` local time and syncs with Reminder due time when
   present.
-- `repeat` syncs with Reminder recurrence where supported.
+- `repeat` is a Reminders-owned, inbound-only marker. When a Reminder has any
+  recurrence, Brain Unfog writes `repeat:"reminder"` for display only and must
+  never write, simplify, clear, or otherwise mutate the Reminder recurrence.
 - `duration` is Obsidian/app-owned Schedule block length.
 - A task with `date` and `time` but no valid `duration` renders as a 15 minute
   Schedule block.

@@ -94,6 +94,7 @@ enum ObsidianRetainedProjectionAdapter {
     if value == "weekly" || value.hasPrefix("weekly|") { return "weekly|1|" }
     if value == "monthly" || value.hasPrefix("monthly|") { return "monthly|1" }
     if value == "yearly" || value.hasPrefix("yearly|") { return "yearly|1" }
+    if value == "reminder" { return "reminder" }
     return nil
   }
 

@@ -366,7 +366,13 @@ final class EventKitReminderGateway: ReminderGateway {
     for identifiers: [String],
     fallbackCalendars: [EKCalendar]
   ) -> [EKCalendar] {
-    let resolved = identifiers.compactMap { eventStore.calendar(withIdentifier: $0) }
+    var fallbackByIdentifier: [String: EKCalendar] = [:]
+    for calendar in fallbackCalendars {
+      fallbackByIdentifier[calendar.calendarIdentifier] = calendar
+    }
+    let resolved = identifiers.compactMap { identifier in
+      fallbackByIdentifier[identifier] ?? eventStore.calendar(withIdentifier: identifier)
+    }
     return resolved.isEmpty ? fallbackCalendars : resolved
   }
 

@@ -43,6 +43,7 @@ final class ObsidianProjectDirectoryWatcherTests: XCTestCase {
       ObsidianProjectDirectoryWatcher.defaultFastDebounceNanoseconds,
       ObsidianProjectDirectoryWatcher.defaultDebounceNanoseconds
     )
+    XCTAssertFalse(ObsidianProjectDirectoryWatcher.defaultFastPollingEnabled)
   }
 
   func testAppAuthoredObsidianMarkdownWriteDoesNotReportChangeLoop() throws {

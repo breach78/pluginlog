@@ -16,6 +16,19 @@ final class ReminderGatewayImportSnapshotProviderTests: XCTestCase {
     XCTAssertEqual(itemsByList[gateway.firstCalendar.calendarIdentifier]?.map(\.title), ["First task"])
     XCTAssertEqual(itemsByList[gateway.secondCalendar.calendarIdentifier]?.map(\.title), ["Second task"])
   }
+
+  func testFetchAllBatchReusesFetchedCalendarsWithoutIdentifierLookups() async throws {
+    let gateway = BatchImportSnapshotGateway()
+    let provider = ReminderGatewayImportSnapshotProvider(gateway: gateway)
+
+    let batch = try await provider.fetchAllBatch()
+
+    XCTAssertEqual(gateway.calendarLookupCount, 0)
+    XCTAssertEqual(gateway.singleCalendarFetchCount, 0)
+    XCTAssertEqual(gateway.batchCalendarFetchCount, 1)
+    XCTAssertEqual(batch.lists.map(\.title), ["A", "B"])
+    XCTAssertEqual(batch.itemsByListIdentifier[gateway.firstCalendar.calendarIdentifier]?.map(\.title), ["First task"])
+  }
 }
 
 @MainActor
@@ -26,6 +39,7 @@ private final class BatchImportSnapshotGateway: ReminderGateway {
   private let reminders: [EKReminder]
   var singleCalendarFetchCount = 0
   var batchCalendarFetchCount = 0
+  var calendarLookupCount = 0
 
   init() {
     firstCalendar = EKCalendar(for: .reminder, eventStore: eventStore)
@@ -65,7 +79,8 @@ private final class BatchImportSnapshotGateway: ReminderGateway {
   func defaultCalendarIdentifierForNewReminders() -> String? { nil }
 
   func calendar(withIdentifier identifier: String) -> EKCalendar? {
-    [firstCalendar, secondCalendar].first { $0.calendarIdentifier == identifier }
+    calendarLookupCount += 1
+    return [firstCalendar, secondCalendar].first { $0.calendarIdentifier == identifier }
   }
 
   func reminder(withIdentifier identifier: String) -> EKReminder? {

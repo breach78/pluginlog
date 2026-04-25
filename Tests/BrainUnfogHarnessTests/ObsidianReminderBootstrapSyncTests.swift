@@ -44,7 +44,7 @@ final class ObsidianReminderBootstrapSyncTests: XCTestCase {
     XCTAssertEqual(snapshots[0].note.tasks.first?.metadata?.reminderExternalIdentifier, "task-1")
     XCTAssertEqual(snapshots[0].note.tasks.first?.metadata?.date, "2026-04-25")
     XCTAssertEqual(snapshots[0].note.tasks.first?.metadata?.time, "09:30")
-    XCTAssertEqual(snapshots[0].note.tasks.first?.metadata?.repeatRule, "monthly")
+    XCTAssertEqual(snapshots[0].note.tasks.first?.metadata?.repeatRule, "reminder")
     XCTAssertTrue(snapshots[0].rawMarkdown.contains("  - sub one"))
     XCTAssertTrue(snapshots[0].rawMarkdown.contains("    - sub two"))
     XCTAssertFalse(snapshots[0].rawMarkdown.contains("brain_unfog_" + "project_id"))

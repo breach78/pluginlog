@@ -255,13 +255,7 @@ enum ObsidianReminderImportFormatting {
   }
 
   private static func encodeRepeat(_ rawValue: String?) -> String? {
-    guard let normalized = normalized(rawValue) else { return nil }
-    let value = normalized.lowercased()
-    if value == "daily" || value.hasPrefix("daily|") { return "daily" }
-    if value == "weekly" || value.hasPrefix("weekly|") { return "weekly" }
-    if value == "monthly" || value.hasPrefix("monthly|") { return "monthly" }
-    if value == "yearly" || value.hasPrefix("yearly|") { return "yearly" }
-    return nil
+    ReminderScheduleMetadataCodec.encodeRepeat(rawValue)
   }
 
   private static let dayFormatter: DateFormatter = {

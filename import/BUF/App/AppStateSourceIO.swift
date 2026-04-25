@@ -99,22 +99,18 @@ extension AppState {
         return
       }
       let snapshotProvider = ReminderGatewayImportSnapshotProvider(gateway: gateway)
-      let lists = try await snapshotProvider.fetchAllLists()
-      let itemsByListIdentifier = try await snapshotProvider.fetchItemsByList(for: lists)
-      let batch = ReminderImportSnapshotBatch(
-        lists: lists,
-        itemsByListIdentifier: itemsByListIdentifier
-      )
-      if reason == .bootstrap {
+      let batch = try await snapshotProvider.fetchAllBatch()
+      let store = ObsidianProjectMarkdownStore(vaultRootURL: obsidianVaultRootURL)
+      if reason == .bootstrap, try await shouldRunReminderFirstBootstrap(store: store) {
         let result = try await ObsidianReminderBootstrapSync.sync(
           batch: batch,
-          store: ObsidianProjectMarkdownStore(vaultRootURL: obsidianVaultRootURL)
+          store: store
         )
         syncStatus = "Synced \(result.importedProjectCount) lists / \(result.importedTaskCount) tasks to Obsidian"
       } else {
         let result = try await ObsidianReminderImportSync.sync(
           batch: batch,
-          store: ObsidianProjectMarkdownStore(vaultRootURL: obsidianVaultRootURL)
+          store: store
         )
         applyObsidianImportResult(result)
         syncStatus = "Imported Obsidian \(result.importedProjectCount) lists / \(result.importedTaskCount) tasks / updated \(result.updatedTaskCount) / deleted \(result.deletedTaskCount)"
@@ -124,6 +120,12 @@ extension AppState {
       reportError(error, logMessage: "reconcileObsidianVaultWithReminderSource failed")
       syncStatus = "Reminder sync failed"
     }
+  }
+
+  private func shouldRunReminderFirstBootstrap(
+    store: ObsidianProjectMarkdownStore
+  ) async throws -> Bool {
+    try await store.loadProjectNotesInScope().isEmpty
   }
 
   func handleObsidianProjectDirectoryChange(_ changedFiles: [URL]) async {
@@ -181,39 +183,17 @@ extension AppState {
   }
 
   func applyObsidianProvisioningResult(_ result: ObsidianReminderProvisioningSync.SyncResult) {
-    for projectRecord in result.projectRecords {
-      TaskIdentityBridgeStore.upsertProject(
-        projectID: projectRecord.projectID,
-        title: projectRecord.title,
-        reminderListExternalIdentifier: projectRecord.reminderListExternalIdentifier
-      )
-    }
-    for taskRecord in result.taskRecords {
-      TaskIdentityBridgeStore.upsertTask(
-        taskID: taskRecord.taskID,
-        title: taskRecord.title,
-        reminderExternalIdentifier: taskRecord.reminderExternalIdentifier,
-        ownerProjectID: taskRecord.ownerProjectID
-      )
-    }
+    TaskIdentityBridgeStore.upsertAll(
+      projects: result.projectRecords,
+      tasks: result.taskRecords
+    )
   }
 
   func applyObsidianImportResult(_ result: ObsidianReminderImportSync.SyncResult) {
-    for projectRecord in result.projectRecords {
-      TaskIdentityBridgeStore.upsertProject(
-        projectID: projectRecord.projectID,
-        title: projectRecord.title,
-        reminderListExternalIdentifier: projectRecord.reminderListExternalIdentifier
-      )
-    }
-    for taskRecord in result.taskRecords {
-      TaskIdentityBridgeStore.upsertTask(
-        taskID: taskRecord.taskID,
-        title: taskRecord.title,
-        reminderExternalIdentifier: taskRecord.reminderExternalIdentifier,
-        ownerProjectID: taskRecord.ownerProjectID
-      )
-    }
+    TaskIdentityBridgeStore.upsertAll(
+      projects: result.projectRecords,
+      tasks: result.taskRecords
+    )
   }
 
   func persistManagedProjectNotes(for projectIDs: Set<UUID>) async {

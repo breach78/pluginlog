@@ -57,7 +57,7 @@ final class ObsidianReminderImportSyncTests: XCTestCase {
     XCTAssertEqual(task.metadata?.reminderExternalIdentifier, "task-1")
     XCTAssertEqual(task.metadata?.date, "2026-04-25")
     XCTAssertEqual(task.metadata?.time, "09:30")
-    XCTAssertEqual(task.metadata?.repeatRule, "monthly")
+    XCTAssertEqual(task.metadata?.repeatRule, "reminder")
     XCTAssertTrue(snapshots[0].rawMarkdown.contains("  - remote note"))
     XCTAssertEqual(ReminderSyncBaselineStore.baseline(for: "task-1")?.state.title, "Remote task")
   }
@@ -124,7 +124,7 @@ final class ObsidianReminderImportSyncTests: XCTestCase {
     XCTAssertEqual(result.updatedTaskCount, 1)
     XCTAssertTrue(raw.contains("Local prose remains."))
     XCTAssertTrue(raw.contains("- [x] Remote title"))
-    XCTAssertTrue(raw.contains(#""date":"2026-04-25","time":"10:15","duration":45,"repeat":"monthly""#))
+    XCTAssertTrue(raw.contains(#""date":"2026-04-25","time":"10:15","duration":45,"repeat":"reminder""#))
     XCTAssertTrue(raw.contains("  - remote note"))
     XCTAssertFalse(raw.contains("old note"))
   }

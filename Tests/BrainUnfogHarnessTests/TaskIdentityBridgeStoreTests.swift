@@ -79,4 +79,61 @@ final class TaskIdentityBridgeStoreTests: XCTestCase {
     XCTAssertEqual(record?.createdAt, olderDate)
     XCTAssertEqual(record?.updatedAt, newerDate)
   }
+
+  func testUpsertAllPreservesExistingRecordsWhileMergingIncomingRecords() {
+    let existingProjectID = UUID()
+    let incomingProjectID = UUID()
+    let existingTaskID = UUID()
+    let incomingTaskID = UUID()
+    let olderDate = Date(timeIntervalSince1970: 100)
+    let newerDate = Date(timeIntervalSince1970: 200)
+
+    TaskIdentityBridgeStore.replaceAll(
+      projects: [
+        ProjectIdentityBridgeRecord(
+          projectID: existingProjectID,
+          title: "Existing",
+          reminderListExternalIdentifier: "list-existing",
+          createdAt: olderDate,
+          updatedAt: olderDate
+        ),
+      ],
+      tasks: [
+        TaskIdentityBridgeRecord(
+          taskID: existingTaskID,
+          title: "Existing Task",
+          reminderExternalIdentifier: "task-existing",
+          ownerProjectID: existingProjectID,
+          createdAt: olderDate,
+          updatedAt: olderDate
+        ),
+      ]
+    )
+
+    TaskIdentityBridgeStore.upsertAll(
+      projects: [
+        ProjectIdentityBridgeRecord(
+          projectID: incomingProjectID,
+          title: "Incoming",
+          reminderListExternalIdentifier: "list-incoming",
+          createdAt: newerDate,
+          updatedAt: newerDate
+        ),
+      ],
+      tasks: [
+        TaskIdentityBridgeRecord(
+          taskID: incomingTaskID,
+          title: "Incoming Task",
+          reminderExternalIdentifier: "task-incoming",
+          ownerProjectID: incomingProjectID,
+          createdAt: newerDate,
+          updatedAt: newerDate
+        ),
+      ]
+    )
+
+    XCTAssertEqual(TaskIdentityBridgeStore.projectRecords().count, 2)
+    XCTAssertEqual(TaskIdentityBridgeStore.taskRecord(for: existingTaskID)?.title, "Existing Task")
+    XCTAssertEqual(TaskIdentityBridgeStore.taskRecord(for: incomingTaskID)?.title, "Incoming Task")
+  }
 }

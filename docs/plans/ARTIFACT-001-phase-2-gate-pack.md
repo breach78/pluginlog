@@ -355,7 +355,7 @@ Why this path is confirmed:
   - bootstrap from in-scope Logseq project pages, creating and binding reminder lists or reminder items when no safe existing binding exists yet
   - import shared reminder fields from managed Logseq pages during bootstrap or repair through bounded owner-command paths
   - fan out local or remote reminder field changes back into the Logseq page store after scoped recompute
-  - add an explicit reminder recurrence write path so `repeat::` no longer dead-ends locally
+  - preserve an inbound-only reminder recurrence marker so `repeat::` displays recurrence existence without owning recurrence writes
 - files in scope:
   - `docs/plans/ARTIFACT-001-phase-2-gate-pack.md`
   - `import/BUF/App/AppCommand.swift`
@@ -385,7 +385,7 @@ Why this path is confirmed:
   - bootstrap or repair import reads shared fields from the managed Logseq task section and applies them through reminder-owner mutations or existing bounded command paths instead of raw storage rewrites
   - shared project or task field convergence covers project title, task title, completion, `date::`, and `repeat::`
   - `duration::` stays Logseq plus BUF-local only in Slice 5 and does not expand into calendar writes here
-  - explicit reminder recurrence writes are supported end-to-end for V1 `repeat::` values
+  - reminder recurrence writes are not supported; recurrence remains Reminders-owned and `repeat::` is display-only
   - reminder owner writes and reminder external changes both fan out the normalized result back into the Logseq page store for the affected managed projects
   - unmatched reminder adoption exists in this slice but stays deterministic and conservative: internal-ID match, external-ID match, or other packet-defined safe criteria only; title-only binding is never allowed
   - pages with unmanaged external task blocks outside the managed section remain readable but read-only in this slice and must not be claimed, relocated, or duplicated
