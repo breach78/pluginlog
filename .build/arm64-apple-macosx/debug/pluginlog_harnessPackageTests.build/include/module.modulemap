@@ -1,3 +1,0 @@
-module pluginlog_harnessPackageTests {
-    header "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/pluginlog_harnessPackageTests.build/include/pluginlog-harnessPackageTests-Swift.h"
-}

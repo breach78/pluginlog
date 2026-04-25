@@ -133,15 +133,23 @@ enum ObsidianTaskOpenService {
     }
     let store = ObsidianProjectMarkdownStore(vaultRootURL: vaultRootURL)
     let snapshots = try await store.loadProjectNotesInScope()
-    try validate(snapshots.map(\.note))
-    guard let snapshot = snapshots.first(where: { snapshot in
+    let matchingSnapshots = snapshots.filter { snapshot in
       guard let listID = normalized(snapshot.note.reminderListExternalIdentifier) else {
         return false
       }
       return RetainedProjectionBuilder.derivedProjectID(for: listID) == projectID
-    }) else {
+    }
+    guard matchingSnapshots.count <= 1 else {
+      let identifier = matchingSnapshots
+        .compactMap { normalized($0.note.reminderListExternalIdentifier) }
+        .sorted()
+        .joined(separator: ", ")
+      throw ObsidianTaskOpenServiceError.duplicateReminderListExternalIdentifier(identifier)
+    }
+    guard let snapshot = matchingSnapshots.first else {
       throw ObsidianTaskOpenServiceError.projectNotFound(projectID)
     }
+    try validate([snapshot.note])
     return snapshot
   }
 

@@ -121,12 +121,18 @@ final class ObsidianTaskOpenServiceTests: XCTestCase {
     try writeProjectNote(
       vault: vaultURL,
       fileName: "A.md",
-      body: projectMarkdown(listID: "LIST-1", taskID: "TASK-DUP", blockID: nil)
-    )
-    try writeProjectNote(
-      vault: vaultURL,
-      fileName: "B.md",
-      body: projectMarkdown(listID: "LIST-2", taskID: "TASK-DUP", blockID: nil)
+      body: """
+      ---
+      tags:
+        - 프로젝트
+      reminder_list_external_id: LIST-1
+      ---
+
+      - [ ] One
+        %% brain-unfog: {"reminder_external_id":"TASK-DUP"} %%
+      - [ ] Two
+        %% brain-unfog: {"reminder_external_id":"TASK-DUP"} %%
+      """
     )
     let projectID = RetainedProjectionBuilder.derivedProjectID(for: "LIST-1")
     let taskID = ReminderProjectionIdentity.taskID(for: "TASK-DUP")
@@ -144,6 +150,41 @@ final class ObsidianTaskOpenServiceTests: XCTestCase {
       XCTAssertEqual(error, .duplicateReminderExternalIdentifier("TASK-DUP"))
     }
     XCTAssertTrue(opener.openedURLs.isEmpty)
+  }
+
+  func testUnrelatedDamagedMetadataDoesNotBlockOpeningMatchedProject() async throws {
+    let vaultURL = try makeTemporaryDirectory(prefix: "ObsidianOpenUnrelatedDamaged")
+    defer { try? FileManager.default.removeItem(at: vaultURL) }
+    try writeProjectNote(
+      vault: vaultURL,
+      fileName: "Project.md",
+      body: projectMarkdown(listID: "LIST-1", taskID: "TASK-1", blockID: nil)
+    )
+    try writeProjectNote(
+      vault: vaultURL,
+      fileName: "Broken.md",
+      body: """
+      ---
+      tags:
+        - 프로젝트
+      reminder_list_external_id: LIST-2
+      ---
+
+      - [ ] Broken
+        %% brain-unfog: {"reminder_external_id": %%
+      """
+    )
+    let projectID = RetainedProjectionBuilder.derivedProjectID(for: "LIST-1")
+    let opener = RecordingDocumentOpener()
+
+    try await ObsidianTaskOpenService.openProjectNote(
+      vaultRootURL: vaultURL,
+      projectID: projectID,
+      documentOpener: opener
+    )
+
+    XCTAssertEqual(opener.openedURLs.count, 1)
+    XCTAssertEqual(opener.openedURLs[0].scheme, "obsidian")
   }
 
   func testMissingCurrentIdentityFailsClosedWithoutTitleFallback() async throws {
