@@ -1,0 +1,9 @@
+{
+  "id": "brain-unfog-helper",
+  "name": "Brain Unfog Helper",
+  "version": "0.1.0",
+  "minAppVersion": "1.5.0",
+  "description": "Vault-side UI and invalidation helper for Brain Unfog project notes.",
+  "author": "Brain Unfog",
+  "isDesktopOnly": true
+}

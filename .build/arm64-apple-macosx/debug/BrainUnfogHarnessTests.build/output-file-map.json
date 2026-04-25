@@ -44,6 +44,13 @@
     "swift-dependencies": "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarnessTests.build/LogseqPagesChangeTrackerTests.swiftdeps",
     "diagnostics": "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarnessTests.build/LogseqPagesChangeTrackerTests.dia"
   },
+  "/Users/three/app_build/logseq plugin/Tests/BrainUnfogHarnessTests/LogseqProjectMarkdownStoreAdapterTests.swift": {
+    "dependencies": "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarnessTests.build/LogseqProjectMarkdownStoreAdapterTests.d",
+    "object": "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarnessTests.build/LogseqProjectMarkdownStoreAdapterTests.swift.o",
+    "swiftmodule": "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarnessTests.build/LogseqProjectMarkdownStoreAdapterTests~partial.swiftmodule",
+    "swift-dependencies": "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarnessTests.build/LogseqProjectMarkdownStoreAdapterTests.swiftdeps",
+    "diagnostics": "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarnessTests.build/LogseqProjectMarkdownStoreAdapterTests.dia"
+  },
   "/Users/three/app_build/logseq plugin/Tests/BrainUnfogHarnessTests/LogseqProjectPageStoreTests.swift": {
     "dependencies": "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarnessTests.build/LogseqProjectPageStoreTests.d",
     "object": "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarnessTests.build/LogseqProjectPageStoreTests.swift.o",
@@ -64,6 +71,55 @@
     "swiftmodule": "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarnessTests.build/ManagedLogseqSyncHardeningTests~partial.swiftmodule",
     "swift-dependencies": "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarnessTests.build/ManagedLogseqSyncHardeningTests.swiftdeps",
     "diagnostics": "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarnessTests.build/ManagedLogseqSyncHardeningTests.dia"
+  },
+  "/Users/three/app_build/logseq plugin/Tests/BrainUnfogHarnessTests/ObsidianHelperPluginInstallerTests.swift": {
+    "dependencies": "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarnessTests.build/ObsidianHelperPluginInstallerTests.d",
+    "object": "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarnessTests.build/ObsidianHelperPluginInstallerTests.swift.o",
+    "swiftmodule": "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarnessTests.build/ObsidianHelperPluginInstallerTests~partial.swiftmodule",
+    "swift-dependencies": "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarnessTests.build/ObsidianHelperPluginInstallerTests.swiftdeps",
+    "diagnostics": "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarnessTests.build/ObsidianHelperPluginInstallerTests.dia"
+  },
+  "/Users/three/app_build/logseq plugin/Tests/BrainUnfogHarnessTests/ObsidianProjectMarkdownStoreTests.swift": {
+    "dependencies": "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarnessTests.build/ObsidianProjectMarkdownStoreTests.d",
+    "object": "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarnessTests.build/ObsidianProjectMarkdownStoreTests.swift.o",
+    "swiftmodule": "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarnessTests.build/ObsidianProjectMarkdownStoreTests~partial.swiftmodule",
+    "swift-dependencies": "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarnessTests.build/ObsidianProjectMarkdownStoreTests.swiftdeps",
+    "diagnostics": "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarnessTests.build/ObsidianProjectMarkdownStoreTests.dia"
+  },
+  "/Users/three/app_build/logseq plugin/Tests/BrainUnfogHarnessTests/ObsidianProjectNoteParserTests.swift": {
+    "dependencies": "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarnessTests.build/ObsidianProjectNoteParserTests.d",
+    "object": "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarnessTests.build/ObsidianProjectNoteParserTests.swift.o",
+    "swiftmodule": "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarnessTests.build/ObsidianProjectNoteParserTests~partial.swiftmodule",
+    "swift-dependencies": "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarnessTests.build/ObsidianProjectNoteParserTests.swiftdeps",
+    "diagnostics": "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarnessTests.build/ObsidianProjectNoteParserTests.dia"
+  },
+  "/Users/three/app_build/logseq plugin/Tests/BrainUnfogHarnessTests/ObsidianProjectNoteRendererTests.swift": {
+    "dependencies": "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarnessTests.build/ObsidianProjectNoteRendererTests.d",
+    "object": "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarnessTests.build/ObsidianProjectNoteRendererTests.swift.o",
+    "swiftmodule": "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarnessTests.build/ObsidianProjectNoteRendererTests~partial.swiftmodule",
+    "swift-dependencies": "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarnessTests.build/ObsidianProjectNoteRendererTests.swiftdeps",
+    "diagnostics": "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarnessTests.build/ObsidianProjectNoteRendererTests.dia"
+  },
+  "/Users/three/app_build/logseq plugin/Tests/BrainUnfogHarnessTests/ObsidianReminderBootstrapSyncTests.swift": {
+    "dependencies": "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarnessTests.build/ObsidianReminderBootstrapSyncTests.d",
+    "object": "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarnessTests.build/ObsidianReminderBootstrapSyncTests.swift.o",
+    "swiftmodule": "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarnessTests.build/ObsidianReminderBootstrapSyncTests~partial.swiftmodule",
+    "swift-dependencies": "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarnessTests.build/ObsidianReminderBootstrapSyncTests.swiftdeps",
+    "diagnostics": "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarnessTests.build/ObsidianReminderBootstrapSyncTests.dia"
+  },
+  "/Users/three/app_build/logseq plugin/Tests/BrainUnfogHarnessTests/ObsidianVaultLayoutTests.swift": {
+    "dependencies": "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarnessTests.build/ObsidianVaultLayoutTests.d",
+    "object": "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarnessTests.build/ObsidianVaultLayoutTests.swift.o",
+    "swiftmodule": "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarnessTests.build/ObsidianVaultLayoutTests~partial.swiftmodule",
+    "swift-dependencies": "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarnessTests.build/ObsidianVaultLayoutTests.swiftdeps",
+    "diagnostics": "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarnessTests.build/ObsidianVaultLayoutTests.dia"
+  },
+  "/Users/three/app_build/logseq plugin/Tests/BrainUnfogHarnessTests/ObsidianVaultPreferenceResolverTests.swift": {
+    "dependencies": "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarnessTests.build/ObsidianVaultPreferenceResolverTests.d",
+    "object": "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarnessTests.build/ObsidianVaultPreferenceResolverTests.swift.o",
+    "swiftmodule": "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarnessTests.build/ObsidianVaultPreferenceResolverTests~partial.swiftmodule",
+    "swift-dependencies": "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarnessTests.build/ObsidianVaultPreferenceResolverTests.swiftdeps",
+    "diagnostics": "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarnessTests.build/ObsidianVaultPreferenceResolverTests.dia"
   },
   "/Users/three/app_build/logseq plugin/Tests/BrainUnfogHarnessTests/OwnedScheduleCalendarInvalidationPolicyTests.swift": {
     "dependencies": "/Users/three/app_build/logseq plugin/.build/arm64-apple-macosx/debug/BrainUnfogHarnessTests.build/OwnedScheduleCalendarInvalidationPolicyTests.d",
