@@ -92,7 +92,10 @@ extension MainWorkspaceView {
   func timelineTaskBadgeOverlayCard(
     _ presentation: TimelineTaskBadgeOverlayPresentation
   ) -> some View {
-    let projectColor = timelineOverlayProjectColor(for: presentation.projectReference)
+    let projectColor = timelineOverlayProjectColor(
+      for: presentation.projectReference,
+      colorHex: presentation.projectColorHex
+    )
 
     VStack(alignment: .leading, spacing: 8) {
       VStack(alignment: .leading, spacing: 8) {
@@ -103,11 +106,10 @@ extension MainWorkspaceView {
                 Button {
                   completeTimelineTask(task.taskID, projectID: presentation.projectReference.id)
                 } label: {
-                  Image(systemName: "circle")
-                    .font(.system(size: 13, weight: .regular))
-                    .foregroundStyle(projectColor.opacity(0.88))
-                    .frame(width: 20, height: 20)
-                    .contentShape(Rectangle())
+                  timelineDayHeaderTaskMarker(
+                    isOverdue: task.isOverdue,
+                    color: projectColor
+                  )
                 }
                 .buttonStyle(.plain)
 
@@ -153,11 +155,10 @@ extension MainWorkspaceView {
                     completedOn: presentation.date
                   )
                 } label: {
-                  Image(systemName: "circle")
-                    .font(.system(size: 13, weight: .regular))
-                    .foregroundStyle(projectColor.opacity(0.72))
-                    .frame(width: 20, height: 20)
-                    .contentShape(Rectangle())
+                  timelineDayHeaderTaskMarker(
+                    isOverdue: false,
+                    color: projectColor
+                  )
                 }
                 .buttonStyle(.plain)
 
@@ -198,9 +199,7 @@ extension MainWorkspaceView {
                 revealTimelineTaskDetail(taskID: task.taskID, projectID: presentation.projectReference.id)
               } label: {
                 HStack(spacing: 8) {
-                  Image(systemName: "checkmark.circle.fill")
-                    .font(.system(size: 13, weight: .regular))
-                    .foregroundStyle(projectColor.opacity(0.9))
+                  timelineDayHeaderCompletedMarker(color: projectColor)
 
                   Text(task.title)
                     .font(.system(size: 12))
@@ -247,13 +246,15 @@ extension MainWorkspaceView {
   ) -> some View {
     VStack(alignment: .leading, spacing: 8) {
       ForEach(Array(presentation.sections.enumerated()), id: \.element.id) { index, section in
-        let sectionColor = timelineOverlayProjectColor(for: section.projectReference)
-        let sectionTitleColor = timelineOverlayProjectTitleColor(for: section.projectReference)
+        let sectionColor = timelineOverlayProjectColor(
+          for: section.projectReference,
+          colorHex: section.projectColorHex
+        )
 
         VStack(alignment: .leading, spacing: 6) {
           Text(section.projectTitle)
             .font(.caption.weight(.semibold))
-            .foregroundStyle(sectionTitleColor)
+            .foregroundStyle(sectionColor)
 
           ForEach(section.tasks) { task in
             if task.isCompleted {
@@ -330,9 +331,13 @@ extension MainWorkspaceView {
     }
   }
 
-  func timelineOverlayProjectColor(for reference: WorkspaceProjectReference) -> Color {
-    guard let descriptor = workspaceProjectDescriptorsByID[reference.id] else { return .blue }
-    return ColorHexCodec.color(from: descriptor.colorHex) ?? .blue
+  func timelineOverlayProjectColor(
+    for reference: WorkspaceProjectReference,
+    colorHex: String?
+  ) -> Color {
+    ColorHexCodec.color(from: colorHex)
+      ?? ColorHexCodec.color(from: workspaceProjectDescriptorsByID[reference.id]?.colorHex)
+      ?? .blue
   }
 
   @ViewBuilder
@@ -368,24 +373,6 @@ extension MainWorkspaceView {
       .foregroundStyle(color.opacity(0.9))
       .frame(width: 20, height: 20)
       .contentShape(Rectangle())
-  }
-
-  func timelineOverlayProjectTitleColor(for reference: WorkspaceProjectReference) -> Color {
-    let source: NSColor
-    source = ColorHexCodec.nsColor(from: workspaceProjectDescriptorsByID[reference.id]?.colorHex)
-      ?? .systemBlue
-    guard let rgbColor = source.usingColorSpace(.deviceRGB) else {
-      return timelineOverlayProjectColor(for: reference).opacity(0.84)
-    }
-
-    return Color(
-      nsColor: NSColor(
-        hue: rgbColor.hueComponent,
-        saturation: max(0.18, rgbColor.saturationComponent * 0.48),
-        brightness: min(1, rgbColor.brightnessComponent * 0.82),
-        alpha: 1
-      )
-    )
   }
 
   func scrollInspectorIfNeeded(

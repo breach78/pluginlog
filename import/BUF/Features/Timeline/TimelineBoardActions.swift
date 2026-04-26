@@ -279,12 +279,12 @@ extension TimelineBoardView {
     else {
       return
     }
-    let stage = priorityStage(for: draggedBar)
-    guard priorityStage(for: targetBar) == stage else { return }
+    let draggedStage = priorityStage(for: draggedBar)
+    let targetStage = priorityStage(for: targetBar)
     let stageProjectIDs = bars
-      .filter { priorityStage(for: $0) == stage }
+      .filter { priorityStage(for: $0) == targetStage }
       .map(\.projectID)
-    guard let reordered = reorderedProjectIDs(
+    guard let reordered = TimelineBoardReadPath.reorderedProjectIDsAfterDrop(
       stageProjectIDs,
       draggedID: draggedID,
       targetID: targetID,
@@ -299,37 +299,16 @@ extension TimelineBoardView {
     }
     timelineProjectManualOrder = nextOrder
     TimelineProjectManualOrderStore.save(nextOrder)
+
+    if draggedStage != targetStage {
+      updateTimelineProjectStage(projectID: draggedID, stage: targetStage)
+    }
   }
 
   private func clearProjectDragFeedback() {
     draggingProjectID = nil
     projectDropIndicator = nil
     taskDropTargetProjectID = nil
-  }
-
-  private func reorderedProjectIDs(
-    _ projectIDs: [UUID],
-    draggedID: UUID,
-    targetID: UUID,
-    placement: TimelineProjectDropPlacement
-  ) -> [UUID]? {
-    guard let sourceIndex = projectIDs.firstIndex(of: draggedID),
-      projectIDs.contains(targetID)
-    else {
-      return nil
-    }
-    var reordered = projectIDs
-    reordered.remove(at: sourceIndex)
-    guard let adjustedTargetIndex = reordered.firstIndex(of: targetID) else { return nil }
-    let insertionIndex: Int
-    switch placement {
-    case .before:
-      insertionIndex = adjustedTargetIndex
-    case .after:
-      insertionIndex = adjustedTargetIndex + 1
-    }
-    reordered.insert(draggedID, at: min(insertionIndex, reordered.count))
-    return reordered == projectIDs ? nil : reordered
   }
 
   private func refreshTimelineProjectState(

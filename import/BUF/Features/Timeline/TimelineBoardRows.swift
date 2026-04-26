@@ -193,9 +193,6 @@ extension TimelineBoardView {
     }
     .allowsHitTesting(!isTimelineScrolling)
     .contentShape(Rectangle())
-    .onHover { isHovering in
-      updateTimelineDayHeaderHover(offset, isHovering: isHovering)
-    }
     .onTapGesture(count: 2) {
       openScheduleDay(for: offset)
     }

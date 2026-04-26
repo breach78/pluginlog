@@ -30,6 +30,7 @@ struct TimelineTaskBadgeOverlayPlannedItem: Identifiable, Sendable {
 struct TimelineTaskBadgeOverlayPresentation: Sendable {
   let frame: CGRect
   let projectReference: WorkspaceProjectReference
+  let projectColorHex: String?
   let date: Date
   let totalCount: Int
   let strongTasks: [TimelineTaskBadgeOverlayTaskItem]
@@ -63,6 +64,7 @@ struct TimelineDayHeaderOverlayTaskItem: Identifiable, Sendable {
 struct TimelineDayHeaderOverlayProjectSection: Identifiable, Sendable {
   let id: UUID
   let projectReference: WorkspaceProjectReference
+  let projectColorHex: String?
   let projectTitle: String
   let tasks: [TimelineDayHeaderOverlayTaskItem]
 }
@@ -269,7 +271,47 @@ final class FlippedTimelineDocumentView: NSView {
 }
 
 final class FlippedTimelineClipView: NSClipView {
+  var onMouseMovedInVisibleRect: ((NSEvent, FlippedTimelineClipView) -> Void)?
+  var onMouseExitedVisibleRect: (() -> Void)?
+  private var timelineTrackingArea: NSTrackingArea?
+
   override var isFlipped: Bool { true }
+
+  override func updateTrackingAreas() {
+    super.updateTrackingAreas()
+    if let timelineTrackingArea {
+      removeTrackingArea(timelineTrackingArea)
+    }
+    let nextTrackingArea = NSTrackingArea(
+      rect: bounds,
+      options: [
+        .activeAlways,
+        .inVisibleRect,
+        .mouseEnteredAndExited,
+        .mouseMoved,
+        .enabledDuringMouseDrag,
+      ],
+      owner: self,
+      userInfo: nil
+    )
+    addTrackingArea(nextTrackingArea)
+    timelineTrackingArea = nextTrackingArea
+  }
+
+  override func mouseMoved(with event: NSEvent) {
+    onMouseMovedInVisibleRect?(event, self)
+    super.mouseMoved(with: event)
+  }
+
+  override func mouseDragged(with event: NSEvent) {
+    onMouseMovedInVisibleRect?(event, self)
+    super.mouseDragged(with: event)
+  }
+
+  override func mouseExited(with event: NSEvent) {
+    onMouseExitedVisibleRect?()
+    super.mouseExited(with: event)
+  }
 
   override func constrainBoundsRect(_ proposedBounds: NSRect) -> NSRect {
     guard let documentView else {
@@ -487,6 +529,7 @@ struct UnifiedTimelineBoardScrollView<
   let boardSize: CGSize
   let titleColumnWidth: CGFloat
   let headerHeight: CGFloat
+  let dayRange: ClosedRange<Int>
   let dayColumnWidth: CGFloat
   let boardContentVersion: Int
   let pinnedLeftVersion: Int
@@ -494,12 +537,14 @@ struct UnifiedTimelineBoardScrollView<
   let scrollRequestGeneration: Int
   let publishOffsetY: Bool
   let publishPreciseHoverOffsets: Bool
+  let isDayHeaderHoverEnabled: Bool
   let scrollHoverSuppressionInterval: TimeInterval
 
   @Binding var offsetX: CGFloat
   @Binding var offsetY: CGFloat
   @Binding var requestedOffsetX: CGFloat?
   let onScrollActivity: (CGFloat, CGFloat, Bool) -> Void
+  let onDayHeaderHover: (Int, Bool) -> Void
 
   let boardContent: BoardContent
   let pinnedLeft: PinnedLeft
@@ -509,6 +554,7 @@ struct UnifiedTimelineBoardScrollView<
     boardSize: CGSize,
     titleColumnWidth: CGFloat,
     headerHeight: CGFloat,
+    dayRange: ClosedRange<Int>,
     dayColumnWidth: CGFloat,
     boardContentVersion: Int,
     pinnedLeftVersion: Int,
@@ -516,11 +562,13 @@ struct UnifiedTimelineBoardScrollView<
     scrollRequestGeneration: Int,
     publishOffsetY: Bool,
     publishPreciseHoverOffsets: Bool,
+    isDayHeaderHoverEnabled: Bool,
     scrollHoverSuppressionInterval: TimeInterval,
     offsetX: Binding<CGFloat>,
     offsetY: Binding<CGFloat>,
     requestedOffsetX: Binding<CGFloat?>,
     onScrollActivity: @escaping (CGFloat, CGFloat, Bool) -> Void,
+    onDayHeaderHover: @escaping (Int, Bool) -> Void,
     @ViewBuilder boardContent: () -> BoardContent,
     @ViewBuilder pinnedLeft: () -> PinnedLeft,
     @ViewBuilder pinnedTop: () -> PinnedTop
@@ -528,6 +576,7 @@ struct UnifiedTimelineBoardScrollView<
     self.boardSize = boardSize
     self.titleColumnWidth = titleColumnWidth
     self.headerHeight = headerHeight
+    self.dayRange = dayRange
     self.dayColumnWidth = dayColumnWidth
     self.boardContentVersion = boardContentVersion
     self.pinnedLeftVersion = pinnedLeftVersion
@@ -535,11 +584,13 @@ struct UnifiedTimelineBoardScrollView<
     self.scrollRequestGeneration = scrollRequestGeneration
     self.publishOffsetY = publishOffsetY
     self.publishPreciseHoverOffsets = publishPreciseHoverOffsets
+    self.isDayHeaderHoverEnabled = isDayHeaderHoverEnabled
     self.scrollHoverSuppressionInterval = scrollHoverSuppressionInterval
     self._offsetX = offsetX
     self._offsetY = offsetY
     self._requestedOffsetX = requestedOffsetX
     self.onScrollActivity = onScrollActivity
+    self.onDayHeaderHover = onDayHeaderHover
     self.boardContent = boardContent()
     self.pinnedLeft = pinnedLeft()
     self.pinnedTop = pinnedTop()
@@ -558,9 +609,11 @@ struct UnifiedTimelineBoardScrollView<
     var offsetY: Binding<CGFloat>
     var titleColumnWidth: CGFloat
     var headerHeight: CGFloat
+    var dayRange: ClosedRange<Int>
     var dayColumnWidth: CGFloat
     var publishOffsetY: Bool
     var publishPreciseHoverOffsets: Bool
+    var isDayHeaderHoverEnabled: Bool
     var scrollHoverSuppressionInterval: TimeInterval
     var lastPublishedDayBucket: Int = .min
     var lastPublishedVerticalBucket: Int = .min
@@ -568,7 +621,9 @@ struct UnifiedTimelineBoardScrollView<
     var hasAppliedRequestedOffset = false
     var didPrimeInitialVerticalOrigin = false
     var scrollHoverSuppressionDeadline: TimeInterval = 0
+    var hoveredDayHeaderOffset: Int?
     var onScrollActivity: (CGFloat, CGFloat, Bool) -> Void
+    var onDayHeaderHover: (Int, Bool) -> Void
     weak var scrollView: NSScrollView?
 
     init(
@@ -582,12 +637,15 @@ struct UnifiedTimelineBoardScrollView<
       offsetY: Binding<CGFloat>,
       titleColumnWidth: CGFloat,
       headerHeight: CGFloat,
+      dayRange: ClosedRange<Int>,
       dayColumnWidth: CGFloat,
       publishOffsetY: Bool,
       publishPreciseHoverOffsets: Bool,
+      isDayHeaderHoverEnabled: Bool,
       scrollHoverSuppressionInterval: TimeInterval,
       scrollRequestGeneration: Int,
-      onScrollActivity: @escaping (CGFloat, CGFloat, Bool) -> Void
+      onScrollActivity: @escaping (CGFloat, CGFloat, Bool) -> Void,
+      onDayHeaderHover: @escaping (Int, Bool) -> Void
     ) {
       self.boardHosting = ScrollPassthroughHostingView(rootView: boardContent)
       self.leftHosting = ScrollPassthroughHostingView(rootView: pinnedLeft)
@@ -599,12 +657,15 @@ struct UnifiedTimelineBoardScrollView<
       self.offsetY = offsetY
       self.titleColumnWidth = titleColumnWidth
       self.headerHeight = headerHeight
+      self.dayRange = dayRange
       self.dayColumnWidth = dayColumnWidth
       self.publishOffsetY = publishOffsetY
       self.publishPreciseHoverOffsets = publishPreciseHoverOffsets
+      self.isDayHeaderHoverEnabled = isDayHeaderHoverEnabled
       self.scrollHoverSuppressionInterval = scrollHoverSuppressionInterval
       self.lastScrollRequestGeneration = scrollRequestGeneration
       self.onScrollActivity = onScrollActivity
+      self.onDayHeaderHover = onDayHeaderHover
       super.init()
       documentView.addSubview(boardHosting)
     }
@@ -680,6 +741,7 @@ struct UnifiedTimelineBoardScrollView<
         titleColumnWidth: titleColumnWidth,
         headerHeight: headerHeight
       )
+      clearDayHeaderHover()
     }
 
     @objc func frameDidChange(_ notification: Notification) {
@@ -738,6 +800,56 @@ struct UnifiedTimelineBoardScrollView<
       if !topHosting.frame.equalTo(topFrame) {
         topHosting.frame = topFrame
       }
+      topHosting.layoutSubtreeIfNeeded()
+    }
+
+    func updateDayHeaderHover(with event: NSEvent, in clipView: FlippedTimelineClipView) {
+      updateDayHeaderHover(windowLocation: event.locationInWindow, in: clipView)
+    }
+
+    func refreshDayHeaderHoverIfNeeded(in clipView: FlippedTimelineClipView) {
+      guard let window = clipView.window else {
+        clearDayHeaderHover()
+        return
+      }
+      updateDayHeaderHover(windowLocation: window.mouseLocationOutsideOfEventStream, in: clipView)
+    }
+
+    func updateDayHeaderHover(
+      windowLocation: NSPoint,
+      in clipView: FlippedTimelineClipView
+    ) {
+      guard isDayHeaderHoverEnabled else {
+        clearDayHeaderHover()
+        return
+      }
+      let contentLocation = clipView.convert(windowLocation, from: nil)
+      guard
+        let nextOffset = TimelineBoardReadPath.dayHeaderHoverOffset(
+          contentLocation: contentLocation,
+          visibleBoundsOrigin: clipView.bounds.origin,
+          titleColumnWidth: titleColumnWidth,
+          headerHeight: headerHeight,
+          dayRange: dayRange,
+          dayColumnWidth: dayColumnWidth
+        )
+      else {
+        clearDayHeaderHover()
+        return
+      }
+
+      guard hoveredDayHeaderOffset != nextOffset else { return }
+      if let hoveredDayHeaderOffset {
+        onDayHeaderHover(hoveredDayHeaderOffset, false)
+      }
+      hoveredDayHeaderOffset = nextOffset
+      onDayHeaderHover(nextOffset, true)
+    }
+
+    func clearDayHeaderHover() {
+      guard let hoveredDayHeaderOffset else { return }
+      self.hoveredDayHeaderOffset = nil
+      onDayHeaderHover(hoveredDayHeaderOffset, false)
     }
   }
 
@@ -753,12 +865,15 @@ struct UnifiedTimelineBoardScrollView<
       offsetY: $offsetY,
       titleColumnWidth: titleColumnWidth,
       headerHeight: headerHeight,
+      dayRange: dayRange,
       dayColumnWidth: dayColumnWidth,
       publishOffsetY: publishOffsetY,
       publishPreciseHoverOffsets: publishPreciseHoverOffsets,
+      isDayHeaderHoverEnabled: isDayHeaderHoverEnabled,
       scrollHoverSuppressionInterval: scrollHoverSuppressionInterval,
       scrollRequestGeneration: scrollRequestGeneration,
-      onScrollActivity: onScrollActivity
+      onScrollActivity: onScrollActivity,
+      onDayHeaderHover: onDayHeaderHover
     )
   }
 
@@ -783,6 +898,12 @@ struct UnifiedTimelineBoardScrollView<
     }
     scrollView.beginUserScrollSession = { [weak coordinator = context.coordinator] in
       coordinator?.beginUserScrollSessionIfNeeded()
+    }
+    clipView.onMouseMovedInVisibleRect = { [weak coordinator = context.coordinator] event, clipView in
+      coordinator?.updateDayHeaderHover(with: event, in: clipView)
+    }
+    clipView.onMouseExitedVisibleRect = { [weak coordinator = context.coordinator] in
+      coordinator?.clearDayHeaderHover()
     }
 
     context.coordinator.leftHosting.wantsLayer = true
@@ -830,17 +951,28 @@ struct UnifiedTimelineBoardScrollView<
     coordinator.offsetY = $offsetY
     coordinator.titleColumnWidth = titleColumnWidth
     coordinator.headerHeight = headerHeight
+    coordinator.dayRange = dayRange
     coordinator.dayColumnWidth = dayColumnWidth
     coordinator.publishOffsetY = publishOffsetY
     coordinator.publishPreciseHoverOffsets = publishPreciseHoverOffsets
+    coordinator.isDayHeaderHoverEnabled = isDayHeaderHoverEnabled
     coordinator.scrollHoverSuppressionInterval = scrollHoverSuppressionInterval
     coordinator.onScrollActivity = onScrollActivity
+    coordinator.onDayHeaderHover = onDayHeaderHover
     if let interactiveScrollView = scrollView as? TimelineInteractionScrollView {
       interactiveScrollView.noteUserScrollActivity = { [weak coordinator] in
         coordinator?.noteUserScrollActivity()
       }
       interactiveScrollView.beginUserScrollSession = { [weak coordinator] in
         coordinator?.beginUserScrollSessionIfNeeded()
+      }
+    }
+    if let clipView = scrollView.contentView as? FlippedTimelineClipView {
+      clipView.onMouseMovedInVisibleRect = { [weak coordinator] event, clipView in
+        coordinator?.updateDayHeaderHover(with: event, in: clipView)
+      }
+      clipView.onMouseExitedVisibleRect = { [weak coordinator] in
+        coordinator?.clearDayHeaderHover()
       }
     }
     if coordinator.lastScrollRequestGeneration != scrollRequestGeneration {
@@ -909,6 +1041,13 @@ struct UnifiedTimelineBoardScrollView<
       titleColumnWidth: titleColumnWidth,
       headerHeight: headerHeight
     )
+    if let clipView = scrollView.contentView as? FlippedTimelineClipView {
+      if isDayHeaderHoverEnabled {
+        coordinator.refreshDayHeaderHoverIfNeeded(in: clipView)
+      } else {
+        coordinator.clearDayHeaderHover()
+      }
+    }
 
     let liveX = max(0, scrollView.contentView.bounds.origin.x)
     let usesPreciseHoverOffsets = publishPreciseHoverOffsets && !coordinator.shouldSuppressHoverPrecision()

@@ -515,6 +515,7 @@ struct TimelineBoardView: View {
         boardSize: CGSize(width: viewport.boardWidth, height: viewport.boardHeight),
         titleColumnWidth: titleColumnWidth,
         headerHeight: headerHeight,
+        dayRange: dayRange,
         dayColumnWidth: dayColumnWidth,
         boardContentVersion: viewport.boardVersion,
         pinnedLeftVersion: viewport.leftVersion,
@@ -522,6 +523,7 @@ struct TimelineBoardView: View {
         scrollRequestGeneration: scrollRequestGeneration,
         publishOffsetY: viewport.shouldPublishVerticalOffset,
         publishPreciseHoverOffsets: viewport.shouldPublishPreciseHoverOffsets,
+        isDayHeaderHoverEnabled: isActive && !isTimelineScrolling && !appState.isEditorMotionSuppressed,
         scrollHoverSuppressionInterval: timelineScrollIdleDelay,
         offsetX: $horizontalOffsetX,
         offsetY: $verticalOffsetY,
@@ -532,6 +534,9 @@ struct TimelineBoardView: View {
             verticalOffsetY: y,
             usedPreciseHoverOffsets: usedPreciseHoverOffsets
           )
+        },
+        onDayHeaderHover: { offset, isHovering in
+          updateTimelineDayHeaderHover(offset, isHovering: isHovering)
         }
       ) {
         boardContent(

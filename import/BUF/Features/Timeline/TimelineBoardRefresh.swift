@@ -21,6 +21,141 @@ enum TimelineBoardReadPath {
     return hasher.finalize()
   }
 
+  static func reorderedProjectIDsAfterDrop(
+    _ projectIDs: [UUID],
+    draggedID: UUID,
+    targetID: UUID,
+    placement: TimelineProjectDropPlacement
+  ) -> [UUID]? {
+    guard projectIDs.contains(targetID), draggedID != targetID else {
+      return nil
+    }
+
+    var reordered = projectIDs.filter { $0 != draggedID }
+    guard let adjustedTargetIndex = reordered.firstIndex(of: targetID) else { return nil }
+    let insertionIndex: Int
+    switch placement {
+    case .before:
+      insertionIndex = adjustedTargetIndex
+    case .after:
+      insertionIndex = adjustedTargetIndex + 1
+    }
+    reordered.insert(draggedID, at: min(insertionIndex, reordered.count))
+    return reordered == projectIDs ? nil : reordered
+  }
+
+  static func dayHeaderHoverOffset(
+    locationX: CGFloat,
+    dayRange: ClosedRange<Int>,
+    dayColumnWidth: CGFloat
+  ) -> Int? {
+    guard dayColumnWidth > 0, locationX >= 0 else { return nil }
+    let offset = dayRange.lowerBound + Int(floor(locationX / dayColumnWidth))
+    guard dayRange.contains(offset) else { return nil }
+    return offset
+  }
+
+  static func dayHeaderHoverOffset(
+    contentLocation: CGPoint,
+    visibleBoundsOrigin: CGPoint,
+    titleColumnWidth: CGFloat,
+    headerHeight: CGFloat,
+    dayRange: ClosedRange<Int>,
+    dayColumnWidth: CGFloat
+  ) -> Int? {
+    let visibleX = contentLocation.x - visibleBoundsOrigin.x
+    let visibleY = contentLocation.y - visibleBoundsOrigin.y
+    guard visibleX >= titleColumnWidth, visibleY >= 0, visibleY < headerHeight else {
+      return nil
+    }
+    return dayHeaderHoverOffset(
+      locationX: contentLocation.x - titleColumnWidth,
+      dayRange: dayRange,
+      dayColumnWidth: dayColumnWidth
+    )
+  }
+
+  static func projectColorHex(
+    forProjectReference reference: WorkspaceProjectReference,
+    in bars: [TimelineProjectBar]
+  ) -> String? {
+    bars.first { $0.projectReference.id == reference.id }?.colorHex
+  }
+
+  static func timelinePreviewTitle(for title: String) -> String {
+    let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
+    return trimmed.isEmpty ? "제목 없음" : trimmed
+  }
+
+  static func dayHeaderSectionsByDay(
+    from bars: [TimelineProjectBar],
+    today: Date
+  ) -> [Date: [TimelineDayHeaderOverlayProjectSection]] {
+    var sectionsByDay: [Date: [TimelineDayHeaderOverlayProjectSection]] = [:]
+
+    for bar in bars {
+      var tasksByDay: [Date: [TimelineDayHeaderOverlayTaskItem]] = [:]
+      for (day, preview) in bar.dailyTaskPreviews {
+        for task in preview.tasks {
+          tasksByDay[day, default: []].append(
+            TimelineDayHeaderOverlayTaskItem(
+              id: "\(bar.projectID.uuidString)-\(task.id)-display",
+              projectReference: bar.projectReference,
+              taskID: task.taskID,
+              title: timelinePreviewTitle(for: task.title),
+              isCompleted: false,
+              isOverdue: task.isOverdue
+            )
+          )
+
+          if task.isOverdue {
+            tasksByDay[today, default: []].append(
+              TimelineDayHeaderOverlayTaskItem(
+                id: "\(bar.projectID.uuidString)-\(task.id)-overdue-today",
+                projectReference: bar.projectReference,
+                taskID: task.taskID,
+                title: timelinePreviewTitle(for: task.title),
+                isCompleted: false,
+                isOverdue: true
+              )
+            )
+          }
+        }
+      }
+
+      for (day, preview) in bar.dailyCompletedTaskPreviews {
+        for task in preview.tasks {
+          tasksByDay[day, default: []].append(
+            TimelineDayHeaderOverlayTaskItem(
+              id: "\(bar.projectID.uuidString)-\(task.id)-completed",
+              projectReference: bar.projectReference,
+              taskID: task.taskID,
+              title: timelinePreviewTitle(for: task.title),
+              isCompleted: true,
+              isOverdue: false
+            )
+          )
+        }
+      }
+
+      guard !tasksByDay.isEmpty else { continue }
+
+      for (day, items) in tasksByDay {
+        sectionsByDay[day, default: []].append(
+          TimelineDayHeaderOverlayProjectSection(
+            id: bar.projectID,
+            projectReference: bar.projectReference,
+            projectColorHex: bar.colorHex,
+            projectTitle: bar.title,
+            tasks: items
+          )
+        )
+      }
+    }
+
+    return sectionsByDay
+  }
+
   static func orderedBars(
     _ bars: [TimelineProjectBar],
     by projectIDs: [UUID]

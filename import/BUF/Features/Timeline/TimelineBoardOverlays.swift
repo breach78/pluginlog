@@ -38,7 +38,10 @@ extension TimelineBoardView {
         .preference(
           key: TimelineDayHeaderOverlayPresentationPreferenceKey.self,
           value: isActive
-            ? timelineDayHeaderOverlayPresentation(containerOrigin: containerOrigin)
+            ? timelineDayHeaderOverlayPresentation(
+              containerOrigin: containerOrigin,
+              bars: snapshot.bars
+            )
             : nil
         )
     }
@@ -334,6 +337,10 @@ extension TimelineBoardView {
     return TimelineTaskBadgeOverlayPresentation(
       frame: frame,
       projectReference: overlayContext.projectReference,
+      projectColorHex: TimelineBoardReadPath.projectColorHex(
+        forProjectReference: overlayContext.projectReference,
+        in: bars
+      ),
       date: overlayContext.date,
       totalCount: overlayContext.totalCount,
       strongTasks: overlayContext.strongPreview?.tasks.map {
@@ -512,8 +519,7 @@ extension TimelineBoardView {
   }
 
   func timelinePreviewTitle(for title: String) -> String {
-    let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
-    return trimmed.isEmpty ? "제목 없음" : trimmed
+    TimelineBoardReadPath.timelinePreviewTitle(for: title)
   }
 
   func refreshTimelineDayHeaderSectionsIfNeeded(
@@ -528,73 +534,17 @@ extension TimelineBoardView {
       return
     }
 
-    let today = calendar.startOfDay(for: .now)
-    var sectionsByDay: [Date: [TimelineDayHeaderOverlayProjectSection]] = [:]
-
-    for bar in bars {
-      var tasksByDay: [Date: [TimelineDayHeaderOverlayTaskItem]] = [:]
-      for (day, preview) in bar.dailyTaskPreviews {
-        for task in preview.tasks {
-          tasksByDay[day, default: []].append(
-            TimelineDayHeaderOverlayTaskItem(
-              id: "\(bar.projectID.uuidString)-\(task.id)-display",
-              projectReference: bar.projectReference,
-              taskID: task.taskID,
-              title: timelinePreviewTitle(for: task.title),
-              isCompleted: false,
-              isOverdue: task.isOverdue
-            )
-          )
-
-          if task.isOverdue {
-            tasksByDay[today, default: []].append(
-              TimelineDayHeaderOverlayTaskItem(
-                id: "\(bar.projectID.uuidString)-\(task.id)-overdue-today",
-                projectReference: bar.projectReference,
-                taskID: task.taskID,
-                title: timelinePreviewTitle(for: task.title),
-                isCompleted: false,
-                isOverdue: true
-              )
-            )
-          }
-        }
-      }
-
-      for (day, preview) in bar.dailyCompletedTaskPreviews {
-        for task in preview.tasks {
-          tasksByDay[day, default: []].append(
-            TimelineDayHeaderOverlayTaskItem(
-              id: "\(bar.projectID.uuidString)-\(task.id)-completed",
-              projectReference: bar.projectReference,
-              taskID: task.taskID,
-              title: timelinePreviewTitle(for: task.title),
-              isCompleted: true,
-              isOverdue: false
-            )
-          )
-        }
-      }
-
-      guard !tasksByDay.isEmpty else { continue }
-
-      for (day, items) in tasksByDay {
-        sectionsByDay[day, default: []].append(
-          TimelineDayHeaderOverlayProjectSection(
-            id: bar.projectID,
-            projectReference: bar.projectReference,
-            projectTitle: bar.title,
-            tasks: items
-          )
-        )
-      }
-    }
-
-    cachedTimelineDayHeaderSections = sectionsByDay
+    cachedTimelineDayHeaderSections = TimelineBoardReadPath.dayHeaderSectionsByDay(
+      from: bars,
+      today: calendar.startOfDay(for: .now)
+    )
     cachedTimelineDayHeaderSourceSignature = sourceSignature
   }
 
-  func timelineDayHeaderOverlayPresentation(containerOrigin: CGPoint)
+  func timelineDayHeaderOverlayPresentation(
+    containerOrigin: CGPoint,
+    bars: [TimelineProjectBar]
+  )
     -> TimelineDayHeaderOverlayPresentation?
   {
     guard !appState.isEditorMotionSuppressed,
@@ -605,10 +555,11 @@ extension TimelineBoardView {
     }
 
     let activeDate = calendar.startOfDay(for: date(for: activeTimelineDayHeaderOffset))
-    guard
-      let sections = cachedTimelineDayHeaderSections[activeDate],
-      !sections.isEmpty
-    else {
+    let sectionsByDay = TimelineBoardReadPath.dayHeaderSectionsByDay(
+      from: bars,
+      today: calendar.startOfDay(for: .now)
+    )
+    guard let sections = sectionsByDay[activeDate], !sections.isEmpty else {
       return nil
     }
 

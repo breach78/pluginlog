@@ -295,16 +295,20 @@ extension ScheduleBoardView {
     }
 
     var taskItemsByDayAndProject:
-      [Date: [UUID: (title: String, items: [TimelineDayHeaderOverlayTaskItem])]] = [:]
+      [Date: [UUID: (title: String, colorHex: String?, items: [TimelineDayHeaderOverlayTaskItem])]]
+      = [:]
 
     func appendDayHeaderTask(
       _ item: TimelineDayHeaderOverlayTaskItem,
       day: Date,
       projectID: UUID,
-      projectTitle: String
+      projectTitle: String,
+      projectColorHex: String?
     ) {
       var sectionsForDay = taskItemsByDayAndProject[day] ?? [:]
-      var payload = sectionsForDay[projectID] ?? (title: projectTitle, items: [])
+      var payload =
+        sectionsForDay[projectID]
+        ?? (title: projectTitle, colorHex: projectColorHex, items: [])
       payload.items.append(item)
       sectionsForDay[projectID] = payload
       taskItemsByDayAndProject[day] = sectionsForDay
@@ -334,7 +338,8 @@ extension ScheduleBoardView {
         ),
         day: day,
         projectID: projectID,
-        projectTitle: descriptor.projectTitle
+        projectTitle: descriptor.projectTitle,
+        projectColorHex: descriptor.projectColorHex
       )
 
       if !task.isCompleted, day < today {
@@ -349,7 +354,8 @@ extension ScheduleBoardView {
             ),
             day: today,
             projectID: projectID,
-            projectTitle: descriptor.projectTitle
+            projectTitle: descriptor.projectTitle,
+            projectColorHex: descriptor.projectColorHex
           )
         }
     }
@@ -360,6 +366,7 @@ extension ScheduleBoardView {
           TimelineDayHeaderOverlayProjectSection(
             id: projectID,
             projectReference: .project(projectID),
+            projectColorHex: payload.colorHex,
             projectTitle: payload.title,
             tasks: payload.items
           )

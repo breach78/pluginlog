@@ -134,6 +134,38 @@ final class TimelineBoardReadPathTests: XCTestCase {
     XCTAssertEqual(ProjectListSortMode.priority.nextTimeline, .recent)
   }
 
+  func testProjectDropReordersWithinExistingGroup() {
+    let firstID = UUID()
+    let secondID = UUID()
+    let thirdID = UUID()
+
+    XCTAssertEqual(
+      TimelineBoardReadPath.reorderedProjectIDsAfterDrop(
+        [firstID, secondID, thirdID],
+        draggedID: thirdID,
+        targetID: firstID,
+        placement: .after
+      ),
+      [firstID, thirdID, secondID]
+    )
+  }
+
+  func testProjectDropInsertsDraggedProjectIntoTargetGroupWhenStageChanges() {
+    let draggedID = UUID()
+    let firstTargetID = UUID()
+    let secondTargetID = UUID()
+
+    XCTAssertEqual(
+      TimelineBoardReadPath.reorderedProjectIDsAfterDrop(
+        [firstTargetID, secondTargetID],
+        draggedID: draggedID,
+        targetID: firstTargetID,
+        placement: .before
+      ),
+      [draggedID, firstTargetID, secondTargetID]
+    )
+  }
+
   func testPinnedTopSignatureChangesWhenScrollSuppressionEnds() {
     let anchorDate = Date(timeIntervalSince1970: 1_000)
 
@@ -153,6 +185,135 @@ final class TimelineBoardReadPathTests: XCTestCase {
         isTimelineScrolling: false
       )
     )
+  }
+
+  func testDayHeaderHoverOffsetMapsLocalXIntoVisibleDayRange() {
+    XCTAssertEqual(
+      TimelineBoardReadPath.dayHeaderHoverOffset(
+        locationX: 0,
+        dayRange: -4...28,
+        dayColumnWidth: 44
+      ),
+      -4
+    )
+    XCTAssertEqual(
+      TimelineBoardReadPath.dayHeaderHoverOffset(
+        locationX: 44 * 4 + 1,
+        dayRange: -4...28,
+        dayColumnWidth: 44
+      ),
+      0
+    )
+    XCTAssertNil(
+      TimelineBoardReadPath.dayHeaderHoverOffset(
+        locationX: 44 * 33,
+        dayRange: -4...28,
+        dayColumnWidth: 44
+      )
+    )
+  }
+
+  func testDayHeaderHoverOffsetMapsPinnedHeaderCoordinatesAfterHorizontalScroll() {
+    XCTAssertEqual(
+      TimelineBoardReadPath.dayHeaderHoverOffset(
+        contentLocation: CGPoint(x: 88 + 320, y: 120 + 10),
+        visibleBoundsOrigin: CGPoint(x: 88, y: 120),
+        titleColumnWidth: 320,
+        headerHeight: 64,
+        dayRange: -4...28,
+        dayColumnWidth: 44
+      ),
+      -2
+    )
+    XCTAssertNil(
+      TimelineBoardReadPath.dayHeaderHoverOffset(
+        contentLocation: CGPoint(x: 88 + 319, y: 120 + 10),
+        visibleBoundsOrigin: CGPoint(x: 88, y: 120),
+        titleColumnWidth: 320,
+        headerHeight: 64,
+        dayRange: -4...28,
+        dayColumnWidth: 44
+      )
+    )
+    XCTAssertNil(
+      TimelineBoardReadPath.dayHeaderHoverOffset(
+        contentLocation: CGPoint(x: 88 + 320, y: 120 + 64),
+        visibleBoundsOrigin: CGPoint(x: 88, y: 120),
+        titleColumnWidth: 320,
+        headerHeight: 64,
+        dayRange: -4...28,
+        dayColumnWidth: 44
+      )
+    )
+  }
+
+  func testProjectColorHexUsesTimelineBarColorForOverlayReference() {
+    let projectID = UUID()
+
+    XCTAssertEqual(
+      TimelineBoardReadPath.projectColorHex(
+        forProjectReference: .project(projectID),
+        in: [makeBar(projectID: projectID, title: "Project", colorHex: "#FF3344")]
+      ),
+      "#FF3344"
+    )
+  }
+
+  func testDayHeaderSectionsBuildFromCurrentBars() {
+    let projectID = UUID()
+    let overdueTaskID = UUID()
+    let completedTaskID = UUID()
+    let today = Date(timeIntervalSince1970: 1_775_340_000)
+    let overdueDay = today.addingTimeInterval(-86_400)
+    let bar = makeBar(
+      projectID: projectID,
+      title: "Project",
+      colorHex: "#34C759",
+      dailyTaskPreviews: [
+        overdueDay: TimelineDayPreview(
+          totalCount: 1,
+          tasks: [
+            TimelineProjectTaskPreview(
+              id: "overdue",
+              taskID: overdueTaskID,
+              title: "  Overdue task  ",
+              isCompleted: false,
+              isOverdue: true,
+              targetCompletedWorkUnits: 0
+            ),
+          ]
+        ),
+      ],
+      dailyCompletedTaskPreviews: [
+        today: TimelineDayPreview(
+          totalCount: 1,
+          tasks: [
+            TimelineProjectTaskPreview(
+              id: "completed",
+              taskID: completedTaskID,
+              title: "Completed task",
+              isCompleted: true,
+              isOverdue: false,
+              targetCompletedWorkUnits: 0
+            ),
+          ]
+        ),
+      ]
+    )
+
+    let sectionsByDay = TimelineBoardReadPath.dayHeaderSectionsByDay(
+      from: [bar],
+      today: today
+    )
+
+    let overdueSection = sectionsByDay[overdueDay]?.first
+    XCTAssertEqual(overdueSection?.projectColorHex, "#34C759")
+    XCTAssertEqual(overdueSection?.tasks.first?.title, "Overdue task")
+    XCTAssertEqual(overdueSection?.tasks.first?.isOverdue, true)
+
+    let todayTasks = sectionsByDay[today]?.first?.tasks ?? []
+    XCTAssertTrue(todayTasks.contains { $0.taskID == overdueTaskID && $0.isOverdue })
+    XCTAssertTrue(todayTasks.contains { $0.taskID == completedTaskID && $0.isCompleted })
   }
 
   private func makeProject(
@@ -178,11 +339,17 @@ final class TimelineBoardReadPathTests: XCTestCase {
     )
   }
 
-  private func makeBar(projectID: UUID, title: String) -> TimelineProjectBar {
+  private func makeBar(
+    projectID: UUID,
+    title: String,
+    colorHex: String? = nil,
+    dailyTaskPreviews: [Date: TimelineDayPreview] = [:],
+    dailyCompletedTaskPreviews: [Date: TimelineDayPreview] = [:]
+  ) -> TimelineProjectBar {
     TimelineProjectBar(
       projectID: projectID,
       title: title,
-      colorHex: nil,
+      colorHex: colorHex,
       start: nil,
       end: nil,
       deadline: nil,
@@ -193,8 +360,8 @@ final class TimelineBoardReadPathTests: XCTestCase {
       dailyTaskCounts: [:],
       dailyCompletedTaskCounts: [:],
       dailyPlannedWorkCounts: [:],
-      dailyTaskPreviews: [:],
-      dailyCompletedTaskPreviews: [:],
+      dailyTaskPreviews: dailyTaskPreviews,
+      dailyCompletedTaskPreviews: dailyCompletedTaskPreviews,
       dailyPlannedWorkPreviews: [:],
       projectReference: .project(projectID)
     )
