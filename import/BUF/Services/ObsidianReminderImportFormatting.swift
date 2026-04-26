@@ -226,19 +226,49 @@ enum ObsidianReminderImportFormatting {
     return (rawValue, nil)
   }
 
-  private static func reminderNoteText(for task: ObsidianProjectTask) -> String {
+  static func reminderNoteText(for task: ObsidianProjectTask) -> String {
     let lines = task.subtreeMarkdown.components(separatedBy: "\n")
     var noteLines: [String] = []
-    for line in lines {
+    var index = 0
+    while index < lines.count {
+      let line = lines[index]
       let trimmed = line.trimmingCharacters(in: .whitespaces)
-      guard !trimmed.isEmpty, !trimmed.hasPrefix("%% brain-unfog:") else { continue }
+      guard !trimmed.isEmpty, !trimmed.hasPrefix("%% brain-unfog:") else {
+        index += 1
+        continue
+      }
+      if let taskIndentation = parseTaskLineIndentation(line) {
+        let blockEnd = taskSubtreeEndIndex(
+          from: index,
+          taskIndentation: taskIndentation,
+          in: lines
+        )
+        let block = Array(lines[index..<blockEnd])
+        if let identifier = reminderIdentifier(in: block) {
+          let noteIndent = reminderNoteIndent(for: line, parentIndentation: task.indentation)
+          noteLines.append("\(String(repeating: " ", count: noteIndent))t:\(identifier)")
+          index = blockEnd
+          continue
+        }
+      }
       let content = markdownListContent(from: trimmed)
-      guard !content.isEmpty else { continue }
-      let noteIndent = max(0, logicalIndentLevel(of: leadingWhitespacePrefix(of: line))
-        - logicalIndentLevel(of: task.indentation) - 1)
+      guard !content.isEmpty else {
+        index += 1
+        continue
+      }
+      let noteIndent = reminderNoteIndent(for: line, parentIndentation: task.indentation)
       noteLines.append("\(String(repeating: " ", count: noteIndent))\(content)")
+      index += 1
     }
     return ReminderNoteSourceCodec.normalize(noteLines.joined(separator: "\n"))
+  }
+
+  private static func reminderNoteIndent(
+    for line: String,
+    parentIndentation: String
+  ) -> Int {
+    max(0, logicalIndentLevel(of: leadingWhitespacePrefix(of: line))
+      - logicalIndentLevel(of: parentIndentation) - 1)
   }
 
   private static func markdownListContent(from trimmedLine: String) -> String {

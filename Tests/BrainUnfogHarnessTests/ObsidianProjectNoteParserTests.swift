@@ -183,6 +183,24 @@ final class ObsidianProjectNoteParserTests: XCTestCase {
     XCTAssertFalse(parent.subtreeMarkdown.contains("- [ ] Next"))
   }
 
+  func testNestedTaskSubtreeStopsBeforeSameLevelParentNoteLine() throws {
+    let note = ObsidianProjectNoteParser.parse(
+      """
+      - [ ] Parent
+        %% brain-unfog: {"reminder_external_id":"PARENT"} %%
+        - before child
+        - [ ] Child
+          %% brain-unfog: {"reminder_external_id":"CHILD"} %%
+          - child detail
+        - after child
+      """
+    )
+
+    let child = try XCTUnwrap(note.tasks.last)
+    XCTAssertTrue(child.subtreeMarkdown.contains("- child detail"))
+    XCTAssertFalse(child.subtreeMarkdown.contains("- after child"))
+  }
+
   func testValidationReportsDuplicateListAndTaskReminderIdentifiers() {
     let first = ObsidianProjectNoteParser.parse(
       """

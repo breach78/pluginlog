@@ -160,7 +160,7 @@ final class ObsidianReminderImportSyncTests: XCTestCase {
         isCompleted: false,
         date: nil,
         repeatRule: nil,
-        noteText: "stale note\nChild one\nChild two"
+        noteText: "stale note\nt:child-one\nt:child-two"
       ),
       remoteModifiedAt: fixedRemoteDate,
       now: fixedNow

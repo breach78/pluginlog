@@ -165,6 +165,98 @@ final class ObsidianReminderProvisioningSyncTests: XCTestCase {
     XCTAssertTrue(provider.updatedRecurrences.isEmpty)
   }
 
+  func testParentNotePushUsesTaskMarkerForNestedReminderTaskWithoutChildSubtree() async throws {
+    let vault = try makeTemporaryVault()
+    let dataRoot = try makeTemporaryDirectory()
+    ReminderSyncBaselineStore.install(dataDirectory: dataRoot)
+    ReminderPendingBindingStore.install(dataDirectory: dataRoot)
+    let noteURL = try writeProjectNote(
+      vault: vault,
+      fileName: "Project.md",
+      body: """
+      ---
+      tags:
+        - 프로젝트
+      reminder_list_external_id: list-1
+      ---
+      - [ ] Parent
+        %% brain-unfog: {"reminder_external_id":"parent"} %%
+        - parent note before
+        - [ ] Child
+          %% brain-unfog: {"reminder_external_id":"child"} %%
+          - child private detail
+        - parent note after
+      """
+    )
+    let store = ObsidianProjectMarkdownStore(vaultRootURL: vault)
+    let provider = FakeObsidianReminderProjectProvider()
+    provider.snapshots["parent"] = makeRemoteTask(
+      externalID: "parent",
+      listID: "list-1",
+      title: "Parent",
+      note: "old parent note",
+      isCompleted: false,
+      dueDate: nil,
+      hasExplicitTime: false,
+      recurrenceRuleRaw: nil,
+      modifiedAt: fixedRemoteDate
+    )
+    provider.snapshots["child"] = makeRemoteTask(
+      externalID: "child",
+      listID: "list-1",
+      title: "Child",
+      note: "child private detail",
+      isCompleted: false,
+      dueDate: nil,
+      hasExplicitTime: false,
+      recurrenceRuleRaw: nil,
+      modifiedAt: fixedRemoteDate
+    )
+    ReminderSyncBaselineStore.upsert(
+      reminderExternalIdentifier: "parent",
+      state: ReminderSyncTaskState(
+        title: "Parent",
+        isCompleted: false,
+        date: nil,
+        repeatRule: nil,
+        noteText: "old parent note"
+      ),
+      remoteModifiedAt: fixedRemoteDate,
+      now: fixedNow
+    )
+    ReminderSyncBaselineStore.upsert(
+      reminderExternalIdentifier: "child",
+      state: ReminderSyncTaskState(
+        title: "Child",
+        isCompleted: false,
+        date: nil,
+        repeatRule: nil,
+        noteText: "child private detail"
+      ),
+      remoteModifiedAt: fixedRemoteDate,
+      now: fixedNow
+    )
+
+    let result = try await ObsidianReminderProvisioningSync.syncChangedNotes(
+      fileURLs: [noteURL],
+      store: store,
+      reminderProjectProvider: provider,
+      now: fixedNow
+    )
+
+    XCTAssertEqual(result.updatedTaskCount, 1)
+    XCTAssertEqual(
+      provider.updatedNotes["parent"],
+      """
+      parent note before
+      t:child
+      parent note after
+      """
+    )
+    XCTAssertNil(provider.updatedNotes["child"])
+    XCTAssertFalse(provider.updatedNotes["parent"]?.contains("child private detail") ?? true)
+  }
+
   func testDurationEditDoesNotWriteReminder() async throws {
     let vault = try makeTemporaryVault()
     let dataRoot = try makeTemporaryDirectory()

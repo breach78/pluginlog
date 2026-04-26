@@ -151,7 +151,22 @@ final class RetainedSetupFlowTests: XCTestCase {
     await appState.configureObsidianVault(at: vaultRoot, activateWhenReady: true)
 
     let afterMarkdown = try String(contentsOf: noteURL, encoding: .utf8)
-    XCTAssertEqual(afterMarkdown, originalMarkdown)
+    XCTAssertEqual(
+      afterMarkdown,
+      """
+      ---
+      tags:
+        - 프로젝트
+      reminder_list_external_id: \(gateway.calendar.calendarIdentifier)
+      완료 가리기: true
+      ---
+      Local prose that must stay.
+      - [ ] Imported task
+        %% brain-unfog: {"reminder_external_id":"\(taskIdentifier)"} %%
+        - note line
+
+      """
+    )
     XCTAssertEqual(appState.obsidianVaultRootURL?.standardizedFileURL, vaultRoot.standardizedFileURL)
     XCTAssertTrue(appState.hasCompletedInitialSetup)
     XCTAssertNil(appState.errorMessage)

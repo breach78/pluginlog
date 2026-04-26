@@ -104,6 +104,7 @@ enum ObsidianProjectNoteParser {
   private static func parseFrontmatterLines(_ lines: [String]) -> ObsidianProjectFrontmatter {
     var tags: [String] = []
     var listID: String?
+    var hideCompletedTasks = true
     var consumed: Set<Int> = []
 
     for index in lines.indices {
@@ -127,6 +128,9 @@ enum ObsidianProjectNoteParser {
       case "reminder_list_external_id":
         consumed.insert(index)
         listID = normalizedScalar(keyValue.value)
+      case "완료 가리기":
+        consumed.insert(index)
+        hideCompletedTasks = boolScalar(keyValue.value)
       case "brain_unfog_project_id", "brain_unfog_task_id":
         consumed.insert(index)
       default:
@@ -140,7 +144,8 @@ enum ObsidianProjectNoteParser {
     return ObsidianProjectFrontmatter(
       tags: unique(tags.compactMap(normalizedTag)),
       reminderListExternalIdentifier: listID,
-      preservedLines: preserved
+      preservedLines: preserved,
+      hideCompletedTasks: hideCompletedTasks
     )
   }
 
@@ -245,10 +250,10 @@ enum ObsidianProjectNoteParser {
       if line.trimmingCharacters(in: .whitespaces).isEmpty {
         return false
       }
-      guard leadingIndentationWidth(line) <= task.indentationCount else {
-        return false
+      if leadingIndentationWidth(line) <= task.indentationCount {
+        return true
       }
-      return parseTaskInfo(line, lineIndex: index) != nil || !line.hasPrefix(" ")
+      return false
     } ?? bodyLines.count
 
     let subtreeLines = bodyLines[(task.lineIndex + 1)..<nextBoundaryIndex]
@@ -291,6 +296,15 @@ enum ObsidianProjectNoteParser {
     let scalar = value.trimmingCharacters(in: .whitespacesAndNewlines)
       .trimmingCharacters(in: CharacterSet(charactersIn: "\"'"))
     return scalar.isEmpty ? nil : scalar
+  }
+
+  private static func boolScalar(_ value: String) -> Bool {
+    switch normalizedScalar(value)?.lowercased() {
+    case "true", "yes", "on":
+      return true
+    default:
+      return false
+    }
   }
 
   private static func unique(_ values: [String]) -> [String] {

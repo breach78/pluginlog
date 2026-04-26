@@ -275,7 +275,7 @@ enum ObsidianReminderProvisioningSync {
       title: task.title,
       dueDate: decodedDate?.date,
       hasExplicitTime: decodedDate?.hasExplicitTime ?? false,
-      noteText: reminderNoteText(for: task)
+      noteText: ObsidianReminderImportFormatting.reminderNoteText(for: task)
     ) else {
       return nil
     }
@@ -509,7 +509,7 @@ enum ObsidianReminderProvisioningSync {
       isCompleted: task.isCompleted,
       date: encodedDate(metadata: task.metadata, calendar: calendar),
       repeatRule: encodeRepeat(task.metadata?.repeatRule),
-      noteText: reminderNoteText(for: task)
+      noteText: ObsidianReminderImportFormatting.reminderNoteText(for: task)
     )
   }
 
@@ -542,41 +542,13 @@ enum ObsidianReminderProvisioningSync {
     return encodeDate(calendar.date(from: components), hasExplicitTime: true)
   }
 
-  private static func reminderNoteText(for task: ObsidianProjectTask) -> String {
-    let lines = task.subtreeMarkdown.components(separatedBy: "\n")
-    var noteLines: [String] = []
-    for line in lines {
-      let trimmed = line.trimmingCharacters(in: .whitespaces)
-      guard !trimmed.isEmpty, !trimmed.hasPrefix("%% brain-unfog:") else { continue }
-      let content = markdownListContent(from: trimmed)
-      guard !content.isEmpty else { continue }
-      let noteIndent = max(0, logicalIndentLevel(of: leadingWhitespacePrefix(of: line))
-        - logicalIndentLevel(of: task.indentation) - 1)
-      noteLines.append("\(String(repeating: " ", count: noteIndent))\(content)")
-    }
-    return ReminderNoteSourceCodec.normalize(noteLines.joined(separator: "\n"))
-  }
-
-  private static func markdownListContent(from trimmedLine: String) -> String {
-    if trimmedLine.hasPrefix("- [") {
-      let end = trimmedLine.index(trimmedLine.startIndex, offsetBy: 5, limitedBy: trimmedLine.endIndex)
-      if let end, end <= trimmedLine.endIndex {
-        return String(trimmedLine[end...]).trimmingCharacters(in: .whitespaces)
-      }
-    }
-    if trimmedLine.hasPrefix("- ") {
-      return String(trimmedLine.dropFirst(2)).trimmingCharacters(in: .whitespaces)
-    }
-    return trimmedLine
-  }
-
   private static func taskFingerprint(_ task: ObsidianProjectTask) -> String {
     [
       fingerprint(task.title),
       task.isCompleted ? "done" : "todo",
       fingerprint(encodedDate(metadata: task.metadata, calendar: .autoupdatingCurrent) ?? ""),
       fingerprint(task.metadata?.repeatRule ?? ""),
-      fingerprint(reminderNoteText(for: task)),
+      fingerprint(ObsidianReminderImportFormatting.reminderNoteText(for: task)),
     ].joined(separator: "|")
   }
 
@@ -639,28 +611,6 @@ enum ObsidianReminderProvisioningSync {
 
   private static func projectTitle(from snapshot: ObsidianProjectMarkdownStore.Snapshot) -> String {
     snapshot.fileURL.deletingPathExtension().lastPathComponent
-  }
-
-  private static func leadingWhitespacePrefix(of line: String) -> String {
-    String(line.prefix { $0 == " " || $0 == "\t" })
-  }
-
-  private static func logicalIndentLevel(of prefix: String) -> Int {
-    var level = 0
-    var pendingSpaces = 0
-    for character in prefix {
-      if character == "\t" {
-        level += pendingSpaces / 2
-        if pendingSpaces % 2 != 0 { level += 1 }
-        pendingSpaces = 0
-        level += 1
-      } else if character == " " {
-        pendingSpaces += 1
-      }
-    }
-    level += pendingSpaces / 2
-    if pendingSpaces % 2 != 0 { level += 1 }
-    return level
   }
 
   private static func fingerprint(_ value: String) -> String {

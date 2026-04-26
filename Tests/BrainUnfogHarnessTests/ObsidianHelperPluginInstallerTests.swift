@@ -34,7 +34,7 @@ final class ObsidianHelperPluginInstallerTests: XCTestCase {
     )
     XCTAssertEqual(manifest["id"] as? String, ObsidianHelperPluginInstaller.pluginIdentifier)
     XCTAssertEqual(manifest["name"] as? String, "Brain Unfog Helper")
-    XCTAssertEqual(manifest["version"] as? String, "0.3.0")
+    XCTAssertEqual(manifest["version"] as? String, "0.5.3")
     XCTAssertNotNil(manifest["minAppVersion"] as? String)
     XCTAssertNotNil(manifest["description"] as? String)
     XCTAssertNotNil(manifest["author"] as? String)
@@ -230,11 +230,17 @@ final class ObsidianHelperPluginInstallerTests: XCTestCase {
     XCTAssertTrue(script.contains("Brain Unfog 날짜 설정"))
     XCTAssertTrue(script.contains("registerEditorExtension"))
     XCTAssertTrue(script.contains("%% brain-unfog:"))
+    XCTAssertTrue(script.contains("brain-unfog-task-schedule-widget"))
+    XCTAssertTrue(script.contains("brain-unfog-inline-schedule-popover"))
+    XCTAssertTrue(script.contains("duration"))
+    XCTAssertTrue(script.contains("repeat"))
+    XCTAssertFalse(script.contains(#"trigger.textContent = "+""#))
     XCTAssertTrue(stylesheet.contains("brain-unfog-hidden-line"))
+    XCTAssertTrue(stylesheet.contains("brain-unfog-schedule-chip"))
     XCTAssertTrue(stylesheet.contains(#"data-property-key="reminder_list_external_id""#))
   }
 
-  func testBundledHelperContainsCompletedSubtreeToggleWithoutWrites() throws {
+  func testBundledHelperUsesProjectPropertyForCompletedSubtreeVisibility() throws {
     let sourceURL = try ObsidianHelperPluginInstaller.bundledSourceURL()
     let script = try String(
       contentsOf: sourceURL.appendingPathComponent("main.js", isDirectory: false),
@@ -245,11 +251,34 @@ final class ObsidianHelperPluginInstallerTests: XCTestCase {
       encoding: .utf8
     )
 
-    XCTAssertTrue(script.contains("toggle-completed-task-subtrees"))
+    XCTAssertTrue(script.contains("완료 가리기"))
+    XCTAssertTrue(script.contains("completedSubtreeLineNumbers"))
+    XCTAssertTrue(script.contains("frontmatterSignature"))
+    XCTAssertTrue(script.contains("function hideCompletedValue"))
+    XCTAssertTrue(script.contains("return true;"))
     XCTAssertTrue(script.contains("brain-unfog-completed-subtree-line"))
-    XCTAssertTrue(script.contains("완료 subtree 숨기기"))
-    XCTAssertTrue(stylesheet.contains("brain-unfog-hide-completed-subtrees"))
+    XCTAssertFalse(script.contains("toggle-completed-task-subtrees"))
+    XCTAssertFalse(script.contains("hideCompletedSubtrees"))
+    XCTAssertFalse(script.contains("완료된 할일 subtree 숨김/표시"))
+    XCTAssertFalse(stylesheet.contains("brain-unfog-hide-completed-subtrees"))
+    XCTAssertTrue(stylesheet.contains("brain-unfog-completed-subtree-scope"))
     XCTAssertTrue(stylesheet.contains(".task-list-item.is-checked"))
+  }
+
+  func testBundledHelperDecoratesVisibleEditorLinesAndCachesCompletedSubtrees() throws {
+    let sourceURL = try ObsidianHelperPluginInstaller.bundledSourceURL()
+    let script = try String(
+      contentsOf: sourceURL.appendingPathComponent("main.js", isDirectory: false),
+      encoding: .utf8
+    )
+
+    XCTAssertTrue(script.contains("visibleLineRanges"))
+    XCTAssertTrue(script.contains("completedSubtreeLineNumbers"))
+    XCTAssertTrue(script.contains("buildCompletedSubtreeDecorations"))
+    XCTAssertTrue(script.contains("this.decorations.map(update.changes)"))
+    XCTAssertTrue(script.contains("lineNumber <= range.to"))
+    XCTAssertTrue(script.contains("projectState.signature !== this.frontmatterSignature"))
+    XCTAssertFalse(script.contains("line <= view.state.doc.lines"))
   }
 
   private func makePluginSource(version: String, script: String) throws -> URL {
