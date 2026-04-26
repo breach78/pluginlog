@@ -316,6 +316,73 @@ final class TimelineBoardReadPathTests: XCTestCase {
     XCTAssertTrue(todayTasks.contains { $0.taskID == completedTaskID && $0.isCompleted })
   }
 
+  func testDayHeaderSectionsKeepStableTaskOrderForOverdueTasks() {
+    let projectID = UUID()
+    let olderTaskID = UUID()
+    let newerTaskID = UUID()
+    let today = Date(timeIntervalSince1970: 1_775_340_000)
+    let olderDay = today.addingTimeInterval(-172_800)
+    let newerDay = today.addingTimeInterval(-86_400)
+    let olderPreview = TimelineDayPreview(
+      totalCount: 1,
+      tasks: [
+        TimelineProjectTaskPreview(
+          id: "older",
+          taskID: olderTaskID,
+          title: "Older overdue",
+          isCompleted: false,
+          isOverdue: true,
+          targetCompletedWorkUnits: 0
+        ),
+      ]
+    )
+    let newerPreview = TimelineDayPreview(
+      totalCount: 1,
+      tasks: [
+        TimelineProjectTaskPreview(
+          id: "newer",
+          taskID: newerTaskID,
+          title: "Newer overdue",
+          isCompleted: false,
+          isOverdue: true,
+          targetCompletedWorkUnits: 0
+        ),
+      ]
+    )
+
+    let firstSections = TimelineBoardReadPath.dayHeaderSectionsByDay(
+      from: [
+        makeBar(
+          projectID: projectID,
+          title: "Project",
+          dailyTaskPreviews: [
+            newerDay: newerPreview,
+            olderDay: olderPreview,
+          ]
+        ),
+      ],
+      today: today
+    )
+    let secondSections = TimelineBoardReadPath.dayHeaderSectionsByDay(
+      from: [
+        makeBar(
+          projectID: projectID,
+          title: "Project",
+          dailyTaskPreviews: [
+            olderDay: olderPreview,
+            newerDay: newerPreview,
+          ]
+        ),
+      ],
+      today: today
+    )
+
+    let firstTaskIDs = firstSections[today]?.first?.tasks.map(\.taskID)
+    let secondTaskIDs = secondSections[today]?.first?.tasks.map(\.taskID)
+    XCTAssertEqual(firstTaskIDs, [olderTaskID, newerTaskID])
+    XCTAssertEqual(secondTaskIDs, firstTaskIDs)
+  }
+
   private func makeProject(
     projectID: UUID,
     title: String = "Project",

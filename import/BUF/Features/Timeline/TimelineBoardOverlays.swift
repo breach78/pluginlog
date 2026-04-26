@@ -435,6 +435,11 @@ extension TimelineBoardView {
   }
 
   func updateTimelineTaskBadgeHover(_ badgeID: String, isHovering: Bool) {
+    if isInteractionObscured {
+      cancelTimelineTaskBadgeOverlay()
+      return
+    }
+
     if isTimelineScrolling {
       if isHovering {
         recordSuppressedTimelineTaskBadgeHover()
@@ -611,6 +616,11 @@ extension TimelineBoardView {
   }
 
   func updateTimelineDayHeaderHover(_ offset: Int, isHovering: Bool) {
+    if isInteractionObscured {
+      cancelTimelineDayHeaderOverlay()
+      return
+    }
+
     if isTimelineScrolling {
       if isHovering {
         recordSuppressedTimelineDayHeaderHover()

@@ -12,6 +12,10 @@ const TASK_LINE_PATTERN = /^(\s*)- \[[ xX]\] /;
 const METADATA_PATTERN = /^(\s*)%%\s*brain-unfog:\s*(\{.*\})\s*%%\s*$/;
 const REMINDER_LIST_PROPERTY_KEY = "reminder_list_external_id";
 const HIDE_COMPLETED_PROPERTY_KEY = "완료 가리기";
+const TASK_FOCUS_PROTOCOL_ACTION = "brain-unfog-focus-task";
+const TASK_FOCUS_HIGHLIGHT_CLASS = "brain-unfog-task-focus-highlight";
+const TASK_FOCUS_HIGHLIGHT_DURATION_MS = 4000;
+const TASK_FOCUS_HIGHLIGHT_MAX_ATTEMPTS = 20;
 const BRAIN_UNFOG_PROPERTY_TYPES = {
   "분류": "multitext",
   "시작일": "date",
@@ -37,6 +41,7 @@ module.exports = class BrainUnfogHelperPlugin extends Plugin {
     this.registerEditorDecorations();
     this.registerMetadataPostProcessor();
     this.registerScheduleContextMenu();
+    this.registerTaskFocusProtocolHandler();
   }
 
   async ensureBrainUnfogPropertyTypes() {
@@ -169,7 +174,337 @@ module.exports = class BrainUnfogHelperPlugin extends Plugin {
       })
     );
   }
+
+  registerTaskFocusProtocolHandler() {
+    if (typeof this.registerObsidianProtocolHandler !== "function") {
+      return;
+    }
+
+    this.registerObsidianProtocolHandler(TASK_FOCUS_PROTOCOL_ACTION, async (params) => {
+      try {
+        await focusBrainUnfogTask(this.app, params || {});
+      } catch (error) {
+        new Notice("Brain Unfog 할일 위치를 열지 못했습니다.");
+      }
+    });
+  }
 };
+
+async function focusBrainUnfogTask(app, params) {
+  const file = fileForFocusParams(app, params);
+  if (!file) {
+    new Notice("Brain Unfog 프로젝트 노트를 찾지 못했습니다.");
+    return;
+  }
+  const block = protocolScalar(params, "block");
+  const reminderID = protocolScalar(params, "reminder_external_id");
+  const fallbackTaskLine = await findTaskLineInFile(app, file, block, reminderID);
+  if (fallbackTaskLine == null) {
+    new Notice("Brain Unfog 할일 줄을 찾지 못했습니다.");
+    return;
+  }
+
+  const leaf = app.workspace.getLeaf(false);
+  await openFileForTaskFocus(leaf, file);
+  if (typeof app.workspace.revealLeaf === "function") {
+    app.workspace.revealLeaf(leaf);
+  }
+
+  const editorView = await waitForFocusEditorView(leaf);
+  if (editorView?.state?.doc) {
+    const taskLine = findTaskLineInDoc(
+      editorView.state.doc,
+      block,
+      reminderID
+    ) ?? fallbackTaskLine;
+    scrollEditorViewToLine(editorView, taskLine);
+    highlightEditorLine(editorView, taskLine);
+    return;
+  }
+
+  const editor = leaf?.view?.editor;
+  const taskLine = findTaskLineInEditor(
+    editor,
+    block,
+    reminderID
+  ) ?? fallbackTaskLine;
+  if (editor && taskLine != null) {
+    scrollEditorToLine(editor, taskLine);
+    return;
+  }
+
+  new Notice("Brain Unfog 할일 줄을 찾지 못했습니다.");
+}
+
+function fileForFocusParams(app, params) {
+  const path = protocolScalar(params, "path");
+  const file = protocolScalar(params, "file");
+  const relativePath = file || (isAbsolutePath(path) ? null : path);
+  const absolutePath = isAbsolutePath(path) ? path : protocolScalar(params, "absolute_path");
+  return fileAtVaultPath(app, relativePath)
+    || fileAtVaultPath(app, vaultRelativePathFromAbsolute(app, absolutePath));
+}
+
+function protocolScalar(params, key) {
+  const value = params?.[key];
+  if (Array.isArray(value)) {
+    return normalizedScalar(value[0]);
+  }
+  return normalizedScalar(value);
+}
+
+function isAbsolutePath(path) {
+  const scalar = normalizedScalar(path);
+  return Boolean(scalar && (scalar.startsWith("/") || /^[A-Za-z]:[\\/]/.test(scalar)));
+}
+
+function fileAtVaultPath(app, path) {
+  const normalizedPath = normalizedVaultPath(path);
+  if (!normalizedPath) {
+    return null;
+  }
+  const file = app?.vault?.getAbstractFileByPath?.(normalizedPath);
+  return file && typeof file.path === "string" ? file : null;
+}
+
+function normalizedVaultPath(path) {
+  const scalar = normalizedScalar(path);
+  if (!scalar) {
+    return null;
+  }
+  return scalar.replace(/\\/g, "/").replace(/^\/+/, "");
+}
+
+function vaultRelativePathFromAbsolute(app, absolutePath) {
+  const absolute = normalizedScalar(absolutePath);
+  const basePath = app?.vault?.adapter?.getBasePath?.();
+  if (!absolute || !basePath) {
+    return null;
+  }
+  const normalizedBase = String(basePath).replace(/\\/g, "/").replace(/\/+$/, "");
+  const normalizedAbsolute = absolute.replace(/\\/g, "/");
+  if (normalizedAbsolute === normalizedBase) {
+    return "";
+  }
+  const prefix = `${normalizedBase}/`;
+  return normalizedAbsolute.startsWith(prefix)
+    ? normalizedAbsolute.slice(prefix.length)
+    : null;
+}
+
+async function openFileForTaskFocus(leaf, file) {
+  await leaf.openFile(file, { active: true, state: { mode: "source" } });
+  const view = leaf?.view;
+  if (typeof view?.getState !== "function" || typeof view?.setState !== "function") {
+    return;
+  }
+  const state = view.getState();
+  if (state?.mode === "source") {
+    return;
+  }
+  await view.setState({ ...state, mode: "source" }, { history: false });
+}
+
+async function waitForFocusEditorView(leaf) {
+  for (let attempt = 0; attempt < 12; attempt += 1) {
+    const editorView = codeMirrorEditorView(leaf);
+    if (editorView?.state?.doc) {
+      return editorView;
+    }
+    await nextAnimationFrame();
+  }
+  return null;
+}
+
+function codeMirrorEditorView(leaf) {
+  return leaf?.view?.editor?.cm
+    || leaf?.view?.sourceMode?.cmEditor?.cm
+    || null;
+}
+
+function nextAnimationFrame() {
+  return new Promise((resolve) => requestAnimationFrame(resolve));
+}
+
+async function findTaskLineInFile(app, file, block, reminderID) {
+  if (typeof app?.vault?.cachedRead !== "function") {
+    return null;
+  }
+  try {
+    const raw = await app.vault.cachedRead(file);
+    return findTaskLineInText(raw, block, reminderID);
+  } catch (error) {
+    return null;
+  }
+}
+
+function findTaskLineInText(raw, block, reminderID) {
+  const normalizedBlock = normalizeBlockIdentifier(block);
+  const normalizedReminderID = normalizedScalar(reminderID);
+  const lines = String(raw || "").split(/\r\n|\n|\r/);
+  for (let line = 0; line < lines.length; line += 1) {
+    const text = lines[line];
+    if (!TASK_LINE_PATTERN.test(text)) {
+      continue;
+    }
+    if (normalizedBlock && taskLineHasBlock(text, normalizedBlock)) {
+      return line;
+    }
+    if (normalizedReminderID) {
+      const metadata = readTaskMetadataFromLines(lines, line).metadata || {};
+      if (normalizedScalar(metadata.reminder_external_id) === normalizedReminderID) {
+        return line;
+      }
+    }
+  }
+  return null;
+}
+
+function findTaskLineInDoc(doc, block, reminderID) {
+  const normalizedBlock = normalizeBlockIdentifier(block);
+  const normalizedReminderID = normalizedScalar(reminderID);
+  for (let lineNumber = 1; lineNumber <= doc.lines; lineNumber += 1) {
+    const text = doc.line(lineNumber).text;
+    if (!TASK_LINE_PATTERN.test(text)) {
+      continue;
+    }
+    if (normalizedBlock && taskLineHasBlock(text, normalizedBlock)) {
+      return lineNumber - 1;
+    }
+    if (normalizedReminderID) {
+      const metadata = readTaskMetadataFromDoc(doc, lineNumber - 1).metadata || {};
+      if (normalizedScalar(metadata.reminder_external_id) === normalizedReminderID) {
+        return lineNumber - 1;
+      }
+    }
+  }
+  return null;
+}
+
+function readTaskMetadataFromLines(lines, taskLine) {
+  const taskText = lines[taskLine] || "";
+  const taskIndent = leadingWhitespaceWidth(taskText);
+  const metadataLine = taskLine + 1;
+  if (metadataLine >= lines.length) {
+    return { line: null, metadata: null, damaged: false };
+  }
+
+  const text = lines[metadataLine] || "";
+  if (leadingWhitespaceWidth(text) <= taskIndent) {
+    return { line: null, metadata: null, damaged: false };
+  }
+
+  const match = text.match(METADATA_PATTERN);
+  if (!match) {
+    return { line: null, metadata: null, damaged: false };
+  }
+
+  try {
+    return { line: metadataLine, metadata: JSON.parse(match[2]), damaged: false };
+  } catch (error) {
+    return { line: metadataLine, metadata: null, damaged: true };
+  }
+}
+
+function findTaskLineInEditor(editor, block, reminderID) {
+  if (!editor || typeof editor.lineCount !== "function" || typeof editor.getLine !== "function") {
+    return null;
+  }
+  const normalizedBlock = normalizeBlockIdentifier(block);
+  const normalizedReminderID = normalizedScalar(reminderID);
+  for (let line = 0; line < editor.lineCount(); line += 1) {
+    const text = editor.getLine(line);
+    if (!TASK_LINE_PATTERN.test(text)) {
+      continue;
+    }
+    if (normalizedBlock && taskLineHasBlock(text, normalizedBlock)) {
+      return line;
+    }
+    if (normalizedReminderID) {
+      const metadata = readTaskMetadata(editor, line).metadata || {};
+      if (normalizedScalar(metadata.reminder_external_id) === normalizedReminderID) {
+        return line;
+      }
+    }
+  }
+  return null;
+}
+
+function taskLineHasBlock(text, normalizedBlock) {
+  return String(text || "").includes(`^${normalizedBlock}`);
+}
+
+function normalizeBlockIdentifier(value) {
+  const scalar = normalizedScalar(value);
+  if (!scalar) {
+    return null;
+  }
+  const withoutHash = scalar.startsWith("#") ? scalar.slice(1) : scalar;
+  return withoutHash.startsWith("^") ? withoutHash.slice(1) : withoutHash;
+}
+
+function scrollEditorViewToLine(view, zeroBasedLine) {
+  const line = view.state.doc.line(zeroBasedLine + 1);
+  const transaction = { selection: { anchor: line.from } };
+  if (codeMirrorView?.EditorView?.scrollIntoView) {
+    transaction.effects = codeMirrorView.EditorView.scrollIntoView(line.from, { y: "center" });
+  }
+  view.dispatch(transaction);
+  view.focus?.();
+}
+
+function scrollEditorToLine(editor, line) {
+  if (typeof editor.setCursor === "function") {
+    editor.setCursor({ line, ch: 0 });
+  }
+  if (typeof editor.scrollIntoView === "function") {
+    const lineLength = String(editor.getLine(line) || "").length;
+    editor.scrollIntoView(
+      {
+        from: { line, ch: 0 },
+        to: { line, ch: lineLength },
+      },
+      true
+    );
+  }
+}
+
+function highlightEditorLine(view, zeroBasedLine) {
+  let attempts = 0;
+  const applyFocusHighlight = () => {
+    if (!view?.state?.doc || zeroBasedLine + 1 > view.state.doc.lines) {
+      return;
+    }
+    const line = view.state.doc.line(zeroBasedLine + 1);
+    const element = editorLineElementAtPosition(view, line.from);
+    if (!element) {
+      if (attempts < TASK_FOCUS_HIGHLIGHT_MAX_ATTEMPTS) {
+        attempts += 1;
+        requestAnimationFrame(applyFocusHighlight);
+      }
+      return;
+    }
+    element.classList.remove(TASK_FOCUS_HIGHLIGHT_CLASS);
+    void element.offsetWidth;
+    element.classList.add(TASK_FOCUS_HIGHLIGHT_CLASS);
+    setTimeout(() => {
+      element.classList.remove(TASK_FOCUS_HIGHLIGHT_CLASS);
+    }, TASK_FOCUS_HIGHLIGHT_DURATION_MS);
+  };
+  requestAnimationFrame(applyFocusHighlight);
+}
+
+function editorLineElementAtPosition(view, position) {
+  const result = view.domAtPos?.(position);
+  let node = result?.node || null;
+  if (node?.nodeType === Node.TEXT_NODE) {
+    node = node.parentElement;
+  }
+  if (node?.nodeType !== Node.ELEMENT_NODE) {
+    node = node?.parentElement || null;
+  }
+  return node?.closest?.(".cm-line") || null;
+}
 
 function buildEditorDecorationExtension(cmView) {
   const hiddenLine = cmView.Decoration.line({ class: "brain-unfog-hidden-line" });

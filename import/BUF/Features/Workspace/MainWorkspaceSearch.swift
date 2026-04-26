@@ -8,14 +8,56 @@ extension MainWorkspaceView {
     results: [WorkspaceSearchResult],
     isVisible: Bool
   ) -> some View {
-    GeometryReader { _ in
-      if isVisible, let frame {
-        workspaceSearchResultsPanel(results: results)
-          .offset(x: frame.minX, y: frame.maxY + workspaceSearchPanelOffset)
-          .zIndex(6)
+    GeometryReader { proxy in
+      if let panelFrame = workspaceSearchPanelFrame(
+        anchorFrame: frame,
+        results: results,
+        isVisible: isVisible
+      ) {
+        ZStack(alignment: .topLeading) {
+          WorkspaceSearchInputShield(
+            panelFrame: panelFrame,
+            anchorFrame: frame,
+            onDismiss: {
+              dismissWorkspaceSearchPanel()
+            }
+          )
+          .frame(width: proxy.size.width, height: proxy.size.height)
+          .zIndex(5)
+
+          workspaceSearchResultsPanel(results: results)
+            .frame(width: panelFrame.width, height: panelFrame.height, alignment: .topLeading)
+            .position(x: panelFrame.midX, y: panelFrame.midY)
+            .zIndex(6)
+        }
+        .frame(width: proxy.size.width, height: proxy.size.height, alignment: .topLeading)
       }
     }
     .animation(workspacePanelTransitionAnimation, value: isVisible)
+  }
+
+  func workspaceSearchPanelFrame(
+    anchorFrame: CGRect?,
+    results: [WorkspaceSearchResult],
+    isVisible: Bool
+  ) -> CGRect? {
+    guard isVisible, let anchorFrame else { return nil }
+    return CGRect(
+      x: anchorFrame.minX,
+      y: anchorFrame.maxY + workspaceSearchPanelOffset,
+      width: workspaceSearchPanelWidth,
+      height: workspaceSearchPanelHitTestHeight(for: results)
+    )
+  }
+
+  func workspaceSearchPanelHitTestHeight(for results: [WorkspaceSearchResult]) -> CGFloat {
+    guard !results.isEmpty else { return 48 }
+    let sectionCount = Set(results.compactMap(\.disposition.sectionHeaderTitle)).count
+    let estimatedHeight =
+      8
+      + CGFloat(results.count) * 68
+      + CGFloat(sectionCount) * 32
+    return min(workspaceSearchPanelMaxHeight + 12, estimatedHeight)
   }
 
   func workspaceSearchField(
@@ -92,9 +134,10 @@ extension MainWorkspaceView {
       }
     }
     .contentShape(Rectangle())
-    .onTapGesture {
-      focusWorkspaceSearch()
-    }
+    .simultaneousGesture(
+      TapGesture().onEnded {
+        focusWorkspaceSearch()
+      })
   }
 
   func workspaceSearchResultsPanel(results: [WorkspaceSearchResult]) -> some View {
@@ -118,51 +161,8 @@ extension MainWorkspaceView {
                     .padding(.bottom, 6)
                 }
 
-                Button {
-                  openWorkspaceSearchResult(result)
-                } label: {
-                  HStack(alignment: .top, spacing: 10) {
-                    Image(systemName: result.entityKind == .project ? "folder" : "checklist")
-                      .foregroundStyle(workspaceSearchIconColor(for: result))
-                      .frame(width: 14, alignment: .top)
-                      .padding(.top, 2)
-
-                    VStack(alignment: .leading, spacing: 4) {
-                      Text(result.title)
-                        .foregroundStyle(workspaceSearchTitleColor(for: result))
-                        .lineLimit(2)
-                        .multilineTextAlignment(.leading)
-
-                      Text(workspaceSearchSubtitleText(for: result))
-                        .font(.caption)
-                        .foregroundStyle(workspaceSearchSubtitleColor(for: result))
-                        .lineLimit(1)
-                        .multilineTextAlignment(.leading)
-
-                      if let preview = workspaceSearchPreviewText(for: result) {
-                        Text(preview)
-                          .font(.caption)
-                          .foregroundStyle(workspaceSearchPreviewColor(for: result))
-                          .lineLimit(2)
-                          .fixedSize(horizontal: false, vertical: true)
-                          .multilineTextAlignment(.leading)
-                      }
-                    }
-
-                    Spacer(minLength: 0)
-                  }
-                  .padding(.horizontal, 12)
-                  .padding(.vertical, 9)
-                  .frame(maxWidth: .infinity, alignment: .leading)
-                  .background(
-                    RoundedRectangle(cornerRadius: 8)
-                      .fill(
-                        index == chromeState.selectedWorkspaceSearchResultIndex
-                          ? Color.accentColor.opacity(0.14) : .clear)
-                  )
-                }
-                .buttonStyle(.plain)
-                .id(result.id)
+                workspaceSearchResultRow(index: index, result: result)
+                  .id(result.id)
 
                 if shouldShowWorkspaceSearchDivider(after: index, in: results) {
                   Divider()
@@ -187,6 +187,7 @@ extension MainWorkspaceView {
       }
     }
     .frame(width: workspaceSearchPanelWidth, alignment: .leading)
+    .contentShape(Rectangle())
     .overlaySurface(
       cornerRadius: 12,
       strokeColor: .secondary,
@@ -197,6 +198,54 @@ extension MainWorkspaceView {
 
   func clearWorkspaceSearch() {
     chromeState.clearWorkspaceSearch()
+  }
+
+  func workspaceSearchResultRow(index: Int, result: WorkspaceSearchResult) -> some View {
+    Button {
+      openWorkspaceSearchResult(result)
+    } label: {
+      HStack(alignment: .top, spacing: 10) {
+        Image(systemName: result.entityKind == .project ? "folder" : "checklist")
+          .foregroundStyle(workspaceSearchIconColor(for: result))
+          .frame(width: 14, alignment: .top)
+          .padding(.top, 2)
+
+        VStack(alignment: .leading, spacing: 4) {
+          Text(result.title)
+            .foregroundStyle(workspaceSearchTitleColor(for: result))
+            .lineLimit(2)
+            .multilineTextAlignment(.leading)
+
+          Text(workspaceSearchSubtitleText(for: result))
+            .font(.caption)
+            .foregroundStyle(workspaceSearchSubtitleColor(for: result))
+            .lineLimit(1)
+            .multilineTextAlignment(.leading)
+
+          if let preview = workspaceSearchPreviewText(for: result) {
+            Text(preview)
+              .font(.caption)
+              .foregroundStyle(workspaceSearchPreviewColor(for: result))
+              .lineLimit(2)
+              .fixedSize(horizontal: false, vertical: true)
+              .multilineTextAlignment(.leading)
+          }
+        }
+
+        Spacer(minLength: 0)
+      }
+    }
+    .buttonStyle(.plain)
+    .padding(.horizontal, 12)
+    .padding(.vertical, 9)
+    .frame(maxWidth: .infinity, alignment: .leading)
+    .background(
+      RoundedRectangle(cornerRadius: 8)
+        .fill(
+          index == chromeState.selectedWorkspaceSearchResultIndex
+            ? Color.accentColor.opacity(0.14) : .clear)
+    )
+    .contentShape(Rectangle())
   }
 
   func openWorkspaceSearchResult(_ result: WorkspaceSearchResult) {
@@ -334,5 +383,58 @@ extension MainWorkspaceView {
         proxy.scrollTo(resultID, anchor: .center)
       }
     }
+  }
+}
+
+private struct WorkspaceSearchInputShield: View {
+  let panelFrame: CGRect
+  let anchorFrame: CGRect?
+  let onDismiss: () -> Void
+
+  var body: some View {
+    GeometryReader { proxy in
+      ForEach(
+        Array(shieldRects(in: CGRect(origin: .zero, size: proxy.size)).enumerated()),
+        id: \.offset
+      ) { _, rect in
+        Color.clear
+          .contentShape(Rectangle())
+          .frame(width: rect.width, height: rect.height)
+          .position(x: rect.midX, y: rect.midY)
+          .onTapGesture {
+            onDismiss()
+          }
+      }
+    }
+  }
+
+  private func shieldRects(in bounds: CGRect) -> [CGRect] {
+    let excludedRect = (anchorFrame?.union(panelFrame) ?? panelFrame)
+      .insetBy(dx: -2, dy: -2)
+      .intersection(bounds)
+    guard !excludedRect.isNull, !excludedRect.isEmpty else { return [bounds] }
+
+    return [
+      CGRect(x: bounds.minX, y: bounds.minY, width: bounds.width, height: excludedRect.minY),
+      CGRect(
+        x: bounds.minX,
+        y: excludedRect.minY,
+        width: excludedRect.minX,
+        height: excludedRect.height
+      ),
+      CGRect(
+        x: excludedRect.maxX,
+        y: excludedRect.minY,
+        width: bounds.maxX - excludedRect.maxX,
+        height: excludedRect.height
+      ),
+      CGRect(
+        x: bounds.minX,
+        y: excludedRect.maxY,
+        width: bounds.width,
+        height: bounds.maxY - excludedRect.maxY
+      ),
+    ]
+    .filter { $0.width > 0 && $0.height > 0 }
   }
 }

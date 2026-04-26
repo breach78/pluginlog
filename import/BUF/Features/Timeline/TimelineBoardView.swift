@@ -63,6 +63,7 @@ struct TimelineBoardView: View {
   let projectIDs: [UUID]
   let showsProjectPassthroughFrames: Bool
   let isActive: Bool
+  let isInteractionObscured: Bool
   let selectedProjectID: UUID?
   let onSelectProject: (UUID) -> Void
   let onToggleProjectSelection: (UUID) -> Void
@@ -185,6 +186,7 @@ struct TimelineBoardView: View {
     projectIDs: [UUID] = [],
     showsProjectPassthroughFrames: Bool = false,
     isActive: Bool = true,
+    isInteractionObscured: Bool = false,
     selectedProjectID: UUID? = nil,
     onSelectProject: @escaping (UUID) -> Void,
     onToggleProjectSelection: @escaping (UUID) -> Void
@@ -193,6 +195,7 @@ struct TimelineBoardView: View {
     self.projectIDs = projectIDs
     self.showsProjectPassthroughFrames = showsProjectPassthroughFrames
     self.isActive = isActive
+    self.isInteractionObscured = isInteractionObscured
     self.selectedProjectID = selectedProjectID
     self.onSelectProject = onSelectProject
     self.onToggleProjectSelection = onToggleProjectSelection
@@ -330,6 +333,12 @@ struct TimelineBoardView: View {
         )
         seedRangeIfNeeded(with: refreshedBars)
         prepareTimelineInitialViewportIfNeeded(with: refreshedBars)
+      }
+    }
+    .onChange(of: isInteractionObscured) { _, isObscured in
+      if isObscured {
+        cancelTimelineTaskBadgeOverlay()
+        cancelTimelineDayHeaderOverlay()
       }
     }
     .onChange(of: horizontalOffsetX) { _, _ in
@@ -523,7 +532,11 @@ struct TimelineBoardView: View {
         scrollRequestGeneration: scrollRequestGeneration,
         publishOffsetY: viewport.shouldPublishVerticalOffset,
         publishPreciseHoverOffsets: viewport.shouldPublishPreciseHoverOffsets,
-        isDayHeaderHoverEnabled: isActive && !isTimelineScrolling && !appState.isEditorMotionSuppressed,
+        isDayHeaderHoverEnabled:
+          isActive
+          && !isInteractionObscured
+          && !isTimelineScrolling
+          && !appState.isEditorMotionSuppressed,
         scrollHoverSuppressionInterval: timelineScrollIdleDelay,
         offsetX: $horizontalOffsetX,
         offsetY: $verticalOffsetY,

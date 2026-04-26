@@ -39,7 +39,7 @@ final class ObsidianTaskOpenServiceTests: XCTestCase {
     XCTAssertFalse(FileManager.default.fileExists(atPath: sidecarURL.path))
   }
 
-  func testOpenTaskWithBlockIdentifierUsesObsidianBlockURI() async throws {
+  func testOpenTaskWithBlockIdentifierUsesHelperFocusURI() async throws {
     let vaultURL = try makeTemporaryDirectory(prefix: "Obsidian Vault 한글")
     defer { try? FileManager.default.removeItem(at: vaultURL) }
     try writeProjectNote(
@@ -60,13 +60,15 @@ final class ObsidianTaskOpenServiceTests: XCTestCase {
 
     let opened = try XCTUnwrap(opener.openedURLs.first)
     XCTAssertEqual(opened.scheme, "obsidian")
-    XCTAssertEqual(opened.host, "open")
-    XCTAssertTrue(opened.absoluteString.contains("path="))
-    XCTAssertTrue(opened.absoluteString.contains("raw%2Fprojects%2FProject%20Name%20"))
-    XCTAssertTrue(opened.absoluteString.contains("%23%5Ebuf-TASK-1"))
+    XCTAssertEqual(opened.host, ObsidianDeepLinking.taskFocusAction)
+    XCTAssertFalse(opened.absoluteString.contains("vault="))
+    XCTAssertTrue(opened.absoluteString.contains("path=%2F"))
+    XCTAssertTrue(opened.absoluteString.contains("file=raw%2Fprojects%2FProject%20Name%20"))
+    XCTAssertTrue(opened.absoluteString.contains("block=%5Ebuf-TASK-1"))
+    XCTAssertTrue(opened.absoluteString.contains("reminder_external_id=TASK-1"))
   }
 
-  func testOpenTaskWithoutBlockIdentifierFallsBackToProjectNoteURI() async throws {
+  func testOpenTaskWithoutBlockIdentifierUsesHelperFocusURIWithTaskIDFallback() async throws {
     let vaultURL = try makeTemporaryDirectory(prefix: "ObsidianOpenNoBlock")
     defer { try? FileManager.default.removeItem(at: vaultURL) }
     try writeProjectNote(
@@ -87,8 +89,11 @@ final class ObsidianTaskOpenServiceTests: XCTestCase {
 
     let opened = try XCTUnwrap(opener.openedURLs.first)
     XCTAssertEqual(opened.scheme, "obsidian")
-    XCTAssertEqual(opened.host, "open")
-    XCTAssertTrue(opened.absoluteString.contains("path="))
+    XCTAssertEqual(opened.host, ObsidianDeepLinking.taskFocusAction)
+    XCTAssertTrue(opened.absoluteString.contains("path=%2F"))
+    XCTAssertTrue(opened.absoluteString.contains("file=raw%2Fprojects%2FProject.md"))
+    XCTAssertFalse(opened.absoluteString.contains("block="))
+    XCTAssertTrue(opened.absoluteString.contains("reminder_external_id=TASK-1"))
   }
 
   func testOpenFailureFallsBackToMarkdownFileURL() async throws {

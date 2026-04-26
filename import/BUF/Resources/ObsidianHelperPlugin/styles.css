@@ -14,6 +14,18 @@
   display: none !important;
 }
 
+.cm-line.brain-unfog-hidden-line.brain-unfog-task-focus-highlight,
+.cm-line.brain-unfog-completed-subtree-line.brain-unfog-task-focus-highlight {
+  display: block !important;
+}
+
+.cm-line.brain-unfog-task-focus-highlight {
+  border-radius: 6px;
+  outline: 2px solid var(--interactive-accent);
+  outline-offset: 2px;
+  background: var(--background-modifier-hover);
+}
+
 .brain-unfog-task-schedule-widget {
   display: inline-flex;
   margin-left: 8px;

@@ -95,7 +95,8 @@ enum TimelineBoardReadPath {
 
     for bar in bars {
       var tasksByDay: [Date: [TimelineDayHeaderOverlayTaskItem]] = [:]
-      for (day, preview) in bar.dailyTaskPreviews {
+      for day in bar.dailyTaskPreviews.keys.sorted() {
+        guard let preview = bar.dailyTaskPreviews[day] else { continue }
         for task in preview.tasks {
           tasksByDay[day, default: []].append(
             TimelineDayHeaderOverlayTaskItem(
@@ -123,7 +124,8 @@ enum TimelineBoardReadPath {
         }
       }
 
-      for (day, preview) in bar.dailyCompletedTaskPreviews {
+      for day in bar.dailyCompletedTaskPreviews.keys.sorted() {
+        guard let preview = bar.dailyCompletedTaskPreviews[day] else { continue }
         for task in preview.tasks {
           tasksByDay[day, default: []].append(
             TimelineDayHeaderOverlayTaskItem(
@@ -140,7 +142,8 @@ enum TimelineBoardReadPath {
 
       guard !tasksByDay.isEmpty else { continue }
 
-      for (day, items) in tasksByDay {
+      for day in tasksByDay.keys.sorted() {
+        guard let items = tasksByDay[day] else { continue }
         sectionsByDay[day, default: []].append(
           TimelineDayHeaderOverlayProjectSection(
             id: bar.projectID,

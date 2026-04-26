@@ -2,7 +2,7 @@ import SwiftUI
 
 extension MainWorkspaceView {
   @ViewBuilder
-  func content(visibleProjects: [UUID]) -> some View {
+  func content(visibleProjects: [UUID], isSearchPanelVisible: Bool) -> some View {
     if !appState.boardsLoaded {
       VStack(spacing: 14) {
         Text("Workspace is paused")
@@ -24,7 +24,11 @@ extension MainWorkspaceView {
       ZStack {
         ForEach(availableViewModes) { mode in
           if chromeState.shouldRenderBoard(currentMode: appState.viewMode, candidateMode: mode) {
-            workspaceBoard(for: mode, visibleProjects: visibleProjects)
+            workspaceBoard(
+              for: mode,
+              visibleProjects: visibleProjects,
+              isSearchPanelVisible: isSearchPanelVisible
+            )
               .frame(maxWidth: .infinity, maxHeight: .infinity)
               .opacity(appState.viewMode == mode ? 1 : 0)
               .allowsHitTesting(appState.viewMode == mode)
@@ -40,7 +44,11 @@ extension MainWorkspaceView {
   }
 
   @ViewBuilder
-  func workspaceBoard(for mode: ViewMode, visibleProjects: [UUID]) -> some View {
+  func workspaceBoard(
+    for mode: ViewMode,
+    visibleProjects: [UUID],
+    isSearchPanelVisible: Bool
+  ) -> some View {
     let isActive = appState.viewMode == mode
     let timelineSelectionProjectIDs = timelineProjectIDs(from: visibleProjects)
 
@@ -54,6 +62,7 @@ extension MainWorkspaceView {
         projectIDs: timelineSelectionProjectIDs,
         showsProjectPassthroughFrames: false,
         isActive: isActive,
+        isInteractionObscured: isSearchPanelVisible,
         selectedProjectID: appState.selectedProjectID,
         onSelectProject: { projectID in
           selectProjectContext(projectID)
@@ -155,7 +164,10 @@ extension MainWorkspaceView {
 
   @ViewBuilder
   func workspacePanelRouterSection(snapshot: WorkspaceShellSnapshot) -> some View {
-    content(visibleProjects: snapshot.filteredProjectIDs)
+    content(
+      visibleProjects: snapshot.filteredProjectIDs,
+      isSearchPanelVisible: snapshot.isSearchPanelVisible
+    )
   }
 
   var workspaceSidebarSection: some View {

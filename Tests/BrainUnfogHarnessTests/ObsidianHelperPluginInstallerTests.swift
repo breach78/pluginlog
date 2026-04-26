@@ -34,7 +34,7 @@ final class ObsidianHelperPluginInstallerTests: XCTestCase {
     )
     XCTAssertEqual(manifest["id"] as? String, ObsidianHelperPluginInstaller.pluginIdentifier)
     XCTAssertEqual(manifest["name"] as? String, "Brain Unfog Helper")
-    XCTAssertEqual(manifest["version"] as? String, "0.5.5")
+    XCTAssertEqual(manifest["version"] as? String, "0.5.9")
     XCTAssertNotNil(manifest["minAppVersion"] as? String)
     XCTAssertNotNil(manifest["description"] as? String)
     XCTAssertNotNil(manifest["author"] as? String)
@@ -243,6 +243,38 @@ final class ObsidianHelperPluginInstallerTests: XCTestCase {
     XCTAssertTrue(stylesheet.contains("brain-unfog-hidden-line"))
     XCTAssertTrue(stylesheet.contains("brain-unfog-schedule-chip"))
     XCTAssertTrue(stylesheet.contains(#"data-property-key="reminder_list_external_id""#))
+  }
+
+  func testBundledHelperCanFocusTasksFromProtocolLinks() throws {
+    let sourceURL = try ObsidianHelperPluginInstaller.bundledSourceURL()
+    let script = try String(
+      contentsOf: sourceURL.appendingPathComponent("main.js", isDirectory: false),
+      encoding: .utf8
+    )
+    let stylesheet = try String(
+      contentsOf: sourceURL.appendingPathComponent("styles.css", isDirectory: false),
+      encoding: .utf8
+    )
+
+    XCTAssertTrue(script.contains("registerTaskFocusProtocolHandler"))
+    XCTAssertTrue(script.contains("registerObsidianProtocolHandler"))
+    XCTAssertTrue(script.contains("brain-unfog-focus-task"))
+    XCTAssertTrue(script.contains("focusBrainUnfogTask"))
+    XCTAssertTrue(script.contains("function protocolScalar"))
+    XCTAssertTrue(script.contains("findTaskLineInFile"))
+    XCTAssertTrue(script.contains("cachedRead"))
+    XCTAssertTrue(script.contains("openFileForTaskFocus"))
+    XCTAssertTrue(script.contains("protocolScalar(params, \"file\")"))
+    XCTAssertTrue(script.contains("isAbsolutePath"))
+    XCTAssertTrue(script.contains("findTaskLineInDoc"))
+    XCTAssertTrue(script.contains("reminder_external_id"))
+    XCTAssertTrue(script.contains("EditorView.scrollIntoView"))
+    XCTAssertTrue(script.contains("brain-unfog-task-focus-highlight"))
+    XCTAssertTrue(script.contains("TASK_FOCUS_HIGHLIGHT_DURATION_MS = 4000"))
+    XCTAssertTrue(script.contains("TASK_FOCUS_HIGHLIGHT_MAX_ATTEMPTS = 20"))
+    XCTAssertTrue(script.contains("requestAnimationFrame(applyFocusHighlight)"))
+    XCTAssertTrue(stylesheet.contains("brain-unfog-task-focus-highlight"))
+    XCTAssertTrue(stylesheet.contains(".cm-line.brain-unfog-hidden-line.brain-unfog-task-focus-highlight"))
   }
 
   func testBundledHelperUsesProjectPropertyForCompletedSubtreeVisibility() throws {

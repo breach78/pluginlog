@@ -526,6 +526,7 @@ extension TimelineBoardView {
     .clipped()
     .allowsHitTesting(
       !appState.isEditorMotionSuppressed
+        && !isInteractionObscured
         && activeTimelineDayHeaderOffset == nil
         && !appState.isHoveringTimelineDayHeaderOverlay
     )
@@ -577,7 +578,7 @@ extension TimelineBoardView {
           }
         }
       }
-      .allowsHitTesting(!isTimelineScrolling)
+      .allowsHitTesting(!isTimelineScrolling && !isInteractionObscured)
       .contentShape(Rectangle())
       .onHover { isHovering in
         updateTimelineTaskBadgeHover(badge.id, isHovering: isHovering)
@@ -591,7 +592,7 @@ extension TimelineBoardView {
     Text("\(layout.count)")
       .font(.system(size: 10, weight: .regular, design: .rounded))
       .foregroundStyle(projectColor)
-      .allowsHitTesting(!isTimelineScrolling)
+      .allowsHitTesting(!isTimelineScrolling && !isInteractionObscured)
       .contentShape(Rectangle())
       .onHover { isHovering in
         updateTimelineTaskBadgeHover(layout.hoverTargetID, isHovering: isHovering)

@@ -20,38 +20,21 @@ struct WorkspaceSearchInputField: NSViewRepresentable {
   final class FocusAwareTextField: NSTextField {
     var onUserFocusAttempt: (() -> Void)?
     var onFocusEnded: (() -> Void)?
-    private var allowsNextFocusAcquisition = false
 
     override var acceptsFirstResponder: Bool {
-      allowsNextFocusAcquisition
-        || window?.firstResponder === self
-        || window?.firstResponder === currentEditor()
-    }
-
-    func allowProgrammaticFocus() {
-      allowsNextFocusAcquisition = true
+      true
     }
 
     override func mouseDown(with event: NSEvent) {
-      allowsNextFocusAcquisition = true
       onUserFocusAttempt?()
       super.mouseDown(with: event)
     }
 
     override func becomeFirstResponder() -> Bool {
-      let isAlreadyFirstResponder =
-        window?.firstResponder === self || window?.firstResponder === currentEditor()
-      guard allowsNextFocusAcquisition || isAlreadyFirstResponder else {
-        return false
-      }
-
-      let didBecomeFirstResponder = super.becomeFirstResponder()
-      allowsNextFocusAcquisition = false
-      return didBecomeFirstResponder
+      super.becomeFirstResponder()
     }
 
     override func resignFirstResponder() -> Bool {
-      allowsNextFocusAcquisition = false
       let didResign = super.resignFirstResponder()
       if didResign {
         onFocusEnded?()
@@ -91,9 +74,6 @@ struct WorkspaceSearchInputField: NSViewRepresentable {
 
     func controlTextDidEndEditing(_ obj: Notification) {
       hasPendingUserFocusAttempt = false
-      if parent.isFocused {
-        parent.isFocused = false
-      }
     }
 
     func controlTextDidChange(_ obj: Notification) {
@@ -186,7 +166,6 @@ struct WorkspaceSearchInputField: NSViewRepresentable {
     guard context.coordinator.lastAppliedFocusRequestID != focusRequestID else { return }
 
     context.coordinator.lastAppliedFocusRequestID = focusRequestID
-    field.allowProgrammaticFocus()
     if window.makeFirstResponder(field) {
       field.currentEditor()?.selectedRange = NSRange(
         location: 0,

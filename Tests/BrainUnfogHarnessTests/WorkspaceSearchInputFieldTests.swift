@@ -5,6 +5,12 @@ import XCTest
 
 @MainActor
 final class WorkspaceSearchInputFieldTests: XCTestCase {
+  func testFieldAcceptsFirstResponderBeforeMouseDown() {
+    let field = WorkspaceSearchInputField.FocusAwareTextField()
+
+    XCTAssertTrue(field.acceptsFirstResponder)
+  }
+
   func testAutomaticEditingDoesNotMarkWorkspaceSearchFocused() {
     let state = WorkspaceSearchInputState()
     let input = makeInput(state: state)
@@ -28,6 +34,23 @@ final class WorkspaceSearchInputFieldTests: XCTestCase {
     coordinator.registerUserFocusAttempt()
 
     XCTAssertTrue(state.isFocused)
+  }
+
+  func testEditingEndDoesNotDismissWorkspaceSearch() {
+    let state = WorkspaceSearchInputState()
+    state.isFocused = true
+    let input = makeInput(state: state)
+    let coordinator = WorkspaceSearchInputField.Coordinator(parent: input)
+
+    coordinator.controlTextDidEndEditing(
+      Notification(
+        name: NSControl.textDidEndEditingNotification,
+        object: NSTextField()
+      )
+    )
+
+    XCTAssertTrue(state.isFocused)
+    XCTAssertFalse(coordinator.hasPendingUserFocusAttempt)
   }
 
   private func makeInput(state: WorkspaceSearchInputState) -> WorkspaceSearchInputField {
