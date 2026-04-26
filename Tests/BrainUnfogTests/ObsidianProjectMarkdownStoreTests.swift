@@ -118,6 +118,28 @@ final class ObsidianProjectMarkdownStoreTests: XCTestCase {
     XCTAssertEqual(snapshots.map(\.vaultRelativePath), ["raw/projects/Direct.md"])
   }
 
+  func testCreateProjectStubCreatesTaggedNoteWithInitialBulletAndUniqueName() async throws {
+    let vaultURL = try makeTemporaryDirectory(named: "ObsidianStoreCreateProjectStub")
+    defer { try? FileManager.default.removeItem(at: vaultURL) }
+    let store = ObsidianProjectMarkdownStore(vaultRootURL: vaultURL)
+
+    let first = try await store.createProjectStub()
+    let second = try await store.createProjectStub()
+
+    XCTAssertEqual(first.vaultRelativePath, "raw/projects/새 프로젝트.md")
+    XCTAssertEqual(second.vaultRelativePath, "raw/projects/새 프로젝트 2.md")
+    XCTAssertEqual(first.note.tags, ["프로젝트"])
+    XCTAssertNil(first.note.reminderListExternalIdentifier)
+    XCTAssertEqual(first.note.bodyMarkdown, "- ")
+    XCTAssertEqual(try String(contentsOf: first.fileURL, encoding: .utf8), """
+    ---
+    tags:
+      - 프로젝트
+    ---
+    - 
+    """)
+  }
+
   func testWriteNoOpForLineEndingOnlyEquivalentContent() async throws {
     let vaultURL = try makeTemporaryDirectory(named: "ObsidianStoreNoOp")
     defer { try? FileManager.default.removeItem(at: vaultURL) }

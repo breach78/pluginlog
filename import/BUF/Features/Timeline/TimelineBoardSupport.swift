@@ -257,6 +257,26 @@ enum TimelineProjectManualOrderStore {
   }
 }
 
+enum TimelineHiddenProjectStore {
+  private static let storageKey = "workspace.timelineHiddenProjects.v1"
+
+  static func load(defaults: UserDefaults = .standard) -> Set<UUID> {
+    guard let raw = defaults.stringArray(forKey: storageKey) else {
+      return []
+    }
+    return Set(raw.compactMap(UUID.init(uuidString:)))
+  }
+
+  static func save(_ projectIDs: Set<UUID>, defaults: UserDefaults = .standard) {
+    guard !projectIDs.isEmpty else {
+      defaults.removeObject(forKey: storageKey)
+      return
+    }
+    let raw = projectIDs.map(\.uuidString).sorted()
+    defaults.set(raw, forKey: storageKey)
+  }
+}
+
 struct TimelineCompletedCountLayout: Identifiable {
   let id: String
   let date: Date

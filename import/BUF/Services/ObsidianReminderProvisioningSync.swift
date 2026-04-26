@@ -87,6 +87,7 @@ enum ObsidianReminderProvisioningSync {
     let vaultRootURL = await store.vaultRoot()
     let archiveStore = ObsidianReminderArchiveStore(vaultRootURL: vaultRootURL)
     let outlineStore = ObsidianReminderOutlineStateStore(vaultRootURL: vaultRootURL)
+    let lifecycleStore = ProjectLifecycleStore(vaultRootURL: vaultRootURL)
 
     for snapshot in snapshots {
       var note = snapshot.note
@@ -135,6 +136,8 @@ enum ObsidianReminderProvisioningSync {
           snapshot: snapshot,
           listIdentifier: listIdentifier,
           archiveStore: archiveStore,
+          lifecycleStore: lifecycleStore,
+          projectID: projectID,
           reminderProjectProvider: reminderProjectProvider,
           now: now
         ) {
@@ -293,11 +296,25 @@ enum ObsidianReminderProvisioningSync {
     snapshot: ObsidianProjectMarkdownStore.Snapshot,
     listIdentifier: String,
     archiveStore: ObsidianReminderArchiveStore,
+    lifecycleStore: ProjectLifecycleStore,
+    projectID: UUID,
     reminderProjectProvider: ReminderProjectProvider,
     now: Date
   ) async throws -> Bool {
     if try archiveStore.load(forListIdentifier: listIdentifier) != nil {
+      try lifecycleStore.recordStarted(
+        intent: .obsidianArchive,
+        projectID: projectID,
+        reminderListExternalIdentifier: listIdentifier,
+        noteVaultRelativePath: snapshot.vaultRelativePath,
+        at: now
+      )
       try reminderProjectProvider.removeProjectList(identifier: listIdentifier)
+      try lifecycleStore.markCompleted(
+        projectID: projectID,
+        reminderListExternalIdentifier: listIdentifier,
+        at: now
+      )
       return false
     }
 
@@ -309,8 +326,20 @@ enum ObsidianReminderProvisioningSync {
       return false
     }
 
+    try lifecycleStore.recordStarted(
+      intent: .obsidianArchive,
+      projectID: projectID,
+      reminderListExternalIdentifier: listIdentifier,
+      noteVaultRelativePath: snapshot.vaultRelativePath,
+      at: now
+    )
     try archiveStore.save(archive, forListIdentifier: listIdentifier)
     try reminderProjectProvider.removeProjectList(identifier: listIdentifier)
+    try lifecycleStore.markCompleted(
+      projectID: projectID,
+      reminderListExternalIdentifier: listIdentifier,
+      at: now
+    )
     return true
   }
 

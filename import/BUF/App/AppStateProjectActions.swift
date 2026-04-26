@@ -123,6 +123,25 @@ extension AppState {
   }
 
   @discardableResult
+  func createProjectStub(context: ModelContext) async -> ObsidianProjectMarkdownStore.Snapshot? {
+    _ = context
+    guard let obsidianVaultRootURL else {
+      errorMessage = "Obsidian vault is not configured."
+      return nil
+    }
+
+    do {
+      let snapshot = try await ObsidianProjectMarkdownStore(vaultRootURL: obsidianVaultRootURL)
+        .createProjectStub()
+      bumpWorkspaceTreeRevision()
+      return snapshot
+    } catch {
+      reportError(error, logMessage: "createProjectStub failed")
+      return nil
+    }
+  }
+
+  @discardableResult
   func createTask(
     inProjectID projectID: UUID,
     title rawTitle: String,
@@ -359,10 +378,25 @@ extension AppState {
 
   @discardableResult
   func deleteProjectPermanently(_ projectID: UUID, context: ModelContext) async -> Bool {
-    _ = projectID
     _ = context
-    errorMessage = RetainedSurfaceMutationGate.block(.timeline, feature: "project-delete")
-    return false
+    do {
+      let result = try await ObsidianProjectDeletionSync.deleteProject(
+        vaultRootURL: obsidianVaultRootURL,
+        projectID: projectID,
+        reminderProjectProvider: reminderProjectProvider,
+        now: .now
+      )
+      if selectedProjectID == result.deletedProjectID {
+        selectedProjectID = nil
+      }
+      recordAppAuthoredReminderPush()
+      syncStatus = "Deleted project"
+      bumpWorkspaceTreeRevision()
+      return true
+    } catch {
+      reportError(error, logMessage: "deleteProjectPermanently failed")
+      return false
+    }
   }
 
   func deleteTaskPermanently(_ taskID: UUID, context: ModelContext) async {

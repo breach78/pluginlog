@@ -654,12 +654,7 @@ struct MainWorkspaceView: View {
 
     Task { @MainActor in
       do {
-        try await ObsidianTaskOpenService.openTask(
-          vaultRootURL: appState.obsidianVaultRootURL,
-          projectID: projectID,
-          taskID: taskID,
-          documentOpener: appState.platformUIFoundation.documentOpener
-        )
+        try await RemindersAppOpenService.openTask(taskID: taskID)
       } catch {
         appState.errorMessage = error.localizedDescription
       }

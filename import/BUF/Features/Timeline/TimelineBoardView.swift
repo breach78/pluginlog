@@ -1,3 +1,4 @@
+import SwiftData
 import SwiftUI
 
 // Composition root only.
@@ -58,6 +59,7 @@ struct TimelineBoardView: View {
 
   @Binding var projectListSortMode: ProjectListSortMode
   @EnvironmentObject var appState: AppState
+  @Environment(\.modelContext) var modelContext
   @Environment(\.undoManager) var undoManager
 
   let projectIDs: [UUID]
@@ -78,7 +80,6 @@ struct TimelineBoardView: View {
   @State var draggingProjectID: UUID?
   @State var projectDropIndicator: TimelineProjectDropIndicator?
   @State var taskDropTargetProjectID: UUID?
-  @State var showAddProjectPopover = false
   @State var isCreatingProject = false
   @State var pendingDeleteProjectID: UUID?
   @State var pendingDeleteProjectTitle: String = ""
@@ -105,7 +106,9 @@ struct TimelineBoardView: View {
   @State var activeTimelineDayHeaderOffset: Int?
   @State var timelineDayHeaderShowWorkItem: DispatchWorkItem?
   @State var timelineDayHeaderHideWorkItem: DispatchWorkItem?
+  @State var activeTimelineProjectListPopoverProjectID: UUID?
   @State var timelineProjectManualOrder = TimelineProjectManualOrderStore.load()
+  @State var hiddenTimelineProjectIDs = TimelineHiddenProjectStore.load()
   @State var midnightRefreshTimer: Timer?
   @State var isHoveringPinnedLeftColumn = false
   @State var overlayMetricsCache = TimelineOverlayMetricsCache()
@@ -130,6 +133,7 @@ struct TimelineBoardView: View {
   let jumpLeftInsetDays = 3
   let timelineTaskBadgeOverlayWidth: CGFloat = 220
   let timelineDayHeaderOverlayWidth: CGFloat = 260
+  let timelineProjectListPopoverWidth: CGFloat = 320
   let timelineTaskBadgeHeight: CGFloat = 18
   let timelineTaskBadgeOverlayAboveOffset: CGFloat = 8
   let timelineTaskBadgeOverlayBelowOffset: CGFloat = -4
@@ -162,7 +166,10 @@ struct TimelineBoardView: View {
   var dayOffsets: [Int] { Array(dayRange) }
   var timelineWidth: CGFloat { CGFloat(dayOffsets.count) * dayColumnWidth }
   var activeProjectIDs: [UUID] {
-    TimelineBoardReadPath.normalizedProjectIDs(projectIDs)
+    TimelineBoardReadPath.visibleProjectIDs(
+      projectIDs,
+      hiddenProjectIDs: hiddenTimelineProjectIDs
+    )
   }
   var activeProjectIDSet: Set<UUID> {
     Set(activeProjectIDs)
@@ -178,6 +185,10 @@ struct TimelineBoardView: View {
   var isTimelineScrolling: Bool { timelineScrollSession != nil }
   var canInteractivelyReorderProjects: Bool {
     projectListSortMode.allowsInteractiveReordering
+  }
+  var hasOnlyHiddenTimelineProjects: Bool {
+    !TimelineBoardReadPath.normalizedProjectIDs(projectIDs).isEmpty
+      && activeProjectIDs.isEmpty
   }
   let selectionHighlightColor = Color(red: 0.84, green: 0.94, blue: 1.0)
 
@@ -467,6 +478,7 @@ struct TimelineBoardView: View {
         visibleLowerOffset: visibleLowerOffset,
         visibleUpperOffset: visibleUpperOffset,
         selectedProjectID: selectedProjectID,
+        activeProjectListPopoverProjectID: activeTimelineProjectListPopoverProjectID,
         draggingProjectID: draggingProjectID,
         dropIndicator: projectDropIndicator,
         taskDropTargetProjectID: taskDropTargetProjectID
@@ -613,6 +625,9 @@ struct TimelineBoardView: View {
     if showsTimelineLoadingState {
       return "프로젝트를 준비하는 중입니다."
     }
+    if hasOnlyHiddenTimelineProjects {
+      return "숨긴 목록은 타임라인에서만 표시되지 않습니다."
+    }
     if appState.isReminderStatusDenied {
       return "리마인더 접근 권한이 필요합니다. 권한을 허용한 뒤 앱을 다시 열어 주세요."
     }
@@ -656,6 +671,7 @@ struct TimelineBoardView: View {
     visibleLowerOffset: Int,
     visibleUpperOffset: Int,
     selectedProjectID: UUID?,
+    activeProjectListPopoverProjectID: UUID?,
     draggingProjectID: UUID?,
     dropIndicator: TimelineProjectDropIndicator?,
     taskDropTargetProjectID: UUID?
@@ -666,6 +682,7 @@ struct TimelineBoardView: View {
     hasher.combine(visibleLowerOffset)
     hasher.combine(visibleUpperOffset)
     hasher.combine(selectedProjectID)
+    hasher.combine(activeProjectListPopoverProjectID)
     hasher.combine(draggingProjectID)
     hasher.combine(dropIndicator?.targetProjectID)
     hasher.combine(dropIndicator?.placement == .before)

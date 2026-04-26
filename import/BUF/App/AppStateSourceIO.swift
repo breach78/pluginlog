@@ -137,7 +137,7 @@ extension AppState {
         } else {
           applyObsidianImportResult(result)
         }
-        syncStatus = "Imported Obsidian \(result.importedProjectCount) lists / \(result.importedTaskCount) tasks / updated \(result.updatedTaskCount) / deleted \(result.deletedTaskCount)"
+        syncStatus = "Imported Obsidian \(result.importedProjectCount) lists / \(result.importedTaskCount) tasks / updated \(result.updatedTaskCount) / deleted \(result.deletedTaskCount) / projects deleted \(result.deletedProjectCount)"
       }
       bumpWorkspaceTreeRevision()
     } catch {
@@ -346,6 +346,7 @@ extension AppState {
       projects: result.projectRecords,
       tasks: result.taskRecords
     )
+    TaskIdentityBridgeStore.removeProjects(projectIDs: Set(result.deletedProjectIDs))
   }
 
   func applyObsidianBootstrapResult(_ result: ObsidianReminderBootstrapSync.SyncResult) {
@@ -360,11 +361,14 @@ extension AppState {
     provisioningResult: ObsidianReminderProvisioningSync.SyncResult
   ) {
     let archivedProjectIDs = Set(provisioningResult.archivedProjectIDs)
+    let deletedProjectIDs = Set(importResult.deletedProjectIDs)
     replaceObsidianBridgeRecords(
       projects: (importResult.projectRecords + provisioningResult.projectRecords)
-        .filter { !archivedProjectIDs.contains($0.projectID) },
+        .filter { !archivedProjectIDs.contains($0.projectID) }
+        .filter { !deletedProjectIDs.contains($0.projectID) },
       tasks: (importResult.taskRecords + provisioningResult.taskRecords)
         .filter { !archivedProjectIDs.contains($0.ownerProjectID) }
+        .filter { !deletedProjectIDs.contains($0.ownerProjectID) }
     )
   }
 

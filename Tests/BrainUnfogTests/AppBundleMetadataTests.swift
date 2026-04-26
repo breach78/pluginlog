@@ -17,5 +17,6 @@ final class AppBundleMetadataTests: XCTestCase {
     XCTAssertEqual(plist["CFBundleDisplayName"], "Brain Unfog")
     XCTAssertEqual(plist["CFBundleExecutable"], "Brain Unfog")
     XCTAssertEqual(plist["CFBundleIdentifier"], "com.brainunfog.app")
+    XCTAssertNotNil(plist["NSAppleEventsUsageDescription"])
   }
 }

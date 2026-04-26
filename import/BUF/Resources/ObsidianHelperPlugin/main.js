@@ -12,6 +12,8 @@ const TASK_LINE_PATTERN = /^(\s*)- \[[ xX]\] /;
 const METADATA_PATTERN = /^(\s*)%%\s*brain-unfog:\s*(\{.*\})\s*%%\s*$/;
 const REMINDER_LIST_PROPERTY_KEY = "reminder_list_external_id";
 const HIDE_COMPLETED_PROPERTY_KEY = "완료 가리기";
+const PROJECTS_ROOT_PATH = "raw/projects";
+const DEFAULT_PROJECT_TITLE = "새 프로젝트";
 const TASK_FOCUS_PROTOCOL_ACTION = "brain-unfog-focus-task";
 const TASK_FOCUS_HIGHLIGHT_CLASS = "brain-unfog-task-focus-highlight";
 const TASK_FOCUS_HIGHLIGHT_DURATION_MS = 4000;
@@ -41,7 +43,7 @@ module.exports = class BrainUnfogHelperPlugin extends Plugin {
     this.registerProjectNoteInvalidationHints();
     this.registerEditorDecorations();
     this.registerMetadataPostProcessor();
-    this.registerScheduleContextMenu();
+    this.registerHelperCommands();
     this.registerTaskFocusProtocolHandler();
   }
 
@@ -152,28 +154,38 @@ module.exports = class BrainUnfogHelperPlugin extends Plugin {
     });
   }
 
-  registerScheduleContextMenu() {
-    this.registerEvent(
-      this.app.workspace.on("editor-menu", (menu, editor, view) => {
+  registerHelperCommands() {
+    this.addCommand({
+      id: "brain-unfog-set-task-schedule",
+      name: "Brain Unfog 날짜 설정",
+      editorCallback: (editor, view) => {
         if (!view || !isReminderSyncedProjectFile(this.app, view.file)) {
+          new Notice("Brain Unfog 프로젝트 노트에서 할일을 선택해 주세요.");
           return;
         }
 
         const taskLine = findNearestTaskLine(editor, editor.getCursor().line);
         if (taskLine == null) {
+          new Notice("커서 근처에서 Brain Unfog 할일을 찾지 못했습니다.");
           return;
         }
 
-        menu.addItem((item) => {
-          item
-            .setTitle("Brain Unfog 날짜 설정")
-            .setIcon("calendar-clock")
-            .onClick(() => {
-              new BrainUnfogScheduleModal(this.app, editor, taskLine).open();
-            });
-        });
-      })
-    );
+        new BrainUnfogScheduleModal(this.app, editor, taskLine).open();
+      },
+    });
+
+    this.addCommand({
+      id: "brain-unfog-create-project",
+      name: "Brain Unfog 새 프로젝트",
+      callback: async () => {
+        try {
+          const file = await createBrainUnfogProjectNote(this.app);
+          new Notice(`${file.basename} 프로젝트를 만들었습니다.`);
+        } catch (error) {
+          new Notice("Brain Unfog 새 프로젝트를 만들지 못했습니다.");
+        }
+      },
+    });
   }
 
   registerTaskFocusProtocolHandler() {
@@ -190,6 +202,69 @@ module.exports = class BrainUnfogHelperPlugin extends Plugin {
     });
   }
 };
+
+async function createBrainUnfogProjectNote(app) {
+  await ensureVaultFolder(app, PROJECTS_ROOT_PATH);
+  const path = nextProjectNotePath(app, DEFAULT_PROJECT_TITLE);
+  const file = await app.vault.create(path, defaultProjectNoteMarkdown());
+  const leaf = app.workspace.getLeaf(false);
+  await leaf.openFile(file);
+  if (typeof app.workspace.revealLeaf === "function") {
+    app.workspace.revealLeaf(leaf);
+  }
+  return file;
+}
+
+async function ensureVaultFolder(app, folderPath) {
+  const parts = folderPath.split("/").filter(Boolean);
+  let current = "";
+  for (const part of parts) {
+    current = current ? `${current}/${part}` : part;
+    const existing = app.vault.getAbstractFileByPath(current);
+    if (existing) {
+      if (!("children" in existing)) {
+        throw new Error(`${current} is not a folder`);
+      }
+      continue;
+    }
+    await app.vault.createFolder(current);
+  }
+}
+
+function nextProjectNotePath(app, preferredTitle) {
+  const base = safeMarkdownBaseName(preferredTitle || DEFAULT_PROJECT_TITLE);
+  for (let index = 1; index < 10000; index += 1) {
+    const title = index === 1 ? base : `${base} ${index}`;
+    const fileName = safeMarkdownFileName(title);
+    const path = `${PROJECTS_ROOT_PATH}/${fileName}`;
+    if (!app.vault.getAbstractFileByPath(path)) {
+      return path;
+    }
+  }
+  return `${PROJECTS_ROOT_PATH}/${safeMarkdownFileName(`${base} ${Date.now()}`)}`;
+}
+
+function safeMarkdownBaseName(preferredTitle) {
+  const fileName = safeMarkdownFileName(preferredTitle);
+  return fileName.toLowerCase().endsWith(".md") ? fileName.slice(0, -3) : fileName;
+}
+
+function safeMarkdownFileName(preferredTitle) {
+  const trimmed = String(preferredTitle || "").trim()
+    .replace(/[\\/:]/g, "-");
+  const base = trimmed || DEFAULT_PROJECT_TITLE;
+  return base.toLowerCase().endsWith(".md") ? base : `${base}.md`;
+}
+
+function defaultProjectNoteMarkdown() {
+  return [
+    "---",
+    "tags:",
+    "  - 프로젝트",
+    "---",
+    "- ",
+  ].join("\n");
+}
 
 async function focusBrainUnfogTask(app, params) {
   const file = fileForFocusParams(app, params);

@@ -12,11 +12,22 @@ extension TimelineBoardView {
     return true
   }
 
-  func submitNewProject(_ rawTitle: String) {
-    let title = rawTitle.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard !title.isEmpty else { return }
+  func createTimelineProject() {
     guard !isCreatingProject else { return }
-    guard allowTimelineMutation("create-project") else { return }
+    isCreatingProject = true
+    Task { @MainActor in
+      defer { isCreatingProject = false }
+      guard let snapshot = await appState.createProjectStub(context: modelContext) else { return }
+      do {
+        try ObsidianTaskOpenService.openProjectNoteFile(
+          fileURL: snapshot.fileURL,
+          documentOpener: appState.platformUIFoundation.documentOpener
+        )
+      } catch {
+        appState.errorMessage = error.localizedDescription
+      }
+      await appState.handleObsidianProjectDirectoryChange([snapshot.fileURL])
+    }
   }
 
   func openScheduleDay(for offset: Int) {
@@ -26,20 +37,40 @@ extension TimelineBoardView {
 
   func revealTimelineTaskDetail(taskID: UUID, projectID: UUID) {
     appState.selectedProjectID = projectID
+    activeTimelineProjectListPopoverProjectID = nil
     Task { @MainActor in
       do {
-        try await ObsidianTaskOpenService.openTask(
-          vaultRootURL: appState.obsidianVaultRootURL,
-          projectID: projectID,
-          taskID: taskID,
-          documentOpener: appState.platformUIFoundation.documentOpener
-        )
+        try await RemindersAppOpenService.openTask(taskID: taskID)
       } catch {
         appState.errorMessage = error.localizedDescription
       }
     }
     cancelTimelineTaskBadgeOverlay()
     cancelTimelineDayHeaderOverlay()
+  }
+
+  func showTimelineProjectListPopover(_ projectID: UUID) {
+    onSelectProject(projectID)
+    appState.selectedProjectID = projectID
+    activeTimelineProjectListPopoverProjectID = nil
+    DispatchQueue.main.async {
+      activeTimelineProjectListPopoverProjectID = projectID
+    }
+    cancelTimelineTaskBadgeOverlay()
+    cancelTimelineDayHeaderOverlay()
+  }
+
+  func timelineProjectListPopoverBinding(for projectID: UUID) -> Binding<Bool> {
+    Binding(
+      get: { activeTimelineProjectListPopoverProjectID == projectID },
+      set: { isPresented in
+        if isPresented {
+          showTimelineProjectListPopover(projectID)
+        } else if activeTimelineProjectListPopoverProjectID == projectID {
+          activeTimelineProjectListPopoverProjectID = nil
+        }
+      }
+    )
   }
 
   func completeTimelineTask(_ taskID: UUID, projectID: UUID) {
@@ -238,14 +269,34 @@ extension TimelineBoardView {
   }
 
   func requestPermanentDelete(for bar: TimelineProjectBar) {
-    guard allowTimelineMutation("delete-project") else { return }
+    guard allowTimelineRetainedWrite("delete-project") else { return }
 
     pendingDeleteProjectID = bar.projectID
     pendingDeleteProjectTitle = bar.title
   }
 
+  func hideProjectFromTimeline(_ projectID: UUID) {
+    var nextHiddenProjectIDs = hiddenTimelineProjectIDs
+    guard nextHiddenProjectIDs.insert(projectID).inserted else { return }
+    hiddenTimelineProjectIDs = nextHiddenProjectIDs
+    TimelineHiddenProjectStore.save(nextHiddenProjectIDs)
+
+    cachedTimelineBars.removeAll { $0.projectID == projectID }
+    cachedTimelineRowLayouts = buildRowLayouts(for: cachedTimelineBars)
+    cachedTimelineBarsSourceSignature = nil
+    cachedTimelineBarsPresentationSignature = timelineSignature(for: cachedTimelineBars)
+    if activeTimelineProjectListPopoverProjectID == projectID {
+      activeTimelineProjectListPopoverProjectID = nil
+    }
+    cancelTimelineTaskBadgeOverlay()
+    cancelTimelineDayHeaderOverlay()
+  }
+
   func performPermanentDelete(_ projectID: UUID) {
-    guard allowTimelineMutation("delete-project") else { return }
+    guard allowTimelineRetainedWrite("delete-project") else { return }
+    Task { @MainActor in
+      _ = await appState.deleteProjectPermanently(projectID, context: modelContext)
+    }
   }
 
   func moveTaskToProjectTop(taskID: UUID, targetProjectID: UUID) {

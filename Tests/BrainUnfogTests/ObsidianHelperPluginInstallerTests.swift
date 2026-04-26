@@ -214,7 +214,6 @@ final class ObsidianHelperPluginInstallerTests: XCTestCase {
     let forbiddenSnippets = [
       "vault.modify",
       "vault.process",
-      "vault.create",
       "vault.delete",
       "requestUrl",
       "fetch(",
@@ -242,6 +241,11 @@ final class ObsidianHelperPluginInstallerTests: XCTestCase {
     )
 
     XCTAssertTrue(script.contains("Brain Unfog 날짜 설정"))
+    XCTAssertTrue(script.contains("registerHelperCommands"))
+    XCTAssertTrue(script.contains("brain-unfog-set-task-schedule"))
+    XCTAssertTrue(script.contains("brain-unfog-create-project"))
+    XCTAssertTrue(script.contains("Brain Unfog 새 프로젝트"))
+    XCTAssertFalse(script.contains("registerScheduleContextMenu"))
     XCTAssertTrue(script.contains("registerEditorExtension"))
     XCTAssertTrue(script.contains("%% brain-unfog:"))
     XCTAssertTrue(script.contains("brain-unfog-task-schedule-widget"))

@@ -39,6 +39,33 @@ final class ObsidianTaskOpenServiceTests: XCTestCase {
     XCTAssertFalse(FileManager.default.fileExists(atPath: sidecarURL.path))
   }
 
+  func testOpenProjectNoteFileUsesObsidianPathURIWithoutProjectIdentity() throws {
+    let vaultURL = try makeTemporaryDirectory(prefix: "ObsidianOpenUnboundProject")
+    defer { try? FileManager.default.removeItem(at: vaultURL) }
+    let fileURL = try writeProjectNote(
+      vault: vaultURL,
+      fileName: "새 프로젝트.md",
+      body: """
+      ---
+      tags:
+        - 프로젝트
+      ---
+      - 
+      """
+    )
+    let opener = RecordingDocumentOpener()
+
+    try ObsidianTaskOpenService.openProjectNoteFile(
+      fileURL: fileURL,
+      documentOpener: opener
+    )
+
+    XCTAssertEqual(opener.openedURLs.count, 1)
+    XCTAssertEqual(opener.openedURLs[0].scheme, "obsidian")
+    XCTAssertEqual(opener.openedURLs[0].host, "open")
+    XCTAssertTrue(opener.openedURLs[0].absoluteString.contains("path=%2F"))
+  }
+
   func testOpenTaskWithBlockIdentifierUsesHelperFocusURI() async throws {
     let vaultURL = try makeTemporaryDirectory(prefix: "Obsidian Vault 한글")
     defer { try? FileManager.default.removeItem(at: vaultURL) }

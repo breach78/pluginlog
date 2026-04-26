@@ -126,6 +126,17 @@ enum ObsidianDeepLinking {
 
 @MainActor
 enum ObsidianTaskOpenService {
+  static func openProjectNoteFile(
+    fileURL: URL,
+    documentOpener: any PlatformDocumentOpening
+  ) throws {
+    try openWithFileFallback(
+      primaryURL: ObsidianDeepLinking.projectNoteURL(fileURL: fileURL),
+      fallbackFileURL: fileURL,
+      documentOpener: documentOpener
+    )
+  }
+
   static func openProjectNote(
     vaultRootURL: URL?,
     projectID: UUID,

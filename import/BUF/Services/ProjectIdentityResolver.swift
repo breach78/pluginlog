@@ -178,6 +178,12 @@ enum TaskIdentityBridgeStore {
     return projectsByID[projectID]?.title
   }
 
+  static func projectRecord(for projectID: UUID) -> ProjectIdentityBridgeRecord? {
+    lock.lock()
+    defer { lock.unlock() }
+    return projectsByID[projectID]
+  }
+
   static func projectRecords() -> [ProjectIdentityBridgeRecord] {
     lock.lock()
     defer { lock.unlock() }

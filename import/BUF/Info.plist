@@ -23,10 +23,12 @@
   <string>Brain Unfog needs calendar write access to maintain BUF-owned schedule events.</string>
   <key>NSCalendarsUsageDescription</key>
   <string>Brain Unfog needs calendar access to sync scheduled tasks with the BUF-owned calendar.</string>
-  <key>NSContactsUsageDescription</key>
-  <string>Brain Unfog may need contacts access when macOS resolves calendar participant metadata.</string>
-  <key>NSRemindersFullAccessUsageDescription</key>
-  <string>Brain Unfog needs reminders access to sync Obsidian project tasks with Apple Reminders.</string>
+	<key>NSContactsUsageDescription</key>
+	<string>Brain Unfog may need contacts access when macOS resolves calendar participant metadata.</string>
+	<key>NSAppleEventsUsageDescription</key>
+	<string>Brain Unfog uses Apple Events to open the matching list or task in Apple Reminders.</string>
+	<key>NSRemindersFullAccessUsageDescription</key>
+	<string>Brain Unfog needs reminders access to sync Obsidian project tasks with Apple Reminders.</string>
   <key>NSRemindersUsageDescription</key>
   <string>Brain Unfog needs reminders access to sync Obsidian project tasks with Apple Reminders.</string>
 </dict>

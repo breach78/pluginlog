@@ -128,6 +128,13 @@ struct ObsidianReminderOutlineStateStore {
     try upsertListOutline(Self.outline(from: note), forListID: listID)
   }
 
+  func removeListOutline(forListID listID: String) throws {
+    guard let key = normalized(listID) else { return }
+    var payload = try loadPayload()
+    guard payload.listsByReminderID.removeValue(forKey: key) != nil else { return }
+    try writePayload(payload)
+  }
+
   static func outline(from note: ObsidianProjectNote) -> ObsidianReminderOutlineState {
     let bodyLines = note.bodyMarkdown.components(separatedBy: "\n")
     let tasksByLine = Dictionary(uniqueKeysWithValues: note.tasks.map { ($0.bodyLineIndex, $0) })

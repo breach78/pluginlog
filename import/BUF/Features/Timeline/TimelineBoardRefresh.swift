@@ -87,6 +87,30 @@ enum TimelineBoardReadPath {
     return trimmed.isEmpty ? "제목 없음" : trimmed
   }
 
+  static func projectListPopoverEntries(from entries: [ScheduleSliceEntry])
+    -> [ScheduleSliceEntry]
+  {
+    entries
+      .filter { !$0.isArchived && !$0.isCompleted }
+      .sorted { lhs, rhs in
+        if lhs.isCompleted != rhs.isCompleted {
+          return !lhs.isCompleted
+        }
+
+        if lhs.rowOrder != rhs.rowOrder {
+          return lhs.rowOrder < rhs.rowOrder
+        }
+
+        let titleComparison = timelinePreviewTitle(for: lhs.title)
+          .localizedStandardCompare(timelinePreviewTitle(for: rhs.title))
+        if titleComparison != .orderedSame {
+          return titleComparison == .orderedAscending
+        }
+
+        return lhs.taskID.uuidString < rhs.taskID.uuidString
+      }
+  }
+
   static func dayHeaderSectionsByDay(
     from bars: [TimelineProjectBar],
     today: Date
@@ -224,6 +248,13 @@ enum TimelineBoardReadPath {
   static func normalizedProjectIDs(_ projectIDs: [UUID]) -> [UUID] {
     var seen: Set<UUID> = []
     return projectIDs.filter { seen.insert($0).inserted }
+  }
+
+  static func visibleProjectIDs(
+    _ projectIDs: [UUID],
+    hiddenProjectIDs: Set<UUID>
+  ) -> [UUID] {
+    normalizedProjectIDs(projectIDs).filter { !hiddenProjectIDs.contains($0) }
   }
 
   static func hasCompleteWorkspaceCoverage(

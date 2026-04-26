@@ -63,6 +63,36 @@ actor ObsidianProjectMarkdownStore: ProjectMarkdownStore {
     try prepareProjectDirectorySync()
   }
 
+  @discardableResult
+  func createProjectStub(preferredTitle: String = "새 프로젝트") async throws -> Snapshot {
+    try prepareProjectDirectorySync()
+    let note = ObsidianProjectNote(
+      frontmatter: ObsidianProjectFrontmatter(
+        tags: ["프로젝트"],
+        reminderListExternalIdentifier: nil,
+        preservedLines: []
+      ),
+      bodyMarkdown: "- ",
+      tasks: [],
+      diagnostics: [],
+      normalizedContentHash: ""
+    )
+    let fileName = uniqueProjectStubFileName(preferredTitle: preferredTitle)
+    let fileURL = projectsRootURL.appendingPathComponent(fileName, isDirectory: false)
+    guard isDirectMarkdownProjectFile(fileURL) else {
+      throw StoreError.unsafeProjectFile(fileURL)
+    }
+
+    try ObsidianProjectNoteRenderer.render(note).write(
+      to: fileURL,
+      atomically: true,
+      encoding: .utf8
+    )
+    let snapshot = try loadSnapshot(at: fileURL)
+    postWriteNotification(fileURL: snapshot.fileURL)
+    return snapshot
+  }
+
   func vaultRoot() -> URL {
     vaultRootURL
   }
@@ -161,18 +191,64 @@ actor ObsidianProjectMarkdownStore: ProjectMarkdownStore {
     }
     try rendered.write(to: fileURL, atomically: true, encoding: .utf8)
     let snapshot = try loadSnapshot(at: fileURL)
-    NotificationCenter.default.post(
-      name: .obsidianProjectMarkdownStoreDidWriteMarkdown,
-      object: nil,
-      userInfo: [ObsidianProjectMarkdownStoreWriteNotification.fileURLKey: snapshot.fileURL]
-    )
+    postWriteNotification(fileURL: snapshot.fileURL)
     return snapshot
+  }
+
+  func removeProjectNote(
+    _ snapshot: Snapshot,
+    expectedBaseline: WriteBaseline
+  ) async throws {
+    try prepareProjectDirectorySync()
+    let fileURL = snapshot.fileURL.standardizedFileURL
+    guard isDirectMarkdownProjectFile(fileURL) else {
+      throw StoreError.unsafeProjectFile(fileURL)
+    }
+    guard fileManager.fileExists(atPath: fileURL.path) else { return }
+    let currentSnapshot = try loadSnapshot(at: fileURL)
+    guard expectedBaseline.normalizedContentHash == currentSnapshot.normalizedContentHash,
+      expectedBaseline.contentModificationDate == currentSnapshot.contentModificationDate
+    else {
+      throw StoreError.staleExpectedBaseline
+    }
+    try backupDeletedProjectNote(fileURL: fileURL, snapshot: currentSnapshot)
+    try fileManager.removeItem(at: fileURL)
+    postWriteNotification(fileURL: fileURL)
+  }
+
+  private func backupDeletedProjectNote(fileURL: URL, snapshot: Snapshot) throws {
+    let backupDirectory = vaultRootURL
+      .appendingPathComponent(".buf", isDirectory: true)
+      .appendingPathComponent("deleted-project-notes", isDirectory: true)
+      .appendingPathComponent("\(Int(Date().timeIntervalSince1970))-\(UUID().uuidString)", isDirectory: true)
+    try fileManager.createDirectory(
+      at: backupDirectory,
+      withIntermediateDirectories: true
+    )
+    try snapshot.rawMarkdown.write(
+      to: backupDirectory.appendingPathComponent(fileURL.lastPathComponent),
+      atomically: true,
+      encoding: .utf8
+    )
+    try snapshot.vaultRelativePath.write(
+      to: backupDirectory.appendingPathComponent("original-path.txt"),
+      atomically: true,
+      encoding: .utf8
+    )
   }
 
   private func prepareProjectDirectorySync() throws {
     try fileManager.createDirectory(
       at: projectsRootURL,
       withIntermediateDirectories: true
+    )
+  }
+
+  private func postWriteNotification(fileURL: URL) {
+    NotificationCenter.default.post(
+      name: .obsidianProjectMarkdownStoreDidWriteMarkdown,
+      object: nil,
+      userInfo: [ObsidianProjectMarkdownStoreWriteNotification.fileURLKey: fileURL]
     )
   }
 
@@ -231,6 +307,25 @@ actor ObsidianProjectMarkdownStore: ProjectMarkdownStore {
       .replacingOccurrences(of: ":", with: "-")
     let safeBase = base.isEmpty ? "Untitled" : base
     return safeBase.lowercased().hasSuffix(".md") ? safeBase : "\(safeBase).md"
+  }
+
+  private func uniqueProjectStubFileName(preferredTitle: String) -> String {
+    let base = safeMarkdownBaseName(preferredTitle)
+    for index in 1..<10_000 {
+      let title = index == 1 ? base : "\(base) \(index)"
+      let fileName = safeMarkdownFileName(title)
+      let fileURL = projectsRootURL.appendingPathComponent(fileName, isDirectory: false)
+      if !fileManager.fileExists(atPath: fileURL.path) {
+        return fileName
+      }
+    }
+    return safeMarkdownFileName("\(base) \(UUID().uuidString)")
+  }
+
+  private func safeMarkdownBaseName(_ preferredTitle: String) -> String {
+    let fileName = safeMarkdownFileName(preferredTitle.isEmpty ? "새 프로젝트" : preferredTitle)
+    guard fileName.lowercased().hasSuffix(".md") else { return fileName }
+    return String(fileName.dropLast(3))
   }
 
   private func validateExistingFileIdentity(

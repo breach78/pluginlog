@@ -587,6 +587,110 @@ final class ObsidianReminderImportSyncTests: XCTestCase {
     XCTAssertEqual(result.updatedTaskCount, 0)
   }
 
+  func testEmptyReminderBatchDoesNotDeleteLocalProjects() async throws {
+    let dataRoot = try makeTemporaryDirectory(prefix: "ObsidianImportData")
+    ReminderSyncBaselineStore.install(dataDirectory: dataRoot)
+    let vault = try makeTemporaryVault()
+    try writeProjectNote(
+      vault: vault,
+      fileName: "Deleted.md",
+      body: """
+      ---
+      tags:
+        - 프로젝트
+      reminder_list_external_id: list-1
+      ---
+      - [ ] Removed task
+        %% brain-unfog: {"reminder_external_id":"task-1"} %%
+      """
+    )
+    ReminderSyncBaselineStore.upsert(
+      reminderExternalIdentifier: "task-1",
+      state: ReminderSyncTaskState(
+        title: "Removed task",
+        isCompleted: false,
+        date: nil,
+        repeatRule: nil,
+        noteText: nil
+      ),
+      remoteModifiedAt: fixedRemoteDate,
+      now: fixedNow
+    )
+    let store = ObsidianProjectMarkdownStore(vaultRootURL: vault)
+
+    let result = try await ObsidianReminderImportSync.sync(
+      batch: ReminderImportSnapshotBatch(lists: [], itemsByListIdentifier: [:]),
+      store: store,
+      now: fixedNow
+    )
+    let lifecycleRecord = try ProjectLifecycleStore(vaultRootURL: vault)
+      .record(forListIdentifier: "list-1")
+
+    XCTAssertEqual(result.deletedProjectCount, 0)
+    XCTAssertEqual(result.deletedProjectIDs, [])
+    XCTAssertEqual(try projectMarkdownFiles(in: vault).map(\.lastPathComponent), ["Deleted.md"])
+    XCTAssertNotNil(ReminderSyncBaselineStore.baseline(for: "task-1"))
+    XCTAssertNil(lifecycleRecord)
+  }
+
+  func testMissingReminderListDoesNotDeleteArchivedObsidianProject() async throws {
+    let vault = try makeTemporaryVault()
+    try writeProjectNote(
+      vault: vault,
+      fileName: "Archived.md",
+      body: """
+      ---
+      tags:
+        - 프로젝트
+      reminder_list_external_id: list-1
+      아카이브: true
+      ---
+      - [ ] Archived task
+        %% brain-unfog: {"reminder_external_id":"task-1"} %%
+      """
+    )
+    try ObsidianReminderArchiveStore(vaultRootURL: vault).save(
+      ObsidianReminderArchiveSnapshot(
+        archivedAt: fixedNow,
+        sourceVaultRelativePath: "raw/projects/Archived.md",
+        list: makeList(identifier: "list-1", title: "Archived"),
+        items: []
+      ),
+      forListIdentifier: "list-1"
+    )
+    let store = ObsidianProjectMarkdownStore(vaultRootURL: vault)
+
+    let result = try await ObsidianReminderImportSync.sync(
+      batch: ReminderImportSnapshotBatch(lists: [], itemsByListIdentifier: [:]),
+      store: store,
+      now: fixedNow
+    )
+
+    XCTAssertEqual(result.deletedProjectCount, 0)
+    XCTAssertEqual(try projectMarkdownFiles(in: vault).map(\.lastPathComponent), ["Archived.md"])
+  }
+
+  func testReminderDeleteLifecycleRecordDoesNotBlockReimport() async throws {
+    let vault = try makeTemporaryVault()
+    let list = makeList(identifier: "list-1", title: "Restored")
+    try ProjectLifecycleStore(vaultRootURL: vault).recordStarted(
+      intent: .remindersDelete,
+      projectID: RetainedProjectionBuilder.derivedProjectID(for: list.identifier),
+      reminderListExternalIdentifier: list.identifier,
+      noteVaultRelativePath: "raw/projects/Restored.md",
+      at: fixedNow
+    )
+
+    let result = try await ObsidianReminderImportSync.sync(
+      batch: ReminderImportSnapshotBatch(lists: [list], itemsByListIdentifier: [:]),
+      store: ObsidianProjectMarkdownStore(vaultRootURL: vault),
+      now: fixedNow
+    )
+
+    XCTAssertEqual(result.importedProjectCount, 1)
+    XCTAssertEqual(try projectMarkdownFiles(in: vault).map(\.lastPathComponent), ["Restored.md"])
+  }
+
   func testDuplicateAndDamagedMetadataFailClosedWithoutWrites() async throws {
     let vault = try makeTemporaryVault()
     _ = try writeProjectNote(

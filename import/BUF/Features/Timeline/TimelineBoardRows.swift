@@ -50,26 +50,14 @@ extension TimelineBoardView {
         )
 
         Button {
-          showAddProjectPopover = true
+          createTimelineProject()
         } label: {
           Image(systemName: "plus.circle.fill")
             .font(.caption.weight(.semibold))
         }
         .buttonStyle(.plain)
-        .popover(isPresented: $showAddProjectPopover, arrowEdge: .bottom) {
-          WorkspaceNewProjectPopoverContent(
-            isCreating: isCreatingProject,
-            onSubmit: submitNewProject,
-            onCancel: {
-              showAddProjectPopover = false
-            }
-          )
-          .overlaySurface(
-            cornerRadius: 12,
-            strokeColor: .primary,
-            style: .card()
-          )
-        }
+        .disabled(isCreatingProject)
+        .help("새 프로젝트 생성")
 
         Spacer(minLength: 0)
       }
@@ -423,14 +411,21 @@ extension TimelineBoardView {
     )
     .contentShape(Rectangle())
     .modifier(TimelineProjectDragModifier(bar: bar, draggingProjectID: $draggingProjectID))
-    .onTapGesture {
-      onSelectProject(bar.projectID)
-    }
-    .simultaneousGesture(
-      TapGesture(count: 2).onEnded {
-        onToggleProjectSelection(bar.projectID)
-      }
+    .gesture(
+      TapGesture(count: 2)
+        .onEnded {
+          showTimelineProjectListPopover(bar.projectID)
+        }
+        .exclusively(
+          before: TapGesture()
+            .onEnded {
+              onSelectProject(bar.projectID)
+            }
+        )
     )
+    .popover(isPresented: timelineProjectListPopoverBinding(for: bar.projectID)) {
+      timelineProjectListPopover(for: bar)
+    }
     .overlay(alignment: .top) {
       if showsPriorityBoundary {
         priorityBoundaryLine
@@ -444,6 +439,156 @@ extension TimelineBoardView {
       }
     }
     .contextMenu { projectContextMenu(for: bar) }
+  }
+
+  func timelineProjectListPopover(for bar: TimelineProjectBar) -> some View {
+    let entries = timelineProjectListPopoverEntries(for: bar.projectID)
+    let projectColor = timelineColor(for: bar)
+
+    return VStack(alignment: .leading, spacing: 10) {
+      HStack(spacing: 8) {
+        Circle()
+          .fill(projectColor)
+          .frame(width: 7, height: 7)
+
+        Text(timelinePreviewTitle(for: bar.title))
+          .font(.caption.weight(.semibold))
+          .foregroundStyle(projectColor)
+          .lineLimit(1)
+
+        Spacer(minLength: 0)
+
+        Text("\(entries.count)")
+          .font(.caption2.monospacedDigit())
+          .foregroundStyle(.secondary)
+      }
+
+      if entries.isEmpty {
+        Text("할일 없음")
+          .font(.system(size: 12))
+          .foregroundStyle(.secondary)
+          .frame(maxWidth: .infinity, minHeight: 42, alignment: .center)
+      } else {
+        ScrollView {
+          LazyVStack(alignment: .leading, spacing: 7) {
+            ForEach(entries) { entry in
+              timelineProjectListPopoverTaskRow(
+                entry,
+                projectID: bar.projectID,
+                projectColor: projectColor
+              )
+            }
+          }
+          .padding(.vertical, 1)
+        }
+        .frame(maxHeight: 360)
+      }
+    }
+    .padding(10)
+    .frame(width: timelineProjectListPopoverWidth, alignment: .topLeading)
+    .background(
+      RoundedRectangle(cornerRadius: 12)
+        .fill(Color(nsColor: NSColor(calibratedWhite: 0.985, alpha: 1)))
+    )
+    .overlay {
+      RoundedRectangle(cornerRadius: 12)
+        .stroke(Color.secondary.opacity(0.18), lineWidth: 0.8)
+    }
+    .compositingGroup()
+    .shadow(color: .black.opacity(0.12), radius: 10, x: 0, y: 5)
+  }
+
+  func timelineProjectListPopoverTaskRow(
+    _ entry: ScheduleSliceEntry,
+    projectID: UUID,
+    projectColor: Color
+  ) -> some View {
+    let isOverdue = timelineProjectListEntryIsOverdue(entry)
+
+    return HStack(alignment: .top, spacing: 8) {
+      if entry.isCompleted {
+        Image(systemName: "checkmark.circle.fill")
+          .font(.system(size: 13, weight: .regular))
+          .foregroundStyle(projectColor.opacity(0.9))
+          .frame(width: 14, height: 18, alignment: .top)
+      } else {
+        Button {
+          completeTimelineTask(entry.taskID, projectID: projectID)
+        } label: {
+          timelineTaskToggleMarker(isOverdue: isOverdue)
+            .frame(width: 14, height: 18, alignment: .top)
+        }
+        .buttonStyle(.plain)
+      }
+
+      Button {
+        revealTimelineTaskDetail(taskID: entry.taskID, projectID: projectID)
+      } label: {
+        VStack(alignment: .leading, spacing: 2) {
+          Text(timelinePreviewTitle(for: entry.title))
+            .font(.system(size: 12))
+            .foregroundStyle(entry.isCompleted ? Color.secondary : Color.primary)
+            .strikethrough(entry.isCompleted, color: Color.secondary.opacity(0.55))
+            .lineLimit(2)
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+          if let dateText = timelineProjectListDateText(for: entry) {
+            Text(dateText)
+              .font(.caption2)
+              .foregroundStyle(isOverdue ? Color.red : Color.secondary.opacity(0.9))
+              .lineLimit(1)
+          }
+        }
+        .contentShape(Rectangle())
+      }
+      .buttonStyle(.plain)
+    }
+  }
+
+  func timelineProjectListPopoverEntries(for projectID: UUID) -> [ScheduleSliceEntry] {
+    TimelineBoardReadPath.projectListPopoverEntries(
+      from: workspaceTimelineScheduleEntriesByProjectID[projectID] ?? []
+    )
+  }
+
+  func timelineProjectListDateText(for entry: ScheduleSliceEntry) -> String? {
+    guard
+      let date = ReminderTaskDateCanonicalizer.unifiedDate(
+        dueDate: entry.dueDate,
+        startDate: entry.startDate,
+        displayedDate: entry.displayedDate
+      )
+    else {
+      return nil
+    }
+
+    let locale = Locale(identifier: "ko_KR")
+    if entry.scheduleHasExplicitTime {
+      return date.formatted(
+        .dateTime
+          .locale(locale)
+          .month(.abbreviated)
+          .day()
+          .hour(.twoDigits(amPM: .omitted))
+          .minute(.twoDigits)
+      )
+    }
+
+    return date.formatted(.dateTime.locale(locale).month(.abbreviated).day())
+  }
+
+  func timelineProjectListEntryIsOverdue(_ entry: ScheduleSliceEntry) -> Bool {
+    guard !entry.isCompleted else { return false }
+    guard
+      let date = ReminderTaskDateCanonicalizer.unifiedDate(
+        dueDate: entry.dueDate,
+        startDate: entry.startDate,
+        displayedDate: entry.displayedDate
+      )
+    else {
+      return false
+    }
+    return calendar.startOfDay(for: date) < calendar.startOfDay(for: .now)
   }
 
   @ViewBuilder
@@ -461,6 +606,14 @@ extension TimelineBoardView {
           }
         }
       }
+    }
+
+    Divider()
+
+    Button {
+      hideProjectFromTimeline(bar.projectID)
+    } label: {
+      Label("숨김", systemImage: "eye.slash")
     }
 
     Divider()

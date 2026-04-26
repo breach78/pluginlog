@@ -6,6 +6,8 @@ enum ObsidianReminderImportSync {
     var importedTaskCount: Int
     var updatedTaskCount: Int
     var deletedTaskCount: Int = 0
+    var deletedProjectCount: Int = 0
+    var deletedProjectIDs: [UUID] = []
     var projectRecords: [ProjectIdentityBridgeRecord]
     var taskRecords: [TaskIdentityBridgeRecord]
   }
@@ -71,15 +73,27 @@ enum ObsidianReminderImportSync {
     let snapshots = try await store.loadProjectNotesInScope()
     try validateExistingNotes(snapshots.map(\.note))
     let snapshotsByListID = try snapshotsByReminderListExternalIdentifier(snapshots)
-    let lists = try normalizedReminderLists(from: batch.lists)
+    let vaultRootURL = await store.vaultRoot()
+    let lifecycleStore = ProjectLifecycleStore(vaultRootURL: vaultRootURL)
+    let archiveStore = ObsidianReminderArchiveStore(vaultRootURL: vaultRootURL)
+    let allLists = try normalizedReminderLists(from: batch.lists)
+    var lists: [NormalizedList] = []
+    for list in allLists {
+      guard try !lifecycleStore.shouldSkipImport(forListIdentifier: list.externalIdentifier) else {
+        continue
+      }
+      lists.append(list)
+    }
     let duplicateTitleCounts = duplicateTitleCounts(in: lists)
     try validateReminderTaskIdentities(in: batch)
-    let outlineStore = ObsidianReminderOutlineStateStore(vaultRootURL: await store.vaultRoot())
+    let outlineStore = ObsidianReminderOutlineStateStore(vaultRootURL: vaultRootURL)
 
     var importedProjectCount = 0
     var importedTaskCount = 0
     var updatedTaskCount = 0
     var deletedTaskCount = 0
+    var deletedProjectCount = 0
+    var deletedProjectIDs: [UUID] = []
     var projectRecords: [ProjectIdentityBridgeRecord] = []
     var taskRecords: [TaskIdentityBridgeRecord] = []
 
@@ -157,14 +171,72 @@ enum ObsidianReminderImportSync {
       }
     }
 
+    let remoteListExternalIdentifiers = Set(allLists.map(\.externalIdentifier))
+    let deletedProjects = try await deleteLocalProjectsMissingFromReminderSourceIfNeeded(
+      snapshots: snapshots,
+      remoteListExternalIdentifiers: remoteListExternalIdentifiers,
+      store: store,
+      vaultRootURL: vaultRootURL,
+      archiveStore: archiveStore,
+      lifecycleStore: lifecycleStore,
+      now: now
+    )
+    deletedProjectCount += deletedProjects.count
+    deletedProjectIDs.append(contentsOf: deletedProjects.map(\.deletedProjectID))
+
     return SyncResult(
       importedProjectCount: importedProjectCount,
       importedTaskCount: importedTaskCount,
       updatedTaskCount: updatedTaskCount,
       deletedTaskCount: deletedTaskCount,
+      deletedProjectCount: deletedProjectCount,
+      deletedProjectIDs: deletedProjectIDs,
       projectRecords: projectRecords,
       taskRecords: taskRecords
     )
+  }
+
+  private static func deleteLocalProjectsMissingFromReminderSourceIfNeeded(
+    snapshots: [ObsidianProjectMarkdownStore.Snapshot],
+    remoteListExternalIdentifiers: Set<String>,
+    store: ObsidianProjectMarkdownStore,
+    vaultRootURL: URL,
+    archiveStore: ObsidianReminderArchiveStore,
+    lifecycleStore: ProjectLifecycleStore,
+    now: Date
+  ) async throws -> [ObsidianProjectDeletionSync.DeleteResult] {
+    guard !remoteListExternalIdentifiers.isEmpty else { return [] }
+    var deletedProjects: [ObsidianProjectDeletionSync.DeleteResult] = []
+    for snapshot in snapshots {
+      guard let listID = normalized(snapshot.note.reminderListExternalIdentifier) else {
+        continue
+      }
+      let hasArchiveSnapshot = try archiveStore.load(forListIdentifier: listID) != nil
+      let hasArchiveIntent = try lifecycleStore
+        .shouldSuppressMissingReminderListDeletion(forListIdentifier: listID)
+      if snapshot.note.frontmatter?.isArchived == true || hasArchiveSnapshot || hasArchiveIntent {
+        continue
+      }
+
+      let lifecycleRecord = try lifecycleStore.record(forListIdentifier: listID)
+      let lifecycleDeleteIntent = lifecycleRecord?.intent.deleteIntent
+      guard lifecycleDeleteIntent != nil else {
+        continue
+      }
+
+      if let deleted = try await ObsidianProjectDeletionSync
+        .deleteLocalProjectForMissingReminderList(
+          snapshot: snapshot,
+          store: store,
+          vaultRootURL: vaultRootURL,
+          intent: lifecycleDeleteIntent ?? .remindersDelete,
+          now: now
+        )
+      {
+        deletedProjects.append(deleted)
+      }
+    }
+    return deletedProjects
   }
 
   private struct ExistingMergeResult {
@@ -804,6 +876,17 @@ enum ObsidianReminderImportSync {
 
   fileprivate static func normalizedColor(_ value: String?) -> String? {
     normalized(value)
+  }
+}
+
+private extension ProjectLifecycleIntent {
+  var deleteIntent: ProjectLifecycleIntent? {
+    switch self {
+    case .appDelete:
+      return self
+    case .remindersDelete, .obsidianArchive:
+      return nil
+    }
   }
 }
 

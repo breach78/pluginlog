@@ -134,6 +134,35 @@ final class TimelineBoardReadPathTests: XCTestCase {
     XCTAssertEqual(ProjectListSortMode.priority.nextTimeline, .recent)
   }
 
+  func testVisibleProjectIDsFiltersTimelineHiddenProjectsAfterDeduping() {
+    let visibleID = UUID()
+    let hiddenID = UUID()
+
+    XCTAssertEqual(
+      TimelineBoardReadPath.visibleProjectIDs(
+        [visibleID, hiddenID, visibleID],
+        hiddenProjectIDs: [hiddenID]
+      ),
+      [visibleID]
+    )
+  }
+
+  func testTimelineHiddenProjectStorePersistsProjectIDs() throws {
+    let suiteName = "TimelineHiddenProjectStoreTests-\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+    defer { defaults.removePersistentDomain(forName: suiteName) }
+    let firstID = UUID()
+    let secondID = UUID()
+
+    TimelineHiddenProjectStore.save([firstID, secondID], defaults: defaults)
+
+    XCTAssertEqual(TimelineHiddenProjectStore.load(defaults: defaults), [firstID, secondID])
+
+    TimelineHiddenProjectStore.save([], defaults: defaults)
+
+    XCTAssertEqual(TimelineHiddenProjectStore.load(defaults: defaults), [])
+  }
+
   func testProjectDropReordersWithinExistingGroup() {
     let firstID = UUID()
     let secondID = UUID()
@@ -383,6 +412,24 @@ final class TimelineBoardReadPathTests: XCTestCase {
     XCTAssertEqual(secondTaskIDs, firstTaskIDs)
   }
 
+  func testProjectListPopoverEntriesExcludeArchivedAndCompletedTasks() {
+    let openFirstID = UUID()
+    let openSecondID = UUID()
+    let completedID = UUID()
+    let archivedID = UUID()
+
+    let ordered = TimelineBoardReadPath.projectListPopoverEntries(
+      from: [
+        makeScheduleEntry(taskID: completedID, title: "Completed", isCompleted: true, rowOrder: 0),
+        makeScheduleEntry(taskID: openSecondID, title: "Second", rowOrder: 20),
+        makeScheduleEntry(taskID: archivedID, title: "Archived", isArchived: true, rowOrder: -1),
+        makeScheduleEntry(taskID: openFirstID, title: "First", rowOrder: 10),
+      ]
+    )
+
+    XCTAssertEqual(ordered.map(\.taskID), [openFirstID, openSecondID])
+  }
+
   private func makeProject(
     projectID: UUID,
     title: String = "Project",
@@ -434,6 +481,40 @@ final class TimelineBoardReadPathTests: XCTestCase {
     )
   }
 
+  private func makeScheduleEntry(
+    taskID: UUID,
+    title: String,
+    isCompleted: Bool = false,
+    isArchived: Bool = false,
+    rowOrder: Int
+  ) -> ScheduleSliceEntry {
+    ScheduleSliceEntry(
+      taskID: taskID,
+      parentTaskID: nil,
+      title: title,
+      displayedDate: nil,
+      startDate: nil,
+      dueDate: nil,
+      scheduleHasExplicitTime: false,
+      scheduledDurationMinutes: nil,
+      isCompleted: isCompleted,
+      completionDate: isCompleted ? .distantPast : nil,
+      recurrenceRuleRaw: nil,
+      attachmentCount: 0,
+      reminderNoteText: "",
+      requiredWorkDays: 0,
+      completedWorkUnits: 0,
+      completedWorkUnitDates: [],
+      preparationScheduleOverridesRaw: "",
+      rowOrder: rowOrder,
+      priority: 0,
+      isFlagged: false,
+      isArchived: isArchived,
+      localUpdatedAt: .distantPast,
+      createdAt: .distantPast
+    )
+  }
+
   private func makeSummary(latestTaskUpdatedAt: Date?) -> ProjectSummaryRecord {
     ProjectSummaryRecord(
       openRootTaskCount: 0,
@@ -451,4 +532,5 @@ final class TimelineBoardReadPathTests: XCTestCase {
       isArchived: false
     )
   }
+
 }

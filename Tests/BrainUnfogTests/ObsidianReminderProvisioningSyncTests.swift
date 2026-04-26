@@ -161,6 +161,82 @@ final class ObsidianReminderProvisioningSyncTests: XCTestCase {
     XCTAssertEqual(archive?.taskDetails.first?.alarms.first?.structuredLocation?.title, "Office")
   }
 
+  func testDeleteProjectRemovesReminderListObsidianNoteAndLifecycleRecords() async throws {
+    TaskIdentityBridgeStore.reset()
+    defer { TaskIdentityBridgeStore.reset() }
+    let dataRoot = try makeTemporaryDirectory()
+    ReminderSyncBaselineStore.install(dataDirectory: dataRoot)
+    let vault = try makeTemporaryVault()
+    let noteURL = try writeProjectNote(
+      vault: vault,
+      fileName: "Project.md",
+      body: """
+      ---
+      tags:
+        - 프로젝트
+      reminder_list_external_id: list-1
+      ---
+      - [ ] Task one
+        %% brain-unfog: {"reminder_external_id":"task-1"} %%
+      """
+    )
+    let projectID = RetainedProjectionBuilder.derivedProjectID(for: "list-1")
+    let taskID = ReminderProjectionIdentity.taskID(for: "task-1")
+    TaskIdentityBridgeStore.upsertProject(
+      projectID: projectID,
+      title: "Project",
+      reminderListExternalIdentifier: "list-1"
+    )
+    TaskIdentityBridgeStore.upsertTask(
+      taskID: taskID,
+      title: "Task one",
+      reminderExternalIdentifier: "task-1",
+      ownerProjectID: projectID
+    )
+    ReminderSyncBaselineStore.upsert(
+      reminderExternalIdentifier: "task-1",
+      state: ReminderSyncTaskState(
+        title: "Task one",
+        isCompleted: false,
+        date: nil,
+        repeatRule: nil,
+        noteText: nil
+      ),
+      remoteModifiedAt: fixedRemoteDate,
+      now: fixedNow
+    )
+    try ObsidianReminderOutlineStateStore(vaultRootURL: vault).upsertListOutline(
+      ObsidianReminderOutlineState(roots: [.task("task-1")]),
+      forListID: "list-1"
+    )
+    let provider = FakeObsidianReminderProjectProvider()
+    provider.lists["list-1"] = ReminderProjectListSnapshot(
+      identifier: "list-1",
+      externalIdentifier: "list-1",
+      title: "Project",
+      colorHex: nil
+    )
+
+    let result = try await ObsidianProjectDeletionSync.deleteProject(
+      vaultRootURL: vault,
+      projectID: projectID,
+      reminderProjectProvider: provider,
+      now: fixedNow
+    )
+    let lifecycleRecord = try ProjectLifecycleStore(vaultRootURL: vault)
+      .record(forListIdentifier: "list-1")
+
+    XCTAssertEqual(result.deletedProjectID, projectID)
+    XCTAssertEqual(result.deletedReminderListExternalIdentifier, "list-1")
+    XCTAssertEqual(provider.removedListIdentifiers, ["list-1"])
+    XCTAssertFalse(FileManager.default.fileExists(atPath: noteURL.path))
+    XCTAssertNil(ReminderSyncBaselineStore.baseline(for: "task-1"))
+    XCTAssertNil(TaskIdentityBridgeStore.projectTitle(for: projectID))
+    XCTAssertNil(try ObsidianReminderOutlineStateStore(vaultRootURL: vault).loadListOutline(for: "list-1"))
+    XCTAssertEqual(lifecycleRecord?.intent, .appDelete)
+    XCTAssertNotNil(lifecycleRecord?.completedAt)
+  }
+
   func testUnarchivedProjectRestoresReminderListFromBackupAndRewritesIdentifiers() async throws {
     let vault = try makeTemporaryVault()
     let noteURL = try writeProjectNote(
