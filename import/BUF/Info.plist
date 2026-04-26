@@ -4,13 +4,13 @@
 <plist version="1.0">
 <dict>
   <key>CFBundleIdentifier</key>
-  <string>com.brainunfog.harness</string>
+  <string>com.brainunfog.app</string>
   <key>CFBundleName</key>
   <string>Brain Unfog</string>
   <key>CFBundleDisplayName</key>
   <string>Brain Unfog</string>
   <key>CFBundleExecutable</key>
-  <string>BrainUnfogHarness</string>
+  <string>Brain Unfog</string>
   <key>CFBundlePackageType</key>
   <string>APPL</string>
   <key>CFBundleShortVersionString</key>

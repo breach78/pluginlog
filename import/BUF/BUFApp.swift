@@ -39,10 +39,8 @@ struct BUFApplication: App {
     Task { @MainActor in
       guard !AppRuntimeEnvironment.isRunningPreview else { return }
       await appState.launch()
-      MainAppWindowPresenter.shared.show(appState: appState)
       AppSettingsWindowPresenter.shared.installAppMenuItem(appState: appState)
       appState.scheduleDebugPhase0AutoExportIfNeeded()
-      MainAppWindowPresenter.shared.reassertSingleWindow(appState: appState)
     }
   }
 

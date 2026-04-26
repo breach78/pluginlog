@@ -1,0 +1,71 @@
+name: Brain Unfog
+options:
+  bundleIdPrefix: com.brainunfog
+  deploymentTarget:
+    macOS: "15.0"
+  createIntermediateGroups: true
+settings:
+  base:
+    CLANG_ENABLE_MODULES: YES
+    ENABLE_USER_SCRIPT_SANDBOXING: NO
+    MACOSX_DEPLOYMENT_TARGET: "15.0"
+    SDKROOT: macosx
+    SWIFT_VERSION: "6.2"
+targets:
+  BrainUnfog:
+    type: application
+    platform: macOS
+    deploymentTarget: "15.0"
+    sources:
+      - path: import/BUF
+        excludes:
+          - .DS_Store
+          - BrainUnfog.entitlements
+          - Info.plist
+          - Resources/ObsidianHelperPlugin
+    resources:
+      - path: import/BUF/Assets.xcassets
+    postBuildScripts:
+      - name: Copy Obsidian Helper Plugin
+        script: |
+          set -euo pipefail
+          SRC="${PROJECT_DIR}/import/BUF/Resources/ObsidianHelperPlugin"
+          DST="${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/ObsidianHelperPlugin"
+          rm -rf "$DST"
+          mkdir -p "$(dirname "$DST")"
+          cp -R "$SRC" "$DST"
+        inputFiles:
+          - $(PROJECT_DIR)/import/BUF/Resources/ObsidianHelperPlugin/main.js
+          - $(PROJECT_DIR)/import/BUF/Resources/ObsidianHelperPlugin/manifest.json
+          - $(PROJECT_DIR)/import/BUF/Resources/ObsidianHelperPlugin/styles.css
+        outputFiles:
+          - $(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/ObsidianHelperPlugin/main.js
+          - $(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/ObsidianHelperPlugin/manifest.json
+          - $(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/ObsidianHelperPlugin/styles.css
+    dependencies:
+      - sdk: libsqlite3.tbd
+    settings:
+      base:
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        CODE_SIGN_ENTITLEMENTS: import/BUF/BrainUnfog.entitlements
+        CODE_SIGN_IDENTITY: "-"
+        CODE_SIGN_STYLE: Manual
+        CURRENT_PROJECT_VERSION: "1"
+        DEVELOPMENT_TEAM: ""
+        GENERATE_INFOPLIST_FILE: NO
+        INFOPLIST_FILE: import/BUF/Info.plist
+        LD_RUNPATH_SEARCH_PATHS: "$(inherited) @executable_path/../Frameworks"
+        MARKETING_VERSION: "0.1"
+        PRODUCT_BUNDLE_IDENTIFIER: com.brainunfog.app
+        PRODUCT_MODULE_NAME: BrainUnfog
+        PRODUCT_NAME: Brain Unfog
+        SWIFT_ACTIVE_COMPILATION_CONDITIONS: "$(inherited) XCODE_PROJECT_BUILD"
+schemes:
+  Brain Unfog:
+    build:
+      targets:
+        BrainUnfog: all
+    run:
+      config: Debug
+    archive:
+      config: Release

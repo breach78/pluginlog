@@ -63,7 +63,9 @@ final class AppSettingsWindowPresenter: NSObject {
     )
     let window = NSWindow(contentViewController: hostingController)
     window.title = "Brain Unfog 설정"
-    window.styleMask = [.titled, .closable, .miniaturizable]
+    window.styleMask = [.titled, .closable, .miniaturizable, .resizable]
+    window.setContentSize(NSSize(width: 640, height: 430))
+    window.minSize = NSSize(width: 560, height: 340)
     window.isReleasedWhenClosed = false
     window.center()
     self.window = window

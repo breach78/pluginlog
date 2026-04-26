@@ -3,23 +3,23 @@
 import PackageDescription
 
 let package = Package(
-  name: "pluginlog-harness",
+  name: "brain-unfog",
   platforms: [
     .macOS(.v15),
   ],
   products: [
     .executable(
-      name: "BrainUnfogHarness",
-      targets: ["BrainUnfogHarness"]
+      name: "BrainUnfog",
+      targets: ["BrainUnfog"]
     ),
   ],
   targets: [
     .executableTarget(
-      name: "BrainUnfogHarness",
+      name: "BrainUnfog",
       path: "import/BUF",
       exclude: [
         ".DS_Store",
-        "BrainUnfogHarness.entitlements",
+        "BrainUnfog.entitlements",
         "Info.plist",
       ],
       resources: [
@@ -37,9 +37,9 @@ let package = Package(
       ]
     ),
     .testTarget(
-      name: "BrainUnfogHarnessTests",
-      dependencies: ["BrainUnfogHarness"],
-      path: "Tests/BrainUnfogHarnessTests"
+      name: "BrainUnfogTests",
+      dependencies: ["BrainUnfog"],
+      path: "Tests/BrainUnfogTests"
     ),
   ]
 )

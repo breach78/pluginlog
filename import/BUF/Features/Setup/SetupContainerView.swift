@@ -17,9 +17,7 @@ struct SetupContainerView: View {
           if let root = appState.obsidianVaultRootURL {
             Label("선택됨", systemImage: "checkmark.circle.fill")
               .foregroundStyle(.green)
-            Text(root.path)
-              .font(.system(.body, design: .monospaced))
-              .textSelection(.enabled)
+            SetupPathText(root.path)
           } else {
             Text("`.obsidian` 폴더가 이미 있는 vault 루트를 선택해 주세요.")
               .foregroundStyle(.secondary)
@@ -66,5 +64,23 @@ struct SetupContainerView: View {
       await action()
       isInitializing = false
     }
+  }
+}
+
+private struct SetupPathText: View {
+  let path: String
+
+  init(_ path: String) {
+    self.path = path
+  }
+
+  var body: some View {
+    Text(path)
+      .font(.system(.body, design: .monospaced))
+      .lineLimit(1)
+      .truncationMode(.middle)
+      .textSelection(.enabled)
+    .frame(maxWidth: .infinity, minHeight: 22, alignment: .leading)
+    .help(path)
   }
 }

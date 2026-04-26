@@ -3,9 +3,9 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 CONFIGURATION="${1:-debug}"
-PRODUCT_NAME="BrainUnfogHarness"
-APP_NAME="BrainUnfogHarness.app"
-RESOURCE_BUNDLE_NAME="pluginlog-harness_BrainUnfogHarness.bundle"
+PRODUCT_NAME="BrainUnfog"
+EXECUTABLE_NAME="Brain Unfog"
+APP_NAME="Brain Unfog.app"
 
 cd "$ROOT_DIR"
 
@@ -17,8 +17,7 @@ CONTENTS_DIR="$APP_DIR/Contents"
 MACOS_DIR="$CONTENTS_DIR/MacOS"
 RESOURCES_DIR="$CONTENTS_DIR/Resources"
 EXECUTABLE_PATH="$BIN_DIR/$PRODUCT_NAME"
-RESOURCE_BUNDLE_PATH="$BIN_DIR/$RESOURCE_BUNDLE_NAME"
-ENTITLEMENTS_PATH="$ROOT_DIR/import/BUF/BrainUnfogHarness.entitlements"
+ENTITLEMENTS_PATH="$ROOT_DIR/import/BUF/BrainUnfog.entitlements"
 INFO_PLIST_PATH="$ROOT_DIR/import/BUF/Info.plist"
 ICONSET_PATH="$ROOT_DIR/import/BUF/Assets.xcassets/AppIcon.appiconset"
 ICON_PATH="$RESOURCES_DIR/AppIcon.icns"
@@ -36,13 +35,13 @@ fi
 rm -rf "$APP_DIR"
 mkdir -p "$MACOS_DIR" "$RESOURCES_DIR"
 
-cp "$EXECUTABLE_PATH" "$MACOS_DIR/$PRODUCT_NAME"
+cp "$EXECUTABLE_PATH" "$MACOS_DIR/$EXECUTABLE_NAME"
 cp "$INFO_PLIST_PATH" "$CONTENTS_DIR/Info.plist"
 printf "APPL????" > "$CONTENTS_DIR/PkgInfo"
 
-if [[ -d "$RESOURCE_BUNDLE_PATH" ]]; then
-  cp -R "$RESOURCE_BUNDLE_PATH" "$RESOURCES_DIR/$RESOURCE_BUNDLE_NAME"
-fi
+while IFS= read -r -d '' resource_bundle_path; do
+  cp -R "$resource_bundle_path" "$RESOURCES_DIR/$(basename "$resource_bundle_path")"
+done < <(find "$BIN_DIR" -maxdepth 1 -type d -name '*_BrainUnfog.bundle' -print0)
 
 if [[ -d "$ICONSET_PATH" ]] && iconutil -c icns "$ICONSET_PATH" -o "$ICON_PATH" 2>/dev/null; then
   /usr/libexec/PlistBuddy -c "Set :CFBundleIconFile AppIcon" "$CONTENTS_DIR/Info.plist" 2>/dev/null \

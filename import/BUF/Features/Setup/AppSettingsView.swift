@@ -15,23 +15,9 @@ struct AppSettingsView: View {
           Text("`.obsidian` 폴더가 이미 있는 vault 루트를 선택합니다.")
             .foregroundStyle(.secondary)
 
-          LabeledContent("현재 vault") {
-            Text(obsidianVaultPath)
-              .font(.system(.caption, design: .monospaced))
-              .textSelection(.enabled)
-          }
-
-          LabeledContent("앱 지원 폴더") {
-            Text(obsidianBufFolderPath)
-              .font(.system(.caption, design: .monospaced))
-              .textSelection(.enabled)
-          }
-
-          LabeledContent("프로젝트 노트") {
-            Text(obsidianProjectsFolderPath)
-              .font(.system(.caption, design: .monospaced))
-              .textSelection(.enabled)
-          }
+          SettingsPathRow(title: "현재 vault", value: obsidianVaultPath)
+          SettingsPathRow(title: "앱 지원 폴더", value: obsidianBufFolderPath)
+          SettingsPathRow(title: "프로젝트 노트", value: obsidianProjectsFolderPath)
 
           HStack(spacing: 10) {
             Button("Obsidian vault 변경...") {
@@ -65,10 +51,10 @@ struct AppSettingsView: View {
               .foregroundStyle(.secondary)
 
             if let status = appState.obsidianHelperPluginInstallStatus {
-              Text(status)
-                .font(.footnote)
-                .foregroundStyle(status.contains("실패") ? .red : .secondary)
-                .textSelection(.enabled)
+              SettingsStatusText(
+                status,
+                isError: status.contains("실패")
+              )
             }
           }
 
@@ -81,7 +67,7 @@ struct AppSettingsView: View {
 
     }
     .padding(24)
-    .frame(width: 560)
+    .frame(minWidth: 560, idealWidth: 640, maxWidth: 640, alignment: .leading)
   }
 
   private var obsidianVaultPath: String {
@@ -115,5 +101,46 @@ struct AppSettingsView: View {
       appState.installObsidianHelperPluginForCurrentVault()
       isInstallingHelperPlugin = false
     }
+  }
+}
+
+private struct SettingsPathRow: View {
+  let title: String
+  let value: String
+
+  var body: some View {
+    HStack(alignment: .firstTextBaseline, spacing: 12) {
+      Text(title)
+        .foregroundStyle(.primary)
+        .frame(width: 92, alignment: .leading)
+
+      Text(value)
+        .font(.system(.caption, design: .monospaced))
+        .lineLimit(1)
+        .truncationMode(.middle)
+        .textSelection(.enabled)
+      .frame(maxWidth: .infinity, minHeight: 18, alignment: .leading)
+      .help(value)
+    }
+  }
+}
+
+private struct SettingsStatusText: View {
+  let text: String
+  let isError: Bool
+
+  init(_ text: String, isError: Bool) {
+    self.text = text
+    self.isError = isError
+  }
+
+  var body: some View {
+    Text(text)
+      .font(.footnote)
+      .foregroundStyle(isError ? .red : .secondary)
+      .lineLimit(3)
+      .truncationMode(.middle)
+      .frame(maxWidth: .infinity, alignment: .leading)
+      .help(text)
   }
 }
