@@ -312,8 +312,13 @@ extension TimelineBoardView {
     .contentShape(Rectangle())
     .modifier(TimelineProjectDragModifier(bar: bar, draggingProjectID: $draggingProjectID))
     .onTapGesture {
-      onToggleProjectSelection(bar.projectID)
+      onSelectProject(bar.projectID)
     }
+    .simultaneousGesture(
+      TapGesture(count: 2).onEnded {
+        onToggleProjectSelection(bar.projectID)
+      }
+    )
     .overlay(alignment: .top) {
       if showsPriorityBoundary {
         priorityBoundaryLine
@@ -422,8 +427,13 @@ extension TimelineBoardView {
     .contentShape(Rectangle())
     .modifier(TimelineProjectDragModifier(bar: bar, draggingProjectID: $draggingProjectID))
     .onTapGesture {
-      onToggleProjectSelection(bar.projectID)
+      onSelectProject(bar.projectID)
     }
+    .simultaneousGesture(
+      TapGesture(count: 2).onEnded {
+        onToggleProjectSelection(bar.projectID)
+      }
+    )
     .overlay(alignment: .top) {
       if showsPriorityBoundary {
         priorityBoundaryLine

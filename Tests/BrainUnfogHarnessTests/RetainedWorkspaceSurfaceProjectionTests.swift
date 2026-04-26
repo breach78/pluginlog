@@ -287,6 +287,58 @@ final class RetainedWorkspaceSurfaceProjectionTests: XCTestCase {
     XCTAssertEqual(ProjectProgressStage.from(progress: bar.progress), .later)
   }
 
+  func testArchivedProjectsAreFilteredFromTimelineAndScheduleProjections() throws {
+    let activeProjectID = UUID()
+    let archivedProjectID = UUID()
+    let activeTaskID = UUID()
+    let archivedTaskID = UUID()
+    let scheduledDay = try XCTUnwrap(
+      Self.calendar.date(from: DateComponents(year: 2026, month: 4, day: 25))
+    )
+    let snapshot = RetainedWorkspaceSnapshot(
+      projects: [
+        makeProject(
+          projectID: activeProjectID,
+          tasks: [
+            makeTask(taskID: activeTaskID, title: "Active task", parsedDate: scheduledDay),
+          ],
+          isArchived: false
+        ),
+        makeProject(
+          projectID: archivedProjectID,
+          tasks: [
+            makeTask(taskID: archivedTaskID, title: "Archived task", parsedDate: scheduledDay),
+          ],
+          isArchived: true
+        ),
+      ]
+    )
+
+    let result = RetainedWorkspaceSurfaceProjectionBuilder.build(
+      snapshot: snapshot,
+      projectIDs: [activeProjectID, archivedProjectID],
+      calendar: Self.calendar
+    )
+    let surface = try XCTUnwrap(result.loadedProjection)
+
+    let bars = TimelineProjectionService.runtimeBars(
+      service: DefaultTimelineService(),
+      projectIDs: [activeProjectID, archivedProjectID],
+      projectSnapshots: surface.projectSnapshots,
+      projectSummariesByID: surface.projectSummaries,
+      scheduleEntriesByProjectID: surface.scheduleEntriesByProjectID
+    )
+    let descriptors = ScheduleProjectionService.taskDescriptors(
+      projectIDs: [activeProjectID, archivedProjectID],
+      projectSnapshots: surface.projectSnapshots,
+      scheduleEntriesByProjectID: surface.scheduleEntriesByProjectID
+    )
+
+    XCTAssertEqual(bars.map(\.projectID), [activeProjectID])
+    XCTAssertEqual(descriptors.map(\.projectID), [activeProjectID])
+    XCTAssertEqual(descriptors.map(\.taskRow.id), [activeTaskID])
+  }
+
   func testResolveRetainedOnlyBlocksUnavailableRetainedLoadsWithoutFallbackData() {
     let vaultMissing = RetainedWorkspaceSurfaceProjectionBuilder.resolveRetainedOnly(
       .blocked(.obsidianVaultNotConfigured)
@@ -385,7 +437,8 @@ final class RetainedWorkspaceSurfaceProjectionTests: XCTestCase {
 
   private func makeProject(
     projectID: UUID,
-    tasks: [RetainedTask] = []
+    tasks: [RetainedTask] = [],
+    isArchived: Bool = false
   ) -> RetainedProject {
     RetainedProject(
       identity: RetainedProjectIdentity(projectID: projectID, reminderListExternalIdentifier: nil),
@@ -396,7 +449,8 @@ final class RetainedWorkspaceSurfaceProjectionTests: XCTestCase {
       usesProjectTag: true,
       isBUFOwned: true,
       hasManagedTaskSection: true,
-      canSafelyPersistProjectNote: true
+      canSafelyPersistProjectNote: true,
+      isArchived: isArchived
     )
   }
 

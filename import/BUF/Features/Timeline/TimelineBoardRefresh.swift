@@ -2,6 +2,25 @@ import Foundation
 import SwiftUI
 
 enum TimelineBoardReadPath {
+  static let visibleDayRange: ClosedRange<Int> = -4...28
+
+  static func pinnedTopSignature(
+    anchorDate: Date,
+    dayRange: ClosedRange<Int>,
+    dayColumnWidth: CGFloat,
+    localeIdentifier: String,
+    isTimelineScrolling: Bool
+  ) -> Int {
+    var hasher = Hasher()
+    hasher.combine(anchorDate.timeIntervalSinceReferenceDate)
+    hasher.combine(dayRange.lowerBound)
+    hasher.combine(dayRange.upperBound)
+    hasher.combine(Int((dayColumnWidth * 100).rounded()))
+    hasher.combine(localeIdentifier)
+    hasher.combine(isTimelineScrolling)
+    return hasher.finalize()
+  }
+
   static func orderedBars(
     _ bars: [TimelineProjectBar],
     by projectIDs: [UUID]
@@ -17,6 +36,51 @@ enum TimelineBoardReadPath {
     }
 
     return projectIDs.compactMap { barsByProjectID[$0] }
+  }
+
+  static func orderedBars(
+    _ bars: [TimelineProjectBar],
+    mode: ProjectListSortMode,
+    workspaceProjectSnapshots: [UUID: WorkspaceProjectRuntimeRecord],
+    workspaceProjectSummaries: [UUID: ProjectSummaryRecord],
+    manualOrderByProjectID: [UUID: Int64]
+  ) -> [TimelineProjectBar] {
+    switch mode {
+    case .recent:
+      return bars.sorted {
+        let lhsDate = latestActivityDate(
+          for: $0,
+          workspaceProjectSnapshots: workspaceProjectSnapshots,
+          workspaceProjectSummaries: workspaceProjectSummaries
+        )
+        let rhsDate = latestActivityDate(
+          for: $1,
+          workspaceProjectSnapshots: workspaceProjectSnapshots,
+          workspaceProjectSummaries: workspaceProjectSummaries
+        )
+        if lhsDate != rhsDate { return lhsDate > rhsDate }
+        return titleSort($0, $1)
+      }
+    case .title:
+      return bars.sorted(by: titleSort)
+    case .priority, .bucketGrouped:
+      return bars.sorted {
+        let lhsStage = stage(for: $0, workspaceProjectSnapshots: workspaceProjectSnapshots)
+        let rhsStage = stage(for: $1, workspaceProjectSnapshots: workspaceProjectSnapshots)
+        if lhsStage.rawValue != rhsStage.rawValue { return lhsStage.rawValue < rhsStage.rawValue }
+        let lhsOrder = manualOrderByProjectID[$0.projectID] ?? Int64.max
+        let rhsOrder = manualOrderByProjectID[$1.projectID] ?? Int64.max
+        if lhsOrder != rhsOrder { return lhsOrder < rhsOrder }
+        return titleSort($0, $1)
+      }
+    case .manual:
+      return bars.sorted {
+        let lhsOrder = manualOrderByProjectID[$0.projectID] ?? Int64.max
+        let rhsOrder = manualOrderByProjectID[$1.projectID] ?? Int64.max
+        if lhsOrder != rhsOrder { return lhsOrder < rhsOrder }
+        return titleSort($0, $1)
+      }
+    }
   }
 
   static func normalizedProjectIDs(_ projectIDs: [UUID]) -> [UUID] {
@@ -74,6 +138,7 @@ enum TimelineBoardReadPath {
       hasher.combine(project.colorHex)
       hasher.combine(project.reminderListIdentifier)
       hasher.combine(project.reminderListExternalIdentifier)
+      hasher.combine(project.isArchived)
       if let summary = workspaceProjectSummaries[projectID] {
         hasher.combine(summary.openRootTaskCount)
         hasher.combine(summary.completedRootTaskCount)
@@ -85,6 +150,7 @@ enum TimelineBoardReadPath {
         hasher.combine(summary.stageRaw)
         hasher.combine(summary.progress)
         hasher.combine(summary.latestTaskUpdatedAt?.timeIntervalSinceReferenceDate)
+        hasher.combine(summary.isArchived)
       } else {
         hasher.combine(0)
         hasher.combine(0)
@@ -121,6 +187,34 @@ enum TimelineBoardReadPath {
       projectSummariesByID: workspaceProjectSummaries,
       scheduleEntriesByProjectID: scheduleEntriesByProjectID
     )
+  }
+
+  private static func latestActivityDate(
+    for bar: TimelineProjectBar,
+    workspaceProjectSnapshots: [UUID: WorkspaceProjectRuntimeRecord],
+    workspaceProjectSummaries: [UUID: ProjectSummaryRecord]
+  ) -> Date {
+    let projectDate = workspaceProjectSnapshots[bar.projectID]?.updatedAt ?? .distantPast
+    guard let taskDate = workspaceProjectSummaries[bar.projectID]?.latestTaskUpdatedAt else {
+      return projectDate
+    }
+    return max(projectDate, taskDate)
+  }
+
+  private static func stage(
+    for bar: TimelineProjectBar,
+    workspaceProjectSnapshots: [UUID: WorkspaceProjectRuntimeRecord]
+  ) -> ProjectProgressStage {
+    if let rawValue = workspaceProjectSnapshots[bar.projectID]?.progressStageRaw,
+      let stage = ProjectProgressStage.fromStorageValue(rawValue)
+    {
+      return stage
+    }
+    return ProjectProgressStage.from(progress: bar.progress)
+  }
+
+  private static func titleSort(_ lhs: TimelineProjectBar, _ rhs: TimelineProjectBar) -> Bool {
+    lhs.title.localizedStandardCompare(rhs.title) == .orderedAscending
   }
 }
 
@@ -366,37 +460,8 @@ extension TimelineBoardView {
   }
 
   func seedRangeIfNeeded(with bars: [TimelineProjectBar]) {
-    guard let span = spanOffsets(for: bars) else {
-      dayRange = -fallbackPastDays...max(dayRange.upperBound, minimumFutureDays)
-      return
-    }
-
-    let lower = max(span.lower, -fallbackPastDays)
-    let upper = max(span.upper + seedPaddingDays, minimumFutureDays)
-    dayRange = lower...upper
-  }
-
-  func spanOffsets(for bars: [TimelineProjectBar]) -> (
-    lower: Int, upper: Int, hasPastBeforeToday: Bool
-  )? {
-    var lower: Int?
-    var upper: Int?
-    var hasPastBeforeToday = false
-
-    for bar in bars {
-      guard let coverage = coverageOffsets(for: bar) else { continue }
-      let localLower = coverage.lower
-      let localUpper = coverage.upper
-
-      if localLower < 0 {
-        hasPastBeforeToday = true
-      }
-      lower = min(lower ?? localLower, localLower)
-      upper = max(upper ?? localUpper, localUpper)
-    }
-
-    guard let lower, let upper else { return nil }
-    return (lower, upper, hasPastBeforeToday)
+    _ = bars
+    dayRange = TimelineBoardReadPath.visibleDayRange
   }
 
   func dayOffset(for date: Date) -> Int {
@@ -425,12 +490,19 @@ extension TimelineBoardView {
     workspaceProjectSummaries: [UUID: ProjectSummaryRecord],
     scheduleEntriesByProjectID: [UUID: [ScheduleSliceEntry]]
   ) -> [TimelineProjectBar] {
-    TimelineBoardReadPath.resolvedBars(
+    let bars = TimelineBoardReadPath.resolvedBars(
       service: appState.timelineService,
       projectIDs: projectIDs,
       workspaceProjectSnapshots: workspaceProjectSnapshots,
       workspaceProjectSummaries: workspaceProjectSummaries,
       scheduleEntriesByProjectID: scheduleEntriesByProjectID
+    )
+    return TimelineBoardReadPath.orderedBars(
+      bars,
+      mode: projectListSortMode,
+      workspaceProjectSnapshots: workspaceProjectSnapshots,
+      workspaceProjectSummaries: workspaceProjectSummaries,
+      manualOrderByProjectID: timelineProjectManualOrder
     )
   }
 
@@ -459,6 +531,10 @@ extension TimelineBoardView {
   ) -> Int {
     var hasher = Hasher()
     hasher.combine(projectIDs)
+    hasher.combine(projectListSortMode)
+    for projectID in projectIDs {
+      hasher.combine(timelineProjectManualOrder[projectID])
+    }
     hasher.combine(
       TimelineBoardReadPath.workspaceDetailSignature(
         projectIDs: projectIDs,

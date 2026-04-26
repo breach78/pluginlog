@@ -271,15 +271,65 @@ extension TimelineBoardView {
     placement: TimelineProjectDropPlacement
   ) {
     defer { clearProjectDragFeedback() }
-    guard projectListSortMode.allowsInteractiveReordering else { return }
+    guard projectListSortMode == .priority || projectListSortMode == .bucketGrouped else { return }
     guard draggedID != targetID else { return }
-    guard allowTimelineMutation("reorder-projects") else { return }
+    let bars = timelineBoardSnapshot.bars
+    guard let draggedBar = bars.first(where: { $0.projectID == draggedID }),
+      let targetBar = bars.first(where: { $0.projectID == targetID })
+    else {
+      return
+    }
+    let stage = priorityStage(for: draggedBar)
+    guard priorityStage(for: targetBar) == stage else { return }
+    let stageProjectIDs = bars
+      .filter { priorityStage(for: $0) == stage }
+      .map(\.projectID)
+    guard let reordered = reorderedProjectIDs(
+      stageProjectIDs,
+      draggedID: draggedID,
+      targetID: targetID,
+      placement: placement
+    ) else {
+      return
+    }
+
+    var nextOrder = timelineProjectManualOrder
+    for (index, projectID) in reordered.enumerated() {
+      nextOrder[projectID] = Int64(index)
+    }
+    timelineProjectManualOrder = nextOrder
+    TimelineProjectManualOrderStore.save(nextOrder)
   }
 
   private func clearProjectDragFeedback() {
     draggingProjectID = nil
     projectDropIndicator = nil
     taskDropTargetProjectID = nil
+  }
+
+  private func reorderedProjectIDs(
+    _ projectIDs: [UUID],
+    draggedID: UUID,
+    targetID: UUID,
+    placement: TimelineProjectDropPlacement
+  ) -> [UUID]? {
+    guard let sourceIndex = projectIDs.firstIndex(of: draggedID),
+      projectIDs.contains(targetID)
+    else {
+      return nil
+    }
+    var reordered = projectIDs
+    reordered.remove(at: sourceIndex)
+    guard let adjustedTargetIndex = reordered.firstIndex(of: targetID) else { return nil }
+    let insertionIndex: Int
+    switch placement {
+    case .before:
+      insertionIndex = adjustedTargetIndex
+    case .after:
+      insertionIndex = adjustedTargetIndex + 1
+    }
+    reordered.insert(draggedID, at: min(insertionIndex, reordered.count))
+    return reordered == projectIDs ? nil : reordered
   }
 
   private func refreshTimelineProjectState(

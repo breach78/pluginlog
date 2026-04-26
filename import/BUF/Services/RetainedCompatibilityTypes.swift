@@ -36,10 +36,10 @@ enum ProjectListSortMode: String, CaseIterable, Hashable {
 
   var nextTimeline: ProjectListSortMode {
     switch self {
-    case .manual: .priority
-    case .priority, .bucketGrouped: .recent
+    case .manual: .recent
     case .recent: .title
-    case .title: .manual
+    case .title: .priority
+    case .priority, .bucketGrouped: .recent
     }
   }
 
@@ -62,6 +62,20 @@ enum ProjectListSortMode: String, CaseIterable, Hashable {
       return .manual
     }
     return value == .bucketGrouped ? .priority : value
+  }
+
+  static func resolvedTimeline(storedRawValue: String?) -> ProjectListSortMode {
+    guard let storedRawValue, let value = ProjectListSortMode(rawValue: storedRawValue) else {
+      return .recent
+    }
+    switch value {
+    case .manual:
+      return .recent
+    case .bucketGrouped:
+      return .priority
+    case .recent, .title, .priority:
+      return value
+    }
   }
 }
 

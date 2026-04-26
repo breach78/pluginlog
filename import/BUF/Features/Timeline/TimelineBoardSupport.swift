@@ -233,6 +233,28 @@ struct TimelineProjectBucketOrderUndoSnapshot {
   let stagesByProjectID: [UUID: ProjectProgressStage]
 }
 
+enum TimelineProjectManualOrderStore {
+  private static let storageKey = "workspace.timelineProjectManualOrder.v1"
+
+  static func load(defaults: UserDefaults = .standard) -> [UUID: Int64] {
+    guard let data = defaults.data(forKey: storageKey),
+      let raw = try? JSONDecoder().decode([String: Int64].self, from: data)
+    else {
+      return [:]
+    }
+    return raw.reduce(into: [UUID: Int64]()) { result, item in
+      guard let id = UUID(uuidString: item.key) else { return }
+      result[id] = item.value
+    }
+  }
+
+  static func save(_ order: [UUID: Int64], defaults: UserDefaults = .standard) {
+    let raw = Dictionary(uniqueKeysWithValues: order.map { ($0.key.uuidString, $0.value) })
+    guard let data = try? JSONEncoder().encode(raw) else { return }
+    defaults.set(data, forKey: storageKey)
+  }
+}
+
 struct TimelineCompletedCountLayout: Identifiable {
   let id: String
   let date: Date

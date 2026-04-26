@@ -181,6 +181,7 @@ enum TimelineProjectionService {
     let today = Calendar.autoupdatingCurrent.startOfDay(for: .now)
     for projectID in projectIDs {
       guard let project = projectSnapshots[projectID] else { continue }
+      guard !project.isArchived else { continue }
       let summary = projectSummariesByID[projectID]
       let entries = scheduleEntriesByProjectID[projectID] ?? []
       let datedEntries = entries.compactMap { entry -> (ScheduleSliceEntry, Date)? in
@@ -258,6 +259,7 @@ enum ScheduleProjectionService {
   ) -> [WorkspaceScheduleTaskDescriptor] {
     projectIDs.flatMap { projectID -> [WorkspaceScheduleTaskDescriptor] in
       guard let project = projectSnapshots[projectID] else { return [] }
+      guard !project.isArchived else { return [] }
       return (scheduleEntriesByProjectID[projectID] ?? []).map { entry in
         WorkspaceScheduleTaskDescriptor(
           projectID: projectID,

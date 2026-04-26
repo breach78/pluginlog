@@ -218,10 +218,13 @@ final class ObsidianRetainedProjectionAdapterTests: XCTestCase {
 
   func testSurfaceProjectionLoadsFromObsidianVaultWhenConfigured() async throws {
     let vaultURL = try makeVault()
-    try writeProject(
+    let fileURL = try writeProject(
       projectMarkdown(listID: "LIST-1", taskID: "TASK-1", title: "Obsidian task"),
       named: "Obsidian Project.md",
       in: vaultURL
+    )
+    let modificationDate = try XCTUnwrap(
+      FileManager.default.attributesOfItem(atPath: fileURL.path)[.modificationDate] as? Date
     )
     let projectID = RetainedProjectionBuilder.derivedProjectID(for: "LIST-1")
     let taskID = ReminderProjectionIdentity.taskID(for: "TASK-1")
@@ -234,6 +237,7 @@ final class ObsidianRetainedProjectionAdapterTests: XCTestCase {
     let surface = try XCTUnwrap(result.loadedProjection)
 
     XCTAssertEqual(surface.projectSnapshots[projectID]?.title, "Obsidian Project")
+    XCTAssertEqual(surface.projectSnapshots[projectID]?.updatedAt, modificationDate)
     XCTAssertEqual(surface.scheduleEntriesByProjectID[projectID]?.first?.taskID, taskID)
     XCTAssertEqual(
       surface.calendarBridgeDecisionsByTaskID[taskID],

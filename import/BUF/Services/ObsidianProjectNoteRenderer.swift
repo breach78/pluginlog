@@ -4,37 +4,60 @@ enum ObsidianProjectNoteRenderer {
   static func render(_ note: ObsidianProjectNote) -> String {
     let frontmatter = renderFrontmatter(note.frontmatter)
     let body = renderBody(note)
+    let projectMetadata = renderProjectMetadata(note.frontmatter)
+    var bodySections: [String] = []
+    if let projectMetadata {
+      bodySections.append(projectMetadata)
+    }
+    if !body.isEmpty {
+      bodySections.append(body)
+    }
+    let bodyWithProjectMetadata = bodySections.joined(separator: "\n")
 
-    guard !frontmatter.isEmpty else { return body }
-    guard !body.isEmpty else { return frontmatter }
-    return frontmatter + "\n" + body
+    guard !frontmatter.isEmpty else { return bodyWithProjectMetadata }
+    guard !bodyWithProjectMetadata.isEmpty else { return frontmatter }
+    return frontmatter + "\n" + bodyWithProjectMetadata
   }
 
   private static func renderFrontmatter(_ frontmatter: ObsidianProjectFrontmatter?) -> String {
     guard let frontmatter else { return "" }
 
     var lines: [String] = ["---"]
-    if !frontmatter.tags.isEmpty {
+    let tags = visibleTags(for: frontmatter)
+    if !tags.isEmpty {
       lines.append("tags:")
-      lines.append(contentsOf: frontmatter.tags.map { "  - \($0)" })
+      lines.append(contentsOf: tags.map { "  - \($0)" })
     }
     if let listID = normalized(frontmatter.reminderListExternalIdentifier) {
       lines.append("reminder_list_external_id: \(listID)")
-      if let colorHex = normalized(frontmatter.colorHex) {
-        lines.append("brain_unfog_color_hex: \(yamlQuoted(colorHex))")
-      }
+      lines.append("아카이브: \(frontmatter.isArchived ? "true" : "false")")
       lines.append("분류:")
       lines.append("  - \(frontmatter.projectStage.title)")
       lines.append(frontmatterLine(key: "시작일", value: frontmatter.startDate))
       lines.append(frontmatterLine(key: "마감일", value: frontmatter.deadline))
       lines.append("완료 가리기: \(frontmatter.hideCompletedTasks ? "true" : "false")")
-      lines.append("아카이브: \(frontmatter.isArchived ? "true" : "false")")
     }
     lines.append(contentsOf: frontmatter.preservedLines.filter { line in
       !isLegacyBrainUnfogLine(line) && !isKnownCanonicalLine(line)
     })
     lines.append("---")
     return lines.joined(separator: "\n")
+  }
+
+  private static func visibleTags(for frontmatter: ObsidianProjectFrontmatter) -> [String] {
+    guard normalized(frontmatter.reminderListExternalIdentifier) != nil else {
+      return frontmatter.tags
+    }
+    return frontmatter.tags.filter { $0 != "프로젝트" }
+  }
+
+  private static func renderProjectMetadata(_ frontmatter: ObsidianProjectFrontmatter?) -> String? {
+    guard normalized(frontmatter?.reminderListExternalIdentifier) != nil,
+      let colorHex = normalized(frontmatter?.colorHex)
+    else {
+      return nil
+    }
+    return #"%% brain-unfog: {"project_color_hex":"\#(jsonEscaped(colorHex))"} %%"#
   }
 
   private static func renderBody(_ note: ObsidianProjectNote) -> String {
@@ -121,10 +144,6 @@ enum ObsidianProjectNoteRenderer {
       .trimmingCharacters(in: .whitespaces)
       .lowercased()
     return key == "brain_unfog_project_id" || key == "brain_unfog_task_id"
-  }
-
-  private static func yamlQuoted(_ value: String) -> String {
-    "\"\(value.replacingOccurrences(of: "\"", with: "\\\""))\""
   }
 
   private static func frontmatterLine(key: String, value: String?) -> String {

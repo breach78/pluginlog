@@ -27,11 +27,18 @@ final class ObsidianProjectNoteRendererTests: XCTestCase {
 
     let rendered = ObsidianProjectNoteRenderer.render(note)
 
-    XCTAssertTrue(rendered.contains("tags:\n  - 프로젝트"))
+    XCTAssertFalse(rendered.contains("tags:\n  - 프로젝트"))
     XCTAssertTrue(rendered.contains("reminder_list_external_id: LIST-1"))
     XCTAssertTrue(rendered.contains("완료 가리기: true"))
     XCTAssertTrue(rendered.contains("아카이브: false"))
     XCTAssertTrue(rendered.contains("분류:\n  - Do"))
+    if let archiveRange = rendered.range(of: "아카이브: false"),
+      let hideCompletedRange = rendered.range(of: "완료 가리기: true")
+    {
+      XCTAssertLessThan(archiveRange.lowerBound, hideCompletedRange.lowerBound)
+    } else {
+      XCTFail("Expected archive and hide-completed properties to render.")
+    }
     XCTAssertTrue(rendered.contains("시작일:"))
     XCTAssertTrue(rendered.contains("마감일:"))
     XCTAssertTrue(rendered.contains("owner: kept"))
@@ -110,7 +117,7 @@ final class ObsidianProjectNoteRendererTests: XCTestCase {
     let rendered = ObsidianProjectNoteRenderer.render(note)
 
     XCTAssertTrue(rendered.contains("aliases:\n  - Alpha\n  - Beta"))
-    XCTAssertTrue(rendered.contains("tags:\n  - 프로젝트"))
+    XCTAssertFalse(rendered.contains("tags:\n  - 프로젝트"))
     XCTAssertTrue(rendered.contains("reminder_list_external_id: LIST-1"))
     XCTAssertTrue(rendered.contains("완료 가리기: true"))
     XCTAssertTrue(rendered.contains("아카이브: false"))
@@ -176,11 +183,13 @@ final class ObsidianProjectNoteRendererTests: XCTestCase {
 
     let rendered = ObsidianProjectNoteRenderer.render(note)
 
-    XCTAssertTrue(rendered.contains("brain_unfog_color_hex: \"#FF3B30\""))
+    XCTAssertFalse(rendered.contains("brain_unfog_color_hex:"))
+    XCTAssertTrue(rendered.contains(##"%% brain-unfog: {"project_color_hex":"#FF3B30"} %%"##))
     XCTAssertTrue(rendered.contains("분류:\n  - Later"))
     XCTAssertTrue(rendered.contains("시작일: 2026-04-01"))
     XCTAssertTrue(rendered.contains("마감일: 2026-04-30"))
     XCTAssertEqual(rendered.components(separatedBy: "분류:").count - 1, 1)
+    XCTAssertEqual(rendered.components(separatedBy: "project_color_hex").count - 1, 1)
   }
 
   func testRendererDoesNotAddCompletedVisibilityCheckboxWithoutReminderBinding() {
@@ -197,6 +206,7 @@ final class ObsidianProjectNoteRendererTests: XCTestCase {
 
     let rendered = ObsidianProjectNoteRenderer.render(note)
 
+    XCTAssertTrue(rendered.contains("tags:\n  - 프로젝트"))
     XCTAssertFalse(rendered.contains("완료 가리기:"))
     XCTAssertFalse(rendered.contains("아카이브:"))
   }

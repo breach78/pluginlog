@@ -60,7 +60,9 @@ final class ObsidianReminderImportSyncTests: XCTestCase {
     XCTAssertEqual(task.metadata?.time, "09:30")
     XCTAssertEqual(task.metadata?.repeatRule, "reminder")
     XCTAssertTrue(snapshots[0].rawMarkdown.contains("  - remote note"))
-    XCTAssertTrue(snapshots[0].rawMarkdown.contains("brain_unfog_color_hex: \"#FF3B30\""))
+    XCTAssertTrue(
+      snapshots[0].rawMarkdown.contains(##"%% brain-unfog: {"project_color_hex":"#FF3B30"} %%"##)
+    )
     XCTAssertEqual(ReminderSyncBaselineStore.baseline(for: "task-1")?.state.title, "Remote task")
   }
 
@@ -113,8 +115,9 @@ final class ObsidianReminderImportSyncTests: XCTestCase {
       .loadProjectNotesInScope()
     let raw = try XCTUnwrap(snapshots.first?.rawMarkdown)
     XCTAssertEqual(result.updatedTaskCount, 0)
-    XCTAssertTrue(raw.contains("brain_unfog_color_hex: \"#34C759\""))
-    XCTAssertFalse(raw.contains("brain_unfog_color_hex: \"#0A84FF\""))
+    XCTAssertTrue(raw.contains(##"%% brain-unfog: {"project_color_hex":"#34C759"} %%"##))
+    XCTAssertFalse(raw.contains("brain_unfog_color_hex:"))
+    XCTAssertFalse(raw.contains("project_color_hex\":\"#0A84FF"))
   }
 
   func testExistingReminderEditsMergeIntoObsidianAndPreserveDuration() async throws {

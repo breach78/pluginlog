@@ -48,15 +48,15 @@ extension MainWorkspaceView {
     case .timeline:
       TimelineBoardView(
         projectListSortMode: Binding(
-          get: { projectListSortMode },
-          set: { projectListSortMode = $0 }
+          get: { timelineProjectListSortMode },
+          set: { timelineProjectListSortMode = $0 }
         ),
         projectIDs: timelineSelectionProjectIDs,
         showsProjectPassthroughFrames: false,
         isActive: isActive,
         selectedProjectID: appState.selectedProjectID,
         onSelectProject: { projectID in
-          presentInspector(for: projectID)
+          selectProjectContext(projectID)
         },
         onToggleProjectSelection: { projectID in
           presentInspector(for: projectID)

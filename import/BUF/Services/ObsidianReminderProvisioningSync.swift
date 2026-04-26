@@ -9,6 +9,8 @@ enum ObsidianReminderProvisioningSync {
     var deletedTaskCount: Int = 0
     var archivedProjectCount: Int = 0
     var restoredProjectCount: Int = 0
+    var archivedProjectIDs: [UUID] = []
+    var archivedProjectFileURLs: [URL] = []
     var projectRecords: [ProjectIdentityBridgeRecord]
     var taskRecords: [TaskIdentityBridgeRecord]
   }
@@ -78,6 +80,8 @@ enum ObsidianReminderProvisioningSync {
     var deletedTaskCount = 0
     var archivedProjectCount = 0
     var restoredProjectCount = 0
+    var archivedProjectIDs: [UUID] = []
+    var archivedProjectFileURLs: [URL] = []
     var projectRecords: [ProjectIdentityBridgeRecord] = []
     var taskRecords: [TaskIdentityBridgeRecord] = []
     let archiveStore = ObsidianReminderArchiveStore(vaultRootURL: await store.vaultRoot())
@@ -133,6 +137,8 @@ enum ObsidianReminderProvisioningSync {
           now: now
         ) {
           archivedProjectCount += 1
+          archivedProjectIDs.append(projectID)
+          archivedProjectFileURLs.append(snapshot.fileURL)
         }
         continue
       }
@@ -268,6 +274,8 @@ enum ObsidianReminderProvisioningSync {
       deletedTaskCount: deletedTaskCount,
       archivedProjectCount: archivedProjectCount,
       restoredProjectCount: restoredProjectCount,
+      archivedProjectIDs: archivedProjectIDs,
+      archivedProjectFileURLs: archivedProjectFileURLs,
       projectRecords: projectRecords,
       taskRecords: taskRecords
     )

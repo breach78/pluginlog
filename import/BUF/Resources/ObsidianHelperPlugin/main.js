@@ -12,6 +12,13 @@ const TASK_LINE_PATTERN = /^(\s*)- \[[ xX]\] /;
 const METADATA_PATTERN = /^(\s*)%%\s*brain-unfog:\s*(\{.*\})\s*%%\s*$/;
 const REMINDER_LIST_PROPERTY_KEY = "reminder_list_external_id";
 const HIDE_COMPLETED_PROPERTY_KEY = "완료 가리기";
+const BRAIN_UNFOG_PROPERTY_TYPES = {
+  "분류": "multitext",
+  "시작일": "date",
+  "마감일": "date",
+  "완료 가리기": "checkbox",
+  "아카이브": "checkbox",
+};
 let activeSchedulePopover = null;
 
 const HIDDEN_FRONTMATTER_KEYS = new Set([
@@ -25,10 +32,58 @@ const HIDDEN_FRONTMATTER_KEYS = new Set([
 
 module.exports = class BrainUnfogHelperPlugin extends Plugin {
   async onload() {
+    await this.ensureBrainUnfogPropertyTypes();
     this.registerProjectNoteInvalidationHints();
     this.registerEditorDecorations();
     this.registerMetadataPostProcessor();
     this.registerScheduleContextMenu();
+  }
+
+  async ensureBrainUnfogPropertyTypes() {
+    const adapter = this.app?.vault?.adapter;
+    if (!adapter?.read || !adapter?.write) {
+      return;
+    }
+    const configDir = this.app?.vault?.configDir || ".obsidian";
+    const path = `${configDir}/types.json`;
+    let raw = "{}";
+    if (adapter.exists && !(await adapter.exists(path))) {
+      raw = "{}";
+    } else {
+      try {
+        raw = await adapter.read(path);
+      } catch (error) {
+        return;
+      }
+    }
+
+    let payload;
+    try {
+      payload = JSON.parse(raw || "{}");
+    } catch (error) {
+      return;
+    }
+    if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+      return;
+    }
+    if (!payload.types || typeof payload.types !== "object" || Array.isArray(payload.types)) {
+      payload.types = {};
+    }
+
+    let didChange = false;
+    for (const [key, type] of Object.entries(BRAIN_UNFOG_PROPERTY_TYPES)) {
+      if (payload.types[key] !== type) {
+        payload.types[key] = type;
+        didChange = true;
+      }
+    }
+    if (didChange) {
+      try {
+        await adapter.write(path, `${JSON.stringify(payload, null, 2)}\n`);
+      } catch (error) {
+        // Leave existing property type settings untouched if Obsidian refuses the write.
+      }
+    }
   }
 
   registerProjectNoteInvalidationHints() {

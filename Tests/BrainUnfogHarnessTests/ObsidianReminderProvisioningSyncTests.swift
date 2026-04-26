@@ -149,6 +149,8 @@ final class ObsidianReminderProvisioningSyncTests: XCTestCase {
       .load(forListIdentifier: "list-1")
 
     XCTAssertEqual(result.archivedProjectCount, 1)
+    XCTAssertEqual(result.archivedProjectIDs, [RetainedProjectionBuilder.derivedProjectID(for: "list-1")])
+    XCTAssertEqual(result.archivedProjectFileURLs, [noteURL])
     XCTAssertEqual(provider.removedListIdentifiers, ["list-1"])
     XCTAssertEqual(archive?.list.title, "Project")
     XCTAssertEqual(archive?.items.first?.title, "Task one")

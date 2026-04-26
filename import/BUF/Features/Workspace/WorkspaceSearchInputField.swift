@@ -22,6 +22,12 @@ struct WorkspaceSearchInputField: NSViewRepresentable {
     var onFocusEnded: (() -> Void)?
     private var allowsNextFocusAcquisition = false
 
+    override var acceptsFirstResponder: Bool {
+      allowsNextFocusAcquisition
+        || window?.firstResponder === self
+        || window?.firstResponder === currentEditor()
+    }
+
     func allowProgrammaticFocus() {
       allowsNextFocusAcquisition = true
     }
@@ -40,9 +46,6 @@ struct WorkspaceSearchInputField: NSViewRepresentable {
       }
 
       let didBecomeFirstResponder = super.becomeFirstResponder()
-      if didBecomeFirstResponder {
-        onUserFocusAttempt?()
-      }
       allowsNextFocusAcquisition = false
       return didBecomeFirstResponder
     }
@@ -75,6 +78,12 @@ struct WorkspaceSearchInputField: NSViewRepresentable {
     }
 
     func controlTextDidBeginEditing(_ obj: Notification) {
+      guard parent.isFocused || hasPendingUserFocusAttempt else {
+        if let field = obj.object as? NSTextField {
+          field.window?.makeFirstResponder(nil)
+        }
+        return
+      }
       if !parent.isFocused {
         parent.isFocused = true
       }
@@ -169,7 +178,6 @@ struct WorkspaceSearchInputField: NSViewRepresentable {
       context.coordinator.isFirstResponder(for: field, in: window)
 
     if !isFocused && isFirstResponderForField {
-      guard !context.coordinator.hasPendingUserFocusAttempt else { return }
       window.makeFirstResponder(nil)
       return
     }

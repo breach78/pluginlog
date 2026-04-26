@@ -46,7 +46,8 @@ enum ObsidianRetainedProjectionAdapter {
       colorHex: normalized(note.frontmatter?.colorHex),
       localStartDate: parseDate(note.frontmatter?.startDate, time: nil, calendar: calendar),
       localDeadline: parseDate(note.frontmatter?.deadline, time: nil, calendar: calendar),
-      progressStage: note.frontmatter?.projectStage ?? .do
+      progressStage: note.frontmatter?.projectStage ?? .do,
+      updatedAt: snapshot.contentModificationDate ?? .distantPast
     )
   }
 

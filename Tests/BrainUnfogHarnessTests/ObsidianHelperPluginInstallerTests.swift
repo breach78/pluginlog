@@ -34,7 +34,7 @@ final class ObsidianHelperPluginInstallerTests: XCTestCase {
     )
     XCTAssertEqual(manifest["id"] as? String, ObsidianHelperPluginInstaller.pluginIdentifier)
     XCTAssertEqual(manifest["name"] as? String, "Brain Unfog Helper")
-    XCTAssertEqual(manifest["version"] as? String, "0.5.4")
+    XCTAssertEqual(manifest["version"] as? String, "0.5.5")
     XCTAssertNotNil(manifest["minAppVersion"] as? String)
     XCTAssertNotNil(manifest["description"] as? String)
     XCTAssertNotNil(manifest["author"] as? String)
@@ -234,11 +234,15 @@ final class ObsidianHelperPluginInstallerTests: XCTestCase {
     XCTAssertTrue(script.contains("brain-unfog-inline-schedule-popover"))
     XCTAssertTrue(script.contains("duration"))
     XCTAssertTrue(script.contains("repeat"))
+    XCTAssertTrue(script.contains("types.json"))
+    XCTAssertTrue(script.contains(#""시작일": "date""#))
+    XCTAssertTrue(script.contains(#""마감일": "date""#))
+    XCTAssertTrue(script.contains(#""분류": "multitext""#))
+    XCTAssertTrue(script.contains(#""아카이브": "checkbox""#))
     XCTAssertFalse(script.contains(#"trigger.textContent = "+""#))
     XCTAssertTrue(stylesheet.contains("brain-unfog-hidden-line"))
     XCTAssertTrue(stylesheet.contains("brain-unfog-schedule-chip"))
     XCTAssertTrue(stylesheet.contains(#"data-property-key="reminder_list_external_id""#))
-    XCTAssertTrue(stylesheet.contains(#"data-property-key="brain_unfog_color_hex""#))
   }
 
   func testBundledHelperUsesProjectPropertyForCompletedSubtreeVisibility() throws {

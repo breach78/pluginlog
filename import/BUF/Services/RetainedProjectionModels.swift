@@ -23,6 +23,7 @@ struct RetainedProject: Equatable, Sendable {
   let localStartDate: Date?
   let localDeadline: Date?
   let progressStage: ProjectProgressStage
+  let updatedAt: Date
 
   init(
     identity: RetainedProjectIdentity,
@@ -38,7 +39,8 @@ struct RetainedProject: Equatable, Sendable {
     colorHex: String? = nil,
     localStartDate: Date? = nil,
     localDeadline: Date? = nil,
-    progressStage: ProjectProgressStage = .do
+    progressStage: ProjectProgressStage = .do,
+    updatedAt: Date = .distantPast
   ) {
     self.identity = identity
     self.fileURL = fileURL
@@ -54,6 +56,7 @@ struct RetainedProject: Equatable, Sendable {
     self.localStartDate = localStartDate
     self.localDeadline = localDeadline
     self.progressStage = progressStage
+    self.updatedAt = updatedAt
   }
 }
 

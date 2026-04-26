@@ -85,15 +85,17 @@ final class ObsidianProjectNoteParserTests: XCTestCase {
       마감일: 2026-04-30
       ---
 
+      %% brain-unfog: {"project_color_hex":"#34C759"} %%
       - [ ] Task
       """
     )
 
     let frontmatter = try XCTUnwrap(note.frontmatter)
-    XCTAssertEqual(frontmatter.colorHex, "#FF3B30")
+    XCTAssertEqual(frontmatter.colorHex, "#34C759")
     XCTAssertEqual(frontmatter.projectStage, .area)
     XCTAssertEqual(frontmatter.startDate, "2026-04-01")
     XCTAssertEqual(frontmatter.deadline, "2026-04-30")
+    XCTAssertFalse(note.bodyMarkdown.contains("project_color_hex"))
   }
 
   func testClassifiesTagOnlyIdOnlyAndOrdinaryNotesAtProjectBoundary() {

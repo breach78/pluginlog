@@ -26,7 +26,9 @@ final class RetainedSetupFlowTests: XCTestCase {
   func testFullReconciliationReplacesStaleBridgeRecords() {
     let staleProjectID = UUID()
     let importedProjectID = UUID()
+    let archivedImportedProjectID = UUID()
     let localProjectID = UUID()
+    let archivedTaskID = UUID()
     let now = Date(timeIntervalSince1970: 100)
     TaskIdentityBridgeStore.replaceAll(
       projects: [
@@ -55,13 +57,31 @@ final class RetainedSetupFlowTests: XCTestCase {
             createdAt: now,
             updatedAt: now
           ),
+          ProjectIdentityBridgeRecord(
+            projectID: archivedImportedProjectID,
+            title: "Archived",
+            reminderListExternalIdentifier: "list-archived",
+            createdAt: now,
+            updatedAt: now
+          ),
         ],
-        taskRecords: []
+        taskRecords: [
+          TaskIdentityBridgeRecord(
+            taskID: archivedTaskID,
+            title: "Archived task",
+            reminderExternalIdentifier: "task-archived",
+            ownerProjectID: archivedImportedProjectID,
+            createdAt: now,
+            updatedAt: now
+          ),
+        ]
       ),
       provisioningResult: ObsidianReminderProvisioningSync.SyncResult(
         createdProjectCount: 0,
         createdTaskCount: 0,
         updatedTaskCount: 0,
+        archivedProjectCount: 1,
+        archivedProjectIDs: [archivedImportedProjectID],
         projectRecords: [
           ProjectIdentityBridgeRecord(
             projectID: localProjectID,
@@ -78,6 +98,8 @@ final class RetainedSetupFlowTests: XCTestCase {
     let projectIDs = Set(TaskIdentityBridgeStore.projectRecords().map(\.projectID))
     XCTAssertEqual(projectIDs, [importedProjectID, localProjectID])
     XCTAssertNil(TaskIdentityBridgeStore.projectTitle(for: staleProjectID))
+    XCTAssertNil(TaskIdentityBridgeStore.projectTitle(for: archivedImportedProjectID))
+    XCTAssertNil(TaskIdentityBridgeStore.projectID(for: archivedTaskID))
   }
 
   func testHarnessEntitlementsAllowVaultFolderSelectionAndPersistence() throws {
@@ -212,15 +234,13 @@ final class RetainedSetupFlowTests: XCTestCase {
       afterMarkdown,
       """
       ---
-      tags:
-        - 프로젝트
       reminder_list_external_id: \(gateway.calendar.calendarIdentifier)
+      아카이브: false
       분류:
         - Do
       시작일:
       마감일:
       완료 가리기: true
-      아카이브: false
       ---
       Local prose that must stay.
       - [ ] Imported task
@@ -276,6 +296,113 @@ final class RetainedSetupFlowTests: XCTestCase {
     XCTAssertFalse(appState.hasCompletedInitialSetup)
     XCTAssertNil(UserDefaults.standard.string(forKey: "container.rootPath"))
     XCTAssertNotNil(appState.errorMessage)
+  }
+
+  func testObsidianArchiveCheckboxRequiresConfirmationAndCancelsByResettingProperty()
+    async throws
+  {
+    let vaultRoot = try makeVaultRoot()
+    let gateway = SetupReminderGateway()
+    let taskIdentifier = try XCTUnwrap(
+      gateway.reminder.calendarItemExternalIdentifier ?? gateway.reminder.calendarItemIdentifier
+    )
+    let projectsRoot = vaultRoot
+      .appendingPathComponent("raw", isDirectory: true)
+      .appendingPathComponent("projects", isDirectory: true)
+    try FileManager.default.createDirectory(at: projectsRoot, withIntermediateDirectories: true)
+    let noteURL = projectsRoot.appendingPathComponent("Imported list.md", isDirectory: false)
+    try """
+      ---
+      reminder_list_external_id: \(gateway.calendar.calendarIdentifier)
+      아카이브: true
+      ---
+      - [ ] Imported task
+        %% brain-unfog: {"reminder_external_id":"\(taskIdentifier)"} %%
+
+      """.write(to: noteURL, atomically: true, encoding: .utf8)
+    let appState = makeAppState(reminderGateway: gateway)
+    appState.obsidianVaultRootURL = vaultRoot
+    var confirmationRequests: [ObsidianArchiveConfirmationRequest] = []
+    appState.confirmObsidianArchive = { request in
+      confirmationRequests.append(request)
+      return false
+    }
+
+    await appState.handleObsidianProjectDirectoryChange([noteURL])
+
+    let afterMarkdown = try String(contentsOf: noteURL, encoding: .utf8)
+    XCTAssertEqual(
+      confirmationRequests,
+      [
+        ObsidianArchiveConfirmationRequest(
+          projectTitle: "Imported list",
+          vaultRelativePath: "raw/projects/Imported list.md"
+        ),
+      ]
+    )
+    XCTAssertTrue(afterMarkdown.contains("아카이브: false"))
+    XCTAssertFalse(afterMarkdown.contains("아카이브: true"))
+    XCTAssertEqual(gateway.writeCallCount, 0)
+  }
+
+  func testConfirmedObsidianArchiveMovesProjectNoteToRawArchiveAndRemovesBridgeRecords()
+    async throws
+  {
+    let vaultRoot = try makeVaultRoot()
+    let gateway = SetupReminderGateway(allowsProjectRemoval: true)
+    let listIdentifier = gateway.calendar.calendarIdentifier
+    let projectID = RetainedProjectionBuilder.derivedProjectID(for: listIdentifier)
+    let taskIdentifier = try XCTUnwrap(
+      gateway.reminder.calendarItemExternalIdentifier ?? gateway.reminder.calendarItemIdentifier
+    )
+    let taskID = ReminderProjectionIdentity.taskID(for: taskIdentifier)
+    TaskIdentityBridgeStore.upsertProject(
+      projectID: projectID,
+      title: "Imported list",
+      reminderListExternalIdentifier: listIdentifier
+    )
+    TaskIdentityBridgeStore.upsertTask(
+      taskID: taskID,
+      title: "Imported task",
+      reminderExternalIdentifier: taskIdentifier,
+      ownerProjectID: projectID
+    )
+
+    let projectsRoot = vaultRoot
+      .appendingPathComponent("raw", isDirectory: true)
+      .appendingPathComponent("projects", isDirectory: true)
+    try FileManager.default.createDirectory(at: projectsRoot, withIntermediateDirectories: true)
+    let noteURL = projectsRoot.appendingPathComponent("Imported list.md", isDirectory: false)
+    let markdown = """
+      ---
+      reminder_list_external_id: \(listIdentifier)
+      아카이브: true
+      ---
+      - [ ] Imported task
+        %% brain-unfog: {"reminder_external_id":"\(taskIdentifier)"} %%
+
+      """
+    try markdown.write(to: noteURL, atomically: true, encoding: .utf8)
+    let appState = makeAppState(reminderGateway: gateway)
+    appState.obsidianVaultRootURL = vaultRoot
+    var confirmationRequests: [ObsidianArchiveConfirmationRequest] = []
+    appState.confirmObsidianArchive = { request in
+      confirmationRequests.append(request)
+      return true
+    }
+
+    await appState.handleObsidianProjectDirectoryChange([noteURL])
+
+    let archiveURL = vaultRoot
+      .appendingPathComponent("raw", isDirectory: true)
+      .appendingPathComponent("archive", isDirectory: true)
+      .appendingPathComponent("Imported list.md", isDirectory: false)
+    XCTAssertEqual(confirmationRequests.count, 1)
+    XCTAssertFalse(FileManager.default.fileExists(atPath: noteURL.path))
+    XCTAssertEqual(try String(contentsOf: archiveURL, encoding: .utf8), markdown)
+    XCTAssertNil(TaskIdentityBridgeStore.projectTitle(for: projectID))
+    XCTAssertNil(TaskIdentityBridgeStore.projectID(for: taskID))
+    XCTAssertEqual(gateway.writeCallCount, 1)
   }
 
   func testLaunchRestoresObsidianVaultFromStoredPath() async throws {
@@ -452,10 +579,12 @@ private final class SetupReminderGateway: ReminderGateway {
   let calendar: EKCalendar
   let reminder: EKReminder
   private let accessGranted: Bool
+  private let allowsProjectRemoval: Bool
   private(set) var writeCallCount = 0
 
-  init(accessGranted: Bool = true) {
+  init(accessGranted: Bool = true, allowsProjectRemoval: Bool = false) {
     self.accessGranted = accessGranted
+    self.allowsProjectRemoval = allowsProjectRemoval
     calendar = EKCalendar(for: .reminder, eventStore: eventStore)
     calendar.title = "Imported list"
 
@@ -518,6 +647,9 @@ private final class SetupReminderGateway: ReminderGateway {
   func remove(_ calendar: EKCalendar) throws {
     _ = calendar
     writeCallCount += 1
+    if allowsProjectRemoval {
+      return
+    }
     throw SetupReminderGatewayError.unexpectedWrite
   }
 }

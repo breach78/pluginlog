@@ -273,7 +273,7 @@ struct MainWorkspaceView: View {
   @AppStorage("workspace.sidebarProjectListSortMode")
   var projectListSortModeRaw = ProjectListSortMode.manual.rawValue
   @AppStorage("workspace.timelineProjectListSortMode")
-  var timelineProjectListSortModeRaw = ProjectListSortMode.manual.rawValue
+  var timelineProjectListSortModeRaw = ProjectListSortMode.recent.rawValue
   @AppStorage(ProjectProgressStage.boardOrderRevisionStorageKey)
   var projectBoardOrderRevision = 0
   @EnvironmentObject var appState: AppState
@@ -565,30 +565,26 @@ struct MainWorkspaceView: View {
 
   var projectListSortMode: ProjectListSortMode {
     get {
-      let defaults = UserDefaults.standard
-      if defaults.object(forKey: Self.sidebarProjectListSortModeKey) != nil {
-        return ProjectListSortMode.resolved(
-          storedRawValue: projectListSortModeRaw,
-          primaryKey: Self.sidebarProjectListSortModeKey
-        )
-      }
-
-      if defaults.object(forKey: Self.timelineProjectListSortModeKey) != nil {
-        return ProjectListSortMode.resolved(
-          storedRawValue: timelineProjectListSortModeRaw,
-          primaryKey: Self.timelineProjectListSortModeKey
-        )
-      }
-
-      return ProjectListSortMode.resolved(
-        storedRawValue: nil,
+      ProjectListSortMode.resolved(
+        storedRawValue: projectListSortModeRaw,
         primaryKey: Self.sidebarProjectListSortModeKey
       )
     }
     nonmutating set {
       let normalized = newValue == .bucketGrouped ? ProjectListSortMode.priority : newValue
       projectListSortModeRaw = normalized.rawValue
-      timelineProjectListSortModeRaw = normalized.rawValue
+    }
+  }
+
+  var timelineProjectListSortMode: ProjectListSortMode {
+    get {
+      ProjectListSortMode.resolvedTimeline(storedRawValue: timelineProjectListSortModeRaw)
+    }
+    nonmutating set {
+      let normalized = newValue == .bucketGrouped ? ProjectListSortMode.priority : newValue
+      timelineProjectListSortModeRaw = ProjectListSortMode.resolvedTimeline(
+        storedRawValue: normalized.rawValue
+      ).rawValue
     }
   }
 

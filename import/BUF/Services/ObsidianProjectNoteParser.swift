@@ -7,13 +7,19 @@ enum ObsidianProjectNoteParser {
     var diagnostics: [ObsidianProjectNoteDiagnostic] = []
 
     let frontmatterResult = parseFrontmatter(lines: lines)
-    let frontmatter = frontmatterResult.frontmatter
     let bodyStartIndex = frontmatterResult.bodyStartIndex
     if frontmatterResult.isUnclosed {
       diagnostics.append(.unclosedFrontmatter)
     }
 
-    let bodyLines = Array(lines.dropFirst(bodyStartIndex))
+    let projectMetadata = extractProjectMetadata(
+      from: Array(lines.dropFirst(bodyStartIndex))
+    )
+    var frontmatter = frontmatterResult.frontmatter
+    if let colorHex = projectMetadata.colorHex {
+      frontmatter?.colorHex = colorHex
+    }
+    let bodyLines = projectMetadata.bodyLines
     let taskInfos = parseTaskInfos(bodyLines)
     let tasks = taskInfos.map { info -> ObsidianProjectTask in
       let metadataResult = parseMetadata(
@@ -81,6 +87,11 @@ enum ObsidianProjectNoteParser {
     case none
     case valid(String)
     case damaged
+  }
+
+  private struct ProjectMetadataResult {
+    var bodyLines: [String]
+    var colorHex: String?
   }
 
   private struct MetadataResult {
@@ -192,6 +203,20 @@ enum ObsidianProjectNoteParser {
     }
   }
 
+  private static func extractProjectMetadata(from bodyLines: [String]) -> ProjectMetadataResult {
+    var colorHex: String?
+    let cleanedLines = bodyLines.compactMap { line -> String? in
+      guard case .valid(let json) = brainUnfogMetadataJSON(in: line),
+        let metadata = parseProjectMetadataJSON(json)
+      else {
+        return line
+      }
+      colorHex = metadata
+      return nil
+    }
+    return ProjectMetadataResult(bodyLines: cleanedLines, colorHex: colorHex)
+  }
+
   private static func parseTaskInfo(_ line: String, lineIndex: Int) -> TaskInfo? {
     let indentation = String(line.prefix { $0 == " " || $0 == "\t" })
     let markerStart = line.dropFirst(indentation.count)
@@ -274,6 +299,16 @@ enum ObsidianProjectNoteParser {
       durationMinutes: intValue(object["duration"]),
       repeatRule: stringValue(object["repeat"])
     )
+  }
+
+  private static func parseProjectMetadataJSON(_ json: String) -> String? {
+    guard let data = json.data(using: .utf8),
+      let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+      let colorHex = stringValue(object["project_color_hex"])
+    else {
+      return nil
+    }
+    return colorHex
   }
 
   private static func subtreeMarkdown(

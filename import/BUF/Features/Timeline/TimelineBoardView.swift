@@ -68,7 +68,7 @@ struct TimelineBoardView: View {
   let onToggleProjectSelection: (UUID) -> Void
 
   @State var anchorDate = Calendar.autoupdatingCurrent.startOfDay(for: .now)
-  @State var dayRange: ClosedRange<Int> = -14...240
+  @State var dayRange: ClosedRange<Int> = TimelineBoardReadPath.visibleDayRange
   @State var horizontalOffsetX: CGFloat = 0
   @State var verticalOffsetY: CGFloat = 0
   @State var requestedOffsetX: CGFloat?
@@ -104,6 +104,7 @@ struct TimelineBoardView: View {
   @State var activeTimelineDayHeaderOffset: Int?
   @State var timelineDayHeaderShowWorkItem: DispatchWorkItem?
   @State var timelineDayHeaderHideWorkItem: DispatchWorkItem?
+  @State var timelineProjectManualOrder = TimelineProjectManualOrderStore.load()
   @State var midnightRefreshTimer: Timer?
   @State var isHoveringPinnedLeftColumn = false
   @State var overlayMetricsCache = TimelineOverlayMetricsCache()
@@ -124,9 +125,6 @@ struct TimelineBoardView: View {
   let horizontalEdgePadding: CGFloat = 16
   let topEdgePadding: CGFloat = 0
   let bottomEdgePadding: CGFloat = 16
-  let seedPaddingDays = 21
-  let fallbackPastDays = 14
-  let minimumFutureDays = 240
   let monthBadgeWidth: CGFloat = 124
   let jumpLeftInsetDays = 3
   let timelineTaskBadgeOverlayWidth: CGFloat = 220
@@ -570,6 +568,7 @@ struct TimelineBoardView: View {
       .background(Color(nsColor: .windowBackgroundColor).opacity(0.96))
       .padding(.leading, titleColumnWidth + 8)
       .padding(.top, monthLabelTopPadding)
+      .allowsHitTesting(false)
   }
 
   private var emptyState: some View {
@@ -657,13 +656,13 @@ struct TimelineBoardView: View {
   }
 
   private func pinnedTopSignature() -> Int {
-    var hasher = Hasher()
-    hasher.combine(anchorDate.timeIntervalSinceReferenceDate)
-    hasher.combine(dayRange.lowerBound)
-    hasher.combine(dayRange.upperBound)
-    hasher.combine(Int((dayColumnWidth * 100).rounded()))
-    hasher.combine(Locale.autoupdatingCurrent.identifier)
-    return hasher.finalize()
+    TimelineBoardReadPath.pinnedTopSignature(
+      anchorDate: anchorDate,
+      dayRange: dayRange,
+      dayColumnWidth: dayColumnWidth,
+      localeIdentifier: Locale.autoupdatingCurrent.identifier,
+      isTimelineScrolling: isTimelineScrolling
+    )
   }
 
   func handleTimelineScrollActivity(

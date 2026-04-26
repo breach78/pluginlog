@@ -285,7 +285,7 @@ enum RetainedWorkspaceSurfaceProjectionBuilder {
       progressStageRaw: project.progressStage.storageRawValue,
       boardOrder: nil,
       createdAt: .distantPast,
-      updatedAt: .distantPast,
+      updatedAt: project.updatedAt,
       isArchived: project.isArchived
     )
   }
