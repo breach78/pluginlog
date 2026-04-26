@@ -18,6 +18,31 @@ struct RetainedProject: Equatable, Sendable {
   let isBUFOwned: Bool
   let hasManagedTaskSection: Bool
   let canSafelyPersistProjectNote: Bool
+  let isArchived: Bool
+
+  init(
+    identity: RetainedProjectIdentity,
+    fileURL: URL,
+    title: String,
+    noteMarkdown: String,
+    tasks: [RetainedTask],
+    usesProjectTag: Bool,
+    isBUFOwned: Bool,
+    hasManagedTaskSection: Bool,
+    canSafelyPersistProjectNote: Bool,
+    isArchived: Bool = false
+  ) {
+    self.identity = identity
+    self.fileURL = fileURL
+    self.title = title
+    self.noteMarkdown = noteMarkdown
+    self.tasks = tasks
+    self.usesProjectTag = usesProjectTag
+    self.isBUFOwned = isBUFOwned
+    self.hasManagedTaskSection = hasManagedTaskSection
+    self.canSafelyPersistProjectNote = canSafelyPersistProjectNote
+    self.isArchived = isArchived
+  }
 }
 
 struct RetainedProjectIdentity: Equatable, Sendable {

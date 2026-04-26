@@ -52,6 +52,12 @@ enum ObsidianProjectNoteParser {
     )
   }
 
+  static func parseFrontmatterOnly(_ markdown: String) -> ObsidianProjectFrontmatter? {
+    let normalizedMarkdown = normalizeLineEndings(markdown)
+    let lines = normalizedMarkdown.components(separatedBy: "\n")
+    return parseFrontmatter(lines: lines).frontmatter
+  }
+
   private struct FrontmatterResult {
     var frontmatter: ObsidianProjectFrontmatter?
     var bodyStartIndex: Int
@@ -105,6 +111,7 @@ enum ObsidianProjectNoteParser {
     var tags: [String] = []
     var listID: String?
     var hideCompletedTasks = true
+    var isArchived = false
     var consumed: Set<Int> = []
 
     for index in lines.indices {
@@ -131,6 +138,9 @@ enum ObsidianProjectNoteParser {
       case "완료 가리기":
         consumed.insert(index)
         hideCompletedTasks = boolScalar(keyValue.value)
+      case "아카이브":
+        consumed.insert(index)
+        isArchived = boolScalar(keyValue.value)
       case "brain_unfog_project_id", "brain_unfog_task_id":
         consumed.insert(index)
       default:
@@ -145,7 +155,8 @@ enum ObsidianProjectNoteParser {
       tags: unique(tags.compactMap(normalizedTag)),
       reminderListExternalIdentifier: listID,
       preservedLines: preserved,
-      hideCompletedTasks: hideCompletedTasks
+      hideCompletedTasks: hideCompletedTasks,
+      isArchived: isArchived
     )
   }
 

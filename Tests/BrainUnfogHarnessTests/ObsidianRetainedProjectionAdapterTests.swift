@@ -241,6 +241,32 @@ final class ObsidianRetainedProjectionAdapterTests: XCTestCase {
     )
   }
 
+  func testSurfaceProjectionLoadOnlyParsesRequestedProjectNotes() async throws {
+    let vaultURL = try makeVault()
+    try writeProject(
+      projectMarkdown(listID: "LIST-1", taskID: "TASK-SHARED", title: "Requested task"),
+      named: "Requested.md",
+      in: vaultURL
+    )
+    try writeProject(
+      projectMarkdown(listID: "LIST-2", taskID: "TASK-SHARED", title: "Unrelated task"),
+      named: "Unrelated.md",
+      in: vaultURL
+    )
+    let requestedProjectID = RetainedProjectionBuilder.derivedProjectID(for: "LIST-1")
+
+    let result = await RetainedWorkspaceSurfaceProjectionBuilder.load(
+      obsidianVaultRootURL: vaultURL,
+      projectIDs: [requestedProjectID],
+      calendar: Self.calendar
+    )
+    let surface = try XCTUnwrap(result.loadedProjection)
+
+    XCTAssertEqual(Set(surface.projectSnapshots.keys), [requestedProjectID])
+    XCTAssertEqual(surface.projectSnapshots[requestedProjectID]?.title, "Requested")
+    XCTAssertEqual(surface.scheduleEntriesByProjectID[requestedProjectID]?.first?.title, "Requested task")
+  }
+
   func testSurfaceProjectionReadDoesNotRewriteObsidianMarkdown() async throws {
     let vaultURL = try makeVault()
     let fileURL = try writeProject(

@@ -63,6 +63,10 @@ actor ObsidianProjectMarkdownStore: ProjectMarkdownStore {
     try prepareProjectDirectorySync()
   }
 
+  func vaultRoot() -> URL {
+    vaultRootURL
+  }
+
   func loadProjectNotesInScope() async throws -> [Snapshot] {
     try prepareProjectDirectorySync()
     let contents = try fileManager.contentsOfDirectory(
@@ -75,6 +79,31 @@ actor ObsidianProjectMarkdownStore: ProjectMarkdownStore {
       .filter(isDirectMarkdownProjectFile)
       .compactMap(loadSnapshotIfInScope)
       .sorted(by: snapshotSort)
+  }
+
+  func loadProjectNotesInScope(matchingProjectIDs projectIDs: Set<UUID>) async throws -> [Snapshot] {
+    guard !projectIDs.isEmpty else {
+      return try await loadProjectNotesInScope()
+    }
+    try prepareProjectDirectorySync()
+    let contents = try fileManager.contentsOfDirectory(
+      at: projectsRootURL,
+      includingPropertiesForKeys: [.isRegularFileKey],
+      options: [.skipsPackageDescendants]
+    )
+
+    var matchingSnapshots: [Snapshot] = []
+    for fileURL in contents where isDirectMarkdownProjectFile(fileURL) {
+      guard let listID = try reminderListExternalIdentifier(in: fileURL) else { continue }
+      let projectID = RetainedProjectionBuilder.derivedProjectID(for: listID)
+      guard projectIDs.contains(projectID),
+        let snapshot = try loadSnapshotIfInScope(at: fileURL)
+      else {
+        continue
+      }
+      matchingSnapshots.append(snapshot)
+    }
+    return matchingSnapshots.sorted(by: snapshotSort)
   }
 
   func loadProjectNotesInScope(at fileURLs: [URL]) async throws -> [Snapshot] {
@@ -95,7 +124,8 @@ actor ObsidianProjectMarkdownStore: ProjectMarkdownStore {
     _ note: ObsidianProjectNote,
     preferredFileName: String,
     expectedBaseline: WriteBaseline? = nil,
-    allowClaimingUnownedProject: Bool = false
+    allowClaimingUnownedProject: Bool = false,
+    allowReplacingReminderListIdentity: Bool = false
   ) async throws -> Snapshot {
     try prepareProjectDirectorySync()
     let fileURL = projectsRootURL.appendingPathComponent(
@@ -117,7 +147,8 @@ actor ObsidianProjectMarkdownStore: ProjectMarkdownStore {
       try validateExistingFileIdentity(
         existingSnapshot,
         requestedNote: note,
-        allowClaimingUnownedProject: allowClaimingUnownedProject
+        allowClaimingUnownedProject: allowClaimingUnownedProject,
+        allowReplacingReminderListIdentity: allowReplacingReminderListIdentity
       )
       guard let expectedBaseline else {
         throw StoreError.missingExpectedBaseline
@@ -154,6 +185,11 @@ actor ObsidianProjectMarkdownStore: ProjectMarkdownStore {
       return nil
     }
     return snapshot
+  }
+
+  private func reminderListExternalIdentifier(in fileURL: URL) throws -> String? {
+    let content = try String(contentsOf: fileURL, encoding: .utf8)
+    return ObsidianProjectNoteParser.parseFrontmatterOnly(content)?.reminderListExternalIdentifier
   }
 
   private func loadSnapshot(at fileURL: URL) throws -> Snapshot {
@@ -200,10 +236,17 @@ actor ObsidianProjectMarkdownStore: ProjectMarkdownStore {
   private func validateExistingFileIdentity(
     _ existingSnapshot: Snapshot,
     requestedNote: ObsidianProjectNote,
-    allowClaimingUnownedProject: Bool
+    allowClaimingUnownedProject: Bool,
+    allowReplacingReminderListIdentity: Bool
   ) throws {
     let requestedListID = normalized(requestedNote.reminderListExternalIdentifier)
     let existingListID = normalized(existingSnapshot.note.reminderListExternalIdentifier)
+    if allowReplacingReminderListIdentity,
+      existingListID != nil,
+      requestedListID != nil
+    {
+      return
+    }
     if allowClaimingUnownedProject,
       existingListID == nil,
       requestedListID != nil,

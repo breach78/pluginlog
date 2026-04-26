@@ -30,6 +30,7 @@ final class ObsidianProjectNoteRendererTests: XCTestCase {
     XCTAssertTrue(rendered.contains("tags:\n  - 프로젝트"))
     XCTAssertTrue(rendered.contains("reminder_list_external_id: LIST-1"))
     XCTAssertTrue(rendered.contains("완료 가리기: true"))
+    XCTAssertTrue(rendered.contains("아카이브: false"))
     XCTAssertTrue(rendered.contains("owner: kept"))
     XCTAssertFalse(rendered.contains("brain_unfog_project_id"))
     XCTAssertFalse(rendered.contains("brain_unfog_task_id"))
@@ -109,6 +110,7 @@ final class ObsidianProjectNoteRendererTests: XCTestCase {
     XCTAssertTrue(rendered.contains("tags:\n  - 프로젝트"))
     XCTAssertTrue(rendered.contains("reminder_list_external_id: LIST-1"))
     XCTAssertTrue(rendered.contains("완료 가리기: true"))
+    XCTAssertTrue(rendered.contains("아카이브: false"))
   }
 
   func testRendererPreservesCompletedVisibilityCheckboxForReminderSyncedProject() {
@@ -131,6 +133,26 @@ final class ObsidianProjectNoteRendererTests: XCTestCase {
     XCTAssertEqual(rendered.components(separatedBy: "완료 가리기:").count - 1, 1)
   }
 
+  func testRendererPreservesArchiveCheckboxForReminderSyncedProject() {
+    let note = ObsidianProjectNoteParser.parse(
+      """
+      ---
+      tags:
+        - 프로젝트
+      reminder_list_external_id: LIST-1
+      아카이브: true
+      ---
+
+      - [ ] Later
+      """
+    )
+
+    let rendered = ObsidianProjectNoteRenderer.render(note)
+
+    XCTAssertTrue(rendered.contains("아카이브: true"))
+    XCTAssertEqual(rendered.components(separatedBy: "아카이브:").count - 1, 1)
+  }
+
   func testRendererDoesNotAddCompletedVisibilityCheckboxWithoutReminderBinding() {
     let note = ObsidianProjectNoteParser.parse(
       """
@@ -146,5 +168,6 @@ final class ObsidianProjectNoteRendererTests: XCTestCase {
     let rendered = ObsidianProjectNoteRenderer.render(note)
 
     XCTAssertFalse(rendered.contains("완료 가리기:"))
+    XCTAssertFalse(rendered.contains("아카이브:"))
   }
 }

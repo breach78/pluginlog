@@ -23,6 +23,7 @@ final class ObsidianProjectNoteParserTests: XCTestCase {
 
     XCTAssertEqual(note.tags, ["프로젝트"])
     XCTAssertEqual(note.reminderListExternalIdentifier, "LIST-1")
+    XCTAssertEqual(note.frontmatter?.isArchived, false)
     XCTAssertTrue(note.isSyncScopeCandidate)
     XCTAssertTrue(
       ObsidianProjectNoteScope.isSyncScopeCandidate(
@@ -53,6 +54,22 @@ final class ObsidianProjectNoteParserTests: XCTestCase {
     let child = try XCTUnwrap(note.tasks.last)
     XCTAssertEqual(child.title, "child task t:TASK-CHILD")
     XCTAssertEqual(child.metadata?.reminderExternalIdentifier, "TASK-CHILD")
+  }
+
+  func testParsesArchivedProjectFrontmatterCheckbox() {
+    let note = ObsidianProjectNoteParser.parse(
+      """
+      ---
+      tags: [프로젝트]
+      reminder_list_external_id: LIST-1
+      아카이브: true
+      ---
+
+      - [ ] Archived task
+      """
+    )
+
+    XCTAssertEqual(note.frontmatter?.isArchived, true)
   }
 
   func testClassifiesTagOnlyIdOnlyAndOrdinaryNotesAtProjectBoundary() {

@@ -29,6 +29,7 @@ struct ObsidianProjectFrontmatter: Equatable, Sendable {
   var reminderListExternalIdentifier: String?
   var preservedLines: [String]
   var hideCompletedTasks: Bool = true
+  var isArchived: Bool = false
 }
 
 struct ObsidianProjectTask: Equatable, Sendable {

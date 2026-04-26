@@ -21,6 +21,7 @@ enum ObsidianProjectNoteRenderer {
     if let listID = normalized(frontmatter.reminderListExternalIdentifier) {
       lines.append("reminder_list_external_id: \(listID)")
       lines.append("완료 가리기: \(frontmatter.hideCompletedTasks ? "true" : "false")")
+      lines.append("아카이브: \(frontmatter.isArchived ? "true" : "false")")
     }
     lines.append(contentsOf: frontmatter.preservedLines.filter { line in
       !isLegacyBrainUnfogLine(line) && !isKnownCanonicalLine(line)
@@ -101,7 +102,7 @@ enum ObsidianProjectNoteRenderer {
   private static func isKnownCanonicalLine(_ line: String) -> Bool {
     let trimmed = line.trimmingCharacters(in: .whitespaces)
     return trimmed == "tags:" || trimmed.hasPrefix("reminder_list_external_id:")
-      || trimmed.hasPrefix("완료 가리기:")
+      || trimmed.hasPrefix("완료 가리기:") || trimmed.hasPrefix("아카이브:")
   }
 
   private static func isLegacyBrainUnfogLine(_ line: String) -> Bool {

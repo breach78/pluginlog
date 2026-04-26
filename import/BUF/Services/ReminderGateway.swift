@@ -569,10 +569,42 @@ struct ReminderArchivedTaskSnapshot: Sendable {
   let title: String
   let isCompleted: Bool
   let completionDate: Date?
-  let unifiedReminderDate: Date?
+  let startDate: Date?
+  let dueDate: Date?
+  let hasExplicitTime: Bool
   let priority: Int
   let reminderNoteText: String
   let attachmentCount: Int
+  let recurrenceRuleRaw: String?
+  let detail: ReminderArchiveTaskDetailSnapshot?
+
+  init(
+    taskID: UUID,
+    title: String,
+    isCompleted: Bool,
+    completionDate: Date?,
+    startDate: Date?,
+    dueDate: Date?,
+    hasExplicitTime: Bool,
+    priority: Int,
+    reminderNoteText: String,
+    attachmentCount: Int,
+    recurrenceRuleRaw: String?,
+    detail: ReminderArchiveTaskDetailSnapshot? = nil
+  ) {
+    self.taskID = taskID
+    self.title = title
+    self.isCompleted = isCompleted
+    self.completionDate = completionDate
+    self.startDate = startDate
+    self.dueDate = dueDate
+    self.hasExplicitTime = hasExplicitTime
+    self.priority = priority
+    self.reminderNoteText = reminderNoteText
+    self.attachmentCount = attachmentCount
+    self.recurrenceRuleRaw = recurrenceRuleRaw
+    self.detail = detail
+  }
 }
 
 struct ReminderArchivedProjectSnapshot: Sendable {
@@ -580,6 +612,21 @@ struct ReminderArchivedProjectSnapshot: Sendable {
   let title: String
   let colorHex: String?
   let tasks: [ReminderArchivedTaskSnapshot]
+  let detail: ReminderArchiveListDetailSnapshot?
+
+  init(
+    projectID: UUID,
+    title: String,
+    colorHex: String?,
+    tasks: [ReminderArchivedTaskSnapshot],
+    detail: ReminderArchiveListDetailSnapshot? = nil
+  ) {
+    self.projectID = projectID
+    self.title = title
+    self.colorHex = colorHex
+    self.tasks = tasks
+    self.detail = detail
+  }
 }
 
 struct ReminderProjectRestoreResult: Sendable {
@@ -601,6 +648,11 @@ protocol ReminderProjectProvider: AnyObject {
   func fetchImportSnapshotBatch(
     forListIdentifiers identifiers: [String]
   ) async throws -> ReminderImportSnapshotBatch?
+  func fetchArchiveSnapshot(
+    forListIdentifier identifier: String,
+    archivedAt: Date,
+    sourceVaultRelativePath: String
+  ) async throws -> ObsidianReminderArchiveSnapshot?
   func createProjectList(title: String) throws -> ReminderProjectListSnapshot
   func removeProjectList(identifier: String) throws
   func setProjectTitle(identifier: String, title: String) throws -> ReminderProjectListSnapshot?
@@ -667,6 +719,41 @@ extension ReminderProjectProvider {
     guard let gateway = reminderGateway else { return nil }
     return try await ReminderGatewayImportSnapshotProvider(gateway: gateway)
       .fetchBatch(forListIdentifiers: identifiers)
+  }
+
+  func fetchArchiveSnapshot(
+    forListIdentifier identifier: String,
+    archivedAt: Date,
+    sourceVaultRelativePath: String
+  ) async throws -> ObsidianReminderArchiveSnapshot? {
+    if let gateway = reminderGateway {
+      return try await ObsidianReminderArchiveSnapshotBuilder(gateway: gateway).snapshot(
+        forListIdentifier: identifier,
+        archivedAt: archivedAt,
+        sourceVaultRelativePath: sourceVaultRelativePath
+      )
+    }
+
+    guard let batch = try await fetchImportSnapshotBatch(forListIdentifiers: [identifier]),
+      let list = batch.lists.first(where: {
+        Self.normalized($0.identifier) == identifier
+          || Self.normalized($0.externalIdentifier) == identifier
+      })
+    else {
+      return nil
+    }
+
+    return ObsidianReminderArchiveSnapshot(
+      archivedAt: archivedAt,
+      sourceVaultRelativePath: sourceVaultRelativePath,
+      list: list,
+      items: batch.itemsByListIdentifier[list.identifier] ?? []
+    )
+  }
+
+  private static func normalized(_ value: String?) -> String? {
+    let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+    return trimmed.isEmpty ? nil : trimmed
   }
 }
 
@@ -959,20 +1046,67 @@ final class EventKitReminderProjectProvider: ReminderProjectProvider {
   }
 
   private func applyArchivedTask(_ task: ReminderArchivedTaskSnapshot, to reminder: EKReminder) {
+    if let detail = task.detail {
+      applyArchivedTaskDetail(detail, fallback: task, to: reminder)
+      return
+    }
+
+    applyArchivedTaskFallback(task, to: reminder)
+  }
+
+  private func applyArchivedTaskDetail(
+    _ detail: ReminderArchiveTaskDetailSnapshot,
+    fallback task: ReminderArchivedTaskSnapshot,
+    to reminder: EKReminder
+  ) {
+    reminder.title = detail.title
+    reminder.location = detail.location
+    reminder.notes = ReminderNoteSourceCodec.normalize(detail.notes)
+    reminder.url = detail.urlString.flatMap(URL.init(string:))
+    reminder.timeZone = detail.timeZoneIdentifier.flatMap(TimeZone.init(identifier:))
+    reminder.isCompleted = detail.isCompleted
+    reminder.completionDate = detail.completionDate
+    reminder.priority = max(0, min(9, detail.priority))
+    reminder.startDateComponents = detail.startDateComponents?.dateComponents
+      ?? dateComponentsForArchivedRestore(
+        from: task.startDate,
+        hasExplicitTime: task.hasExplicitTime
+      )
+    reminder.dueDateComponents = detail.dueDateComponents?.dateComponents
+      ?? dateComponentsForArchivedRestore(
+        from: task.dueDate,
+        hasExplicitTime: task.hasExplicitTime
+      )
+    reminder.recurrenceRules = detail.recurrenceRules.compactMap(\.recurrenceRule)
+    reminder.alarms = detail.alarms.map(\.alarm)
+  }
+
+  private func applyArchivedTaskFallback(_ task: ReminderArchivedTaskSnapshot, to reminder: EKReminder) {
     reminder.title = task.title
     reminder.isCompleted = task.isCompleted
     reminder.completionDate = task.completionDate
     reminder.priority = max(0, min(9, task.priority))
-    reminder.startDateComponents = nil
-    reminder.dueDateComponents = dateComponentsForArchivedRestore(from: task.unifiedReminderDate)
+    reminder.startDateComponents = dateComponentsForArchivedRestore(
+      from: task.startDate,
+      hasExplicitTime: task.hasExplicitTime
+    )
+    reminder.dueDateComponents = dateComponentsForArchivedRestore(
+      from: task.dueDate,
+      hasExplicitTime: task.hasExplicitTime
+    )
     reminder.notes = ReminderNoteSourceCodec.normalize(task.reminderNoteText)
+    reminder.recurrenceRules = ReminderRecurrenceCodec.recurrenceRules(
+      fromRawValue: task.recurrenceRuleRaw
+    )
   }
 
-  private func dateComponentsForArchivedRestore(from date: Date?) -> DateComponents? {
+  private func dateComponentsForArchivedRestore(
+    from date: Date?,
+    hasExplicitTime: Bool
+  ) -> DateComponents? {
     guard let date else { return nil }
     let calendar = Calendar.autoupdatingCurrent
-    let dayStart = calendar.startOfDay(for: date)
-    if calendar.isDate(date, equalTo: dayStart, toGranularity: .second) {
+    if !hasExplicitTime {
       return calendar.dateComponents([.year, .month, .day], from: date)
     }
 

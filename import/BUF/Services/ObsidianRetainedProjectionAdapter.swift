@@ -41,7 +41,8 @@ enum ObsidianRetainedProjectionAdapter {
       usesProjectTag: note.isProjectTagged,
       isBUFOwned: true,
       hasManagedTaskSection: false,
-      canSafelyPersistProjectNote: false
+      canSafelyPersistProjectNote: false,
+      isArchived: note.frontmatter?.isArchived ?? false
     )
   }
 

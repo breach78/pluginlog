@@ -21,9 +21,7 @@ extension AppState {
     }
     let watcher = ObsidianProjectDirectoryWatcher(
       vaultRootURL: obsidianVaultRootURL,
-      fastHandler: { [weak self] in
-        self?.bumpWorkspaceTreeRevision()
-      },
+      pollingNanoseconds: nil,
       handler: { [weak self] changedFiles in
         await self?.handleObsidianProjectDirectoryChange(changedFiles)
       }
@@ -114,19 +112,30 @@ extension AppState {
           batch: batch,
           store: store
         )
-        applyObsidianImportResult(result)
         if let catchUpResult = try await reconcileObsidianLocalChangesWithReminderSource(
           store: store,
           reason: reason
         ) {
-          applyObsidianProvisioningResult(catchUpResult)
+          applyObsidianFullReconciliationResult(
+            importResult: result,
+            provisioningResult: catchUpResult
+          )
           if catchUpResult.createdProjectCount > 0
             || catchUpResult.createdTaskCount > 0
             || catchUpResult.updatedTaskCount > 0
             || catchUpResult.deletedTaskCount > 0
+            || catchUpResult.archivedProjectCount > 0
+            || catchUpResult.restoredProjectCount > 0
           {
             recordAppAuthoredReminderPush()
           }
+        } else if reason == .bootstrap || reason == .manual {
+          replaceObsidianBridgeRecords(
+            projects: result.projectRecords,
+            tasks: result.taskRecords
+          )
+        } else {
+          applyObsidianImportResult(result)
         }
         syncStatus = "Imported Obsidian \(result.importedProjectCount) lists / \(result.importedTaskCount) tasks / updated \(result.updatedTaskCount) / deleted \(result.deletedTaskCount)"
       }
@@ -201,9 +210,11 @@ extension AppState {
         || provisioningResult.createdTaskCount > 0
         || provisioningResult.updatedTaskCount > 0
         || provisioningResult.deletedTaskCount > 0
+        || provisioningResult.archivedProjectCount > 0
+        || provisioningResult.restoredProjectCount > 0
       {
         recordAppAuthoredReminderPush()
-        syncStatus = "Synced Obsidian \(provisioningResult.createdProjectCount) lists / \(provisioningResult.createdTaskCount) tasks / updated \(provisioningResult.updatedTaskCount) / deleted \(provisioningResult.deletedTaskCount)"
+        syncStatus = "Synced Obsidian \(provisioningResult.createdProjectCount) lists / \(provisioningResult.createdTaskCount) tasks / updated \(provisioningResult.updatedTaskCount) / deleted \(provisioningResult.deletedTaskCount) / archived \(provisioningResult.archivedProjectCount) / restored \(provisioningResult.restoredProjectCount)"
       }
       bumpWorkspaceTreeRevision()
     } catch {
@@ -227,10 +238,27 @@ extension AppState {
   }
 
   func applyObsidianBootstrapResult(_ result: ObsidianReminderBootstrapSync.SyncResult) {
-    TaskIdentityBridgeStore.upsertAll(
+    replaceObsidianBridgeRecords(
       projects: result.projectRecords,
       tasks: result.taskRecords
     )
+  }
+
+  func applyObsidianFullReconciliationResult(
+    importResult: ObsidianReminderImportSync.SyncResult,
+    provisioningResult: ObsidianReminderProvisioningSync.SyncResult
+  ) {
+    replaceObsidianBridgeRecords(
+      projects: importResult.projectRecords + provisioningResult.projectRecords,
+      tasks: importResult.taskRecords + provisioningResult.taskRecords
+    )
+  }
+
+  func replaceObsidianBridgeRecords(
+    projects: [ProjectIdentityBridgeRecord],
+    tasks: [TaskIdentityBridgeRecord]
+  ) {
+    TaskIdentityBridgeStore.replaceAll(projects: projects, tasks: tasks)
   }
 
   func persistManagedProjectNotes(for projectIDs: Set<UUID>) async {

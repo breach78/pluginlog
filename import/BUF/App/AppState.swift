@@ -54,7 +54,6 @@ final class AppState: ObservableObject {
   @Published var timelineDayColumnWidth: CGFloat = 44
   @Published var isEditorActive = false
   @Published var isEditorMotionSuppressed = false
-  @Published private(set) var runtimeProjectionRevision: UInt64 = 0
   @Published var scheduleCalendarOverlayProjection: ScheduleCalendarOverlayProjection = .empty
 
   let defaultTimelineDayColumnWidth: CGFloat = 44
@@ -248,7 +247,6 @@ final class AppState: ObservableObject {
 
   func bumpWorkspaceTreeRevision() {
     workspaceTreeRevision &+= 1
-    runtimeProjectionRevision &+= 1
   }
 
   @discardableResult

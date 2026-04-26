@@ -82,7 +82,11 @@ enum RetainedWorkspaceSurfaceProjectionBuilder {
 
     let store = ObsidianProjectMarkdownStore(vaultRootURL: obsidianVaultRootURL)
     do {
-      let snapshots = try await store.loadProjectNotesInScope()
+      let requestedProjectIDs = Set(projectIDs)
+      let snapshots =
+        requestedProjectIDs.isEmpty
+        ? try await store.loadProjectNotesInScope()
+        : try await store.loadProjectNotesInScope(matchingProjectIDs: requestedProjectIDs)
       let snapshot = try ObsidianRetainedProjectionAdapter.build(
         snapshots: snapshots,
         calendar: calendar
@@ -282,7 +286,7 @@ enum RetainedWorkspaceSurfaceProjectionBuilder {
       boardOrder: nil,
       createdAt: .distantPast,
       updatedAt: .distantPast,
-      isArchived: false
+      isArchived: project.isArchived
     )
   }
 

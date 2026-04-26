@@ -288,11 +288,6 @@ struct TimelineBoardView: View {
     ) {
       await reloadWorkspaceTimelineProjectDetails(for: activeProjectIDs)
     }
-    .onChange(of: appState.runtimeProjectionRevision) { _, _ in
-      Task { @MainActor in
-        await reloadWorkspaceTimelineProjectDetails(for: activeProjectIDs)
-      }
-    }
     .onChange(of: snapshot.watchedSourceSignature) { _, newSignature in
       guard isActive, !appState.isEditorMotionSuppressed else { return }
       let refreshedBars = refreshTimelineBarsIfNeeded(

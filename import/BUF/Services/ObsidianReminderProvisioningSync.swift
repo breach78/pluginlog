@@ -7,6 +7,8 @@ enum ObsidianReminderProvisioningSync {
     var createdTaskCount: Int
     var updatedTaskCount: Int
     var deletedTaskCount: Int = 0
+    var archivedProjectCount: Int = 0
+    var restoredProjectCount: Int = 0
     var projectRecords: [ProjectIdentityBridgeRecord]
     var taskRecords: [TaskIdentityBridgeRecord]
   }
@@ -74,8 +76,11 @@ enum ObsidianReminderProvisioningSync {
     var createdTaskCount = 0
     var updatedTaskCount = 0
     var deletedTaskCount = 0
+    var archivedProjectCount = 0
+    var restoredProjectCount = 0
     var projectRecords: [ProjectIdentityBridgeRecord] = []
     var taskRecords: [TaskIdentityBridgeRecord] = []
+    let archiveStore = ObsidianReminderArchiveStore(vaultRootURL: await store.vaultRoot())
 
     for snapshot in snapshots {
       var note = snapshot.note
@@ -86,6 +91,8 @@ enum ObsidianReminderProvisioningSync {
       var didCreateProject = false
       if let existingListID = normalized(note.reminderListExternalIdentifier) {
         listIdentifier = existingListID
+      } else if note.frontmatter?.isArchived == true {
+        continue
       } else if let pending = ReminderPendingBindingStore.projectBinding(
         pageFileURL: snapshot.fileURL,
         pageTitle: projectTitle(from: snapshot),
@@ -114,6 +121,33 @@ enum ObsidianReminderProvisioningSync {
       }
 
       let projectID = RetainedProjectionBuilder.derivedProjectID(for: listIdentifier)
+      if note.frontmatter?.isArchived == true {
+        if try await archiveProject(
+          snapshot: snapshot,
+          listIdentifier: listIdentifier,
+          archiveStore: archiveStore,
+          reminderProjectProvider: reminderProjectProvider,
+          now: now
+        ) {
+          archivedProjectCount += 1
+        }
+        continue
+      }
+
+      if let restoration = try await restoreProjectIfNeeded(
+        snapshot: snapshot,
+        listIdentifier: listIdentifier,
+        archiveStore: archiveStore,
+        store: store,
+        reminderProjectProvider: reminderProjectProvider,
+        now: now
+      ) {
+        restoredProjectCount += 1
+        projectRecords.append(restoration.projectRecord)
+        taskRecords.append(contentsOf: restoration.taskRecords)
+        continue
+      }
+
       let remoteSnapshots = await remoteTaskSnapshotsByExternalIdentifier(
         inListIdentifier: listIdentifier,
         reminderProjectProvider: reminderProjectProvider
@@ -229,8 +263,225 @@ enum ObsidianReminderProvisioningSync {
       createdTaskCount: createdTaskCount,
       updatedTaskCount: updatedTaskCount,
       deletedTaskCount: deletedTaskCount,
+      archivedProjectCount: archivedProjectCount,
+      restoredProjectCount: restoredProjectCount,
       projectRecords: projectRecords,
       taskRecords: taskRecords
+    )
+  }
+
+  private struct RestoreResult {
+    var projectRecord: ProjectIdentityBridgeRecord
+    var taskRecords: [TaskIdentityBridgeRecord]
+  }
+
+  private static func archiveProject(
+    snapshot: ObsidianProjectMarkdownStore.Snapshot,
+    listIdentifier: String,
+    archiveStore: ObsidianReminderArchiveStore,
+    reminderProjectProvider: ReminderProjectProvider,
+    now: Date
+  ) async throws -> Bool {
+    if try archiveStore.load(forListIdentifier: listIdentifier) != nil {
+      try reminderProjectProvider.removeProjectList(identifier: listIdentifier)
+      return false
+    }
+
+    guard let archive = try await reminderProjectProvider.fetchArchiveSnapshot(
+      forListIdentifier: listIdentifier,
+      archivedAt: now,
+      sourceVaultRelativePath: snapshot.vaultRelativePath
+    ) else {
+      return false
+    }
+
+    try archiveStore.save(archive, forListIdentifier: listIdentifier)
+    try reminderProjectProvider.removeProjectList(identifier: listIdentifier)
+    return true
+  }
+
+  private static func restoreProjectIfNeeded(
+    snapshot: ObsidianProjectMarkdownStore.Snapshot,
+    listIdentifier: String,
+    archiveStore: ObsidianReminderArchiveStore,
+    store: ObsidianProjectMarkdownStore,
+    reminderProjectProvider: ReminderProjectProvider,
+    now: Date
+  ) async throws -> RestoreResult? {
+    guard let archive = try archiveStore.load(forListIdentifier: listIdentifier) else {
+      return nil
+    }
+
+    let restoreResult = try reminderProjectProvider.restoreArchivedProject(
+      archivedProject(from: archive)
+    )
+    let restoredListIdentifier = restoreResult.list.externalIdentifier
+    var restoredNote = snapshot.note.withReminderListExternalIdentifier(restoredListIdentifier)
+    var taskRecords: [TaskIdentityBridgeRecord] = []
+    var baselineUpdates: [ReminderSyncTaskBaselineUpdate] = []
+    var oldReminderIDsToRemove: [String] = []
+    var oldTaskIDsToRemove: [UUID] = []
+
+    for task in snapshot.note.tasks {
+      guard let oldReminderID = normalized(task.reminderExternalIdentifier) else { continue }
+      let oldTaskID = ReminderProjectionIdentity.taskID(for: oldReminderID)
+      guard let metadata = restoreResult.taskMetadataByTaskID[oldTaskID],
+        let newReminderID = normalized(metadata.externalIdentifier) ?? normalized(metadata.identifier)
+      else {
+        continue
+      }
+
+      restoredNote = restoredNote.updatingTaskMetadata(bodyLineIndex: task.bodyLineIndex) {
+        existing in
+        var next = existing ?? ObsidianTaskMetadata(
+          reminderExternalIdentifier: nil,
+          date: nil,
+          time: nil,
+          durationMinutes: nil,
+          repeatRule: nil
+        )
+        next.reminderExternalIdentifier = newReminderID
+        return next
+      }
+      let newTaskID = ReminderProjectionIdentity.taskID(for: newReminderID)
+      taskRecords.append(
+        TaskIdentityBridgeRecord(
+          taskID: newTaskID,
+          title: task.title,
+          reminderExternalIdentifier: newReminderID,
+          ownerProjectID: RetainedProjectionBuilder.derivedProjectID(for: restoredListIdentifier),
+          createdAt: now,
+          updatedAt: now
+        )
+      )
+      if let item = archive.items.first(where: {
+        (normalized($0.externalIdentifier) ?? normalized($0.identifier)) == oldReminderID
+      }) {
+        baselineUpdates.append(
+          ReminderSyncTaskBaselineUpdate(
+            reminderExternalIdentifier: newReminderID,
+            state: ReminderSyncTaskState(importedItem: item),
+            remoteModifiedAt: metadata.modifiedAt,
+            now: now
+          )
+        )
+      }
+      oldReminderIDsToRemove.append(oldReminderID)
+      oldTaskIDsToRemove.append(oldTaskID)
+    }
+
+    do {
+      _ = try await store.writeProjectNote(
+        restoredNote,
+        preferredFileName: snapshot.fileURL.lastPathComponent,
+        expectedBaseline: ObsidianProjectMarkdownStore.WriteBaseline(snapshot: snapshot),
+        allowClaimingUnownedProject: true,
+        allowReplacingReminderListIdentity: true
+      )
+    } catch let writeError {
+      do {
+        try reminderProjectProvider.removeProjectList(identifier: restoredListIdentifier)
+      } catch let cleanupError {
+        AppLogger.sync.error(
+          "restore rollback failed for list=\(restoredListIdentifier, privacy: .public): \(cleanupError.localizedDescription, privacy: .public)"
+        )
+      }
+      throw writeError
+    }
+
+    for oldReminderID in oldReminderIDsToRemove {
+      ReminderSyncBaselineStore.remove(reminderExternalIdentifier: oldReminderID)
+    }
+    for oldTaskID in oldTaskIDsToRemove {
+      TaskIdentityBridgeStore.removeTask(taskID: oldTaskID)
+    }
+    ReminderSyncBaselineStore.upsertMany(baselineUpdates)
+    try archiveStore.remove(forListIdentifier: listIdentifier)
+
+    let projectRecord = ProjectIdentityBridgeRecord(
+      projectID: RetainedProjectionBuilder.derivedProjectID(for: restoredListIdentifier),
+      title: projectTitle(from: snapshot),
+      reminderListExternalIdentifier: restoredListIdentifier,
+      createdAt: now,
+      updatedAt: now
+    )
+    return RestoreResult(projectRecord: projectRecord, taskRecords: taskRecords)
+  }
+
+  private static func archivedProject(
+    from archive: ObsidianReminderArchiveSnapshot
+  ) -> ReminderArchivedProjectSnapshot {
+    let detailsByIdentifier = archive.taskDetailsByReminderIdentifier
+    var consumedDetailIdentifiers: Set<String> = []
+    let itemTasks = archive.items.compactMap { item -> ReminderArchivedTaskSnapshot? in
+      let itemIdentifier = normalized(item.externalIdentifier) ?? normalized(item.identifier)
+      let detail = itemIdentifier.flatMap { detailsByIdentifier[$0] }
+      if let itemIdentifier, detail != nil {
+        consumedDetailIdentifiers.insert(itemIdentifier)
+      }
+      return archivedTask(from: item, detail: detail)
+    }
+    let detailOnlyTasks = archive.taskDetails.compactMap { detail -> ReminderArchivedTaskSnapshot? in
+      let detailIdentifier = normalized(detail.externalIdentifier) ?? normalized(detail.identifier)
+      guard let detailIdentifier, !consumedDetailIdentifiers.contains(detailIdentifier) else {
+        return nil
+      }
+      return archivedTask(from: detail)
+    }
+
+    return ReminderArchivedProjectSnapshot(
+      projectID: RetainedProjectionBuilder.derivedProjectID(
+        for: archive.list.externalIdentifier ?? archive.list.identifier
+      ),
+      title: archive.list.title,
+      colorHex: archive.list.colorHex,
+      tasks: itemTasks + detailOnlyTasks,
+      detail: archive.listDetail
+    )
+  }
+
+  private static func archivedTask(
+    from item: ReminderItemImportSnapshot,
+    detail: ReminderArchiveTaskDetailSnapshot?
+  ) -> ReminderArchivedTaskSnapshot? {
+    guard let identifier = normalized(item.externalIdentifier) ?? normalized(item.identifier) else {
+      return nil
+    }
+    return ReminderArchivedTaskSnapshot(
+      taskID: ReminderProjectionIdentity.taskID(for: identifier),
+      title: item.title,
+      isCompleted: item.isCompleted,
+      completionDate: item.completionDate,
+      startDate: item.startDate,
+      dueDate: item.dueDate,
+      hasExplicitTime: item.scheduleHasExplicitTime,
+      priority: item.priority,
+      reminderNoteText: item.notes,
+      attachmentCount: item.attachmentCount,
+      recurrenceRuleRaw: item.recurrenceRuleRaw,
+      detail: detail
+    )
+  }
+
+  private static func archivedTask(
+    from detail: ReminderArchiveTaskDetailSnapshot
+  ) -> ReminderArchivedTaskSnapshot? {
+    guard let identifier = normalized(detail.externalIdentifier) ?? normalized(detail.identifier) else {
+      return nil
+    }
+    return ReminderArchivedTaskSnapshot(
+      taskID: ReminderProjectionIdentity.taskID(for: identifier),
+      title: detail.title,
+      isCompleted: detail.isCompleted,
+      completionDate: detail.completionDate,
+      startDate: detail.startDateComponents?.date,
+      dueDate: detail.dueDateComponents?.date,
+      hasExplicitTime: detail.dueDateComponents?.hasExplicitTime ?? false,
+      priority: detail.priority,
+      reminderNoteText: detail.notes ?? "",
+      attachmentCount: 0,
+      recurrenceRuleRaw: nil,
+      detail: detail
     )
   }
 
@@ -630,6 +881,36 @@ enum ObsidianReminderProvisioningSync {
   }
 }
 
+private extension ObsidianReminderArchiveSnapshot {
+  var taskDetailsByReminderIdentifier: [String: ReminderArchiveTaskDetailSnapshot] {
+    var details: [String: ReminderArchiveTaskDetailSnapshot] = [:]
+    for detail in taskDetails {
+      if let externalIdentifier = normalizedArchiveIdentifier(detail.externalIdentifier) {
+        details[externalIdentifier] = detail
+      }
+      if let identifier = normalizedArchiveIdentifier(detail.identifier) {
+        details[identifier] = detail
+      }
+    }
+    return details
+  }
+
+  private func normalizedArchiveIdentifier(_ value: String?) -> String? {
+    guard let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines),
+      !trimmed.isEmpty
+    else {
+      return nil
+    }
+    return trimmed
+  }
+}
+
+private extension ReminderArchiveDateComponentsSnapshot {
+  var hasExplicitTime: Bool {
+    hour != nil || minute != nil || second != nil || nanosecond != nil
+  }
+}
+
 private extension ObsidianProjectNote {
   func withReminderListExternalIdentifier(_ identifier: String) -> Self {
     var next = self
@@ -641,7 +922,9 @@ private extension ObsidianProjectNote {
     next.frontmatter = ObsidianProjectFrontmatter(
       tags: frontmatter.tags.isEmpty ? ["프로젝트"] : frontmatter.tags,
       reminderListExternalIdentifier: identifier,
-      preservedLines: frontmatter.preservedLines
+      preservedLines: frontmatter.preservedLines,
+      hideCompletedTasks: frontmatter.hideCompletedTasks,
+      isArchived: frontmatter.isArchived
     )
     return next
   }

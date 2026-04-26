@@ -23,6 +23,63 @@ final class RetainedSetupFlowTests: XCTestCase {
     try await super.tearDown()
   }
 
+  func testFullReconciliationReplacesStaleBridgeRecords() {
+    let staleProjectID = UUID()
+    let importedProjectID = UUID()
+    let localProjectID = UUID()
+    let now = Date(timeIntervalSince1970: 100)
+    TaskIdentityBridgeStore.replaceAll(
+      projects: [
+        ProjectIdentityBridgeRecord(
+          projectID: staleProjectID,
+          title: "Stale",
+          reminderListExternalIdentifier: "list-stale",
+          createdAt: now,
+          updatedAt: now
+        ),
+      ],
+      tasks: []
+    )
+    let appState = makeAppState()
+
+    appState.applyObsidianFullReconciliationResult(
+      importResult: ObsidianReminderImportSync.SyncResult(
+        importedProjectCount: 1,
+        importedTaskCount: 0,
+        updatedTaskCount: 0,
+        projectRecords: [
+          ProjectIdentityBridgeRecord(
+            projectID: importedProjectID,
+            title: "Imported",
+            reminderListExternalIdentifier: "list-imported",
+            createdAt: now,
+            updatedAt: now
+          ),
+        ],
+        taskRecords: []
+      ),
+      provisioningResult: ObsidianReminderProvisioningSync.SyncResult(
+        createdProjectCount: 0,
+        createdTaskCount: 0,
+        updatedTaskCount: 0,
+        projectRecords: [
+          ProjectIdentityBridgeRecord(
+            projectID: localProjectID,
+            title: "Local",
+            reminderListExternalIdentifier: "list-local",
+            createdAt: now,
+            updatedAt: now
+          ),
+        ],
+        taskRecords: []
+      )
+    )
+
+    let projectIDs = Set(TaskIdentityBridgeStore.projectRecords().map(\.projectID))
+    XCTAssertEqual(projectIDs, [importedProjectID, localProjectID])
+    XCTAssertNil(TaskIdentityBridgeStore.projectTitle(for: staleProjectID))
+  }
+
   func testHarnessEntitlementsAllowVaultFolderSelectionAndPersistence() throws {
     let entitlementsURL = URL(fileURLWithPath: #filePath)
       .deletingLastPathComponent()
@@ -159,6 +216,7 @@ final class RetainedSetupFlowTests: XCTestCase {
         - 프로젝트
       reminder_list_external_id: \(gateway.calendar.calendarIdentifier)
       완료 가리기: true
+      아카이브: false
       ---
       Local prose that must stay.
       - [ ] Imported task

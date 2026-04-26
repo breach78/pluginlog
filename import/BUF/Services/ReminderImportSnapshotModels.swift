@@ -2,7 +2,7 @@ import AppKit
 @preconcurrency import EventKit
 import Foundation
 
-struct ReminderListImportSnapshot: Equatable, Sendable {
+struct ReminderListImportSnapshot: Codable, Equatable, Sendable {
   let identifier: String
   let externalIdentifier: String?
   let title: String
@@ -21,7 +21,7 @@ struct ReminderListImportSnapshot: Equatable, Sendable {
   }
 }
 
-struct ReminderItemImportSnapshot: Equatable, Sendable {
+struct ReminderItemImportSnapshot: Codable, Equatable, Sendable {
   let identifier: String
   let externalIdentifier: String?
   let parentExternalIdentifier: String?
@@ -88,7 +88,7 @@ struct ReminderItemImportSnapshot: Equatable, Sendable {
   }
 }
 
-struct ReminderImportSnapshotBatch: Equatable, Sendable {
+struct ReminderImportSnapshotBatch: Codable, Equatable, Sendable {
   let lists: [ReminderListImportSnapshot]
   let itemsByListIdentifier: [String: [ReminderItemImportSnapshot]]
 

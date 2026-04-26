@@ -99,6 +99,202 @@ final class ObsidianReminderProvisioningSyncTests: XCTestCase {
     XCTAssertEqual(ReminderSyncBaselineStore.baseline(for: "task-1")?.state.title, "Task one")
   }
 
+  func testArchivedProjectBacksUpReminderListAndRemovesRemoteList() async throws {
+    let vault = try makeTemporaryVault()
+    let noteURL = try writeProjectNote(
+      vault: vault,
+      fileName: "Project.md",
+      body: """
+      ---
+      tags:
+        - 프로젝트
+      reminder_list_external_id: list-1
+      아카이브: true
+      ---
+      - [ ] Task one
+        %% brain-unfog: {"reminder_external_id":"task-1"} %%
+      """
+    )
+    let store = ObsidianProjectMarkdownStore(vaultRootURL: vault)
+    let provider = FakeObsidianReminderProjectProvider()
+    provider.lists["list-1"] = ReminderProjectListSnapshot(
+      identifier: "list-1",
+      externalIdentifier: "list-1",
+      title: "Project",
+      colorHex: "#ff0000"
+    )
+    provider.snapshots["task-1"] = makeRemoteTask(
+      externalID: "task-1",
+      listID: "list-1",
+      title: "Task one",
+      note: "remote note",
+      isCompleted: false,
+      dueDate: makeDate(year: 2026, month: 4, day: 25, hour: 9),
+      hasExplicitTime: true,
+      recurrenceRuleRaw: "daily|110",
+      modifiedAt: fixedRemoteDate
+    )
+    provider.archiveSnapshotOverride = archiveSnapshotWithDetails(
+      archivedAt: fixedNow,
+      recurrenceRuleRaw: "daily|110"
+    )
+
+    let result = try await ObsidianReminderProvisioningSync.syncChangedNotes(
+      fileURLs: [noteURL],
+      store: store,
+      reminderProjectProvider: provider,
+      now: fixedNow
+    )
+    let archive = try ObsidianReminderArchiveStore(vaultRootURL: vault)
+      .load(forListIdentifier: "list-1")
+
+    XCTAssertEqual(result.archivedProjectCount, 1)
+    XCTAssertEqual(provider.removedListIdentifiers, ["list-1"])
+    XCTAssertEqual(archive?.list.title, "Project")
+    XCTAssertEqual(archive?.items.first?.title, "Task one")
+    XCTAssertEqual(archive?.items.first?.recurrenceRuleRaw, "daily|110")
+    XCTAssertEqual(archive?.taskDetails.first?.urlString, "https://example.com/task")
+    XCTAssertEqual(archive?.taskDetails.first?.dueDateComponents?.timeZoneIdentifier, "Asia/Seoul")
+    XCTAssertEqual(archive?.taskDetails.first?.recurrenceRules.first?.interval, 110)
+    XCTAssertEqual(archive?.taskDetails.first?.alarms.first?.structuredLocation?.title, "Office")
+  }
+
+  func testUnarchivedProjectRestoresReminderListFromBackupAndRewritesIdentifiers() async throws {
+    let vault = try makeTemporaryVault()
+    let noteURL = try writeProjectNote(
+      vault: vault,
+      fileName: "Project.md",
+      body: """
+      ---
+      tags:
+        - 프로젝트
+      reminder_list_external_id: list-1
+      아카이브: false
+      ---
+      - [ ] Task one
+        %% brain-unfog: {"reminder_external_id":"task-1"} %%
+      """
+    )
+    let archiveStore = ObsidianReminderArchiveStore(vaultRootURL: vault)
+    try archiveStore.save(
+      ObsidianReminderArchiveSnapshot(
+        archivedAt: fixedNow,
+        sourceVaultRelativePath: "raw/projects/Project.md",
+        listDetail: ReminderArchiveListDetailSnapshot(
+          identifier: "list-1",
+          externalIdentifier: "list-1",
+          title: "Project",
+          colorHex: nil,
+          calendarTypeRaw: 1,
+          sourceIdentifier: "source-1",
+          sourceTitle: "iCloud",
+          sourceTypeRaw: 2
+        ),
+        list: ReminderListImportSnapshot(
+          identifier: "list-1",
+          externalIdentifier: "list-1",
+          title: "Project",
+          colorHex: nil
+        ),
+        items: [
+          ReminderItemImportSnapshot(
+            identifier: "task-1",
+            externalIdentifier: "task-1",
+            parentExternalIdentifier: nil,
+            sourceListIdentifier: "list-1",
+            sourceListTitle: "Project",
+            title: "Task one",
+            notes: "remote note",
+            attachmentCount: 0,
+            isCompleted: false,
+            completionDate: nil,
+            startDate: nil,
+            dueDate: makeDate(year: 2026, month: 4, day: 25, hour: 9),
+            scheduleHasExplicitTime: true,
+            scheduledDurationMinutes: nil,
+            priority: 0,
+            recurrenceRuleRaw: "weekly|1|4",
+            isFlagged: false,
+            requiredWorkDays: 0,
+            createdAt: fixedRemoteDate,
+            modifiedAt: fixedRemoteDate
+          )
+        ],
+        taskDetails: [
+          detailedTaskSnapshot(recurrenceRuleRaw: "weekly|1|4")
+        ]
+      ),
+      forListIdentifier: "list-1"
+    )
+    let store = ObsidianProjectMarkdownStore(vaultRootURL: vault)
+    let provider = FakeObsidianReminderProjectProvider()
+
+    let result = try await ObsidianReminderProvisioningSync.syncChangedNotes(
+      fileURLs: [noteURL],
+      store: store,
+      reminderProjectProvider: provider,
+      now: fixedNow
+    )
+    let snapshots = try await store.loadProjectNotesInScope()
+    let snapshot = try XCTUnwrap(snapshots.first)
+    let task = try XCTUnwrap(snapshot.note.tasks.first)
+
+    XCTAssertEqual(result.restoredProjectCount, 1)
+    XCTAssertEqual(provider.restoredProjects.map(\.title), ["Project"])
+    XCTAssertEqual(provider.restoredProjects.first?.tasks.first?.detail?.urlString, "https://example.com/task")
+    XCTAssertEqual(provider.restoredProjects.first?.tasks.first?.detail?.recurrenceRules.first?.frequencyRaw, 1)
+    XCTAssertEqual(snapshot.note.reminderListExternalIdentifier, "restored-list-1")
+    XCTAssertEqual(task.reminderExternalIdentifier, "restored-task-1")
+    XCTAssertNil(try archiveStore.load(forListIdentifier: "list-1"))
+  }
+
+  func testUnarchiveRollsBackRestoredReminderListWhenMarkdownWriteFails() async throws {
+    let vault = try makeTemporaryVault()
+    let rawNote = """
+    ---
+    tags:
+      - 프로젝트
+    reminder_list_external_id: list-1
+    아카이브: false
+    ---
+    - [ ] Task one
+      %% brain-unfog: {"reminder_external_id":"task-1"} %%
+    """
+    let noteURL = try writeProjectNote(vault: vault, fileName: "Project.md", body: rawNote)
+    let archiveStore = ObsidianReminderArchiveStore(vaultRootURL: vault)
+    try archiveStore.save(
+      archiveSnapshotWithDetails(archivedAt: fixedNow, recurrenceRuleRaw: "weekly|1|4"),
+      forListIdentifier: "list-1"
+    )
+    let store = ObsidianProjectMarkdownStore(vaultRootURL: vault)
+    let staleSnapshots = try await store.loadProjectNotesInScope()
+    try await Task.sleep(nanoseconds: 10_000_000)
+    try """
+    \(rawNote)
+    - [ ] Edited while restore was pending
+    """.write(to: noteURL, atomically: true, encoding: .utf8)
+    let provider = FakeObsidianReminderProjectProvider()
+
+    do {
+      _ = try await ObsidianReminderProvisioningSync.syncLoadedSnapshots(
+        snapshots: staleSnapshots,
+        store: store,
+        reminderProjectProvider: provider,
+        now: fixedNow
+      )
+      XCTFail("Expected stale write to fail")
+    } catch ObsidianProjectMarkdownStore.StoreError.staleExpectedBaseline {
+    } catch {
+      XCTFail("Unexpected error: \(error)")
+    }
+
+    XCTAssertEqual(provider.restoredProjects.count, 1)
+    XCTAssertEqual(provider.removedListIdentifiers, ["restored-list-1"])
+    XCTAssertNil(provider.lists["restored-list-1"])
+    XCTAssertFalse(provider.snapshots.values.contains { $0.calendarIdentifier == "restored-list-1" })
+    XCTAssertNotNil(try archiveStore.load(forListIdentifier: "list-1"))
+  }
+
   func testExistingTaskTitleCompletionDateTimeAndNotePushToReminderWithoutRecurrenceWrite() async throws {
     let vault = try makeTemporaryVault()
     let dataRoot = try makeTemporaryDirectory()
@@ -555,6 +751,132 @@ final class ObsidianReminderProvisioningSyncTests: XCTestCase {
       modifiedAt: modifiedAt
     )
   }
+
+  private func archiveSnapshotWithDetails(
+    archivedAt: Date,
+    recurrenceRuleRaw: String
+  ) -> ObsidianReminderArchiveSnapshot {
+    ObsidianReminderArchiveSnapshot(
+      archivedAt: archivedAt,
+      sourceVaultRelativePath: "raw/projects/Project.md",
+      listDetail: ReminderArchiveListDetailSnapshot(
+        identifier: "list-1",
+        externalIdentifier: "list-1",
+        title: "Project",
+        colorHex: "#ff0000",
+        calendarTypeRaw: 1,
+        sourceIdentifier: "source-1",
+        sourceTitle: "iCloud",
+        sourceTypeRaw: 2
+      ),
+      list: ReminderListImportSnapshot(
+        identifier: "list-1",
+        externalIdentifier: "list-1",
+        title: "Project",
+        colorHex: "#ff0000"
+      ),
+      items: [
+        ReminderItemImportSnapshot(
+          identifier: "task-1",
+          externalIdentifier: "task-1",
+          parentExternalIdentifier: nil,
+          sourceListIdentifier: "list-1",
+          sourceListTitle: "Project",
+          title: "Task one",
+          notes: "remote note",
+          attachmentCount: 0,
+          isCompleted: false,
+          completionDate: nil,
+          startDate: nil,
+          dueDate: makeDate(year: 2026, month: 4, day: 25, hour: 9),
+          scheduleHasExplicitTime: true,
+          scheduledDurationMinutes: nil,
+          priority: 0,
+          recurrenceRuleRaw: recurrenceRuleRaw,
+          isFlagged: false,
+          requiredWorkDays: 0,
+          createdAt: fixedRemoteDate,
+          modifiedAt: fixedRemoteDate
+        )
+      ],
+      taskDetails: [
+        detailedTaskSnapshot(recurrenceRuleRaw: recurrenceRuleRaw)
+      ]
+    )
+  }
+
+  private func detailedTaskSnapshot(
+    recurrenceRuleRaw: String
+  ) -> ReminderArchiveTaskDetailSnapshot {
+    let frequency = recurrenceRuleRaw.hasPrefix("weekly") ? 1 : 0
+    let interval = recurrenceRuleRaw.hasPrefix("daily|110") ? 110 : 1
+    return ReminderArchiveTaskDetailSnapshot(
+      identifier: "task-1",
+      externalIdentifier: "task-1",
+      calendarIdentifier: "list-1",
+      title: "Task one",
+      location: "Desk",
+      notes: "remote note",
+      urlString: "https://example.com/task",
+      creationDate: Date(timeIntervalSince1970: 900),
+      lastModifiedDate: fixedRemoteDate,
+      timeZoneIdentifier: "Asia/Seoul",
+      startDateComponents: ReminderArchiveDateComponentsSnapshot(
+        calendarIdentifier: "gregorian",
+        timeZoneIdentifier: "Asia/Seoul",
+        year: 2026,
+        month: 4,
+        day: 25,
+        hour: 8,
+        minute: 30
+      ),
+      dueDateComponents: ReminderArchiveDateComponentsSnapshot(
+        calendarIdentifier: "gregorian",
+        timeZoneIdentifier: "Asia/Seoul",
+        year: 2026,
+        month: 4,
+        day: 25,
+        hour: 9,
+        minute: 0
+      ),
+      isCompleted: false,
+      completionDate: nil,
+      priority: 5,
+      recurrenceRules: [
+        ReminderArchiveRecurrenceRuleSnapshot(
+          frequencyRaw: frequency,
+          interval: interval,
+          firstDayOfTheWeek: 0,
+          recurrenceEnd: nil,
+          daysOfTheWeek: frequency == 1
+            ? [ReminderArchiveRecurrenceDayOfWeekSnapshot(dayOfTheWeekRaw: 4, weekNumber: 0)]
+            : [],
+          daysOfTheMonth: [],
+          monthsOfTheYear: [],
+          weeksOfTheYear: [],
+          daysOfTheYear: [],
+          setPositions: []
+        )
+      ],
+      alarms: [
+        ReminderArchiveAlarmSnapshot(
+          relativeOffset: -900,
+          absoluteDate: nil,
+          structuredLocation: ReminderArchiveStructuredLocationSnapshot(
+            title: "Office",
+            latitude: 37.0,
+            longitude: 127.0,
+            radius: 100
+          ),
+          proximityRaw: 1,
+          typeRaw: 0,
+          emailAddress: nil,
+          soundName: "Ping",
+          urlString: nil
+        )
+      ]
+    )
+  }
 }
 
 @MainActor
@@ -569,6 +891,9 @@ private final class FakeObsidianReminderProjectProvider: ReminderProjectProvider
   var updatedNotes: [String: String] = [:]
   var updatedSchedules: [String: (date: Date?, hasExplicitTime: Bool)] = [:]
   var updatedRecurrences: [String: String?] = [:]
+  var removedListIdentifiers: [String] = []
+  var restoredProjects: [ReminderArchivedProjectSnapshot] = []
+  var archiveSnapshotOverride: ObsidianReminderArchiveSnapshot?
 
   var allTaskUpdateCalls: [String] {
     Array(updatedTitles.keys)
@@ -610,6 +935,14 @@ private final class FakeObsidianReminderProjectProvider: ReminderProjectProvider
         }
       )
     )
+  }
+
+  func fetchArchiveSnapshot(
+    forListIdentifier identifier: String,
+    archivedAt: Date,
+    sourceVaultRelativePath: String
+  ) async throws -> ObsidianReminderArchiveSnapshot? {
+    archiveSnapshotOverride
   }
 
   func createProjectList(title: String) throws -> ReminderProjectListSnapshot {
@@ -702,14 +1035,54 @@ private final class FakeObsidianReminderProjectProvider: ReminderProjectProvider
     return updateSnapshot(task, recurrenceRuleRaw: recurrenceRuleRaw)
   }
 
-  func removeProjectList(identifier: String) throws {}
+  func removeProjectList(identifier: String) throws {
+    removedListIdentifiers.append(identifier)
+    lists.removeValue(forKey: identifier)
+    snapshots = snapshots.filter { $0.value.calendarIdentifier != identifier }
+  }
   func setProjectTitle(identifier: String, title: String) throws -> ReminderProjectListSnapshot? { nil }
   func setProjectColor(identifier: String, colorHex: String?) throws -> ReminderProjectListSnapshot? { nil }
   func removeTaskReminder(for task: ReminderTaskReference) throws -> Bool { false }
   func setTaskPresentation(for task: ReminderTaskReference, priority: Int) throws -> ReminderTaskRemoteMetadata? { nil }
   func moveTaskReminder(for task: ReminderTaskReference, toProject identifier: String) throws -> ReminderTaskRemoteMetadata? { nil }
   func restoreArchivedProject(_ project: ReminderArchivedProjectSnapshot) throws -> ReminderProjectRestoreResult {
-    throw NSError(domain: "unused", code: 1)
+    restoredProjects.append(project)
+    let listID = "restored-list-\(restoredProjects.count)"
+    let list = ReminderProjectListSnapshot(
+      identifier: listID,
+      externalIdentifier: listID,
+      title: project.title,
+      colorHex: project.colorHex
+    )
+    lists[listID] = list
+    var taskMetadataByTaskID: [UUID: ReminderTaskRemoteMetadata] = [:]
+    for (index, task) in project.tasks.enumerated() {
+      let taskID = "restored-task-\(index + 1)"
+      snapshots[taskID] = ReminderTaskRemoteSnapshot(
+        identifier: taskID,
+        externalIdentifier: taskID,
+        calendarIdentifier: listID,
+        title: task.title,
+        noteText: task.reminderNoteText,
+        isCompleted: task.isCompleted,
+        completionDate: task.completionDate,
+        startDate: task.startDate,
+        dueDate: task.dueDate,
+        hasExplicitTime: task.hasExplicitTime,
+        priority: task.priority,
+        recurrenceRuleRaw: task.recurrenceRuleRaw,
+        modifiedAt: Date(timeIntervalSince1970: 4_000)
+      )
+      taskMetadataByTaskID[task.taskID] = ReminderTaskRemoteMetadata(
+        identifier: taskID,
+        externalIdentifier: taskID,
+        modifiedAt: Date(timeIntervalSince1970: 4_000)
+      )
+    }
+    return ReminderProjectRestoreResult(
+      list: list,
+      taskMetadataByTaskID: taskMetadataByTaskID
+    )
   }
   func removeArchivedProjectLists(_ projects: [ReminderProjectListReference]) -> ReminderProjectCleanupResult {
     ReminderProjectCleanupResult(removedCount: 0, failedProjectIDs: [])
