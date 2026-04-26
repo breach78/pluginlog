@@ -931,7 +931,8 @@ struct MainWorkspaceView: View {
         "\($0.nodeID.uuidString):\($0.title):\($0.breadcrumbText)"
       }
       .joined(separator: "|")
-    return "\(chromeState.debouncedWorkspaceSearchQuery)|\(sidebarSignature)"
+    let vaultSignature = appState.obsidianVaultRootURL?.path ?? ""
+    return "\(chromeState.debouncedWorkspaceSearchQuery)|\(appState.workspaceTreeRevision)|\(vaultSignature)|\(sidebarSignature)"
   }
 
   @MainActor
@@ -952,7 +953,24 @@ struct MainWorkspaceView: View {
       return
     }
 
-    let searchResults = WorkspaceSearchService.projectResults(from: workspaceItems, rawQuery: query)
+    let projectResults = WorkspaceSearchService.projectResults(from: workspaceItems, rawQuery: query)
+    let projectIDs = workspaceItems.compactMap(\.projectID)
+    let taskResults: [WorkspaceSearchResult]
+    if projectIDs.isEmpty {
+      taskResults = []
+    } else {
+      let retainedResult = await RetainedWorkspaceSurfaceProjectionBuilder.load(
+        obsidianVaultRootURL: appState.obsidianVaultRootURL,
+        projectIDs: projectIDs
+      )
+      let resolvedRead = RetainedWorkspaceSurfaceProjectionBuilder.resolveRetainedOnly(retainedResult)
+      taskResults = WorkspaceSearchService.taskResults(
+        projectSnapshots: resolvedRead.projectSnapshots,
+        scheduleEntriesByProjectID: resolvedRead.scheduleEntriesByProjectID,
+        rawQuery: query
+      )
+    }
+    let searchResults = projectResults + taskResults
     guard searchResults != workspaceOnlySearchResults else { return }
     workspaceOnlySearchResults = searchResults
   }

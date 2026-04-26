@@ -2,7 +2,7 @@ import Foundation
 import SwiftUI
 
 enum TimelineBoardReadPath {
-  static let visibleDayRange: ClosedRange<Int> = -4...28
+  static let visibleDayRange: ClosedRange<Int> = -4...61
 
   static func pinnedTopSignature(
     anchorDate: Date,

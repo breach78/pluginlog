@@ -170,11 +170,7 @@ enum WorkspaceSearchService {
     guard !token.isEmpty else { return [] }
     return items.compactMap { item in
       guard let projectID = item.projectID,
-        item.title.range(
-          of: token,
-          options: [.caseInsensitive, .diacriticInsensitive],
-          locale: .autoupdatingCurrent
-        ) != nil
+        matches(item.title, token: token)
       else {
         return nil
       }
@@ -194,6 +190,48 @@ enum WorkspaceSearchService {
         )
       )
     }
+  }
+
+  static func taskResults(
+    projectSnapshots: [UUID: WorkspaceProjectRuntimeRecord],
+    scheduleEntriesByProjectID: [UUID: [ScheduleSliceEntry]],
+    rawQuery: String
+  ) -> [WorkspaceSearchResult] {
+    let token = rawQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !token.isEmpty else { return [] }
+
+    return scheduleEntriesByProjectID.flatMap { element -> [WorkspaceSearchResult] in
+      let (projectID, entries) = element
+      guard let project = projectSnapshots[projectID], !project.isArchived else { return [] }
+
+      return entries.compactMap { entry in
+        guard !entry.isArchived, matches(entry.title, token: token) else { return nil }
+
+        return WorkspaceSearchResult(
+          id: "task-\(projectID.uuidString)-\(entry.taskID.uuidString)",
+          entityKind: .task,
+          matchKind: .taskTitle,
+          title: entry.title,
+          subtitle: project.title,
+          preview: entry.reminderNoteText,
+          navigationTarget: .taskRow(projectID: projectID, taskID: entry.taskID),
+          disposition: WorkspaceSearchDisposition(
+            sectionRank: entry.isCompleted ? 2 : 1,
+            sectionHeaderTitle: entry.isCompleted ? "Completed tasks" : "Tasks",
+            statusLabel: entry.isCompleted ? "완료" : nil,
+            isDimmed: entry.isCompleted
+          )
+        )
+      }
+    }
+  }
+
+  private static func matches(_ source: String, token: String) -> Bool {
+    source.range(
+      of: token,
+      options: [.caseInsensitive, .diacriticInsensitive],
+      locale: .autoupdatingCurrent
+    ) != nil
   }
 }
 

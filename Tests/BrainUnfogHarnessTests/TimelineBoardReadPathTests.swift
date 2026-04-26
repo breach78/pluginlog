@@ -2,9 +2,9 @@ import XCTest
 @testable import BrainUnfogHarness
 
 final class TimelineBoardReadPathTests: XCTestCase {
-  func testTimelineVisibleDayRangeIsFourDaysBeforeThroughFourWeeksAfterToday() {
-    XCTAssertEqual(TimelineBoardReadPath.visibleDayRange, -4...28)
-    XCTAssertEqual(Array(TimelineBoardReadPath.visibleDayRange).count, 33)
+  func testTimelineVisibleDayRangeIsFourDaysBeforeThroughTwoMonthsAfterToday() {
+    XCTAssertEqual(TimelineBoardReadPath.visibleDayRange, -4...61)
+    XCTAssertEqual(Array(TimelineBoardReadPath.visibleDayRange).count, 66)
   }
 
   func testLoadingStateStopsWhenRetainedReadIsBlocked() {
@@ -172,14 +172,14 @@ final class TimelineBoardReadPathTests: XCTestCase {
     XCTAssertNotEqual(
       TimelineBoardReadPath.pinnedTopSignature(
         anchorDate: anchorDate,
-        dayRange: -4...28,
+        dayRange: TimelineBoardReadPath.visibleDayRange,
         dayColumnWidth: 44,
         localeIdentifier: "ko_KR",
         isTimelineScrolling: true
       ),
       TimelineBoardReadPath.pinnedTopSignature(
         anchorDate: anchorDate,
-        dayRange: -4...28,
+        dayRange: TimelineBoardReadPath.visibleDayRange,
         dayColumnWidth: 44,
         localeIdentifier: "ko_KR",
         isTimelineScrolling: false
@@ -191,7 +191,7 @@ final class TimelineBoardReadPathTests: XCTestCase {
     XCTAssertEqual(
       TimelineBoardReadPath.dayHeaderHoverOffset(
         locationX: 0,
-        dayRange: -4...28,
+        dayRange: TimelineBoardReadPath.visibleDayRange,
         dayColumnWidth: 44
       ),
       -4
@@ -199,15 +199,15 @@ final class TimelineBoardReadPathTests: XCTestCase {
     XCTAssertEqual(
       TimelineBoardReadPath.dayHeaderHoverOffset(
         locationX: 44 * 4 + 1,
-        dayRange: -4...28,
+        dayRange: TimelineBoardReadPath.visibleDayRange,
         dayColumnWidth: 44
       ),
       0
     )
     XCTAssertNil(
       TimelineBoardReadPath.dayHeaderHoverOffset(
-        locationX: 44 * 33,
-        dayRange: -4...28,
+        locationX: 44 * 66,
+        dayRange: TimelineBoardReadPath.visibleDayRange,
         dayColumnWidth: 44
       )
     )
@@ -220,7 +220,7 @@ final class TimelineBoardReadPathTests: XCTestCase {
         visibleBoundsOrigin: CGPoint(x: 88, y: 120),
         titleColumnWidth: 320,
         headerHeight: 64,
-        dayRange: -4...28,
+        dayRange: TimelineBoardReadPath.visibleDayRange,
         dayColumnWidth: 44
       ),
       -2
@@ -231,7 +231,7 @@ final class TimelineBoardReadPathTests: XCTestCase {
         visibleBoundsOrigin: CGPoint(x: 88, y: 120),
         titleColumnWidth: 320,
         headerHeight: 64,
-        dayRange: -4...28,
+        dayRange: TimelineBoardReadPath.visibleDayRange,
         dayColumnWidth: 44
       )
     )
@@ -241,7 +241,7 @@ final class TimelineBoardReadPathTests: XCTestCase {
         visibleBoundsOrigin: CGPoint(x: 88, y: 120),
         titleColumnWidth: 320,
         headerHeight: 64,
-        dayRange: -4...28,
+        dayRange: TimelineBoardReadPath.visibleDayRange,
         dayColumnWidth: 44
       )
     )

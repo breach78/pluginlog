@@ -91,6 +91,10 @@ extension MainWorkspaceView {
         )
       }
     }
+    .contentShape(Rectangle())
+    .onTapGesture {
+      focusWorkspaceSearch()
+    }
   }
 
   func workspaceSearchResultsPanel(results: [WorkspaceSearchResult]) -> some View {
@@ -201,6 +205,11 @@ extension MainWorkspaceView {
 
     if result.entityKind == .project {
       openProjectPage(for: result.navigationTarget.projectID, fallbackTitle: result.title)
+      return
+    }
+
+    if let taskID = result.navigationTarget.taskID {
+      openProjectTaskInSource(projectID: result.navigationTarget.projectID, taskID: taskID)
       return
     }
 
