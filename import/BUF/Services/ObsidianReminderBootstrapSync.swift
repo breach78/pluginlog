@@ -13,6 +13,9 @@ enum ObsidianReminderBootstrapSync {
     case duplicateReminderExternalIdentifier(String)
     case missingReminderListExternalIdentifier(String)
     case missingReminderExternalIdentifier(String)
+    case duplicateReminderNoteTaskMarker(String)
+    case unresolvedReminderNoteTaskMarker(String)
+    case cyclicReminderNoteTaskMarker(String)
     case repairNeeded(ObsidianProjectNoteValidationIssue)
     case unsafeExistingNoteContent(String)
 
@@ -26,6 +29,12 @@ enum ObsidianReminderBootstrapSync {
         "Reminder list is missing a stable identity: \(title)"
       case .missingReminderExternalIdentifier(let title):
         "Reminder task is missing a stable identity: \(title)"
+      case .duplicateReminderNoteTaskMarker(let identifier):
+        "Reminder note references task more than once: \(identifier)"
+      case .unresolvedReminderNoteTaskMarker(let identifier):
+        "Reminder note references an unknown task marker: \(identifier)"
+      case .cyclicReminderNoteTaskMarker(let identifier):
+        "Reminder note task marker cycle detected at: \(identifier)"
       case .repairNeeded(let issue):
         "Existing Obsidian project note needs repair before bootstrap can write: \(issue)"
       case .unsafeExistingNoteContent(let path):
@@ -46,6 +55,7 @@ enum ObsidianReminderBootstrapSync {
     let normalizedLists = try normalizedReminderLists(from: batch.lists)
     let duplicateTitleCounts = duplicateTitleCounts(in: normalizedLists)
     try validateReminderTaskIdentities(in: batch)
+    let outlineStore = ObsidianReminderOutlineStateStore(vaultRootURL: await store.vaultRoot())
 
     var importedProjectCount = 0
     var importedTaskCount = 0
@@ -54,7 +64,11 @@ enum ObsidianReminderBootstrapSync {
 
     for list in normalizedLists {
       let items = batch.itemsByListIdentifier[list.list.identifier] ?? []
-      let note = try makeNote(for: list, items: items)
+      let note = try makeNote(
+        for: list,
+        items: items,
+        outline: try outlineStore.loadListOutline(for: list.externalIdentifier)
+      )
       let projectID = RetainedProjectionBuilder.derivedProjectID(for: list.externalIdentifier)
       if let existingSnapshot = snapshotsByListID[list.externalIdentifier] {
         try validateExistingNoteIsSafeForBootstrapOverwrite(
@@ -149,6 +163,14 @@ enum ObsidianReminderBootstrapSync {
   }
 
   private static func validateExistingNotes(_ notes: [ObsidianProjectNote]) throws {
+    for note in notes {
+      if let marker = ObsidianReminderImportFormatting
+        .unresolvedReminderNoteTaskMarkers(in: note)
+        .first
+      {
+        throw BootstrapError.unresolvedReminderNoteTaskMarker(marker)
+      }
+    }
     for issue in ObsidianProjectNoteValidation.issues(in: notes) {
       throw BootstrapError.repairNeeded(issue)
     }
@@ -170,9 +192,10 @@ enum ObsidianReminderBootstrapSync {
 
   private static func makeNote(
     for list: NormalizedList,
-    items: [ReminderItemImportSnapshot]
+    items: [ReminderItemImportSnapshot],
+    outline: ObsidianReminderOutlineState?
   ) throws -> ObsidianProjectNote {
-    let bodyLines = try makeBodyLines(items: items)
+    let bodyLines = try makeBodyLines(items: items, outline: outline)
     return ObsidianProjectNoteParser.parse(
       ObsidianProjectNoteRenderer.render(
         ObsidianProjectNote(
@@ -191,53 +214,62 @@ enum ObsidianReminderBootstrapSync {
     )
   }
 
-  private static func makeBodyLines(items: [ReminderItemImportSnapshot]) throws -> [String] {
-    try items.map { item -> [String] in
+  private static func makeBodyLines(
+    items: [ReminderItemImportSnapshot],
+    outline: ObsidianReminderOutlineState? = nil
+  ) throws -> [String] {
+    let inputs = try items.compactMap { item -> ObsidianReminderImportFormatting.FlatReminderTaskBlockInput? in
       guard let title = normalized(item.title) else {
-        return []
+        return nil
       }
       guard let taskID = normalized(item.externalIdentifier) ?? normalized(item.identifier) else {
         throw BootstrapError.missingReminderExternalIdentifier(title)
       }
-
-      let checkbox = item.isCompleted ? "x" : " "
-      var lines = ["- [\(checkbox)] \(title)"]
-      lines.append("  \(metadataLine(for: item, taskID: taskID))")
-      lines.append(contentsOf: subtreeLines(fromReminderNote: item.notes))
-      return lines
+      return ObsidianReminderImportFormatting.FlatReminderTaskBlockInput(
+        externalIdentifier: taskID,
+        title: title,
+        isCompleted: item.isCompleted,
+        metadata: metadata(for: item, taskID: taskID),
+        noteText: item.notes
+      )
     }
-    .flatMap { $0 }
+
+    do {
+      return try ObsidianReminderImportFormatting.flatReminderTaskBodyLines(
+        inputs,
+        outline: outline
+      )
+    } catch let error as ObsidianReminderImportFormatting.TaskMarkerResolutionError {
+      throw bootstrapError(from: error)
+    } catch {
+      throw error
+    }
   }
 
-  private static func metadataLine(
+  private static func metadata(
     for item: ReminderItemImportSnapshot,
     taskID: String
-  ) -> String {
+  ) -> ObsidianTaskMetadata {
     let schedule = scheduleFields(from: item)
-    var fields = [#""reminder_external_id":"\#(jsonEscaped(taskID))""#]
-    if let date = schedule.date {
-      fields.append(#""date":"\#(jsonEscaped(date))""#)
-    }
-    if let time = schedule.time {
-      fields.append(#""time":"\#(jsonEscaped(time))""#)
-    }
-    if let repeatRule = encodeRepeat(item.recurrenceRuleRaw) {
-      fields.append(#""repeat":"\#(jsonEscaped(repeatRule))""#)
-    }
-    return "%% brain-unfog: {\(fields.joined(separator: ","))} %%"
+    return ObsidianTaskMetadata(
+      reminderExternalIdentifier: taskID,
+      date: schedule.date,
+      time: schedule.time,
+      durationMinutes: nil,
+      repeatRule: encodeRepeat(item.recurrenceRuleRaw)
+    )
   }
 
-  private static func subtreeLines(fromReminderNote noteText: String) -> [String] {
-    let normalizedNote = ReminderNoteSourceCodec.normalizeReminderRawNote(noteText)
-    guard !normalizedNote.isEmpty else { return [] }
-
-    return normalizedNote.components(separatedBy: "\n").compactMap { rawLine in
-      let leadingSpaces = rawLine.prefix { $0 == " " }.count
-      let content = String(rawLine.dropFirst(leadingSpaces))
-        .trimmingCharacters(in: .whitespaces)
-      guard !content.isEmpty else { return nil }
-      let indentation = "  " + String(repeating: "  ", count: leadingSpaces)
-      return "\(indentation)- \(content)"
+  private static func bootstrapError(
+    from error: ObsidianReminderImportFormatting.TaskMarkerResolutionError
+  ) -> BootstrapError {
+    switch error {
+    case .duplicateTaskMarker(let identifier):
+      return .duplicateReminderNoteTaskMarker(identifier)
+    case .unresolvedTaskMarker(let identifier):
+      return .unresolvedReminderNoteTaskMarker(identifier)
+    case .cyclicTaskMarker(let identifier):
+      return .cyclicReminderNoteTaskMarker(identifier)
     }
   }
 
@@ -371,24 +403,4 @@ enum ObsidianReminderBootstrapSync {
     return formatter
   }()
 
-  private static func jsonEscaped(_ value: String) -> String {
-    var result = ""
-    for character in value {
-      switch character {
-      case "\\":
-        result.append(#"\\"#)
-      case "\"":
-        result.append(#"\""#)
-      case "\n":
-        result.append(#"\n"#)
-      case "\r":
-        result.append(#"\r"#)
-      case "\t":
-        result.append(#"\t"#)
-      default:
-        result.append(character)
-      }
-    }
-    return result
-  }
 }

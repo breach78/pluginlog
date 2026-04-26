@@ -80,6 +80,50 @@ final class ObsidianReminderBootstrapSyncTests: XCTestCase {
     XCTAssertNil(task.metadata?.time)
   }
 
+  func testBootstrapExpandsReminderNoteTaskMarkersIntoNestedTaskBlocks() async throws {
+    let store = ObsidianProjectMarkdownStore(vaultRootURL: try makeTemporaryDirectory())
+    let batch = ReminderImportSnapshotBatch(
+      lists: [makeList(identifier: "list-1", title: "Nested")],
+      itemsByListIdentifier: [
+        "list-1": [
+          makeItem(
+            identifier: "parent",
+            listIdentifier: "list-1",
+            title: "Parent",
+            notes: "before\nt:child\nafter"
+          ),
+          makeItem(
+            identifier: "child",
+            listIdentifier: "list-1",
+            title: "Child",
+            notes: "child detail"
+          ),
+        ],
+      ]
+    )
+
+    let result = try await ObsidianReminderBootstrapSync.sync(batch: batch, store: store)
+    let snapshots = try await store.loadProjectNotesInScope()
+    let raw = try XCTUnwrap(snapshots.first?.rawMarkdown)
+
+    XCTAssertEqual(result.importedTaskCount, 2)
+    XCTAssertTrue(raw.contains("  - before"))
+    XCTAssertTrue(raw.contains("  - [ ] Child"))
+    XCTAssertTrue(raw.contains(#""reminder_external_id":"child""#))
+    XCTAssertTrue(raw.contains("    - child detail"))
+    XCTAssertTrue(raw.contains("  - after"))
+    XCTAssertFalse(raw.contains("t:child"))
+    XCTAssertLessThan(
+      try XCTUnwrap(raw.range(of: "  - before")?.lowerBound),
+      try XCTUnwrap(raw.range(of: "  - [ ] Child")?.lowerBound)
+    )
+    XCTAssertLessThan(
+      try XCTUnwrap(raw.range(of: "  - [ ] Child")?.lowerBound),
+      try XCTUnwrap(raw.range(of: "  - after")?.lowerBound)
+    )
+    XCTAssertEqual(raw.components(separatedBy: "- [ ] Child").count - 1, 1)
+  }
+
   func testRerunIsIdempotentAndDoesNotDuplicateNotesOrTasks() async throws {
     let store = ObsidianProjectMarkdownStore(vaultRootURL: try makeTemporaryDirectory())
     let batch = ReminderImportSnapshotBatch(

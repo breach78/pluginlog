@@ -66,6 +66,148 @@ final class ObsidianReminderImportSyncTests: XCTestCase {
     XCTAssertEqual(ReminderSyncBaselineStore.baseline(for: "task-1")?.state.title, "Remote task")
   }
 
+  func testNewReminderListExpandsReminderNoteTaskMarkersIntoNestedTaskBlocks() async throws {
+    let dataRoot = try makeTemporaryDirectory(prefix: "ObsidianImportData")
+    ReminderSyncBaselineStore.install(dataDirectory: dataRoot)
+    let store = ObsidianProjectMarkdownStore(vaultRootURL: try makeTemporaryVault())
+    let list = makeList(identifier: "list-1", title: "Nested")
+
+    let result = try await ObsidianReminderImportSync.sync(
+      batch: ReminderImportSnapshotBatch(
+        lists: [list],
+        itemsByListIdentifier: [
+          list.identifier: [
+            makeItem(
+              identifier: "parent",
+              listIdentifier: list.identifier,
+              title: "Parent",
+              notes: "before\nt:child\nafter"
+            ),
+            makeItem(
+              identifier: "child",
+              listIdentifier: list.identifier,
+              title: "Child",
+              notes: "child detail"
+            ),
+          ],
+        ]
+      ),
+      store: store,
+      now: fixedNow
+    )
+
+    let snapshots = try await store.loadProjectNotesInScope()
+    let raw = try XCTUnwrap(snapshots.first?.rawMarkdown)
+
+    XCTAssertEqual(result.importedTaskCount, 2)
+    XCTAssertTrue(raw.contains("  - before"))
+    XCTAssertTrue(raw.contains("  - [ ] Child"))
+    XCTAssertTrue(raw.contains(#""reminder_external_id":"child""#))
+    XCTAssertTrue(raw.contains("    - child detail"))
+    XCTAssertTrue(raw.contains("  - after"))
+    XCTAssertFalse(raw.contains("t:child"))
+    XCTAssertEqual(raw.components(separatedBy: "- [ ] Child").count - 1, 1)
+  }
+
+  func testNewReminderListRestoresNestedTasksFromOutlineStateWithoutReminderNoteMarkers() async throws {
+    let dataRoot = try makeTemporaryDirectory(prefix: "ObsidianImportData")
+    ReminderSyncBaselineStore.install(dataDirectory: dataRoot)
+    let vault = try makeTemporaryVault()
+    try ObsidianReminderOutlineStateStore(vaultRootURL: vault).upsertListOutline(
+      ObsidianReminderOutlineState(
+        roots: [.task("parent")],
+        taskChildrenByReminderID: [
+          "parent": [
+            .bullet(text: "before", children: []),
+            .task("child"),
+            .bullet(text: "after", children: []),
+          ],
+          "child": [
+            .bullet(text: "child detail", children: []),
+          ],
+        ]
+      ),
+      forListID: "list-1"
+    )
+    let store = ObsidianProjectMarkdownStore(vaultRootURL: vault)
+    let list = makeList(identifier: "list-1", title: "Nested")
+
+    let result = try await ObsidianReminderImportSync.sync(
+      batch: ReminderImportSnapshotBatch(
+        lists: [list],
+        itemsByListIdentifier: [
+          list.identifier: [
+            makeItem(
+              identifier: "parent",
+              listIdentifier: list.identifier,
+              title: "Parent",
+              notes: "before\nafter"
+            ),
+            makeItem(
+              identifier: "child",
+              listIdentifier: list.identifier,
+              title: "Child",
+              notes: "child detail"
+            ),
+          ],
+        ]
+      ),
+      store: store,
+      now: fixedNow
+    )
+
+    let snapshots = try await store.loadProjectNotesInScope()
+    let raw = try XCTUnwrap(snapshots.first?.rawMarkdown)
+
+    XCTAssertEqual(result.importedTaskCount, 2)
+    XCTAssertLessThan(
+      try XCTUnwrap(raw.range(of: "  - before")?.lowerBound),
+      try XCTUnwrap(raw.range(of: "  - [ ] Child")?.lowerBound)
+    )
+    XCTAssertLessThan(
+      try XCTUnwrap(raw.range(of: "  - [ ] Child")?.lowerBound),
+      try XCTUnwrap(raw.range(of: "  - after")?.lowerBound)
+    )
+    XCTAssertFalse(raw.contains("t:child"))
+    XCTAssertEqual(raw.components(separatedBy: "- [ ] Child").count - 1, 1)
+  }
+
+  func testNewReminderListFailsClosedForUnknownReminderNoteTaskMarker() async throws {
+    let dataRoot = try makeTemporaryDirectory(prefix: "ObsidianImportData")
+    ReminderSyncBaselineStore.install(dataDirectory: dataRoot)
+    let vault = try makeTemporaryVault()
+    let store = ObsidianProjectMarkdownStore(vaultRootURL: vault)
+    let list = makeList(identifier: "list-1", title: "Nested")
+
+    do {
+      _ = try await ObsidianReminderImportSync.sync(
+        batch: ReminderImportSnapshotBatch(
+          lists: [list],
+          itemsByListIdentifier: [
+            list.identifier: [
+              makeItem(
+                identifier: "parent",
+                listIdentifier: list.identifier,
+                title: "Parent",
+                notes: "before\nt:missing-child\nafter"
+              ),
+            ],
+          ]
+        ),
+        store: store,
+        now: fixedNow
+      )
+      XCTFail("Expected unresolved task marker to fail closed")
+    } catch ObsidianReminderImportSync.SyncError.unresolvedReminderNoteTaskMarker(
+      "missing-child"
+    ) {
+    } catch {
+      XCTFail("Unexpected error: \(error)")
+    }
+
+    XCTAssertTrue(try projectMarkdownFiles(in: vault).isEmpty)
+  }
+
   func testExistingReminderListColorUpdatesHiddenObsidianPropertyWithoutTaskChanges() async throws {
     let dataRoot = try makeTemporaryDirectory(prefix: "ObsidianImportData")
     ReminderSyncBaselineStore.install(dataDirectory: dataRoot)
@@ -189,7 +331,7 @@ final class ObsidianReminderImportSyncTests: XCTestCase {
     XCTAssertFalse(raw.contains("old note"))
   }
 
-  func testReminderNoteTaskMarkersReorderPreservedChildTaskBlocks() async throws {
+  func testRemoteCleanNoteTextPreservesExistingChildTaskBlocks() async throws {
     let dataRoot = try makeTemporaryDirectory(prefix: "ObsidianImportData")
     ReminderSyncBaselineStore.install(dataDirectory: dataRoot)
     let vault = try makeTemporaryVault()
@@ -218,7 +360,7 @@ final class ObsidianReminderImportSyncTests: XCTestCase {
         isCompleted: false,
         date: nil,
         repeatRule: nil,
-        noteText: "stale note\nt:child-one\nt:child-two"
+        noteText: "stale note"
       ),
       remoteModifiedAt: fixedRemoteDate,
       now: fixedNow
@@ -246,7 +388,7 @@ final class ObsidianReminderImportSyncTests: XCTestCase {
               identifier: "parent",
               listIdentifier: list.identifier,
               title: "Parent",
-              notes: "remote note\nt:child-two\nt:child-one\nremote trailing",
+              notes: "remote note\nremote trailing",
               modifiedAt: fixedRemoteDate.addingTimeInterval(10)
             ),
             makeItem(identifier: "child-one", listIdentifier: list.identifier, title: "Child one"),
@@ -268,9 +410,10 @@ final class ObsidianReminderImportSyncTests: XCTestCase {
     XCTAssertTrue(raw.contains("  - remote note"))
     XCTAssertTrue(raw.contains("  - remote trailing"))
     XCTAssertFalse(raw.contains("stale note"))
+    XCTAssertFalse(raw.contains("t:child"))
     XCTAssertLessThan(
-      try XCTUnwrap(raw.range(of: "  - [ ] Child two")?.lowerBound),
-      try XCTUnwrap(raw.range(of: "  - [ ] Child one")?.lowerBound)
+      try XCTUnwrap(raw.range(of: "  - [ ] Child one")?.lowerBound),
+      try XCTUnwrap(raw.range(of: "  - [ ] Child two")?.lowerBound)
     )
   }
 
@@ -385,6 +528,63 @@ final class ObsidianReminderImportSyncTests: XCTestCase {
       ReminderSyncBaselineStore.baseline(for: "parent")?.conflictedFields.contains(.noteText)
         ?? false
     )
+  }
+
+  func testExistingLegacyTaskMarkerForKnownTaskDoesNotFailValidation() async throws {
+    let dataRoot = try makeTemporaryDirectory(prefix: "ObsidianImportData")
+    ReminderSyncBaselineStore.install(dataDirectory: dataRoot)
+    let vault = try makeTemporaryVault()
+    _ = try writeProjectNote(
+      vault: vault,
+      fileName: "Project.md",
+      body: """
+      ---
+      tags:
+        - 프로젝트
+      reminder_list_external_id: list-1
+      ---
+      - [ ] Parent
+        %% brain-unfog: {"reminder_external_id":"parent"} %%
+        - t:child
+      - [ ] Child
+        %% brain-unfog: {"reminder_external_id":"child"} %%
+      """
+    )
+    ReminderSyncBaselineStore.upsert(
+      reminderExternalIdentifier: "parent",
+      state: ReminderSyncTaskState(
+        title: "Parent",
+        isCompleted: false,
+        date: nil,
+        repeatRule: nil,
+        noteText: nil
+      ),
+      remoteModifiedAt: fixedRemoteDate,
+      now: fixedNow
+    )
+    ReminderSyncBaselineStore.upsert(
+      reminderExternalIdentifier: "child",
+      state: matchingChildState("Child"),
+      remoteModifiedAt: fixedRemoteDate,
+      now: fixedNow
+    )
+    let list = makeList(identifier: "list-1", title: "Project")
+
+    let result = try await ObsidianReminderImportSync.sync(
+      batch: ReminderImportSnapshotBatch(
+        lists: [list],
+        itemsByListIdentifier: [
+          list.identifier: [
+            makeItem(identifier: "parent", listIdentifier: list.identifier, title: "Parent"),
+            makeItem(identifier: "child", listIdentifier: list.identifier, title: "Child"),
+          ],
+        ]
+      ),
+      store: ObsidianProjectMarkdownStore(vaultRootURL: vault),
+      now: fixedNow
+    )
+
+    XCTAssertEqual(result.updatedTaskCount, 0)
   }
 
   func testDuplicateAndDamagedMetadataFailClosedWithoutWrites() async throws {
@@ -532,6 +732,18 @@ final class ObsidianReminderImportSyncTests: XCTestCase {
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
     temporaryRoots.append(root)
     return root
+  }
+
+  private func projectMarkdownFiles(in vaultURL: URL) throws -> [URL] {
+    let projects = vaultURL
+      .appendingPathComponent("raw", isDirectory: true)
+      .appendingPathComponent("projects", isDirectory: true)
+    guard FileManager.default.fileExists(atPath: projects.path) else { return [] }
+    return try FileManager.default.contentsOfDirectory(
+      at: projects,
+      includingPropertiesForKeys: nil
+    )
+    .filter { $0.pathExtension == "md" }
   }
 
   @discardableResult

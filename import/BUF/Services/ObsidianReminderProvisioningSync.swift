@@ -84,7 +84,9 @@ enum ObsidianReminderProvisioningSync {
     var archivedProjectFileURLs: [URL] = []
     var projectRecords: [ProjectIdentityBridgeRecord] = []
     var taskRecords: [TaskIdentityBridgeRecord] = []
-    let archiveStore = ObsidianReminderArchiveStore(vaultRootURL: await store.vaultRoot())
+    let vaultRootURL = await store.vaultRoot()
+    let archiveStore = ObsidianReminderArchiveStore(vaultRootURL: vaultRootURL)
+    let outlineStore = ObsidianReminderOutlineStateStore(vaultRootURL: vaultRootURL)
 
     for snapshot in snapshots {
       var note = snapshot.note
@@ -224,6 +226,7 @@ enum ObsidianReminderProvisioningSync {
           )
         }
       }
+      try outlineStore.upsertListOutline(from: noteWithTaskIDs, forListID: listIdentifier)
 
       for task in note.tasks {
         guard let reminderExternalIdentifier = normalized(task.reminderExternalIdentifier) else {

@@ -15,6 +15,9 @@ enum ObsidianReminderImportSync {
     case duplicateReminderExternalIdentifier(String)
     case missingReminderListExternalIdentifier(String)
     case missingReminderExternalIdentifier(String)
+    case duplicateReminderNoteTaskMarker(String)
+    case unresolvedReminderNoteTaskMarker(String)
+    case cyclicReminderNoteTaskMarker(String)
     case damagedTaskMetadata(line: Int, rawLine: String)
 
     var errorDescription: String? {
@@ -27,6 +30,12 @@ enum ObsidianReminderImportSync {
         "Reminder list is missing a stable identity: \(title)"
       case .missingReminderExternalIdentifier(let title):
         "Reminder task is missing a stable identity: \(title)"
+      case .duplicateReminderNoteTaskMarker(let identifier):
+        "Reminder note references task more than once: \(identifier)"
+      case .unresolvedReminderNoteTaskMarker(let identifier):
+        "Reminder note references an unknown task marker: \(identifier)"
+      case .cyclicReminderNoteTaskMarker(let identifier):
+        "Reminder note task marker cycle detected at: \(identifier)"
       case .damagedTaskMetadata(let line, let rawLine):
         "Damaged Obsidian task metadata at line \(line): \(rawLine)"
       }
@@ -65,6 +74,7 @@ enum ObsidianReminderImportSync {
     let lists = try normalizedReminderLists(from: batch.lists)
     let duplicateTitleCounts = duplicateTitleCounts(in: lists)
     try validateReminderTaskIdentities(in: batch)
+    let outlineStore = ObsidianReminderOutlineStateStore(vaultRootURL: await store.vaultRoot())
 
     var importedProjectCount = 0
     var importedTaskCount = 0
@@ -80,7 +90,7 @@ enum ObsidianReminderImportSync {
       let projectID = RetainedProjectionBuilder.derivedProjectID(for: list.externalIdentifier)
 
       if let snapshot = snapshotsByListID[list.externalIdentifier] {
-        let merge = mergeExistingNote(
+        let merge = try mergeExistingNote(
           snapshot: snapshot,
           list: list,
           items: items,
@@ -110,7 +120,12 @@ enum ObsidianReminderImportSync {
         )
         taskRecords.append(contentsOf: taskRecordsForItems(items, projectID: projectID, now: now))
       } else {
-        let note = makeNote(for: list, items: items)
+        let note = try makeNote(
+          for: list,
+          items: items,
+          outline: try outlineStore.loadListOutline(for: list.externalIdentifier),
+          calendar: calendar
+        )
         _ = try await store.writeProjectNote(
           note,
           preferredFileName: preferredFileName(
@@ -168,7 +183,7 @@ enum ObsidianReminderImportSync {
     items: [NormalizedItem],
     now: Date,
     calendar: Calendar
-  ) -> ExistingMergeResult {
+  ) throws -> ExistingMergeResult {
     var bodyLines = snapshot.note.bodyMarkdown.components(separatedBy: "\n")
     let tasksByID = Dictionary(
       uniqueKeysWithValues: snapshot.note.tasks.compactMap { task -> (String, ObsidianProjectTask)? in
@@ -226,8 +241,13 @@ enum ObsidianReminderImportSync {
       from: snapshot.note,
       bodyLines: bodyLines
     )
-    for item in items where tasksByID[item.externalIdentifier] == nil {
-      appendTask(item, to: &bodyLines, calendar: calendar)
+    let newItems = items.filter { tasksByID[$0.externalIdentifier] == nil }
+    if !newItems.isEmpty {
+      bodyLines.append(
+        contentsOf: try flatTaskBodyLines(for: newItems, calendar: calendar)
+      )
+    }
+    for item in newItems {
       baselineUpdates.append(
         ReminderSyncTaskBaselineUpdate(
           reminderExternalIdentifier: item.externalIdentifier,
@@ -263,6 +283,7 @@ enum ObsidianReminderImportSync {
     )
 
     let nextNote = deletion.note.updatingFrontmatterColor(list.list.colorHex)
+    try validateNoUnresolvedReminderNoteTaskMarkers(in: nextNote)
     let rendered = ObsidianProjectNoteRenderer.render(nextNote)
     let noteChanged = ObsidianReminderImportFormatting.normalizeForComparison(rendered)
       != ObsidianReminderImportFormatting.normalizeForComparison(snapshot.rawMarkdown)
@@ -555,39 +576,70 @@ enum ObsidianReminderImportSync {
     }
   }
 
-  private static func appendTask(
-    _ item: NormalizedItem,
-    to bodyLines: inout [String],
+  private static func flatTaskBodyLines(
+    for items: [NormalizedItem],
+    outline: ObsidianReminderOutlineState? = nil,
     calendar: Calendar
-  ) {
-    if bodyLines.count == 1, bodyLines[0].isEmpty {
-      bodyLines.removeAll()
-    }
-    let metadata = ObsidianReminderImportFormatting.metadata(
-      existing: nil,
-      reminderExternalIdentifier: item.externalIdentifier,
-      state: item.state,
-      calendar: calendar
-    )
-    bodyLines.append("- [\(item.item.isCompleted ? "x" : " ")] \(item.title)")
-    bodyLines.append(ObsidianReminderImportFormatting.renderMetadataLine(metadata, indentation: "  "))
-    bodyLines.append(
-      contentsOf: ObsidianReminderImportFormatting.subtreeLines(
-        fromReminderNote: item.item.notes,
-        parentIndentation: ""
+  ) throws -> [String] {
+    let inputs = items.map { item in
+      ObsidianReminderImportFormatting.FlatReminderTaskBlockInput(
+        externalIdentifier: item.externalIdentifier,
+        title: item.title,
+        isCompleted: item.item.isCompleted,
+        metadata: ObsidianReminderImportFormatting.metadata(
+          existing: nil,
+          reminderExternalIdentifier: item.externalIdentifier,
+          state: item.state,
+          calendar: calendar
+        ),
+        noteText: item.item.notes
       )
-    )
+    }
+
+    do {
+      return try ObsidianReminderImportFormatting.flatReminderTaskBodyLines(
+        inputs,
+        outline: outline
+      )
+    } catch let error as ObsidianReminderImportFormatting.TaskMarkerResolutionError {
+      throw syncError(from: error)
+    } catch {
+      throw error
+    }
+  }
+
+  private static func syncError(
+    from error: ObsidianReminderImportFormatting.TaskMarkerResolutionError
+  ) -> SyncError {
+    switch error {
+    case .duplicateTaskMarker(let identifier):
+      return .duplicateReminderNoteTaskMarker(identifier)
+    case .unresolvedTaskMarker(let identifier):
+      return .unresolvedReminderNoteTaskMarker(identifier)
+    case .cyclicTaskMarker(let identifier):
+      return .cyclicReminderNoteTaskMarker(identifier)
+    }
+  }
+
+  private static func validateNoUnresolvedReminderNoteTaskMarkers(
+    in note: ObsidianProjectNote
+  ) throws {
+    if let marker = ObsidianReminderImportFormatting
+      .unresolvedReminderNoteTaskMarkers(in: note)
+      .first
+    {
+      throw SyncError.unresolvedReminderNoteTaskMarker(marker)
+    }
   }
 
   private static func makeNote(
     for list: NormalizedList,
-    items: [NormalizedItem]
-  ) -> ObsidianProjectNote {
-    var bodyLines: [String] = []
-    for item in items {
-      appendTask(item, to: &bodyLines, calendar: .autoupdatingCurrent)
-    }
-    return ObsidianProjectNoteParser.parse(
+    items: [NormalizedItem],
+    outline: ObsidianReminderOutlineState?,
+    calendar: Calendar
+  ) throws -> ObsidianProjectNote {
+    let bodyLines = try flatTaskBodyLines(for: items, outline: outline, calendar: calendar)
+    let note = ObsidianProjectNoteParser.parse(
       ObsidianProjectNoteRenderer.render(
         ObsidianProjectNote(
           frontmatter: ObsidianProjectFrontmatter(
@@ -603,9 +655,14 @@ enum ObsidianReminderImportSync {
         )
       )
     )
+    try validateNoUnresolvedReminderNoteTaskMarkers(in: note)
+    return note
   }
 
   private static func validateExistingNotes(_ notes: [ObsidianProjectNote]) throws {
+    for note in notes {
+      try validateNoUnresolvedReminderNoteTaskMarkers(in: note)
+    }
     for issue in ObsidianProjectNoteValidation.issues(in: notes) {
       switch issue {
       case .duplicateReminderListExternalIdentifier(let identifier):

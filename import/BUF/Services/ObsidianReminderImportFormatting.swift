@@ -6,6 +6,20 @@ enum ObsidianReminderImportFormatting {
     var blocksByIdentifier: [String: [String]]
   }
 
+  struct FlatReminderTaskBlockInput {
+    var externalIdentifier: String
+    var title: String
+    var isCompleted: Bool
+    var metadata: ObsidianTaskMetadata
+    var noteText: String?
+  }
+
+  enum TaskMarkerResolutionError: Error, Equatable {
+    case duplicateTaskMarker(String)
+    case unresolvedTaskMarker(String)
+    case cyclicTaskMarker(String)
+  }
+
   static func taskState(
     _ task: ObsidianProjectTask,
     calendar: Calendar
@@ -89,6 +103,62 @@ enum ObsidianReminderImportFormatting {
         blocksByIdentifier: [:]
       )
     )
+  }
+
+  static func flatReminderTaskBodyLines(
+    _ inputs: [FlatReminderTaskBlockInput],
+    outline: ObsidianReminderOutlineState? = nil
+  ) throws -> [String] {
+    let tasksByID = try flatTasksByIdentifier(inputs)
+    if let outline {
+      return try flatReminderTaskBodyLines(inputs, tasksByID: tasksByID, outline: outline)
+    }
+    let referencedIDs = try referencedTaskIdentifiers(in: inputs, tasksByID: tasksByID)
+    var consumedIDs = Set<String>()
+    var bodyLines: [String] = []
+
+    for input in inputs where !referencedIDs.contains(input.externalIdentifier) {
+      bodyLines.append(
+        contentsOf: try renderFlatReminderTaskBlock(
+          input.externalIdentifier,
+          parentIndentation: "",
+          tasksByID: tasksByID,
+          consumedIDs: &consumedIDs,
+          stack: []
+        )
+      )
+    }
+
+    for input in inputs where !consumedIDs.contains(input.externalIdentifier) {
+      bodyLines.append(
+        contentsOf: try renderFlatReminderTaskBlock(
+          input.externalIdentifier,
+          parentIndentation: "",
+          tasksByID: tasksByID,
+          consumedIDs: &consumedIDs,
+          stack: []
+        )
+      )
+    }
+
+    return bodyLines
+  }
+
+  static func unresolvedReminderNoteTaskMarkers(in bodyMarkdown: String) -> [String] {
+    bodyMarkdown.components(separatedBy: "\n").compactMap { line in
+      let trimmed = line.trimmingCharacters(in: .whitespaces)
+      guard !trimmed.isEmpty, !trimmed.hasPrefix("%% brain-unfog:") else { return nil }
+      return reminderNoteTaskMarkerIdentifier(from: markdownListContent(from: trimmed))
+    }
+  }
+
+  static func unresolvedReminderNoteTaskMarkers(in note: ObsidianProjectNote) -> [String] {
+    let knownTaskIdentifiers = Set(note.tasks.compactMap {
+      normalized($0.reminderExternalIdentifier)
+    })
+    return unresolvedReminderNoteTaskMarkers(in: note.bodyMarkdown).filter {
+      !knownTaskIdentifiers.contains($0)
+    }
   }
 
   static func parseTaskLineIndentation(_ line: String) -> String? {
@@ -200,6 +270,260 @@ enum ObsidianReminderImportFormatting {
     return replacement
   }
 
+  private static func flatTasksByIdentifier(
+    _ inputs: [FlatReminderTaskBlockInput]
+  ) throws -> [String: FlatReminderTaskBlockInput] {
+    var result: [String: FlatReminderTaskBlockInput] = [:]
+    for input in inputs {
+      guard result[input.externalIdentifier] == nil else {
+        throw TaskMarkerResolutionError.duplicateTaskMarker(input.externalIdentifier)
+      }
+      result[input.externalIdentifier] = input
+    }
+    return result
+  }
+
+  private static func flatReminderTaskBodyLines(
+    _ inputs: [FlatReminderTaskBlockInput],
+    tasksByID: [String: FlatReminderTaskBlockInput],
+    outline: ObsidianReminderOutlineState
+  ) throws -> [String] {
+    var consumedIDs = Set<String>()
+    var bodyLines = try renderOutlineChildren(
+      outline.roots,
+      parentIndentation: "",
+      tasksByID: tasksByID,
+      outline: outline,
+      consumedIDs: &consumedIDs,
+      stack: []
+    )
+
+    for input in inputs where !consumedIDs.contains(input.externalIdentifier) {
+      bodyLines.append(
+        contentsOf: try renderFlatReminderTaskBlock(
+          input.externalIdentifier,
+          parentIndentation: "",
+          tasksByID: tasksByID,
+          outline: outline,
+          consumedIDs: &consumedIDs,
+          stack: []
+        )
+      )
+    }
+
+    return bodyLines
+  }
+
+  private static func referencedTaskIdentifiers(
+    in inputs: [FlatReminderTaskBlockInput],
+    tasksByID: [String: FlatReminderTaskBlockInput]
+  ) throws -> Set<String> {
+    var result = Set<String>()
+    for input in inputs {
+      for marker in reminderNoteTaskMarkers(in: input.noteText) {
+        guard tasksByID[marker] != nil else {
+          throw TaskMarkerResolutionError.unresolvedTaskMarker(marker)
+        }
+        result.insert(marker)
+      }
+    }
+    return result
+  }
+
+  private static func renderFlatReminderTaskBlock(
+    _ identifier: String,
+    parentIndentation: String,
+    tasksByID: [String: FlatReminderTaskBlockInput],
+    outline: ObsidianReminderOutlineState? = nil,
+    consumedIDs: inout Set<String>,
+    stack: [String]
+  ) throws -> [String] {
+    guard !stack.contains(identifier) else {
+      throw TaskMarkerResolutionError.cyclicTaskMarker(identifier)
+    }
+    guard !consumedIDs.contains(identifier) else {
+      throw TaskMarkerResolutionError.duplicateTaskMarker(identifier)
+    }
+    guard let input = tasksByID[identifier] else {
+      throw TaskMarkerResolutionError.unresolvedTaskMarker(identifier)
+    }
+
+    consumedIDs.insert(identifier)
+    let checkbox = input.isCompleted ? "x" : " "
+    var block = ["\(parentIndentation)- [\(checkbox)] \(input.title)"]
+    block.append(renderMetadataLine(input.metadata, indentation: parentIndentation + "  "))
+    if let outlineChildren = outline?.taskChildrenByReminderID[identifier] {
+      let remoteNote = ReminderNoteSourceCodec.normalize(input.noteText)
+      let outlineNote = outline?.humanNoteText(forTaskID: identifier) ?? ""
+      if remoteNote.isEmpty || remoteNote == outlineNote {
+        block.append(
+          contentsOf: try renderOutlineChildren(
+            outlineChildren,
+            parentIndentation: parentIndentation + "  ",
+            tasksByID: tasksByID,
+            outline: outline,
+            consumedIDs: &consumedIDs,
+            stack: stack + [identifier]
+          )
+        )
+      } else {
+        block.append(
+          contentsOf: try renderFlatReminderNoteLines(
+            input.noteText,
+            parentIndentation: parentIndentation,
+            tasksByID: tasksByID,
+            consumedIDs: &consumedIDs,
+            stack: stack + [identifier]
+          )
+        )
+        block.append(
+          contentsOf: try renderOutlineTaskChildren(
+            outlineChildren,
+            parentIndentation: parentIndentation + "  ",
+            tasksByID: tasksByID,
+            outline: outline,
+            consumedIDs: &consumedIDs,
+            stack: stack + [identifier]
+          )
+        )
+      }
+    } else {
+      block.append(
+        contentsOf: try renderFlatReminderNoteLines(
+          input.noteText,
+          parentIndentation: parentIndentation,
+          tasksByID: tasksByID,
+          consumedIDs: &consumedIDs,
+          stack: stack + [identifier]
+        )
+      )
+    }
+    return block
+  }
+
+  private static func renderOutlineChildren(
+    _ children: [ObsidianReminderOutlineChild],
+    parentIndentation: String,
+    tasksByID: [String: FlatReminderTaskBlockInput],
+    outline: ObsidianReminderOutlineState?,
+    consumedIDs: inout Set<String>,
+    stack: [String]
+  ) throws -> [String] {
+    var result: [String] = []
+    for child in children {
+      switch child {
+      case .task(let identifier):
+        guard tasksByID[identifier] != nil else { continue }
+        result.append(
+          contentsOf: try renderFlatReminderTaskBlock(
+            identifier,
+            parentIndentation: parentIndentation,
+            tasksByID: tasksByID,
+            outline: outline,
+            consumedIDs: &consumedIDs,
+            stack: stack
+          )
+        )
+      case .bullet(let text, let descendants):
+        result.append("\(parentIndentation)- \(text)")
+        result.append(
+          contentsOf: try renderOutlineChildren(
+            descendants,
+            parentIndentation: parentIndentation + "  ",
+            tasksByID: tasksByID,
+            outline: outline,
+            consumedIDs: &consumedIDs,
+            stack: stack
+          )
+        )
+      }
+    }
+    return result
+  }
+
+  private static func renderOutlineTaskChildren(
+    _ children: [ObsidianReminderOutlineChild],
+    parentIndentation: String,
+    tasksByID: [String: FlatReminderTaskBlockInput],
+    outline: ObsidianReminderOutlineState?,
+    consumedIDs: inout Set<String>,
+    stack: [String]
+  ) throws -> [String] {
+    var result: [String] = []
+    for child in children {
+      switch child {
+      case .task(let identifier):
+        guard tasksByID[identifier] != nil else { continue }
+        result.append(
+          contentsOf: try renderFlatReminderTaskBlock(
+            identifier,
+            parentIndentation: parentIndentation,
+            tasksByID: tasksByID,
+            outline: outline,
+            consumedIDs: &consumedIDs,
+            stack: stack
+          )
+        )
+      case .bullet(_, let descendants):
+        result.append(
+          contentsOf: try renderOutlineTaskChildren(
+            descendants,
+            parentIndentation: parentIndentation,
+            tasksByID: tasksByID,
+            outline: outline,
+            consumedIDs: &consumedIDs,
+            stack: stack
+          )
+        )
+      }
+    }
+    return result
+  }
+
+  private static func renderFlatReminderNoteLines(
+    _ noteText: String?,
+    parentIndentation: String,
+    tasksByID: [String: FlatReminderTaskBlockInput],
+    consumedIDs: inout Set<String>,
+    stack: [String]
+  ) throws -> [String] {
+    let normalizedNote = ReminderNoteSourceCodec.normalize(noteText)
+    guard !normalizedNote.isEmpty else { return [] }
+
+    var result: [String] = []
+    for rawLine in normalizedNote.components(separatedBy: "\n") {
+      let leadingSpaces = rawLine.prefix { $0 == " " }.count
+      let content = String(rawLine.dropFirst(leadingSpaces))
+        .trimmingCharacters(in: .whitespaces)
+      guard !content.isEmpty else { continue }
+      let indentation = parentIndentation + "  " + String(repeating: "  ", count: leadingSpaces)
+      if let taskIdentifier = reminderNoteTaskMarkerIdentifier(from: content) {
+        result.append(
+          contentsOf: try renderFlatReminderTaskBlock(
+            taskIdentifier,
+            parentIndentation: indentation,
+            tasksByID: tasksByID,
+            consumedIDs: &consumedIDs,
+            stack: stack
+          )
+        )
+      } else {
+        result.append("\(indentation)- \(content)")
+      }
+    }
+    return result
+  }
+
+  private static func reminderNoteTaskMarkers(in noteText: String?) -> [String] {
+    let normalizedNote = ReminderNoteSourceCodec.normalize(noteText)
+    guard !normalizedNote.isEmpty else { return [] }
+    return normalizedNote.components(separatedBy: "\n").compactMap { rawLine in
+      reminderNoteTaskMarkerIdentifier(
+        from: rawLine.trimmingCharacters(in: .whitespaces)
+      )
+    }
+  }
+
   static func normalizeForComparison(_ value: String) -> String {
     value
       .replacingOccurrences(of: "\r\n", with: "\n")
@@ -243,16 +567,15 @@ enum ObsidianReminderImportFormatting {
           taskIndentation: taskIndentation,
           in: lines
         )
-        let block = Array(lines[index..<blockEnd])
-        if let identifier = reminderIdentifier(in: block) {
-          let noteIndent = reminderNoteIndent(for: line, parentIndentation: task.indentation)
-          noteLines.append("\(String(repeating: " ", count: noteIndent))t:\(identifier)")
-          index = blockEnd
-          continue
-        }
+        index = blockEnd
+        continue
       }
       let content = markdownListContent(from: trimmed)
       guard !content.isEmpty else {
+        index += 1
+        continue
+      }
+      if reminderNoteTaskMarkerIdentifier(from: content) != nil {
         index += 1
         continue
       }
