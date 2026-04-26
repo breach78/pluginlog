@@ -456,6 +456,7 @@ struct ScheduleTaskDragState {
   let originalTimeMinutes: Int?
   let originalDurationMinutes: Int?
   let originalViewportFrame: CGRect
+  let originalPointerViewportX: CGFloat
   let originalPointerViewportY: CGFloat
   let originalPointerScheduleY: CGFloat
   let originalTopScheduleY: CGFloat
@@ -470,6 +471,7 @@ struct ScheduleCalendarDragState {
   let originalTimeMinutes: Int?
   let originalDurationMinutes: Int?
   let originalViewportFrame: CGRect
+  let originalPointerViewportX: CGFloat
   let originalPointerViewportY: CGFloat
   let originalPointerScheduleY: CGFloat
   let originalTopScheduleY: CGFloat
@@ -527,6 +529,42 @@ struct ScheduleBoardGlobalFramePreferenceKey: PreferenceKey {
 
   static func reduce(value: inout CGRect, nextValue: () -> CGRect) {
     value = nextValue()
+  }
+}
+
+enum ScheduleBoardHostingInvalidationPolicy {
+  static func boardContentVersion(
+    today: Date,
+    dayRange: ClosedRange<Int>,
+    layoutSourceSignature: Int,
+    selectedScheduleTaskID: UUID?,
+    transientInteractionSignature _: Int
+  ) -> Int {
+    var hasher = Hasher()
+    hasher.combine(today.timeIntervalSinceReferenceDate)
+    hasher.combine(dayRange.lowerBound)
+    hasher.combine(dayRange.upperBound)
+    hasher.combine(layoutSourceSignature)
+    hasher.combine(selectedScheduleTaskID)
+    return hasher.finalize()
+  }
+
+  static func pinnedTopVersion(
+    today: Date,
+    dayRange: ClosedRange<Int>,
+    layoutSourceSignature: Int,
+    calendarSourcesSignature: Int,
+    selectedScheduleTaskID: UUID?,
+    transientInteractionSignature _: Int
+  ) -> Int {
+    var hasher = Hasher()
+    hasher.combine(today.timeIntervalSinceReferenceDate)
+    hasher.combine(dayRange.lowerBound)
+    hasher.combine(dayRange.upperBound)
+    hasher.combine(layoutSourceSignature)
+    hasher.combine(calendarSourcesSignature)
+    hasher.combine(selectedScheduleTaskID)
+    return hasher.finalize()
   }
 }
 
@@ -781,6 +819,10 @@ struct ScheduleBoardView: View {
       quality: scheduleOverlayMotionQuality
     )
   }
+  var isScheduleBoardTransientInteractionActive: Bool {
+    activeTaskDrag != nil || activeTaskResize != nil
+      || activeCalendarDrag != nil || activeCalendarResize != nil
+  }
   var scheduleOverlayCardStyle: OverlaySurfaceStyle {
     OverlaySurfaceStyle.card(quality: scheduleOverlayMotionQuality)
   }
@@ -831,30 +873,26 @@ struct ScheduleBoardView: View {
     hasher.combine(pendingTimedQuickCreateSelection?.durationMinutes)
     return hasher.finalize()
   }
-  func boardContentVersion(filteredEventHash: Int, taskSignature: Int) -> Int {
-    var hasher = Hasher()
-    hasher.combine(today.timeIntervalSinceReferenceDate)
-    hasher.combine(dayRange.lowerBound)
-    hasher.combine(dayRange.upperBound)
-    hasher.combine(taskSignature)
-    hasher.combine(filteredEventHash)
-    hasher.combine(selectedScheduleTaskID)
-    hasher.combine(boardInteractionSignature)
-    return hasher.finalize()
+  func boardContentVersion(layoutSourceSignature: Int) -> Int {
+    ScheduleBoardHostingInvalidationPolicy.boardContentVersion(
+      today: today,
+      dayRange: dayRange,
+      layoutSourceSignature: layoutSourceSignature,
+      selectedScheduleTaskID: selectedScheduleTaskID,
+      transientInteractionSignature: boardInteractionSignature
+    )
   }
   let pinnedLeftVersion = 0
 
-  func pinnedTopVersion(filteredEventHash: Int, taskSignature: Int) -> Int {
-    var hasher = Hasher()
-    hasher.combine(today.timeIntervalSinceReferenceDate)
-    hasher.combine(dayRange.lowerBound)
-    hasher.combine(dayRange.upperBound)
-    hasher.combine(taskSignature)
-    hasher.combine(scheduleCalendarOverlayProjection.calendarsSignature)
-    hasher.combine(filteredEventHash)
-    hasher.combine(selectedScheduleTaskID)
-    hasher.combine(boardInteractionSignature)
-    return hasher.finalize()
+  func pinnedTopVersion(layoutSourceSignature: Int) -> Int {
+    ScheduleBoardHostingInvalidationPolicy.pinnedTopVersion(
+      today: today,
+      dayRange: dayRange,
+      layoutSourceSignature: layoutSourceSignature,
+      calendarSourcesSignature: scheduleCalendarOverlayProjection.calendarsSignature,
+      selectedScheduleTaskID: selectedScheduleTaskID,
+      transientInteractionSignature: boardInteractionSignature
+    )
   }
 
   struct ScheduleBoardBodyContext {
@@ -871,20 +909,22 @@ struct ScheduleBoardView: View {
 
   func makeBodyContext() -> ScheduleBoardBodyContext {
     let isMotionSuppressed = appState.isEditorMotionSuppressed
+    let usesFrozenHostedContent =
+      isMotionSuppressed || !isActive || isScheduleBoardTransientInteractionActive
     let calendarOverlayProjection = appState.resolvedScheduleCalendarOverlayProjection()
     let filteredEvents = calendarOverlayProjection.foregroundEvents
     let backgroundEvents = calendarOverlayProjection.backgroundEvents
     let filteredEventHash = calendarOverlayProjection.visibleEventsSignature
     let liveTaskSourceSignature =
-      isMotionSuppressed
+      usesFrozenHostedContent
       ? (cachedScheduledTaskSourceSignature ?? 0)
       : scheduleTaskSourceSignature
     let taskSnapshot = resolvedScheduleTaskSnapshot(
-      preferCached: isMotionSuppressed || !isActive
+      preferCached: usesFrozenHostedContent
     )
     let taskSignature = taskSnapshot.signature
     let liveLayoutSourceSignature =
-      isMotionSuppressed
+      usesFrozenHostedContent
       ? (cachedLayoutSourceSignature
         ?? scheduleLayoutSourceSignature(
           filteredEventHash: filteredEventHash,
@@ -897,10 +937,10 @@ struct ScheduleBoardView: View {
     let layoutSourceSignature = resolvedScheduleLayoutSourceSignature(
       filteredEventHash: filteredEventHash,
       taskSignature: taskSignature,
-      preferCached: isMotionSuppressed || !isActive
+      preferCached: usesFrozenHostedContent
     )
     let useCachedLayouts =
-      isMotionSuppressed || !isActive
+      usesFrozenHostedContent
       ? cachedLayoutSourceSignature != nil
       : cachedLayoutSourceSignature == layoutSourceSignature
     let layoutCache =
@@ -1174,12 +1214,10 @@ struct ScheduleBoardView: View {
     context: ScheduleBoardBodyContext
   ) -> some View {
     let boardContentVersion = boardContentVersion(
-      filteredEventHash: context.filteredEventHash,
-      taskSignature: context.taskSignature
+      layoutSourceSignature: context.layoutSourceSignature
     )
     let pinnedTopVersion = pinnedTopVersion(
-      filteredEventHash: context.filteredEventHash,
-      taskSignature: context.taskSignature
+      layoutSourceSignature: context.layoutSourceSignature
     )
 
     return UnifiedScheduleBoardScrollView(

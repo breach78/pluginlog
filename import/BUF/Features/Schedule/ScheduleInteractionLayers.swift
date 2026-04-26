@@ -32,11 +32,15 @@ enum ScheduleDragDropInteractionLayer {
   ) -> ScheduleInteractionPreview? {
     guard !days.isEmpty, location.y >= 0 else { return nil }
 
-    let scheduleX = location.x - externalMetrics.titleColumnWidth + externalMetrics.scrollOffsetX
-    guard scheduleX >= 0, scheduleX < externalMetrics.dayColumnsWidth else { return nil }
-
-    let dayIndex = min(max(Int(scheduleX / interactionMetrics.dayColumnWidth), 0), days.count - 1)
-    let day = days[dayIndex]
+    guard
+      let day = dayForPointerViewportX(
+        location.x,
+        titleColumnWidth: externalMetrics.titleColumnWidth,
+        scrollOffsetX: externalMetrics.scrollOffsetX,
+        days: days,
+        metrics: interactionMetrics
+      )
+    else { return nil }
 
     if location.y < externalMetrics.headerHeight {
       return ScheduleInteractionPreview(day: day, timeMinutes: nil, durationMinutes: nil)
@@ -49,6 +53,41 @@ enum ScheduleDragDropInteractionLayer {
       timeMinutes: timeMinutes,
       durationMinutes: interactionMetrics.timedMinimumDurationMinutes
     )
+  }
+
+  static func dayForPointerViewportX(
+    _ pointerViewportX: CGFloat,
+    titleColumnWidth: CGFloat,
+    scrollOffsetX: CGFloat,
+    days: [Date],
+    metrics: ScheduleInteractionMetrics
+  ) -> Date? {
+    guard !days.isEmpty else { return nil }
+
+    let scheduleX = pointerViewportX - titleColumnWidth + scrollOffsetX
+    let dayColumnsWidth = CGFloat(days.count) * metrics.dayColumnWidth
+    guard scheduleX >= 0, scheduleX < dayColumnsWidth else { return nil }
+
+    let dayIndex = min(max(Int(scheduleX / metrics.dayColumnWidth), 0), days.count - 1)
+    return days[dayIndex]
+  }
+
+  static func allDayPreviewViewportY(
+    pointerViewportY: CGFloat?,
+    originalPointerViewportY: CGFloat,
+    originalViewportMinY: CGFloat,
+    translationHeight: CGFloat,
+    dateHeaderHeight: CGFloat,
+    allDayRailPadding: CGFloat,
+    allDayRailVisibleHeight: CGFloat,
+    previewHeight: CGFloat
+  ) -> CGFloat {
+    let pointerY = pointerViewportY ?? (originalPointerViewportY + translationHeight)
+    let grabOffsetY = originalPointerViewportY - originalViewportMinY
+    let projectedY = pointerY - grabOffsetY
+    let minY = dateHeaderHeight + allDayRailPadding
+    let maxY = dateHeaderHeight + max(allDayRailPadding, allDayRailVisibleHeight - previewHeight)
+    return min(max(projectedY, minY), maxY)
   }
 
   static func preview(

@@ -48,7 +48,7 @@ final class ObsidianRetainedTaskCommandServiceTests: XCTestCase {
     let raw = try await firstRawMarkdown(in: vault)
     XCTAssertTrue(raw.contains("- [x] Task one"))
     XCTAssertEqual(provider.completionWrites.map(\.isCompleted), [true])
-    XCTAssertEqual(result.calendarBridgeDecision, .noAction)
+    XCTAssertEqual(result.calendarBridgeDecision, RetainedCalendarBridgeDecision.noAction)
     XCTAssertNil(result.calendarWriteMarker)
     XCTAssertEqual(ReminderSyncBaselineStore.baseline(for: "task-1")?.state.isCompleted, true)
   }
@@ -119,6 +119,45 @@ final class ObsidianRetainedTaskCommandServiceTests: XCTestCase {
     XCTAssertTrue(raw.contains(#""duration":60"#))
     XCTAssertTrue(provider.scheduleWrites.isEmpty)
     XCTAssertNil(ReminderSyncBaselineStore.baseline(for: "task-1"))
+  }
+
+  func testCreateTaskWritesReminderBackedTimedObsidianTask() async throws {
+    let dataRoot = try makeTemporaryDirectory(prefix: "ObsidianCommandData")
+    ReminderSyncBaselineStore.install(dataDirectory: dataRoot)
+    let vault = try makeTemporaryVault()
+    _ = try writeProjectNote(
+      vault: vault,
+      body: projectNote(
+        body: """
+        - [ ] Existing
+          %% brain-unfog: {"reminder_external_id":"task-1"} %%
+        """
+      )
+    )
+    let provider = FakeObsidianCommandReminderProjectProvider()
+    let day = makeDate(year: 2026, month: 4, day: 25)
+
+    let result = try await ObsidianRetainedTaskCommandService.createTask(
+      vaultRootURL: vault,
+      projectID: projectID,
+      title: "Dragged task",
+      day: day,
+      timeMinutes: 9 * 60 + 30,
+      durationMinutes: 30,
+      calendar: calendar,
+      reminderProjectProvider: provider
+    )
+
+    let raw = try await firstRawMarkdown(in: vault)
+    XCTAssertTrue(raw.contains("- [ ] Dragged task"))
+    XCTAssertTrue(raw.contains(#""reminder_external_id":"created-task-1","date":"2026-04-25","time":"09:30","duration":30"#))
+    XCTAssertEqual(provider.createdTasks.map(\.title), ["Dragged task"])
+    XCTAssertEqual(provider.createdTasks.first?.listID, "list-1")
+    XCTAssertEqual(provider.createdTasks.first?.hasExplicitTime, true)
+    XCTAssertEqual(provider.createdTasks.first?.dueDate.map(dateTimeString), "2026-04-25 09:30")
+    XCTAssertEqual(result.taskID, ReminderProjectionIdentity.taskID(for: "created-task-1"))
+    XCTAssertEqual(result.calendarBridgeDecision, .noAction)
+    XCTAssertEqual(ReminderSyncBaselineStore.baseline(for: "created-task-1")?.state.date, "2026-04-25 09:30")
   }
 
   func testReminderFailureRollsBackObsidianWrite() async throws {
@@ -397,11 +436,21 @@ private final class FakeObsidianCommandReminderProjectProvider: ReminderProjectP
     var hasExplicitTime: Bool
   }
 
+  struct CreatedTask: Equatable {
+    var listID: String
+    var title: String
+    var dueDate: Date?
+    var hasExplicitTime: Bool
+    var noteText: String
+  }
+
   var completionWrites: [CompletionWrite] = []
   var scheduleWrites: [ScheduleWrite] = []
+  var createdTasks: [CreatedTask] = []
   var snapshots: [String: ReminderTaskRemoteSnapshot] = [:]
   var completionError: Error?
   var scheduleError: Error?
+  let remoteModificationDate = Date(timeIntervalSince1970: 1_000)
 
   var reminderGateway: ReminderGateway? { nil }
   var defaultCalendarIdentifierForNewReminders: String? { nil }
@@ -436,7 +485,41 @@ private final class FakeObsidianCommandReminderProjectProvider: ReminderProjectP
   func removeProjectList(identifier: String) throws {}
   func setProjectTitle(identifier: String, title: String) throws -> ReminderProjectListSnapshot? { nil }
   func setProjectColor(identifier: String, colorHex: String?) throws -> ReminderProjectListSnapshot? { nil }
-  func createTaskReminder(inProject identifier: String, title: String, dueDate: Date?, hasExplicitTime: Bool, noteText: String) throws -> ReminderTaskRemoteMetadata? { nil }
+  func createTaskReminder(
+    inProject identifier: String,
+    title: String,
+    dueDate: Date?,
+    hasExplicitTime: Bool,
+    noteText: String
+  ) throws -> ReminderTaskRemoteMetadata? {
+    let externalIdentifier = "created-task-\(createdTasks.count + 1)"
+    createdTasks.append(
+      CreatedTask(
+        listID: identifier,
+        title: title,
+        dueDate: dueDate,
+        hasExplicitTime: hasExplicitTime,
+        noteText: noteText
+      )
+    )
+    snapshots[externalIdentifier] = ReminderTaskRemoteSnapshot(
+      identifier: externalIdentifier,
+      externalIdentifier: externalIdentifier,
+      calendarIdentifier: identifier,
+      title: title,
+      noteText: noteText,
+      isCompleted: false,
+      dueDate: dueDate,
+      hasExplicitTime: hasExplicitTime,
+      priority: 0,
+      modifiedAt: remoteModificationDate
+    )
+    return ReminderTaskRemoteMetadata(
+      identifier: externalIdentifier,
+      externalIdentifier: externalIdentifier,
+      modifiedAt: remoteModificationDate
+    )
+  }
   func removeTaskReminder(for task: ReminderTaskReference) throws -> Bool { false }
   func taskSnapshot(for task: ReminderTaskReference) throws -> ReminderTaskRemoteSnapshot? {
     guard let identifier = task.reminderExternalIdentifier else { return nil }

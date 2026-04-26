@@ -371,7 +371,7 @@ extension ScheduleBoardView {
       ? dragState.originalTopScheduleY + dragState.translation.height + currentScrollOffsetY
       : nil
 
-    return ScheduleDragDropInteractionLayer.preview(
+    let preview = ScheduleDragDropInteractionLayer.preview(
       originalDay: dragState.originalDay,
       originalTimeMinutes: dragState.originalTimeMinutes,
       originalDurationMinutes: dragState.originalDurationMinutes,
@@ -386,6 +386,11 @@ extension ScheduleBoardView {
       metrics: interactionMetrics,
       calendar: calendar
     )
+    return previewWithPointerDay(
+      preview,
+      pointerViewportLocation: dragState.currentPointerViewportLocation,
+      allowsDayChange: !dragState.isPreparationSlot
+    )
   }
 
   func preview(for dragState: ScheduleCalendarDragState) -> ScheduleInteractionPreview {
@@ -397,7 +402,7 @@ extension ScheduleBoardView {
       ? dragState.originalTopScheduleY + dragState.translation.height + currentScrollOffsetY
       : nil
 
-    return ScheduleDragDropInteractionLayer.preview(
+    let preview = ScheduleDragDropInteractionLayer.preview(
       originalDay: dragState.originalDay,
       originalTimeMinutes: dragState.originalTimeMinutes,
       originalDurationMinutes: dragState.originalDurationMinutes,
@@ -410,6 +415,36 @@ extension ScheduleBoardView {
       metrics: interactionMetrics,
       calendar: calendar
     )
+    return previewWithPointerDay(
+      preview,
+      pointerViewportLocation: dragState.currentPointerViewportLocation,
+      allowsDayChange: true
+    )
+  }
+
+  func previewWithPointerDay(
+    _ preview: ScheduleInteractionPreview,
+    pointerViewportLocation: CGPoint?,
+    allowsDayChange: Bool
+  ) -> ScheduleInteractionPreview {
+    guard allowsDayChange,
+      let pointerViewportLocation,
+      let day = ScheduleDragDropInteractionLayer.dayForPointerViewportX(
+        pointerViewportLocation.x,
+        titleColumnWidth: titleColumnWidth,
+        scrollOffsetX: currentScrollOffsetX,
+        days: days,
+        metrics: interactionMetrics
+      )
+    else {
+      return preview
+    }
+
+    return ScheduleInteractionPreview(
+      day: day,
+      timeMinutes: preview.timeMinutes,
+      durationMinutes: preview.durationMinutes
+    )
   }
 
   func taskDragPointerViewportLocation(
@@ -418,7 +453,7 @@ extension ScheduleBoardView {
   ) -> CGPoint {
     scrollViewportState.pointerViewportLocation()
       ?? CGPoint(
-        x: dragState.originalViewportFrame.midX + value.translation.width,
+        x: dragState.originalPointerViewportX + value.translation.width,
         y: dragState.originalPointerViewportY + value.translation.height
       )
   }
@@ -487,11 +522,11 @@ extension ScheduleBoardView {
             originalTimeMinutes: originalTimeMinutes,
             originalDurationMinutes: originalDurationMinutes,
             originalViewportFrame: originalViewportFrame,
+            originalPointerViewportX: originalViewportFrame.minX + value.startLocation.x,
             originalPointerViewportY: originalViewportFrame.minY + value.startLocation.y,
             originalPointerScheduleY: originalScheduleY + value.startLocation.y,
             originalTopScheduleY: originalScheduleY
           )
-          selectedScheduleTaskID = taskID
         }
         suppressTaskTap()
         guard var dragState else { return }
@@ -564,7 +599,7 @@ extension ScheduleBoardView {
     let viewportPoint =
       dragState.currentPointerViewportLocation
       ?? CGPoint(
-        x: dragState.originalViewportFrame.midX + dragState.translation.width,
+        x: dragState.originalPointerViewportX + dragState.translation.width,
         y: dragState.originalPointerViewportY + dragState.translation.height
       )
 
@@ -623,6 +658,7 @@ extension ScheduleBoardView {
             originalTimeMinutes: event.isAllDay ? nil : timeMinutes(for: event.startDate),
             originalDurationMinutes: durationMinutes(for: event),
             originalViewportFrame: originalViewportFrame,
+            originalPointerViewportX: originalViewportFrame.minX + value.startLocation.x,
             originalPointerViewportY: originalViewportFrame.minY + value.startLocation.y,
             originalPointerScheduleY: originalScheduleY + value.startLocation.y,
             originalTopScheduleY: originalScheduleY
@@ -635,7 +671,7 @@ extension ScheduleBoardView {
         let pointerViewportLocation =
           scrollViewportState.pointerViewportLocation()
           ?? CGPoint(
-            x: dragState.originalViewportFrame.midX + value.translation.width,
+            x: dragState.originalPointerViewportX + value.translation.width,
             y: dragState.originalPointerViewportY + value.translation.height
           )
         dragState.currentPointerViewportLocation = pointerViewportLocation
@@ -645,12 +681,24 @@ extension ScheduleBoardView {
         )
         activeCalendarDrag = dragState
       }
-      .onEnded { _ in
+      .onEnded { value in
         guard let dragState = activeCalendarDrag, dragState.eventID == event.id else { return }
         suppressTaskTap()
         activeCalendarDrag = nil
+        var resolvedDragState = dragState
+        let pointerViewportLocation =
+          scrollViewportState.pointerViewportLocation()
+          ?? CGPoint(
+            x: dragState.originalPointerViewportX + value.translation.width,
+            y: dragState.originalPointerViewportY + value.translation.height
+          )
+        resolvedDragState.currentPointerViewportLocation = pointerViewportLocation
+        resolvedDragState.isInAllDayZone = isPointerInAllDayZone(
+          pointerViewportLocation: pointerViewportLocation,
+          wasInAllDayZone: dragState.isInAllDayZone
+        )
         commitCalendarPreview(
-          preview(for: dragState),
+          preview(for: resolvedDragState),
           for: event,
           actionName: "캘린더 일정 이동"
         )
@@ -1201,7 +1249,31 @@ extension ScheduleBoardView {
     timeMinutes: Int?,
     durationMinutes: Int?
   ) {
-    guard allowScheduleMutation("create-task") else { return }
+    let normalizedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !normalizedTitle.isEmpty else { return }
+    scheduleTaskWriteNotice = nil
+    Task { @MainActor in
+      do {
+        let result = try await ObsidianRetainedTaskCommandService.createTask(
+          vaultRootURL: appState.obsidianVaultRootURL,
+          projectID: projectID,
+          title: normalizedTitle,
+          day: day,
+          timeMinutes: timeMinutes,
+          durationMinutes: durationMinutes,
+          calendar: calendar,
+          reminderProjectProvider: appState.reminderProjectProvider
+        )
+        selectedScheduleTaskID = result.taskID
+        await reloadWorkspaceScheduleProjectDetails(for: activeProjectIDs)
+        retainedScheduleCalendarBridgeDecisionsByTaskID[result.taskID] = result.calendarBridgeDecision
+        retainedScheduleCalendarBridgeWriteMarkersByTaskID[result.taskID] = result.calendarWriteMarker
+        appState.bumpWorkspaceTreeRevision()
+        refreshCalendarOverlay(force: true)
+      } catch {
+        appState.reportError(error, logMessage: "schedule createTask failed")
+      }
+    }
   }
 
   func handleUnavailableScheduleQuickAdd(reason: ScheduleQuickAddFailureReason = .noAvailableProject) {

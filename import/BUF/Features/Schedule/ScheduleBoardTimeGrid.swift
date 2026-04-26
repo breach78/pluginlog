@@ -1066,7 +1066,7 @@ extension ScheduleBoardView {
     }
   }
 
-  func liftedDragPreview<Content: View>(
+  func liftedDragGhost<Content: View>(
     frame: CGRect,
     @ViewBuilder content: () -> Content
   ) -> some View {
@@ -1082,6 +1082,50 @@ extension ScheduleBoardView {
         y: dragGhostShadowYOffset
       )
       .zIndex(2000)
+  }
+
+  func dragDropTargetIndicator(
+    frame: CGRect,
+    color: Color,
+    isAllDay: Bool,
+    label: String?
+  ) -> some View {
+    ZStack(alignment: .topLeading) {
+      RoundedRectangle(cornerRadius: isAllDay ? 8 : 10, style: .continuous)
+        .fill(color.opacity(isAllDay ? 0.08 : 0.1))
+
+      RoundedRectangle(cornerRadius: isAllDay ? 8 : 10, style: .continuous)
+        .stroke(
+          color.opacity(0.72),
+          style: StrokeStyle(lineWidth: 1.2, lineCap: .round, dash: [5, 4])
+        )
+
+      if let label {
+        Text(label)
+          .font(.system(size: 10, weight: .semibold))
+          .foregroundStyle(color.opacity(0.92))
+          .lineLimit(1)
+          .padding(.horizontal, 6)
+          .padding(.vertical, 4)
+      }
+    }
+    .frame(width: frame.width, height: frame.height, alignment: .topLeading)
+    .offset(x: frame.minX, y: frame.minY)
+    .allowsHitTesting(false)
+    .zIndex(1998)
+  }
+
+  func dragSourcePlaceholder(frame: CGRect, isAllDay: Bool) -> some View {
+    RoundedRectangle(cornerRadius: isAllDay ? 8 : 10, style: .continuous)
+      .fill(Color(nsColor: .windowBackgroundColor).opacity(0.58))
+      .overlay {
+        RoundedRectangle(cornerRadius: isAllDay ? 8 : 10, style: .continuous)
+          .stroke(Color.primary.opacity(0.08), lineWidth: 1)
+      }
+      .frame(width: frame.width, height: frame.height, alignment: .topLeading)
+      .offset(x: frame.minX, y: frame.minY)
+      .allowsHitTesting(false)
+      .zIndex(1997)
   }
 
   func recurrenceIndicator(fontSize: CGFloat) -> some View {
@@ -1417,13 +1461,28 @@ extension ScheduleBoardView {
           let taskDescriptor = cachedWorkspaceScheduleTasksByID[dragState.taskID]
         {
           let preview = preview(for: dragState)
-          let frame = dragPreviewViewportFrame(for: dragState, preview: preview)
-          let presentsAsAllDay = preview.timeMinutes == nil
+          let dropFrame = dragDropTargetViewportFrame(for: dragState, preview: preview)
+          let ghostFrame = dragGhostViewportFrame(for: dragState)
+          let ghostPresentsAsAllDay = dragState.originalTimeMinutes == nil
           let color = scheduleColor(for: taskDescriptor.projectColorHex)
           let taskRow = taskDescriptor.taskRow
 
-          liftedDragPreview(frame: frame) {
-            if presentsAsAllDay {
+          dragSourcePlaceholder(
+            frame: dragState.originalViewportFrame,
+            isAllDay: ghostPresentsAsAllDay
+          )
+
+          if let dropFrame {
+            dragDropTargetIndicator(
+              frame: dropFrame,
+              color: color,
+              isAllDay: preview.timeMinutes == nil,
+              label: preview.timeMinutes == nil ? nil : scheduleDragPreviewLabel(for: preview)
+            )
+          }
+
+          liftedDragGhost(frame: ghostFrame) {
+            if ghostPresentsAsAllDay {
               dragPreviewChip(
                 taskDescriptor: taskDescriptor,
                 title: taskRow.title,
@@ -1441,8 +1500,8 @@ extension ScheduleBoardView {
                 isSelected: false,
                 isPreparationSlot: dragState.isPreparationSlot,
                 targetCompletedWorkUnits: dragState.targetCompletedWorkUnits,
-                timeLabel: scheduleDragPreviewLabel(for: preview),
-                blockHeight: frame.height
+                timeLabel: originalTaskDragTimeLabel(for: dragState),
+                blockHeight: ghostFrame.height
               )
             }
           }
@@ -1452,12 +1511,27 @@ extension ScheduleBoardView {
           let event = appState.resolvedScheduleCalendarEvent(eventID: dragState.eventID)
         {
           let preview = preview(for: dragState)
-          let frame = dragPreviewViewportFrame(for: dragState, preview: preview)
-          let presentsAsAllDay = preview.timeMinutes == nil
+          let dropFrame = dragDropTargetViewportFrame(for: dragState, preview: preview)
+          let ghostFrame = dragGhostViewportFrame(for: dragState)
+          let ghostPresentsAsAllDay = dragState.originalTimeMinutes == nil
           let color = scheduleColor(for: event.calendarColorHex, fallback: .secondary)
 
-          liftedDragPreview(frame: frame) {
-            if presentsAsAllDay {
+          dragSourcePlaceholder(
+            frame: dragState.originalViewportFrame,
+            isAllDay: ghostPresentsAsAllDay
+          )
+
+          if let dropFrame {
+            dragDropTargetIndicator(
+              frame: dropFrame,
+              color: color,
+              isAllDay: preview.timeMinutes == nil,
+              label: preview.timeMinutes == nil ? nil : scheduleDragPreviewLabel(for: preview)
+            )
+          }
+
+          liftedDragGhost(frame: ghostFrame) {
+            if ghostPresentsAsAllDay {
               dragPreviewEventChip(
                 event: event,
                 title: event.title,
@@ -1470,9 +1544,9 @@ extension ScheduleBoardView {
                 title: event.title,
                 subtitle: event.calendarTitle,
                 color: color,
-                timeLabel: scheduleDragPreviewLabel(for: preview),
-                blockHeight: frame.height,
-                durationMinutes: preview.durationMinutes ?? timedMinimumDuration
+                timeLabel: originalCalendarDragTimeLabel(for: dragState),
+                blockHeight: ghostFrame.height,
+                durationMinutes: dragState.originalDurationMinutes ?? timedMinimumDuration
               )
             }
           }
@@ -1889,69 +1963,41 @@ extension ScheduleBoardView {
     )
   }
 
-  func dragPreviewViewportFrame(
+  func dragDropTargetViewportFrame(
     for dragState: ScheduleTaskDragState,
     preview: ScheduleInteractionPreview
-  ) -> CGRect {
-    let rawFollowFrame = dragState.originalViewportFrame.offsetBy(
-      dx: dragState.isPreparationSlot ? 0 : dragState.translation.width,
-      dy: dragState.translation.height
-    )
+  ) -> CGRect? {
     if isTaskDragOverExternalTarget || isTaskDragOutsideBoardBounds(dragState) {
-      return rawFollowFrame
+      return nil
     }
-    let isOriginalAllDay = dragState.originalTimeMinutes == nil
-    let presentsAsAllDay = preview.timeMinutes == nil
+    return dragDropTargetViewportFrame(
+      for: preview,
+      allDayViewportY: allDayPreviewViewportY(for: dragState, preview: preview)
+    )
+  }
 
-    if isOriginalAllDay {
-      if presentsAsAllDay {
-        return CGRect(
-          x: rawFollowFrame.minX,
-          y: rawFollowFrame.minY,
-          width: dayColumnWidth - allDayChipHorizontalInset * 2,
-          height: allDayRowHeight - 4
-        )
-      }
+  func dragDropTargetViewportFrame(
+    for dragState: ScheduleCalendarDragState,
+    preview: ScheduleInteractionPreview
+  ) -> CGRect? {
+    dragDropTargetViewportFrame(
+      for: preview,
+      allDayViewportY: allDayPreviewViewportY(for: dragState, preview: preview)
+    )
+  }
 
-      guard let day = preview.day,
-        let dayIndex = dayIndexByDate[day],
-        let timeMinutes = preview.timeMinutes
-      else {
-        return rawFollowFrame
-      }
-      return snappedTimedDragPreviewFrame(
-        dayIndex: dayIndex,
-        timeMinutes: timeMinutes,
-        durationMinutes: preview.durationMinutes ?? timedMinimumDuration
-      )
-    }
-
+  func dragDropTargetViewportFrame(
+    for preview: ScheduleInteractionPreview,
+    allDayViewportY: CGFloat? = nil
+  ) -> CGRect? {
     guard let day = preview.day,
       let dayIndex = dayIndexByDate[day]
     else {
-      return rawFollowFrame
-    }
-
-    if isOriginalAllDay != presentsAsAllDay {
-      return snappedAllDayDragPreviewFrame(dayIndex: dayIndex)
+      return nil
     }
 
     if let timeMinutes = preview.timeMinutes {
       let durationMinutes = preview.durationMinutes ?? timedMinimumDuration
-      let originalDayIndex = dayIndexByDate[dragState.originalDay] ?? dayIndex
-      let dayOffset = CGFloat(dayIndex - originalDayIndex) * dayColumnWidth
-
-      if dragState.originalTimeMinutes != nil {
-        return CGRect(
-          x: dragState.isPreparationSlot
-            ? dragState.originalViewportFrame.minX
-            : dragState.originalViewportFrame.minX + dayOffset,
-          y: headerHeight + CGFloat(timeMinutes) / 60 * hourHeight - currentScrollOffsetY,
-          width: dragState.originalViewportFrame.width,
-          height: max(quarterHourHeight, CGFloat(durationMinutes) / 60 * hourHeight)
-        )
-      }
-
       return snappedTimedDragPreviewFrame(
         dayIndex: dayIndex,
         timeMinutes: timeMinutes,
@@ -1959,7 +2005,53 @@ extension ScheduleBoardView {
       )
     }
 
-    return snappedAllDayDragPreviewFrame(dayIndex: dayIndex)
+    return snappedAllDayDragPreviewFrame(dayIndex: dayIndex, viewportY: allDayViewportY)
+  }
+
+  func allDayPreviewViewportY(
+    for dragState: ScheduleTaskDragState,
+    preview: ScheduleInteractionPreview
+  ) -> CGFloat? {
+    allDayPreviewViewportY(
+      preview: preview,
+      pointerViewportY: dragState.currentPointerViewportLocation?.y,
+      originalPointerViewportY: dragState.originalPointerViewportY,
+      originalViewportMinY: dragState.originalViewportFrame.minY,
+      translationHeight: dragState.translation.height
+    )
+  }
+
+  func allDayPreviewViewportY(
+    for dragState: ScheduleCalendarDragState,
+    preview: ScheduleInteractionPreview
+  ) -> CGFloat? {
+    allDayPreviewViewportY(
+      preview: preview,
+      pointerViewportY: dragState.currentPointerViewportLocation?.y,
+      originalPointerViewportY: dragState.originalPointerViewportY,
+      originalViewportMinY: dragState.originalViewportFrame.minY,
+      translationHeight: dragState.translation.height
+    )
+  }
+
+  func allDayPreviewViewportY(
+    preview: ScheduleInteractionPreview,
+    pointerViewportY: CGFloat?,
+    originalPointerViewportY: CGFloat,
+    originalViewportMinY: CGFloat,
+    translationHeight: CGFloat
+  ) -> CGFloat? {
+    guard preview.timeMinutes == nil else { return nil }
+    return ScheduleDragDropInteractionLayer.allDayPreviewViewportY(
+      pointerViewportY: pointerViewportY,
+      originalPointerViewportY: originalPointerViewportY,
+      originalViewportMinY: originalViewportMinY,
+      translationHeight: translationHeight,
+      dateHeaderHeight: dateHeaderHeight,
+      allDayRailPadding: allDayRailPadding,
+      allDayRailVisibleHeight: allDayRailVisibleHeight,
+      previewHeight: allDayRowHeight - 4
+    )
   }
 
   func isTaskDragOutsideBoardBounds(_ dragState: ScheduleTaskDragState) -> Bool {
@@ -1969,79 +2061,37 @@ extension ScheduleBoardView {
     return pointerX < 0
   }
 
-  func dragPreviewViewportFrame(
-    for dragState: ScheduleCalendarDragState,
-    preview: ScheduleInteractionPreview
-  ) -> CGRect {
-    let rawFollowFrame = dragState.originalViewportFrame.offsetBy(
+  func dragGhostViewportFrame(for dragState: ScheduleTaskDragState) -> CGRect {
+    dragState.originalViewportFrame.offsetBy(
+      dx: dragState.isPreparationSlot ? 0 : dragState.translation.width,
+      dy: dragState.translation.height
+    )
+  }
+
+  func dragGhostViewportFrame(for dragState: ScheduleCalendarDragState) -> CGRect {
+    dragState.originalViewportFrame.offsetBy(
       dx: dragState.translation.width,
       dy: dragState.translation.height
     )
-    let isOriginalAllDay = dragState.originalTimeMinutes == nil
-    let presentsAsAllDay = preview.timeMinutes == nil
-
-    if isOriginalAllDay {
-      if presentsAsAllDay {
-        return CGRect(
-          x: rawFollowFrame.minX,
-          y: rawFollowFrame.minY,
-          width: dayColumnWidth - allDayChipHorizontalInset * 2,
-          height: allDayRowHeight - 4
-        )
-      }
-
-      guard let day = preview.day,
-        let dayIndex = dayIndexByDate[day],
-        let timeMinutes = preview.timeMinutes
-      else {
-        return rawFollowFrame
-      }
-      return snappedTimedDragPreviewFrame(
-        dayIndex: dayIndex,
-        timeMinutes: timeMinutes,
-        durationMinutes: preview.durationMinutes ?? timedMinimumDuration
-      )
-    }
-
-    guard let day = preview.day,
-      let dayIndex = dayIndexByDate[day]
-    else {
-      return rawFollowFrame
-    }
-
-    if isOriginalAllDay != presentsAsAllDay {
-      return snappedAllDayDragPreviewFrame(dayIndex: dayIndex)
-    }
-
-    if let timeMinutes = preview.timeMinutes {
-      let durationMinutes = preview.durationMinutes ?? timedMinimumDuration
-      let originalDayIndex = dayIndexByDate[dragState.originalDay] ?? dayIndex
-      let dayOffset = CGFloat(dayIndex - originalDayIndex) * dayColumnWidth
-
-      if dragState.originalTimeMinutes != nil {
-        return CGRect(
-          x: dragState.originalViewportFrame.minX + dayOffset,
-          y: headerHeight + CGFloat(timeMinutes) / 60 * hourHeight - currentScrollOffsetY,
-          width: dragState.originalViewportFrame.width,
-          height: max(quarterHourHeight, CGFloat(durationMinutes) / 60 * hourHeight)
-        )
-      }
-
-      return snappedTimedDragPreviewFrame(
-        dayIndex: dayIndex,
-        timeMinutes: timeMinutes,
-        durationMinutes: durationMinutes
-      )
-    }
-
-    return snappedAllDayDragPreviewFrame(dayIndex: dayIndex)
   }
 
-  func snappedAllDayDragPreviewFrame(dayIndex: Int) -> CGRect {
+  func originalTaskDragTimeLabel(for dragState: ScheduleTaskDragState) -> String? {
+    guard let startMinute = dragState.originalTimeMinutes else { return nil }
+    let durationMinutes = dragState.originalDurationMinutes ?? timedMinimumDuration
+    return timeRangeLabel(startMinute: startMinute, durationMinutes: durationMinutes)
+  }
+
+  func originalCalendarDragTimeLabel(for dragState: ScheduleCalendarDragState) -> String? {
+    guard let startMinute = dragState.originalTimeMinutes else { return nil }
+    let durationMinutes = dragState.originalDurationMinutes ?? timedMinimumDuration
+    return timeRangeLabel(startMinute: startMinute, durationMinutes: durationMinutes)
+  }
+
+  func snappedAllDayDragPreviewFrame(dayIndex: Int, viewportY: CGFloat? = nil) -> CGRect {
     CGRect(
       x: titleColumnWidth + CGFloat(dayIndex) * dayColumnWidth - currentScrollOffsetX
         + allDayChipHorizontalInset,
-      y: dateHeaderHeight + allDayRailPadding,
+      y: viewportY ?? dateHeaderHeight + allDayRailPadding,
       width: dayColumnWidth - allDayChipHorizontalInset * 2,
       height: allDayRowHeight - 4
     )

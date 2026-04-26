@@ -3,15 +3,15 @@ import XCTest
 @testable import BrainUnfogHarness
 
 final class ScheduleDragDropInteractionLayerTests: XCTestCase {
-  func testAllDayItemDraggedIntoTimedGridUsesDefaultScheduledDuration() {
-    let metrics = ScheduleInteractionMetrics(
-      dayColumnWidth: 120,
-      hourHeight: 60,
-      quarterHourHeight: 15,
-      timeGridHeight: 24 * 60,
-      timedMinimumDurationMinutes: WorkspaceTaskScheduleEventStore.defaultScheduledDurationMinutes
-    )
+  private let metrics = ScheduleInteractionMetrics(
+    dayColumnWidth: 120,
+    hourHeight: 60,
+    quarterHourHeight: 15,
+    timeGridHeight: 24 * 60,
+    timedMinimumDurationMinutes: WorkspaceTaskScheduleEventStore.defaultScheduledDurationMinutes
+  )
 
+  func testAllDayItemDraggedIntoTimedGridUsesDefaultScheduledDuration() {
     let preview = ScheduleDragDropInteractionLayer.preview(
       originalDay: Date(timeIntervalSince1970: 0),
       originalTimeMinutes: nil,
@@ -30,14 +30,6 @@ final class ScheduleDragDropInteractionLayerTests: XCTestCase {
   }
 
   func testTimedItemDraggedIntoAllDayZonePresentsAsAllDay() {
-    let metrics = ScheduleInteractionMetrics(
-      dayColumnWidth: 120,
-      hourHeight: 60,
-      quarterHourHeight: 15,
-      timeGridHeight: 24 * 60,
-      timedMinimumDurationMinutes: WorkspaceTaskScheduleEventStore.defaultScheduledDurationMinutes
-    )
-
     let preview = ScheduleDragDropInteractionLayer.preview(
       originalDay: Date(timeIntervalSince1970: 0),
       originalTimeMinutes: 10 * 60,
@@ -54,5 +46,67 @@ final class ScheduleDragDropInteractionLayerTests: XCTestCase {
 
     XCTAssertNil(preview.timeMinutes)
     XCTAssertNil(preview.durationMinutes)
+  }
+
+  func testPointerViewportXMapsToVisibleDayColumn() {
+    let calendar = Calendar(identifier: .gregorian)
+    let firstDay = Date(timeIntervalSince1970: 0)
+    let days = (0..<3).compactMap { calendar.date(byAdding: .day, value: $0, to: firstDay) }
+
+    let pointerDay = ScheduleDragDropInteractionLayer.dayForPointerViewportX(
+      76 + 120 + 40,
+      titleColumnWidth: 76,
+      scrollOffsetX: 0,
+      days: days,
+      metrics: metrics
+    )
+
+    XCTAssertEqual(pointerDay, days[1])
+  }
+
+  func testPointerViewportXMappingAccountsForHorizontalScroll() {
+    let calendar = Calendar(identifier: .gregorian)
+    let firstDay = Date(timeIntervalSince1970: 0)
+    let days = (0..<4).compactMap { calendar.date(byAdding: .day, value: $0, to: firstDay) }
+
+    let pointerDay = ScheduleDragDropInteractionLayer.dayForPointerViewportX(
+      76 + 30,
+      titleColumnWidth: 76,
+      scrollOffsetX: 240,
+      days: days,
+      metrics: metrics
+    )
+
+    XCTAssertEqual(pointerDay, days[2])
+  }
+
+  func testAllDayPreviewViewportYPreservesGrabOffset() {
+    let y = ScheduleDragDropInteractionLayer.allDayPreviewViewportY(
+      pointerViewportY: 210,
+      originalPointerViewportY: 130,
+      originalViewportMinY: 120,
+      translationHeight: 80,
+      dateHeaderHeight: 48,
+      allDayRailPadding: 6,
+      allDayRailVisibleHeight: 240,
+      previewHeight: 32
+    )
+
+    XCTAssertEqual(y, 200)
+  }
+
+  func testAllDayPreviewViewportYClampsToVisibleRail() {
+    let y = ScheduleDragDropInteractionLayer.allDayPreviewViewportY(
+      pointerViewportY: 400,
+      originalPointerViewportY: 130,
+      originalViewportMinY: 120,
+      translationHeight: 270,
+      dateHeaderHeight: 48,
+      allDayRailPadding: 6,
+      allDayRailVisibleHeight: 120,
+      previewHeight: 32
+    )
+
+    XCTAssertEqual(y, 136)
   }
 }

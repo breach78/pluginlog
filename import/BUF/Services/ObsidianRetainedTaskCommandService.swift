@@ -2,6 +2,65 @@ import Foundation
 
 @MainActor
 enum ObsidianRetainedTaskCommandService {
+  static func createTask(
+    vaultRootURL: URL?,
+    projectID: UUID,
+    title rawTitle: String,
+    day: Date?,
+    timeMinutes: Int?,
+    durationMinutes: Int?,
+    calendar: Calendar = .autoupdatingCurrent,
+    reminderProjectProvider: ReminderProjectProvider
+  ) async throws -> RetainedTaskCommandResult {
+    let title = rawTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !title.isEmpty else {
+      throw RetainedTaskCommandError.retainedProjectionFailed("empty task title")
+    }
+    let context = try await projectContext(vaultRootURL: vaultRootURL, projectID: projectID)
+    let dueDate = scheduledDate(day: day, timeMinutes: timeMinutes, calendar: calendar)
+    let hasExplicitTime = dueDate != nil && timeMinutes != nil
+    guard let remoteMetadata = try reminderProjectProvider.createTaskReminder(
+      inProject: context.reminderListExternalIdentifier,
+      title: title,
+      dueDate: dueDate,
+      hasExplicitTime: hasExplicitTime,
+      noteText: ""
+    ), let reminderExternalIdentifier = normalized(remoteMetadata.externalIdentifier) else {
+      throw RetainedTaskCommandError.retainedProjectionFailed("created reminder missing external id")
+    }
+
+    let taskID = ReminderProjectionIdentity.taskID(for: reminderExternalIdentifier)
+    do {
+      let writtenSnapshot = try await writeCreatedTask(
+        using: context,
+        title: title,
+        reminderExternalIdentifier: reminderExternalIdentifier,
+        day: day,
+        timeMinutes: timeMinutes,
+        durationMinutes: durationMinutes,
+        calendar: calendar
+      )
+      try updateBaseline(
+        from: writtenSnapshot,
+        taskID: taskID,
+        reminderExternalIdentifier: reminderExternalIdentifier,
+        remoteModifiedAt: remoteMetadata.modifiedAt,
+        pushedFields: [.title, .date],
+        previousBaseline: nil
+      )
+      return try result(projectID: projectID, taskID: taskID, snapshot: writtenSnapshot)
+    } catch {
+      _ = try? reminderProjectProvider.removeTaskReminder(
+        for: ReminderTaskReference(
+          taskID: taskID,
+          reminderIdentifier: remoteMetadata.identifier,
+          reminderExternalIdentifier: reminderExternalIdentifier
+        )
+      )
+      throw error
+    }
+  }
+
   static func setTaskCompletion(
     vaultRootURL: URL?,
     projectID: UUID,
@@ -148,6 +207,37 @@ enum ObsidianRetainedTaskCommandService {
     let retainedTask: RetainedTask
   }
 
+  private struct ProjectCommandContext {
+    let store: ObsidianProjectMarkdownStore
+    let snapshot: ObsidianProjectMarkdownStore.Snapshot
+    let reminderListExternalIdentifier: String
+  }
+
+  private static func projectContext(
+    vaultRootURL: URL?,
+    projectID: UUID
+  ) async throws -> ProjectCommandContext {
+    guard let vaultRootURL else {
+      throw RetainedTaskCommandError.obsidianVaultNotConfigured
+    }
+    let store = ObsidianProjectMarkdownStore(vaultRootURL: vaultRootURL)
+    let snapshots = try await store.loadProjectNotesInScope()
+    try validateNotes(snapshots.map(\.note))
+    guard let snapshot = snapshots.first(where: { retainedProjectID(for: $0) == projectID }) else {
+      throw RetainedTaskCommandError.projectNotFound(projectID)
+    }
+    guard let reminderListExternalIdentifier = normalized(
+      snapshot.note.reminderListExternalIdentifier
+    ) else {
+      throw RetainedTaskCommandError.unsafeProjectNote(projectID)
+    }
+    return ProjectCommandContext(
+      store: store,
+      snapshot: snapshot,
+      reminderListExternalIdentifier: reminderListExternalIdentifier
+    )
+  }
+
   private static func commandContext(
     vaultRootURL: URL?,
     projectID: UUID,
@@ -195,6 +285,42 @@ enum ObsidianRetainedTaskCommandService {
       throw RetainedTaskCommandError.unmanagedTask(context.retainedTask.identity.taskID ?? UUID())
     }
     mutate(context.task, &bodyLines)
+    let note = ObsidianReminderImportFormatting.reparsedNote(
+      from: context.snapshot.note,
+      bodyLines: bodyLines
+    )
+    try validateNotes([note])
+    return try await context.store.writeProjectNote(
+      note,
+      preferredFileName: context.snapshot.fileURL.lastPathComponent,
+      expectedBaseline: ObsidianProjectMarkdownStore.WriteBaseline(snapshot: context.snapshot)
+    )
+  }
+
+  private static func writeCreatedTask(
+    using context: ProjectCommandContext,
+    title: String,
+    reminderExternalIdentifier: String,
+    day: Date?,
+    timeMinutes: Int?,
+    durationMinutes: Int?,
+    calendar: Calendar
+  ) async throws -> ObsidianProjectMarkdownStore.Snapshot {
+    var bodyLines = context.snapshot.note.bodyMarkdown.isEmpty
+      ? []
+      : context.snapshot.note.bodyMarkdown.components(separatedBy: "\n")
+    bodyLines.append("- [ ] \(title)")
+    let metadata = scheduleMetadata(
+      existing: nil,
+      reminderExternalIdentifier: reminderExternalIdentifier,
+      day: day,
+      timeMinutes: timeMinutes,
+      durationMinutes: durationMinutes,
+      calendar: calendar
+    )
+    bodyLines.append(
+      ObsidianReminderImportFormatting.renderMetadataLine(metadata, indentation: "  ")
+    )
     let note = ObsidianReminderImportFormatting.reparsedNote(
       from: context.snapshot.note,
       bodyLines: bodyLines
