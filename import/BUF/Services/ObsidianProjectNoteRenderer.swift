@@ -20,6 +20,13 @@ enum ObsidianProjectNoteRenderer {
     }
     if let listID = normalized(frontmatter.reminderListExternalIdentifier) {
       lines.append("reminder_list_external_id: \(listID)")
+      if let colorHex = normalized(frontmatter.colorHex) {
+        lines.append("brain_unfog_color_hex: \(yamlQuoted(colorHex))")
+      }
+      lines.append("분류:")
+      lines.append("  - \(frontmatter.projectStage.title)")
+      lines.append(frontmatterLine(key: "시작일", value: frontmatter.startDate))
+      lines.append(frontmatterLine(key: "마감일", value: frontmatter.deadline))
       lines.append("완료 가리기: \(frontmatter.hideCompletedTasks ? "true" : "false")")
       lines.append("아카이브: \(frontmatter.isArchived ? "true" : "false")")
     }
@@ -102,6 +109,10 @@ enum ObsidianProjectNoteRenderer {
   private static func isKnownCanonicalLine(_ line: String) -> Bool {
     let trimmed = line.trimmingCharacters(in: .whitespaces)
     return trimmed == "tags:" || trimmed.hasPrefix("reminder_list_external_id:")
+      || trimmed.hasPrefix("brain_unfog_color_hex:")
+      || trimmed.hasPrefix("분류:")
+      || trimmed.hasPrefix("시작일:")
+      || trimmed.hasPrefix("마감일:")
       || trimmed.hasPrefix("완료 가리기:") || trimmed.hasPrefix("아카이브:")
   }
 
@@ -110,6 +121,15 @@ enum ObsidianProjectNoteRenderer {
       .trimmingCharacters(in: .whitespaces)
       .lowercased()
     return key == "brain_unfog_project_id" || key == "brain_unfog_task_id"
+  }
+
+  private static func yamlQuoted(_ value: String) -> String {
+    "\"\(value.replacingOccurrences(of: "\"", with: "\\\""))\""
+  }
+
+  private static func frontmatterLine(key: String, value: String?) -> String {
+    guard let value = normalized(value) else { return "\(key):" }
+    return "\(key): \(value)"
   }
 
   private static func jsonEscaped(_ value: String) -> String {

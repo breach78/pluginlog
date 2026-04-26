@@ -82,6 +82,7 @@ enum ObsidianReminderImportSync {
       if let snapshot = snapshotsByListID[list.externalIdentifier] {
         let merge = mergeExistingNote(
           snapshot: snapshot,
+          list: list,
           items: items,
           now: now,
           calendar: calendar
@@ -163,6 +164,7 @@ enum ObsidianReminderImportSync {
 
   private static func mergeExistingNote(
     snapshot: ObsidianProjectMarkdownStore.Snapshot,
+    list: NormalizedList,
     items: [NormalizedItem],
     now: Date,
     calendar: Calendar
@@ -260,7 +262,7 @@ enum ObsidianReminderImportSync {
       calendar: calendar
     )
 
-    let nextNote = deletion.note
+    let nextNote = deletion.note.updatingFrontmatterColor(list.list.colorHex)
     let rendered = ObsidianProjectNoteRenderer.render(nextNote)
     let noteChanged = ObsidianReminderImportFormatting.normalizeForComparison(rendered)
       != ObsidianReminderImportFormatting.normalizeForComparison(snapshot.rawMarkdown)
@@ -591,6 +593,7 @@ enum ObsidianReminderImportSync {
           frontmatter: ObsidianProjectFrontmatter(
             tags: ["프로젝트"],
             reminderListExternalIdentifier: list.externalIdentifier,
+            colorHex: normalized(list.list.colorHex),
             preservedLines: []
           ),
           bodyMarkdown: bodyLines.joined(separator: "\n"),
@@ -740,5 +743,28 @@ enum ObsidianReminderImportSync {
       return nil
     }
     return value
+  }
+
+  fileprivate static func normalizedColor(_ value: String?) -> String? {
+    normalized(value)
+  }
+}
+
+private extension ObsidianProjectNote {
+  func updatingFrontmatterColor(_ colorHex: String?) -> Self {
+    var next = self
+    guard let frontmatter = next.frontmatter else { return next }
+    next.frontmatter = ObsidianProjectFrontmatter(
+      tags: frontmatter.tags,
+      reminderListExternalIdentifier: frontmatter.reminderListExternalIdentifier,
+      colorHex: ObsidianReminderImportSync.normalizedColor(colorHex),
+      projectStage: frontmatter.projectStage,
+      startDate: frontmatter.startDate,
+      deadline: frontmatter.deadline,
+      preservedLines: frontmatter.preservedLines,
+      hideCompletedTasks: frontmatter.hideCompletedTasks,
+      isArchived: frontmatter.isArchived
+    )
+    return next
   }
 }

@@ -31,6 +31,9 @@ final class ObsidianProjectNoteRendererTests: XCTestCase {
     XCTAssertTrue(rendered.contains("reminder_list_external_id: LIST-1"))
     XCTAssertTrue(rendered.contains("완료 가리기: true"))
     XCTAssertTrue(rendered.contains("아카이브: false"))
+    XCTAssertTrue(rendered.contains("분류:\n  - Do"))
+    XCTAssertTrue(rendered.contains("시작일:"))
+    XCTAssertTrue(rendered.contains("마감일:"))
     XCTAssertTrue(rendered.contains("owner: kept"))
     XCTAssertFalse(rendered.contains("brain_unfog_project_id"))
     XCTAssertFalse(rendered.contains("brain_unfog_task_id"))
@@ -151,6 +154,33 @@ final class ObsidianProjectNoteRendererTests: XCTestCase {
 
     XCTAssertTrue(rendered.contains("아카이브: true"))
     XCTAssertEqual(rendered.components(separatedBy: "아카이브:").count - 1, 1)
+  }
+
+  func testRendererCanonicalizesProjectTimelineFrontmatterProperties() {
+    let note = ObsidianProjectNoteParser.parse(
+      """
+      ---
+      tags:
+        - 프로젝트
+      reminder_list_external_id: LIST-1
+      brain_unfog_color_hex: "#FF3B30"
+      분류:
+        - Later
+      시작일: 2026-04-01
+      마감일: 2026-04-30
+      ---
+
+      - [ ] Later task
+      """
+    )
+
+    let rendered = ObsidianProjectNoteRenderer.render(note)
+
+    XCTAssertTrue(rendered.contains("brain_unfog_color_hex: \"#FF3B30\""))
+    XCTAssertTrue(rendered.contains("분류:\n  - Later"))
+    XCTAssertTrue(rendered.contains("시작일: 2026-04-01"))
+    XCTAssertTrue(rendered.contains("마감일: 2026-04-30"))
+    XCTAssertEqual(rendered.components(separatedBy: "분류:").count - 1, 1)
   }
 
   func testRendererDoesNotAddCompletedVisibilityCheckboxWithoutReminderBinding() {

@@ -72,6 +72,30 @@ final class ObsidianProjectNoteParserTests: XCTestCase {
     XCTAssertEqual(note.frontmatter?.isArchived, true)
   }
 
+  func testParsesProjectTimelineFrontmatterProperties() throws {
+    let note = ObsidianProjectNoteParser.parse(
+      """
+      ---
+      tags: [프로젝트]
+      reminder_list_external_id: LIST-1
+      brain_unfog_color_hex: "#FF3B30"
+      분류:
+        - Area
+      시작일: 2026-04-01
+      마감일: 2026-04-30
+      ---
+
+      - [ ] Task
+      """
+    )
+
+    let frontmatter = try XCTUnwrap(note.frontmatter)
+    XCTAssertEqual(frontmatter.colorHex, "#FF3B30")
+    XCTAssertEqual(frontmatter.projectStage, .area)
+    XCTAssertEqual(frontmatter.startDate, "2026-04-01")
+    XCTAssertEqual(frontmatter.deadline, "2026-04-30")
+  }
+
   func testClassifiesTagOnlyIdOnlyAndOrdinaryNotesAtProjectBoundary() {
     let tagOnly = ObsidianProjectNoteParser.parse(
       """

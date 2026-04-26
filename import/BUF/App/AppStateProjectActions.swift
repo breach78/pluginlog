@@ -99,6 +99,7 @@ extension AppState {
             frontmatter: ObsidianProjectFrontmatter(
               tags: ["프로젝트"],
               reminderListExternalIdentifier: reminderList.externalIdentifier,
+              colorHex: reminderList.colorHex,
               preservedLines: []
             ),
             bodyMarkdown: "",

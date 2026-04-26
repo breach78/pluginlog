@@ -17,6 +17,7 @@ let activeSchedulePopover = null;
 const HIDDEN_FRONTMATTER_KEYS = new Set([
   "brain_unfog_project_id",
   "brain_unfog_task_id",
+  "brain_unfog_color_hex",
   "calendar_event_external_id",
   "reminder_external_id",
   "reminder_list_external_id",

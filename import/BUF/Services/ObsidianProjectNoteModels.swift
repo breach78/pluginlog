@@ -27,9 +27,35 @@ struct ObsidianProjectNote: Equatable, Sendable {
 struct ObsidianProjectFrontmatter: Equatable, Sendable {
   var tags: [String]
   var reminderListExternalIdentifier: String?
+  var colorHex: String?
+  var projectStage: ProjectProgressStage
+  var startDate: String?
+  var deadline: String?
   var preservedLines: [String]
   var hideCompletedTasks: Bool = true
   var isArchived: Bool = false
+
+  init(
+    tags: [String],
+    reminderListExternalIdentifier: String?,
+    colorHex: String? = nil,
+    projectStage: ProjectProgressStage = .do,
+    startDate: String? = nil,
+    deadline: String? = nil,
+    preservedLines: [String],
+    hideCompletedTasks: Bool = true,
+    isArchived: Bool = false
+  ) {
+    self.tags = tags
+    self.reminderListExternalIdentifier = reminderListExternalIdentifier
+    self.colorHex = colorHex
+    self.projectStage = projectStage
+    self.startDate = startDate
+    self.deadline = deadline
+    self.preservedLines = preservedLines
+    self.hideCompletedTasks = hideCompletedTasks
+    self.isArchived = isArchived
+  }
 }
 
 struct ObsidianProjectTask: Equatable, Sendable {

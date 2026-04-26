@@ -19,6 +19,10 @@ struct RetainedProject: Equatable, Sendable {
   let hasManagedTaskSection: Bool
   let canSafelyPersistProjectNote: Bool
   let isArchived: Bool
+  let colorHex: String?
+  let localStartDate: Date?
+  let localDeadline: Date?
+  let progressStage: ProjectProgressStage
 
   init(
     identity: RetainedProjectIdentity,
@@ -30,7 +34,11 @@ struct RetainedProject: Equatable, Sendable {
     isBUFOwned: Bool,
     hasManagedTaskSection: Bool,
     canSafelyPersistProjectNote: Bool,
-    isArchived: Bool = false
+    isArchived: Bool = false,
+    colorHex: String? = nil,
+    localStartDate: Date? = nil,
+    localDeadline: Date? = nil,
+    progressStage: ProjectProgressStage = .do
   ) {
     self.identity = identity
     self.fileURL = fileURL
@@ -42,6 +50,10 @@ struct RetainedProject: Equatable, Sendable {
     self.hasManagedTaskSection = hasManagedTaskSection
     self.canSafelyPersistProjectNote = canSafelyPersistProjectNote
     self.isArchived = isArchived
+    self.colorHex = colorHex
+    self.localStartDate = localStartDate
+    self.localDeadline = localDeadline
+    self.progressStage = progressStage
   }
 }
 

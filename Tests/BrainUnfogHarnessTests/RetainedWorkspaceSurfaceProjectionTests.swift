@@ -218,6 +218,75 @@ final class RetainedWorkspaceSurfaceProjectionTests: XCTestCase {
     XCTAssertEqual(surface.calendarBridgeDecisionsByTaskID[stableTaskID], .noAction)
   }
 
+  func testBuildProjectsCarryTimelineFrontmatterIntoRuntimeBars() throws {
+    let listID = "reminder-list-1"
+    let projectID = RetainedProjectionBuilder.derivedProjectID(for: listID)
+    let taskID = UUID()
+    let firstTaskDay = try XCTUnwrap(
+      Self.calendar.date(from: DateComponents(year: 2026, month: 4, day: 10))
+    )
+    let deadline = try XCTUnwrap(
+      Self.calendar.date(from: DateComponents(year: 2026, month: 4, day: 30))
+    )
+    let explicitStart = try XCTUnwrap(
+      Self.calendar.date(from: DateComponents(year: 2026, month: 4, day: 1))
+    )
+    let snapshot = RetainedWorkspaceSnapshot(
+      projects: [
+        RetainedProject(
+          identity: RetainedProjectIdentity(
+            projectID: projectID,
+            reminderListExternalIdentifier: listID
+          ),
+          fileURL: URL(fileURLWithPath: "/tmp/Launch.md"),
+          title: "Launch",
+          noteMarkdown: "",
+          tasks: [
+            makeTask(taskID: taskID, title: "Dated", parsedDate: firstTaskDay),
+          ],
+          usesProjectTag: true,
+          isBUFOwned: true,
+          hasManagedTaskSection: false,
+          canSafelyPersistProjectNote: false,
+          isArchived: false,
+          colorHex: "#34C759",
+          localStartDate: explicitStart,
+          localDeadline: deadline,
+          progressStage: .later
+        )
+      ]
+    )
+
+    let result = RetainedWorkspaceSurfaceProjectionBuilder.build(
+      snapshot: snapshot,
+      projectIDs: [projectID],
+      calendar: Self.calendar
+    )
+    let surface = try XCTUnwrap(result.loadedProjection)
+    let project = try XCTUnwrap(surface.projectSnapshots[projectID])
+    let summary = try XCTUnwrap(surface.projectSummaries[projectID])
+    let bar = try XCTUnwrap(
+      TimelineProjectionService.runtimeBars(
+        service: DefaultTimelineService(),
+        projectIDs: [projectID],
+        projectSnapshots: surface.projectSnapshots,
+        projectSummariesByID: surface.projectSummaries,
+        scheduleEntriesByProjectID: surface.scheduleEntriesByProjectID
+      ).first
+    )
+
+    XCTAssertEqual(project.colorHex, "#34C759")
+    XCTAssertEqual(project.localStartDate, explicitStart)
+    XCTAssertEqual(project.localDeadline, deadline)
+    XCTAssertEqual(project.progressStageRaw, ProjectProgressStage.later.storageRawValue)
+    XCTAssertEqual(summary.stageRaw, ProjectProgressStage.later.storageRawValue)
+    XCTAssertEqual(summary.deadline, deadline)
+    XCTAssertEqual(bar.colorHex, "#34C759")
+    XCTAssertEqual(bar.start, Calendar.autoupdatingCurrent.startOfDay(for: explicitStart))
+    XCTAssertEqual(bar.end, Calendar.autoupdatingCurrent.startOfDay(for: deadline))
+    XCTAssertEqual(ProjectProgressStage.from(progress: bar.progress), .later)
+  }
+
   func testResolveRetainedOnlyBlocksUnavailableRetainedLoadsWithoutFallbackData() {
     let vaultMissing = RetainedWorkspaceSurfaceProjectionBuilder.resolveRetainedOnly(
       .blocked(.obsidianVaultNotConfigured)

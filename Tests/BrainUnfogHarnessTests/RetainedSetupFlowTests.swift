@@ -215,6 +215,10 @@ final class RetainedSetupFlowTests: XCTestCase {
       tags:
         - 프로젝트
       reminder_list_external_id: \(gateway.calendar.calendarIdentifier)
+      분류:
+        - Do
+      시작일:
+      마감일:
       완료 가리기: true
       아카이브: false
       ---

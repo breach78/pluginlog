@@ -179,6 +179,7 @@ enum ObsidianReminderBootstrapSync {
           frontmatter: ObsidianProjectFrontmatter(
             tags: ["프로젝트"],
             reminderListExternalIdentifier: list.externalIdentifier,
+            colorHex: normalized(list.list.colorHex),
             preservedLines: []
           ),
           bodyMarkdown: bodyLines.joined(separator: "\n"),

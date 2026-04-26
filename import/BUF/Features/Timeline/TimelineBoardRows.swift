@@ -743,8 +743,10 @@ extension TimelineBoardView {
       return Color.red.opacity(0.5)
     case .decide:
       return Color.yellow.opacity(0.5)
-    case .done:
+    case .area:
       return Color.green.opacity(0.5)
+    case .later:
+      return Color.secondary.opacity(0.35)
     }
   }
 

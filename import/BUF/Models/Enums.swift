@@ -61,27 +61,25 @@ enum ImportanceLevel: String, Codable, CaseIterable, Identifiable {
 }
 
 enum ProjectProgressStage: Int, Codable, CaseIterable, Identifiable {
-    case decide = 0
-    case `do` = 1
-    case done = 2
+    case `do` = 0
+    case decide = 1
+    case area = 2
+    case later = 3
 
     static let boardOrderRevisionStorageKey = "project.progressStage.boardOrderRevision"
 
     var id: Int { rawValue }
     var storageRawValue: String { String(rawValue) }
     var progressValue: Double {
-        switch self {
-        case .decide: 0.25
-        case .do: 0.6
-        case .done: 1
-        }
+        Double(rawValue) / Double(max(1, Self.allCases.count - 1))
     }
 
     var title: String {
         switch self {
-        case .decide: "결정"
-        case .do: "진행"
-        case .done: "완료"
+        case .do: "Do"
+        case .decide: "Decide"
+        case .area: "Area"
+        case .later: "Later"
         }
     }
 
@@ -89,16 +87,35 @@ enum ProjectProgressStage: Int, Codable, CaseIterable, Identifiable {
 
     var iconName: String {
         switch self {
-        case .decide: "questionmark.circle.fill"
-        case .do: "circle.fill"
-        case .done: "checkmark.circle.fill"
+        case .do: "bolt.fill"
+        case .decide: "clock.fill"
+        case .area: "square.grid.2x2"
+        case .later: "archivebox.fill"
         }
     }
 
     static func from(progress: Double) -> ProjectProgressStage {
-        if progress >= 0.95 { return .done }
-        if progress >= 0.45 { return .do }
-        return .decide
+        let clamped = min(max(progress, 0), 1)
+        let snappedIndex = Int((clamped * Double(Self.allCases.count - 1)).rounded())
+        return ProjectProgressStage(rawValue: snappedIndex) ?? .do
+    }
+
+    static func fromStorageValue(_ value: String?) -> ProjectProgressStage? {
+        guard let normalized = normalizedStageValue(value) else { return nil }
+        if let intValue = Int(normalized), let stage = ProjectProgressStage(rawValue: intValue) {
+            return stage
+        }
+        return Self.allCases.first { stage in
+            normalizedStageValue(stage.title) == normalized
+                || normalizedStageValue(stage.label) == normalized
+        }
+    }
+
+    private static func normalizedStageValue(_ value: String?) -> String? {
+        guard let value else { return nil }
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+            .trimmingCharacters(in: CharacterSet(charactersIn: "\"'"))
+        return trimmed.isEmpty ? nil : trimmed.lowercased()
     }
 }
 

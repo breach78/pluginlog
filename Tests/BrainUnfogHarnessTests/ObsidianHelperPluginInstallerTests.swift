@@ -34,7 +34,7 @@ final class ObsidianHelperPluginInstallerTests: XCTestCase {
     )
     XCTAssertEqual(manifest["id"] as? String, ObsidianHelperPluginInstaller.pluginIdentifier)
     XCTAssertEqual(manifest["name"] as? String, "Brain Unfog Helper")
-    XCTAssertEqual(manifest["version"] as? String, "0.5.3")
+    XCTAssertEqual(manifest["version"] as? String, "0.5.4")
     XCTAssertNotNil(manifest["minAppVersion"] as? String)
     XCTAssertNotNil(manifest["description"] as? String)
     XCTAssertNotNil(manifest["author"] as? String)
@@ -238,6 +238,7 @@ final class ObsidianHelperPluginInstallerTests: XCTestCase {
     XCTAssertTrue(stylesheet.contains("brain-unfog-hidden-line"))
     XCTAssertTrue(stylesheet.contains("brain-unfog-schedule-chip"))
     XCTAssertTrue(stylesheet.contains(#"data-property-key="reminder_list_external_id""#))
+    XCTAssertTrue(stylesheet.contains(#"data-property-key="brain_unfog_color_hex""#))
   }
 
   func testBundledHelperUsesProjectPropertyForCompletedSubtreeVisibility() throws {

@@ -187,6 +187,18 @@ enum TimelineProjectionService {
         guard let date = entry.displayedDate ?? entry.dueDate ?? entry.startDate else { return nil }
         return (entry, Calendar.autoupdatingCurrent.startOfDay(for: date))
       }
+      let datedDays = datedEntries.map(\.1)
+      let explicitStart = project.localStartDate.map {
+        Calendar.autoupdatingCurrent.startOfDay(for: $0)
+      }
+      let explicitDeadline = project.localDeadline.map {
+        Calendar.autoupdatingCurrent.startOfDay(for: $0)
+      }
+      let barStart = explicitStart ?? datedDays.min()
+      let lastDatedDay = datedDays.max()
+      let barEnd = [lastDatedDay, explicitDeadline].compactMap { $0 }.max()
+      let stage = ProjectProgressStage.fromStorageValue(project.progressStageRaw)
+        ?? ProjectProgressStage.do
       var dailyTaskCounts: [Date: Int] = [:]
       var dailyCompletedTaskCounts: [Date: Int] = [:]
       var taskPreviews: [Date: [TimelineProjectTaskPreview]] = [:]
@@ -218,11 +230,11 @@ enum TimelineProjectionService {
         projectID: projectID,
         title: project.title,
         colorHex: project.colorHex,
-        start: project.localStartDate,
-        end: summary?.nextUpcomingDate,
-        deadline: summary?.deadline,
+        start: barStart,
+        end: barEnd,
+        deadline: explicitDeadline ?? summary?.deadline,
         nextUpcomingDate: summary?.nextUpcomingDate,
-        progress: summary?.progress ?? 0,
+        progress: summary?.progress ?? stage.progressValue,
         remainingTaskCount: summary?.openRootTaskCount ?? entries.filter { !$0.isCompleted }.count,
         undatedRemainingTaskCount: summary?.undatedOpenRootTaskCount ?? 0,
         dailyTaskCounts: dailyTaskCounts,

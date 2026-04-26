@@ -110,6 +110,10 @@ enum ObsidianProjectNoteParser {
   private static func parseFrontmatterLines(_ lines: [String]) -> ObsidianProjectFrontmatter {
     var tags: [String] = []
     var listID: String?
+    var colorHex: String?
+    var projectStage: ProjectProgressStage = .do
+    var startDate: String?
+    var deadline: String?
     var hideCompletedTasks = true
     var isArchived = false
     var consumed: Set<Int> = []
@@ -135,6 +139,24 @@ enum ObsidianProjectNoteParser {
       case "reminder_list_external_id":
         consumed.insert(index)
         listID = normalizedScalar(keyValue.value)
+      case "brain_unfog_color_hex":
+        consumed.insert(index)
+        colorHex = normalizedScalar(keyValue.value)
+      case "분류":
+        consumed.insert(index)
+        let values = frontmatterValues(
+          scalar: keyValue.value,
+          lines: lines,
+          startingAt: index + 1,
+          consumed: &consumed
+        )
+        projectStage = values.compactMap(ProjectProgressStage.fromStorageValue).first ?? .do
+      case "시작일":
+        consumed.insert(index)
+        startDate = normalizedScalar(keyValue.value)
+      case "마감일":
+        consumed.insert(index)
+        deadline = normalizedScalar(keyValue.value)
       case "완료 가리기":
         consumed.insert(index)
         hideCompletedTasks = boolScalar(keyValue.value)
@@ -154,6 +176,10 @@ enum ObsidianProjectNoteParser {
     return ObsidianProjectFrontmatter(
       tags: unique(tags.compactMap(normalizedTag)),
       reminderListExternalIdentifier: listID,
+      colorHex: colorHex,
+      projectStage: projectStage,
+      startDate: startDate,
+      deadline: deadline,
       preservedLines: preserved,
       hideCompletedTasks: hideCompletedTasks,
       isArchived: isArchived
@@ -292,6 +318,36 @@ enum ObsidianProjectNoteParser {
       }.filter { !$0.isEmpty }
     }
     return normalizedTag(trimmed).map { [$0] } ?? []
+  }
+
+  private static func frontmatterValues(
+    scalar: String,
+    lines: [String],
+    startingAt startIndex: Int,
+    consumed: inout Set<Int>
+  ) -> [String] {
+    var values: [String] = []
+    if let scalarValue = normalizedScalar(scalar) {
+      if scalarValue.hasPrefix("["), scalarValue.hasSuffix("]") {
+        values.append(contentsOf: scalarValue.dropFirst().dropLast().split(separator: ",")
+          .compactMap { normalizedScalar(String($0)) })
+      } else {
+        values.append(scalarValue)
+      }
+    }
+
+    var cursor = startIndex
+    while cursor < lines.count {
+      let candidate = lines[cursor]
+      let trimmed = candidate.trimmingCharacters(in: .whitespaces)
+      guard candidate.hasPrefix(" "), trimmed.hasPrefix("- ") else { break }
+      consumed.insert(cursor)
+      if let value = normalizedScalar(String(trimmed.dropFirst(2))) {
+        values.append(value)
+      }
+      cursor += 1
+    }
+    return values
   }
 
   private static func normalizedTag(_ value: String) -> String? {

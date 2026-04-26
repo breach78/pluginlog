@@ -23,7 +23,7 @@ final class ObsidianReminderImportSyncTests: XCTestCase {
     ReminderSyncBaselineStore.install(dataDirectory: dataRoot)
     let store = ObsidianProjectMarkdownStore(vaultRootURL: try makeTemporaryVault())
     let dueDate = makeDate(year: 2026, month: 4, day: 25, hour: 9, minute: 30)
-    let list = makeList(identifier: "list-1", title: "Inbox")
+    let list = makeList(identifier: "list-1", title: "Inbox", colorHex: "#FF3B30")
 
     let result = try await ObsidianReminderImportSync.sync(
       batch: ReminderImportSnapshotBatch(
@@ -53,13 +53,68 @@ final class ObsidianReminderImportSyncTests: XCTestCase {
     XCTAssertEqual(result.importedTaskCount, 1)
     XCTAssertEqual(snapshots.first?.vaultRelativePath, "raw/projects/Inbox.md")
     XCTAssertEqual(note.reminderListExternalIdentifier, "list-1")
+    XCTAssertEqual(note.frontmatter?.colorHex, "#FF3B30")
     XCTAssertEqual(task.title, "Remote task")
     XCTAssertEqual(task.metadata?.reminderExternalIdentifier, "task-1")
     XCTAssertEqual(task.metadata?.date, "2026-04-25")
     XCTAssertEqual(task.metadata?.time, "09:30")
     XCTAssertEqual(task.metadata?.repeatRule, "reminder")
     XCTAssertTrue(snapshots[0].rawMarkdown.contains("  - remote note"))
+    XCTAssertTrue(snapshots[0].rawMarkdown.contains("brain_unfog_color_hex: \"#FF3B30\""))
     XCTAssertEqual(ReminderSyncBaselineStore.baseline(for: "task-1")?.state.title, "Remote task")
+  }
+
+  func testExistingReminderListColorUpdatesHiddenObsidianPropertyWithoutTaskChanges() async throws {
+    let dataRoot = try makeTemporaryDirectory(prefix: "ObsidianImportData")
+    ReminderSyncBaselineStore.install(dataDirectory: dataRoot)
+    let vault = try makeTemporaryVault()
+    _ = try writeProjectNote(
+      vault: vault,
+      fileName: "Project.md",
+      body: """
+      ---
+      tags:
+        - 프로젝트
+      reminder_list_external_id: list-1
+      brain_unfog_color_hex: "#0A84FF"
+      ---
+      - [ ] Stable task
+        %% brain-unfog: {"reminder_external_id":"task-1"} %%
+      """
+    )
+    ReminderSyncBaselineStore.upsert(
+      reminderExternalIdentifier: "task-1",
+      state: ReminderSyncTaskState(
+        title: "Stable task",
+        isCompleted: false,
+        date: nil,
+        repeatRule: nil,
+        noteText: nil
+      ),
+      remoteModifiedAt: fixedRemoteDate,
+      now: fixedNow
+    )
+    let list = makeList(identifier: "list-1", title: "Project", colorHex: "#34C759")
+
+    let result = try await ObsidianReminderImportSync.sync(
+      batch: ReminderImportSnapshotBatch(
+        lists: [list],
+        itemsByListIdentifier: [
+          list.identifier: [
+            makeItem(identifier: "task-1", listIdentifier: list.identifier, title: "Stable task"),
+          ],
+        ]
+      ),
+      store: ObsidianProjectMarkdownStore(vaultRootURL: vault),
+      now: fixedNow
+    )
+
+    let snapshots = try await ObsidianProjectMarkdownStore(vaultRootURL: vault)
+      .loadProjectNotesInScope()
+    let raw = try XCTUnwrap(snapshots.first?.rawMarkdown)
+    XCTAssertEqual(result.updatedTaskCount, 0)
+    XCTAssertTrue(raw.contains("brain_unfog_color_hex: \"#34C759\""))
+    XCTAssertFalse(raw.contains("brain_unfog_color_hex: \"#0A84FF\""))
   }
 
   func testExistingReminderEditsMergeIntoObsidianAndPreserveDuration() async throws {
@@ -398,12 +453,16 @@ final class ObsidianReminderImportSyncTests: XCTestCase {
     )
   }
 
-  private func makeList(identifier: String, title: String) -> ReminderListImportSnapshot {
+  private func makeList(
+    identifier: String,
+    title: String,
+    colorHex: String? = nil
+  ) -> ReminderListImportSnapshot {
     ReminderListImportSnapshot(
       identifier: identifier,
       externalIdentifier: identifier,
       title: title,
-      colorHex: nil
+      colorHex: colorHex
     )
   }
 

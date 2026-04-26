@@ -165,7 +165,21 @@ extension TimelineBoardView {
   }
 
   func updateTimelineProjectColor(projectID: UUID, hex: String) {
-    guard allowTimelineMutation("project-color") else { return }
+    guard allowTimelineRetainedWrite("project-color") else { return }
+    Task { @MainActor in
+      do {
+        _ = try await ObsidianRetainedProjectCommandService.setProjectColor(
+          vaultRootURL: appState.obsidianVaultRootURL,
+          projectID: projectID,
+          colorHex: hex,
+          reminderProjectProvider: appState.reminderProjectProvider
+        )
+        appState.recordAppAuthoredReminderPush()
+        await refreshTimelineProjectState(including: [projectID])
+      } catch {
+        appState.errorMessage = error.localizedDescription
+      }
+    }
   }
 
   func updateTimelineProjectStage(
@@ -175,7 +189,31 @@ extension TimelineBoardView {
   ) {
     let currentStage = timelineProjectStage(for: projectID)
     guard currentStage != stage else { return }
-    guard allowTimelineMutation("project-stage") else { return }
+    guard allowTimelineRetainedWrite("project-stage") else { return }
+    Task { @MainActor in
+      do {
+        _ = try await ObsidianRetainedProjectCommandService.setProjectStage(
+          vaultRootURL: appState.obsidianVaultRootURL,
+          projectID: projectID,
+          stage: stage
+        )
+        await refreshTimelineProjectState(including: [projectID])
+
+        guard registerUndo else { return }
+        appState.registerUndo(
+          with: undoManager,
+          actionName: "분류 변경"
+        ) {
+          self.updateTimelineProjectStage(
+            projectID: projectID,
+            stage: currentStage,
+            registerUndo: true
+          )
+        }
+      } catch {
+        appState.errorMessage = error.localizedDescription
+      }
+    }
   }
 
   func colorSwatchMenuImage(hex: String, selected: Bool) -> NSImage {
@@ -281,16 +319,14 @@ extension TimelineBoardView {
   private func timelineProjectStage(for projectID: UUID) -> ProjectProgressStage {
     if
       let stageRaw = workspaceTimelineProjectSummaries[projectID]?.stageRaw,
-      let stageValue = Int(stageRaw),
-      let stage = ProjectProgressStage(rawValue: stageValue)
+      let stage = ProjectProgressStage.fromStorageValue(stageRaw)
     {
       return stage
     }
 
     if
       let stageRaw = workspaceTimelineProjectSnapshots[projectID]?.progressStageRaw,
-      let stageValue = Int(stageRaw),
-      let stage = ProjectProgressStage(rawValue: stageValue)
+      let stage = ProjectProgressStage.fromStorageValue(stageRaw)
     {
       return stage
     }

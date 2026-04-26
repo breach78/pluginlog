@@ -42,7 +42,11 @@ enum ObsidianRetainedProjectionAdapter {
       isBUFOwned: true,
       hasManagedTaskSection: false,
       canSafelyPersistProjectNote: false,
-      isArchived: note.frontmatter?.isArchived ?? false
+      isArchived: note.frontmatter?.isArchived ?? false,
+      colorHex: normalized(note.frontmatter?.colorHex),
+      localStartDate: parseDate(note.frontmatter?.startDate, time: nil, calendar: calendar),
+      localDeadline: parseDate(note.frontmatter?.deadline, time: nil, calendar: calendar),
+      progressStage: note.frontmatter?.projectStage ?? .do
     )
   }
 

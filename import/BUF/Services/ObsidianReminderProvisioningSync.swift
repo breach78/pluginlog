@@ -114,7 +114,10 @@ enum ObsidianReminderProvisioningSync {
           reminderListExternalIdentifier: listIdentifier,
           now: now
         )
-        note = note.withReminderListExternalIdentifier(listIdentifier)
+        note = note.withReminderListExternalIdentifier(
+          listIdentifier,
+          colorHex: createdList.colorHex
+        )
         didMutateNote = true
         didCreateProject = true
         createdProjectCount += 1
@@ -316,7 +319,10 @@ enum ObsidianReminderProvisioningSync {
       archivedProject(from: archive)
     )
     let restoredListIdentifier = restoreResult.list.externalIdentifier
-    var restoredNote = snapshot.note.withReminderListExternalIdentifier(restoredListIdentifier)
+    var restoredNote = snapshot.note.withReminderListExternalIdentifier(
+      restoredListIdentifier,
+      colorHex: restoreResult.list.colorHex
+    )
     var taskRecords: [TaskIdentityBridgeRecord] = []
     var baselineUpdates: [ReminderSyncTaskBaselineUpdate] = []
     var oldReminderIDsToRemove: [String] = []
@@ -912,7 +918,7 @@ private extension ReminderArchiveDateComponentsSnapshot {
 }
 
 private extension ObsidianProjectNote {
-  func withReminderListExternalIdentifier(_ identifier: String) -> Self {
+  func withReminderListExternalIdentifier(_ identifier: String, colorHex: String? = nil) -> Self {
     var next = self
     let frontmatter = next.frontmatter ?? ObsidianProjectFrontmatter(
       tags: ["프로젝트"],
@@ -922,11 +928,24 @@ private extension ObsidianProjectNote {
     next.frontmatter = ObsidianProjectFrontmatter(
       tags: frontmatter.tags.isEmpty ? ["프로젝트"] : frontmatter.tags,
       reminderListExternalIdentifier: identifier,
+      colorHex: normalized(colorHex) ?? frontmatter.colorHex,
+      projectStage: frontmatter.projectStage,
+      startDate: frontmatter.startDate,
+      deadline: frontmatter.deadline,
       preservedLines: frontmatter.preservedLines,
       hideCompletedTasks: frontmatter.hideCompletedTasks,
       isArchived: frontmatter.isArchived
     )
     return next
+  }
+
+  private func normalized(_ value: String?) -> String? {
+    guard let value = value?.trimmingCharacters(in: .whitespacesAndNewlines),
+      !value.isEmpty
+    else {
+      return nil
+    }
+    return value
   }
 
   func updatingTaskMetadata(
