@@ -119,7 +119,7 @@ extension ScheduleBoardView {
             targetCompletedWorkUnits: entry.targetCompletedWorkUnits
           )
         )
-        .opacity(isTaskDragging ? 0 : 1)
+        .opacity(isTaskDragging ? dragSourcePlaceholderOpacity : 1)
         .offset(x: frame.minX, y: frame.minY)
         .zIndex(2)
       } else if let event = entry.event {
@@ -145,7 +145,7 @@ extension ScheduleBoardView {
             eventChip(event, title: entry.title, subtitle: entry.subtitle, color: entry.color)
           }
         }
-        .opacity(isEventDragging ? 0 : 1)
+        .opacity(isEventDragging ? dragSourcePlaceholderOpacity : 1)
         .offset(x: frame.minX, y: frame.minY)
         .zIndex(1)
       }
@@ -177,16 +177,4 @@ extension ScheduleBoardView {
     )
   }
 
-  func allDayItemSort(_ lhs: ScheduleAllDayLayout, _ rhs: ScheduleAllDayLayout) -> Bool {
-    if lhs.isTask != rhs.isTask {
-      return lhs.isTask && !rhs.isTask
-    }
-    if lhs.isPreparationSlot != rhs.isPreparationSlot {
-      return !lhs.isPreparationSlot && rhs.isPreparationSlot
-    }
-    if lhs.subtitle != rhs.subtitle {
-      return (lhs.subtitle ?? "") < (rhs.subtitle ?? "")
-    }
-    return lhs.title.localizedStandardCompare(rhs.title) == .orderedAscending
-  }
 }

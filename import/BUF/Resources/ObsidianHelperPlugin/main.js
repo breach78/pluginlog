@@ -16,6 +16,7 @@ const TASK_FOCUS_PROTOCOL_ACTION = "brain-unfog-focus-task";
 const TASK_FOCUS_HIGHLIGHT_CLASS = "brain-unfog-task-focus-highlight";
 const TASK_FOCUS_HIGHLIGHT_DURATION_MS = 4000;
 const TASK_FOCUS_HIGHLIGHT_MAX_ATTEMPTS = 20;
+const DEFAULT_SCHEDULE_DURATION_MINUTES = "30";
 const BRAIN_UNFOG_PROPERTY_TYPES = {
   "분류": "multitext",
   "시작일": "date",
@@ -721,7 +722,7 @@ class BrainUnfogScheduleModal extends Modal {
     timeInput.addEventListener("change", () => {
       this.state.time = timeInput.value.trim();
       if (this.state.time && !this.state.duration) {
-        this.state.duration = "15";
+        this.state.duration = DEFAULT_SCHEDULE_DURATION_MINUTES;
         this.render();
       }
     });
@@ -731,7 +732,7 @@ class BrainUnfogScheduleModal extends Modal {
     const durationInput = scheduleRow.createEl("input", { type: "number" });
     durationInput.min = "1";
     durationInput.step = "5";
-    durationInput.placeholder = this.state.time ? "15" : "";
+    durationInput.placeholder = this.state.time ? DEFAULT_SCHEDULE_DURATION_MINUTES : "";
     durationInput.value = this.state.duration || "";
     durationInput.addEventListener("change", () => {
       this.state.duration = durationInput.value.trim();
@@ -835,7 +836,7 @@ class BrainUnfogInlineSchedulePopover {
     timeInput.addEventListener("change", () => {
       this.state.time = timeInput.value.trim();
       if (this.state.time && !this.state.duration) {
-        this.state.duration = "15";
+        this.state.duration = DEFAULT_SCHEDULE_DURATION_MINUTES;
         this.render();
         this.position();
       }
@@ -844,7 +845,7 @@ class BrainUnfogInlineSchedulePopover {
     const durationInput = labeledInput(fields, "듀레이션", "number");
     durationInput.min = "1";
     durationInput.step = "5";
-    durationInput.placeholder = this.state.time ? "15" : "";
+    durationInput.placeholder = this.state.time ? DEFAULT_SCHEDULE_DURATION_MINUTES : "";
     durationInput.value = this.state.duration || "";
     durationInput.addEventListener("change", () => {
       this.state.duration = durationInput.value.trim();
@@ -1137,7 +1138,7 @@ function writeScheduleState(editor, taskLine, state) {
   metadata.date = state.date;
   if (state.time) {
     metadata.time = state.time;
-    metadata.duration = Number.parseInt(state.duration || "15", 10);
+    metadata.duration = Number.parseInt(state.duration || DEFAULT_SCHEDULE_DURATION_MINUTES, 10);
   } else {
     delete metadata.time;
     if (state.duration) {

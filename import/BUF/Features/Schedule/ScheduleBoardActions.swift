@@ -1023,6 +1023,7 @@ extension ScheduleBoardView {
       return
     }
     selectedScheduleTaskID = taskID
+    scheduleTaskWriteNotice = nil
     Task { @MainActor in
       do {
         let result = try await ObsidianRetainedTaskCommandService.setTaskSchedule(
@@ -1053,9 +1054,37 @@ extension ScheduleBoardView {
           )
         }
       } catch {
+        if await handleRetainedScheduleWriteFailure(error) {
+          return
+        }
         appState.errorMessage = error.localizedDescription
       }
     }
+  }
+
+  func handleRetainedScheduleWriteFailure(_ error: Error) async -> Bool {
+    guard let retainedError = error as? RetainedTaskCommandError else {
+      return false
+    }
+
+    guard case .retainedProjectionFailed(let message) = retainedError,
+      message.contains("reminder sync baseline")
+    else {
+      return false
+    }
+
+    AppLogger.ui.error(
+      "schedule retained write stale baseline: \(message, privacy: .public)"
+    )
+    scheduleTaskWriteNotice = ScheduleBoardRuntimeNotice(
+      id: "schedule_retained_write_stale_baseline",
+      symbol: "arrow.clockwise.circle",
+      title: "일정 저장 대기",
+      message: "리마인더가 먼저 바뀌어 최신 상태를 다시 불러왔습니다. 같은 이동을 다시 시도해 주세요."
+    )
+    await reloadWorkspaceScheduleProjectDetails(for: activeProjectIDs)
+    refreshCalendarOverlay(force: true)
+    return true
   }
 
   func externalTaskDropPreview(at location: CGPoint) -> ScheduleInteractionPreview? {

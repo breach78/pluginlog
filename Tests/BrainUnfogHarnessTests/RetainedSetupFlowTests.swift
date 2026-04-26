@@ -116,6 +116,8 @@ final class RetainedSetupFlowTests: XCTestCase {
     XCTAssertEqual(plist["com.apple.security.app-sandbox"], true)
     XCTAssertEqual(plist["com.apple.security.files.user-selected.read-write"], true)
     XCTAssertEqual(plist["com.apple.security.files.bookmarks.app-scope"], true)
+    XCTAssertEqual(plist["com.apple.security.personal-information.calendars"], true)
+    XCTAssertEqual(plist["com.apple.security.personal-information.reminders"], true)
   }
 
   func testConfigureObsidianVaultCreatesBufRawProjectsAndRunsReminderFirstBootstrap() async throws {

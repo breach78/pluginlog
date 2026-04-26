@@ -42,6 +42,20 @@ final class ObsidianHelperPluginInstallerTests: XCTestCase {
     XCTAssertFalse(ObsidianHelperPluginInstaller.pluginIdentifier.contains("obsidian"))
   }
 
+  func testBundledSourceURLResolvesPackagedAppResourceBundlePath() throws {
+    let resourceRoot = try makeTemporaryDirectory(named: "PackagedAppResources")
+    let bundledSourceURL = resourceRoot
+      .appendingPathComponent(ObsidianHelperPluginInstaller.resourceBundleName, isDirectory: true)
+      .appendingPathComponent(ObsidianHelperPluginInstaller.bundledResourceName, isDirectory: true)
+    try FileManager.default.createDirectory(at: bundledSourceURL, withIntermediateDirectories: true)
+
+    XCTAssertEqual(
+      ObsidianHelperPluginInstaller.bundledSourceURL(inResourceDirectory: resourceRoot)?
+        .standardizedFileURL,
+      bundledSourceURL.standardizedFileURL
+    )
+  }
+
   func testInstallCopiesPluginIntoExistingObsidianPluginsDirectory() throws {
     let sourceURL = try makePluginSource(version: "0.1.0", script: "window.__buf = 'fresh';")
     let vaultURL = try makeVault(withObsidianDirectory: true)
@@ -243,6 +257,19 @@ final class ObsidianHelperPluginInstallerTests: XCTestCase {
     XCTAssertTrue(stylesheet.contains("brain-unfog-hidden-line"))
     XCTAssertTrue(stylesheet.contains("brain-unfog-schedule-chip"))
     XCTAssertTrue(stylesheet.contains(#"data-property-key="reminder_list_external_id""#))
+  }
+
+  func testBundledHelperUsesThirtyMinuteDefaultScheduleDuration() throws {
+    let sourceURL = try ObsidianHelperPluginInstaller.bundledSourceURL()
+    let script = try String(
+      contentsOf: sourceURL.appendingPathComponent("main.js", isDirectory: false),
+      encoding: .utf8
+    )
+
+    XCTAssertTrue(script.contains("DEFAULT_SCHEDULE_DURATION_MINUTES = \"30\""))
+    XCTAssertFalse(script.contains("state.duration = \"15\""))
+    XCTAssertFalse(script.contains("state.duration || \"15\""))
+    XCTAssertFalse(script.contains("placeholder = this.state.time ? \"15\""))
   }
 
   func testBundledHelperCanFocusTasksFromProtocolLinks() throws {

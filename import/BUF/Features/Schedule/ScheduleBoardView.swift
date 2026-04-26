@@ -73,7 +73,7 @@ enum ScheduleViewportSyncDiagnostic: String, Equatable {
   case scrollRequestQueuedWithoutViewport = "scroll_request_queued_without_viewport"
   case dragProjectionFrameUnavailable = "drag_projection_frame_unavailable"
 
-  var notice: ScheduleBoardRuntimeNotice {
+  var notice: ScheduleBoardRuntimeNotice? {
     switch self {
     case .scrollRequestQueuedWithoutViewport:
       return ScheduleBoardRuntimeNotice(
@@ -83,12 +83,7 @@ enum ScheduleViewportSyncDiagnostic: String, Equatable {
         message: "스크롤 뷰가 아직 준비되지 않아 점프 요청을 큐에 보관했습니다."
       )
     case .dragProjectionFrameUnavailable:
-      return ScheduleBoardRuntimeNotice(
-        id: rawValue,
-        symbol: "scope",
-        title: "드래그 projection 진단",
-        message: "보드 전역 frame이 아직 준비되지 않아 외부 drop projection을 계산하지 못했습니다."
-      )
+      return nil
     }
   }
 }
@@ -606,6 +601,7 @@ struct ScheduleBoardView: View {
   @State var workspaceScheduleProjectSnapshots: [UUID: WorkspaceProjectRuntimeRecord] = [:]
   @State var workspaceScheduleSliceEntriesByProjectID: [UUID: [ScheduleSliceEntry]] = [:]
   @State var workspaceLoadFallback: ScheduleWorkspaceLoadFallback?
+  @State var scheduleTaskWriteNotice: ScheduleBoardRuntimeNotice?
   @State var selectedScheduleTaskID: UUID?
   @State var suppressedTaskTapUntil: Date = .distantPast
   @State var boardFrameInGlobal: CGRect = .null
@@ -634,6 +630,11 @@ struct ScheduleBoardView: View {
   let timedBlockColumnSpacing: CGFloat = 3
   let allDayChipHorizontalInset: CGFloat = 5
   let timedMinimumDuration = WorkspaceTaskScheduleEventStore.defaultScheduledDurationMinutes
+  let dragSourcePlaceholderOpacity = 0.34
+  let dragGhostOpacity = 0.86
+  let dragGhostScale: CGFloat = 1.015
+  let dragGhostShadowRadius: CGFloat = 10
+  let dragGhostShadowYOffset: CGFloat = 4
   let selectionHighlightColor = Color(red: 1.0, green: 0.93, blue: 0.82)
   let layoutEngine = ScheduleDayTimelineLayoutEngine()
   let scheduleDayHeaderOverlayWidth: CGFloat = 260
@@ -795,8 +796,11 @@ struct ScheduleBoardView: View {
     if let workspaceLoadFallback {
       return workspaceLoadFallback.notice
     }
-    if let viewportSyncDiagnostic {
-      return viewportSyncDiagnostic.notice
+    if let scheduleTaskWriteNotice {
+      return scheduleTaskWriteNotice
+    }
+    if let viewportNotice = viewportSyncDiagnostic?.notice {
+      return viewportNotice
     }
     return nil
   }

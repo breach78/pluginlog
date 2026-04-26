@@ -384,7 +384,7 @@ extension ScheduleBoardView {
         )
         .frame(width: frame.width, height: blockHeight, alignment: .topLeading)
         .offset(x: frame.minX, y: frame.minY)
-        .opacity((isDragging || isResizing) ? 0 : 1)
+        .opacity(isResizing ? 0 : (isDragging ? dragSourcePlaceholderOpacity : 1))
         .simultaneousGesture(
           taskDragGesture(
             for: taskDescriptor,
@@ -458,7 +458,7 @@ extension ScheduleBoardView {
         }
         .frame(width: frame.width, height: frame.height, alignment: .topLeading)
         .offset(x: frame.minX, y: frame.minY)
-        .opacity((isEventDragging || isEventResizing) ? 0 : 1)
+        .opacity(isEventResizing ? 0 : (isEventDragging ? dragSourcePlaceholderOpacity : 1))
         .zIndex(layout.entry.isBackgroundCalendar ? 1 : 2)
       }
     }
@@ -1066,6 +1066,24 @@ extension ScheduleBoardView {
     }
   }
 
+  func liftedDragPreview<Content: View>(
+    frame: CGRect,
+    @ViewBuilder content: () -> Content
+  ) -> some View {
+    content()
+      .frame(width: frame.width, height: frame.height, alignment: .topLeading)
+      .offset(x: frame.minX, y: frame.minY)
+      .scaleEffect(dragGhostScale, anchor: .center)
+      .opacity(dragGhostOpacity)
+      .shadow(
+        color: Color.black.opacity(0.18),
+        radius: dragGhostShadowRadius,
+        x: 0,
+        y: dragGhostShadowYOffset
+      )
+      .zIndex(2000)
+  }
+
   func recurrenceIndicator(fontSize: CGFloat) -> some View {
     Image(systemName: "repeat")
       .font(.system(size: fontSize, weight: .semibold))
@@ -1404,14 +1422,14 @@ extension ScheduleBoardView {
           let color = scheduleColor(for: taskDescriptor.projectColorHex)
           let taskRow = taskDescriptor.taskRow
 
-          Group {
+          liftedDragPreview(frame: frame) {
             if presentsAsAllDay {
               dragPreviewChip(
                 taskDescriptor: taskDescriptor,
                 title: taskRow.title,
                 subtitle: taskDescriptor.projectTitle,
                 color: color,
-                isSelected: selectedScheduleTaskID == taskRow.id,
+                isSelected: false,
                 isPreparationSlot: dragState.isPreparationSlot
               )
             } else {
@@ -1420,7 +1438,7 @@ extension ScheduleBoardView {
                 title: taskRow.title,
                 subtitle: taskDescriptor.projectTitle,
                 color: color,
-                isSelected: selectedScheduleTaskID == taskRow.id,
+                isSelected: false,
                 isPreparationSlot: dragState.isPreparationSlot,
                 targetCompletedWorkUnits: dragState.targetCompletedWorkUnits,
                 timeLabel: scheduleDragPreviewLabel(for: preview),
@@ -1428,9 +1446,6 @@ extension ScheduleBoardView {
               )
             }
           }
-          .frame(width: frame.width, height: frame.height, alignment: .topLeading)
-          .offset(x: frame.minX, y: frame.minY)
-          .zIndex(2000)
         }
 
         if let dragState = activeCalendarDrag,
@@ -1441,7 +1456,7 @@ extension ScheduleBoardView {
           let presentsAsAllDay = preview.timeMinutes == nil
           let color = scheduleColor(for: event.calendarColorHex, fallback: .secondary)
 
-          Group {
+          liftedDragPreview(frame: frame) {
             if presentsAsAllDay {
               dragPreviewEventChip(
                 event: event,
@@ -1461,9 +1476,6 @@ extension ScheduleBoardView {
               )
             }
           }
-          .frame(width: frame.width, height: frame.height, alignment: .topLeading)
-          .offset(x: frame.minX, y: frame.minY)
-          .zIndex(2000)
         }
 
         if let resizeState = activeTaskResize,
@@ -1907,13 +1919,10 @@ extension ScheduleBoardView {
       else {
         return rawFollowFrame
       }
-      let durationMinutes = preview.durationMinutes ?? timedMinimumDuration
-      return CGRect(
-        x: titleColumnWidth + CGFloat(dayIndex) * dayColumnWidth - currentScrollOffsetX
-          + timedBlockInset,
-        y: headerHeight + CGFloat(timeMinutes) / 60 * hourHeight - currentScrollOffsetY,
-        width: dayColumnWidth - timedBlockInset * 2,
-        height: max(quarterHourHeight, CGFloat(durationMinutes) / 60 * hourHeight)
+      return snappedTimedDragPreviewFrame(
+        dayIndex: dayIndex,
+        timeMinutes: timeMinutes,
+        durationMinutes: preview.durationMinutes ?? timedMinimumDuration
       )
     }
 
@@ -1924,22 +1933,7 @@ extension ScheduleBoardView {
     }
 
     if isOriginalAllDay != presentsAsAllDay {
-      if presentsAsAllDay {
-        return CGRect(
-          x: rawFollowFrame.minX,
-          y: rawFollowFrame.minY,
-          width: dayColumnWidth - allDayChipHorizontalInset * 2,
-          height: allDayRowHeight - 4
-        )
-      }
-
-      let durationMinutes = preview.durationMinutes ?? timedMinimumDuration
-      return CGRect(
-        x: rawFollowFrame.minX,
-        y: rawFollowFrame.minY,
-        width: dayColumnWidth - timedBlockInset * 2,
-        height: max(quarterHourHeight, CGFloat(durationMinutes) / 60 * hourHeight)
-      )
+      return snappedAllDayDragPreviewFrame(dayIndex: dayIndex)
     }
 
     if let timeMinutes = preview.timeMinutes {
@@ -1958,22 +1952,14 @@ extension ScheduleBoardView {
         )
       }
 
-      return CGRect(
-        x: titleColumnWidth + CGFloat(dayIndex) * dayColumnWidth - currentScrollOffsetX
-          + timedBlockInset,
-        y: headerHeight + CGFloat(timeMinutes) / 60 * hourHeight - currentScrollOffsetY,
-        width: dayColumnWidth - timedBlockInset * 2,
-        height: max(quarterHourHeight, CGFloat(durationMinutes) / 60 * hourHeight)
+      return snappedTimedDragPreviewFrame(
+        dayIndex: dayIndex,
+        timeMinutes: timeMinutes,
+        durationMinutes: durationMinutes
       )
     }
 
-    return CGRect(
-      x: titleColumnWidth + CGFloat(dayIndex) * dayColumnWidth - currentScrollOffsetX
-        + allDayChipHorizontalInset,
-      y: dateHeaderHeight + allDayRailPadding,
-      width: dayColumnWidth - allDayChipHorizontalInset * 2,
-      height: allDayRowHeight - 4
-    )
+    return snappedAllDayDragPreviewFrame(dayIndex: dayIndex)
   }
 
   func isTaskDragOutsideBoardBounds(_ dragState: ScheduleTaskDragState) -> Bool {
@@ -2010,13 +1996,10 @@ extension ScheduleBoardView {
       else {
         return rawFollowFrame
       }
-      let durationMinutes = preview.durationMinutes ?? timedMinimumDuration
-      return CGRect(
-        x: titleColumnWidth + CGFloat(dayIndex) * dayColumnWidth - currentScrollOffsetX
-          + timedBlockInset,
-        y: headerHeight + CGFloat(timeMinutes) / 60 * hourHeight - currentScrollOffsetY,
-        width: dayColumnWidth - timedBlockInset * 2,
-        height: max(quarterHourHeight, CGFloat(durationMinutes) / 60 * hourHeight)
+      return snappedTimedDragPreviewFrame(
+        dayIndex: dayIndex,
+        timeMinutes: timeMinutes,
+        durationMinutes: preview.durationMinutes ?? timedMinimumDuration
       )
     }
 
@@ -2027,22 +2010,7 @@ extension ScheduleBoardView {
     }
 
     if isOriginalAllDay != presentsAsAllDay {
-      if presentsAsAllDay {
-        return CGRect(
-          x: rawFollowFrame.minX,
-          y: rawFollowFrame.minY,
-          width: dayColumnWidth - allDayChipHorizontalInset * 2,
-          height: allDayRowHeight - 4
-        )
-      }
-
-      let durationMinutes = preview.durationMinutes ?? timedMinimumDuration
-      return CGRect(
-        x: rawFollowFrame.minX,
-        y: rawFollowFrame.minY,
-        width: dayColumnWidth - timedBlockInset * 2,
-        height: max(quarterHourHeight, CGFloat(durationMinutes) / 60 * hourHeight)
-      )
+      return snappedAllDayDragPreviewFrame(dayIndex: dayIndex)
     }
 
     if let timeMinutes = preview.timeMinutes {
@@ -2059,21 +2027,37 @@ extension ScheduleBoardView {
         )
       }
 
-      return CGRect(
-        x: titleColumnWidth + CGFloat(dayIndex) * dayColumnWidth - currentScrollOffsetX
-          + timedBlockInset,
-        y: headerHeight + CGFloat(timeMinutes) / 60 * hourHeight - currentScrollOffsetY,
-        width: dayColumnWidth - timedBlockInset * 2,
-        height: max(quarterHourHeight, CGFloat(durationMinutes) / 60 * hourHeight)
+      return snappedTimedDragPreviewFrame(
+        dayIndex: dayIndex,
+        timeMinutes: timeMinutes,
+        durationMinutes: durationMinutes
       )
     }
 
-    return CGRect(
+    return snappedAllDayDragPreviewFrame(dayIndex: dayIndex)
+  }
+
+  func snappedAllDayDragPreviewFrame(dayIndex: Int) -> CGRect {
+    CGRect(
       x: titleColumnWidth + CGFloat(dayIndex) * dayColumnWidth - currentScrollOffsetX
         + allDayChipHorizontalInset,
       y: dateHeaderHeight + allDayRailPadding,
       width: dayColumnWidth - allDayChipHorizontalInset * 2,
       height: allDayRowHeight - 4
+    )
+  }
+
+  func snappedTimedDragPreviewFrame(
+    dayIndex: Int,
+    timeMinutes: Int,
+    durationMinutes: Int
+  ) -> CGRect {
+    CGRect(
+      x: titleColumnWidth + CGFloat(dayIndex) * dayColumnWidth - currentScrollOffsetX
+        + timedBlockInset,
+      y: headerHeight + CGFloat(timeMinutes) / 60 * hourHeight - currentScrollOffsetY,
+      width: dayColumnWidth - timedBlockInset * 2,
+      height: max(quarterHourHeight, CGFloat(durationMinutes) / 60 * hourHeight)
     )
   }
 

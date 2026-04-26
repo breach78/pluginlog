@@ -906,7 +906,11 @@ final class ScheduleCalendarStore: ObservableObject, ScheduleCalendarServicing,
     if event.isAllDay {
       fallbackEndDate = calendar.date(byAdding: .day, value: 1, to: startDate) ?? startDate
     } else {
-      fallbackEndDate = calendar.date(byAdding: .minute, value: 15, to: startDate) ?? startDate
+      fallbackEndDate = calendar.date(
+        byAdding: .minute,
+        value: WorkspaceTaskScheduleEventStore.defaultScheduledDurationMinutes,
+        to: startDate
+      ) ?? startDate
     }
     let endDate = max(event.endDate ?? fallbackEndDate, fallbackEndDate)
     let editability = timingEditability(for: event, calendar: calendar)
@@ -1250,7 +1254,10 @@ final class ScheduleCalendarStore: ObservableObject, ScheduleCalendarServicing,
         throw ScheduleCalendarEditError.invalidTarget
       }
       let durationMinutes =
-        max(15, preview.durationMinutes ?? currentDurationMinutes(for: event, calendar: calendar))
+        max(
+          WorkspaceTaskScheduleEventStore.defaultScheduledDurationMinutes,
+          preview.durationMinutes ?? currentDurationMinutes(for: event, calendar: calendar)
+        )
       guard let endDate = calendar.date(byAdding: .minute, value: durationMinutes, to: startDate) else {
         throw ScheduleCalendarEditError.invalidTarget
       }
@@ -1271,7 +1278,7 @@ final class ScheduleCalendarStore: ObservableObject, ScheduleCalendarServicing,
       return 24 * 60
     }
     let duration = Int(event.endDate.timeIntervalSince(event.startDate) / 60)
-    return max(15, duration)
+    return max(WorkspaceTaskScheduleEventStore.defaultScheduledDurationMinutes, duration)
   }
 
   func requestAccessIfNeeded() async throws -> Bool {

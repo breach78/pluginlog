@@ -35,6 +35,7 @@ struct ObsidianHelperPluginInstaller {
 
   static let pluginIdentifier = "brain-unfog-helper"
   static let bundledResourceName = "ObsidianHelperPlugin"
+  static let resourceBundleName = "pluginlog-harness_BrainUnfogHarness.bundle"
   static let ownershipMarkerFilename = ".brain-unfog-helper-owned"
 
   let sourceURL: URL
@@ -52,10 +53,21 @@ struct ObsidianHelperPluginInstaller {
   }
 
   static func bundledSourceURL() throws -> URL {
-    guard let sourceURL = Bundle.module.url(forResource: bundledResourceName, withExtension: nil) else {
-      throw InstallError.bundledSourceMissing
+    if let sourceURL = bundledSourceURL(inResourceDirectory: Bundle.main.resourceURL) {
+      return sourceURL
     }
-    return sourceURL
+    if let sourceURL = Bundle.module.url(forResource: bundledResourceName, withExtension: nil) {
+      return sourceURL
+    }
+    throw InstallError.bundledSourceMissing
+  }
+
+  static func bundledSourceURL(inResourceDirectory resourceDirectory: URL?) -> URL? {
+    guard let resourceDirectory else { return nil }
+    let sourceURL = resourceDirectory
+      .appendingPathComponent(resourceBundleName, isDirectory: true)
+      .appendingPathComponent(bundledResourceName, isDirectory: true)
+    return FileManager.default.fileExists(atPath: sourceURL.path) ? sourceURL : nil
   }
 
   static func installBundled(

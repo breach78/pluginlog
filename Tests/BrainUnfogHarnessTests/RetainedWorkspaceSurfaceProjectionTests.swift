@@ -98,7 +98,7 @@ final class RetainedWorkspaceSurfaceProjectionTests: XCTestCase {
         $0.source == .workspaceTask(taskID: timedDefaultDurationTaskID, projectID: projectID)
       }
     )
-    XCTAssertEqual(defaultDurationItem.endDate.timeIntervalSince(defaultDurationItem.startDate), 15 * 60)
+    XCTAssertEqual(defaultDurationItem.endDate.timeIntervalSince(defaultDurationItem.startDate), 30 * 60)
   }
 
   func testBuildBlocksPartialRequestedProjectCoverage() {
