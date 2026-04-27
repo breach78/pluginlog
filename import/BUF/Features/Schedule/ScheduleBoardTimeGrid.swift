@@ -10,7 +10,7 @@ struct ScheduleCurrentTimeIndicator: View {
   let calendar: Calendar
 
   var body: some View {
-    TimelineView(.periodic(from: nextRefreshDate(after: .now), by: 60)) { context in
+    TimelineView(.periodic(from: .now, by: 1)) { context in
       ZStack(alignment: .topLeading) {
         let currentDate = context.date
         let today = calendar.startOfDay(for: currentDate)
@@ -39,16 +39,6 @@ struct ScheduleCurrentTimeIndicator: View {
     Array(dayRange).compactMap { offset in
       calendar.date(byAdding: .day, value: offset, to: today)
     }
-  }
-
-  func nextRefreshDate(after date: Date) -> Date {
-    let nextMinute = calendar.date(byAdding: .minute, value: 1, to: date) ?? date.addingTimeInterval(60)
-    return calendar.date(
-      bySettingHour: calendar.component(.hour, from: nextMinute),
-      minute: calendar.component(.minute, from: nextMinute),
-      second: 0,
-      of: nextMinute
-    ) ?? nextMinute
   }
 }
 
@@ -1505,6 +1495,16 @@ extension ScheduleBoardView {
               )
             }
           }
+        }
+
+        if activeTaskDrag == nil, let committed = committedTaskDrop {
+          dragSourcePlaceholder(frame: committed.originalFrame, isAllDay: committed.isOriginalAllDay)
+          dragDropTargetIndicator(
+            frame: committed.dropFrame,
+            color: committed.color,
+            isAllDay: committed.isAllDay,
+            label: committed.label
+          )
         }
 
         if let dragState = activeCalendarDrag,

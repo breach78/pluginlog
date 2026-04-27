@@ -296,13 +296,17 @@ extension TimelineBoardView {
     .padding(.bottom, interRowBottomPadding(for: index, totalCount: totalCount, rowLayout: rowLayout))
     .contentShape(Rectangle())
     .modifier(TimelineProjectDragModifier(bar: bar, draggingProjectID: $draggingProjectID))
-    .onTapGesture {
-      onSelectProject(bar.projectID)
-    }
-    .simultaneousGesture(
-      TapGesture(count: 2).onEnded {
-        onToggleProjectSelection(bar.projectID)
-      }
+    .gesture(
+      TapGesture(count: 2)
+        .onEnded {
+          showTimelineProjectListPopover(bar.projectID)
+        }
+        .exclusively(
+          before: TapGesture()
+            .onEnded {
+              onSelectProject(bar.projectID)
+            }
+        )
     )
     .overlay(alignment: .top) {
       if showsPriorityBoundary {

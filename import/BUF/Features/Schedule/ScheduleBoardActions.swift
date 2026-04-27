@@ -244,6 +244,7 @@ extension ScheduleBoardView {
         invalidateWorkspaceScheduleProjectionCaches()
       }
 
+      committedTaskDrop = nil
       switch resolvedRead.source {
       case .retained:
         recordWorkspaceLoadFallback(nil)
@@ -549,7 +550,6 @@ extension ScheduleBoardView {
       .onEnded { value in
         guard let dragState = activeTaskDrag, dragState.entryID == entryID else { return }
         suppressTaskTap()
-        activeTaskDrag = nil
         var resolvedDragState = dragState
         let pointerViewportLocation = taskDragPointerViewportLocation(
           for: dragState,
@@ -569,20 +569,33 @@ extension ScheduleBoardView {
           )
         }
         if onTaskDragEndedAtPoint?(dragState.taskID, dropPoint, projectionFrame) == true {
+          activeTaskDrag = nil
           onTaskDragProjectionChanged?(nil, nil)
           return
         }
+        let resolvedPreview = preview(for: resolvedDragState)
+        if let dropFrame = dragDropTargetViewportFrame(for: resolvedDragState, preview: resolvedPreview) {
+          committedTaskDrop = CommittedTaskDropState(
+            originalFrame: dragState.originalViewportFrame,
+            isOriginalAllDay: dragState.originalTimeMinutes == nil,
+            dropFrame: dropFrame,
+            color: scheduleColor(for: taskDescriptor.projectColorHex),
+            isAllDay: resolvedPreview.timeMinutes == nil,
+            label: resolvedPreview.timeMinutes == nil ? nil : scheduleDragPreviewLabel(for: resolvedPreview)
+          )
+        }
+        activeTaskDrag = nil
         onTaskDragProjectionChanged?(nil, nil)
         if dragState.isPreparationSlot, let targetCompletedWorkUnits = dragState.targetCompletedWorkUnits {
           applyPreparationPreview(
-            preview(for: resolvedDragState),
+            resolvedPreview,
             to: taskDescriptor,
             targetCompletedWorkUnits: targetCompletedWorkUnits,
             actionName: "예상 일정 이동"
           )
         } else {
           applyPreview(
-            preview(for: resolvedDragState),
+            resolvedPreview,
             to: taskDescriptor,
             actionName: "일정 이동"
           )
@@ -826,6 +839,7 @@ extension ScheduleBoardView {
       || previousTime != preview.timeMinutes
       || previousDuration != preview.durationMinutes
     else {
+      committedTaskDrop = nil
       return
     }
 

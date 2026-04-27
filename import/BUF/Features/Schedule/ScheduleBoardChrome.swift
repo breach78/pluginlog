@@ -1,6 +1,65 @@
 import AppKit
 import SwiftUI
 
+private struct CalendarPickerRow: View {
+  let source: ScheduleCalendarSource
+  let onCycle: () -> Void
+
+  @State private var isHovering = false
+
+  private var calendarColor: Color {
+    ColorHexCodec.color(from: source.colorHex) ?? Color.secondary
+  }
+
+  var body: some View {
+    Button(action: onCycle) {
+      HStack(spacing: 10) {
+        stateIcon
+          .frame(width: 14, height: 14)
+
+        Text(source.title)
+          .font(.system(size: 13))
+          .foregroundStyle(source.isVisible ? Color.primary : Color.primary.opacity(0.3))
+          .lineLimit(1)
+
+        Spacer(minLength: 0)
+      }
+      .padding(.horizontal, 10)
+      .padding(.vertical, 6)
+      .background(
+        RoundedRectangle(cornerRadius: 6, style: .continuous)
+          .fill(isHovering ? Color(nsColor: .controlBackgroundColor) : Color.clear)
+      )
+    }
+    .buttonStyle(.plain)
+    .onHover { isHovering = $0 }
+    .help(stateHelp)
+  }
+
+  @ViewBuilder
+  private var stateIcon: some View {
+    if !source.isVisible {
+      Image(systemName: "xmark")
+        .font(.system(size: 9, weight: .semibold))
+        .foregroundStyle(Color.primary.opacity(0.25))
+    } else if source.isBackgroundOnly {
+      Image(systemName: "triangle.fill")
+        .font(.system(size: 9))
+        .foregroundStyle(calendarColor.opacity(0.55))
+    } else {
+      Image(systemName: "circle.fill")
+        .font(.system(size: 9))
+        .foregroundStyle(calendarColor)
+    }
+  }
+
+  private var stateHelp: String {
+    if !source.isVisible { return "숨김 → 클릭하면 활성으로" }
+    if source.isBackgroundOnly { return "표시만 함 → 클릭하면 숨김으로" }
+    return "활성 → 클릭하면 표시만으로"
+  }
+}
+
 extension ScheduleBoardView {
   var scheduleBoardTopLeftHeaderSection: some View {
     topLeftHeaderOverlay
@@ -9,8 +68,8 @@ extension ScheduleBoardView {
   var scheduleBoardChromeSection: some View {
     overlayControls
       .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-      .padding(.top, 10)
-      .padding(.leading, calendarMenuLeadingInset)
+      .padding(.top, -2)
+      .padding(.leading, calendarMenuLeadingInset - 3)
   }
 
   func scheduleBoardHeaderRailSection(
@@ -29,40 +88,70 @@ extension ScheduleBoardView {
 
     VStack(alignment: .leading, spacing: 8) {
       if !calendarSources.isEmpty {
-        Menu {
-          ForEach(calendarSources) { source in
-            Section(source.title) {
-              Toggle(
-                isOn: Binding(
-                  get: { source.isVisible },
-                  set: { _ in appState.toggleScheduleCalendarVisibility(source.id) }
-                )
-              ) {
-                HStack(spacing: 8) {
-                  Circle()
-                    .fill(ColorHexCodec.color(from: source.colorHex) ?? .secondary)
-                    .frame(width: 10, height: 10)
-                  Text("캘린더 표시")
-                }
-              }
-
-              Toggle(
-                isOn: Binding(
-                  get: { source.isBackgroundOnly },
-                  set: { _ in appState.toggleScheduleCalendarBackgroundOnly(source.id) }
-                )
-              ) {
-                Label("영향 없음", systemImage: "square.split.diagonal")
-              }
-            }
-          }
+        Button {
+          isCalendarPickerShown.toggle()
         } label: {
           calendarMenuLabel
         }
-        .menuStyle(.borderlessButton)
-        .help("Calendars")
+        .buttonStyle(.plain)
+        .popover(isPresented: $isCalendarPickerShown, arrowEdge: .bottom) {
+          calendarPickerPopover(sources: calendarSources)
+        }
+      }
+    }
+  }
+
+  func calendarPickerPopover(sources: [ScheduleCalendarSource]) -> some View {
+    VStack(alignment: .leading, spacing: 1) {
+      Text("캘린더")
+        .font(.system(size: 11, weight: .semibold))
+        .foregroundStyle(.secondary)
+        .padding(.horizontal, 10)
+        .padding(.top, 6)
+        .padding(.bottom, 2)
+
+      ForEach(sources) { source in
+        CalendarPickerRow(source: source) {
+          cycleCalendarState(source: source)
+        }
       }
 
+      Divider()
+        .padding(.horizontal, 6)
+        .padding(.vertical, 4)
+
+      HStack(spacing: 12) {
+        calendarPickerLegendItem("circle.fill", opacity: 1.0, label: "활성")
+        calendarPickerLegendItem("triangle.fill", opacity: 0.55, label: "표시만")
+        calendarPickerLegendItem("xmark", opacity: 0.25, label: "숨김")
+      }
+      .font(.system(size: 10))
+      .padding(.horizontal, 10)
+      .padding(.bottom, 8)
+    }
+    .frame(minWidth: 190, maxWidth: 280)
+  }
+
+  func calendarPickerLegendItem(_ symbol: String, opacity: Double, label: String) -> some View {
+    HStack(spacing: 4) {
+      Image(systemName: symbol)
+        .font(.system(size: 8))
+        .foregroundStyle(Color.primary.opacity(opacity))
+      Text(label)
+        .foregroundStyle(.tertiary)
+    }
+  }
+
+  func cycleCalendarState(source: ScheduleCalendarSource) {
+    if !source.isVisible {
+      appState.toggleScheduleCalendarVisibility(source.id)
+      if source.isBackgroundOnly {
+        appState.toggleScheduleCalendarBackgroundOnly(source.id)
+      }
+    } else if source.isBackgroundOnly {
+      appState.toggleScheduleCalendarVisibility(source.id)
+    } else {
+      appState.toggleScheduleCalendarBackgroundOnly(source.id)
     }
   }
 

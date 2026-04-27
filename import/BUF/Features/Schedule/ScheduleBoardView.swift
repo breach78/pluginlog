@@ -465,6 +465,15 @@ struct ScheduleTaskDragState {
   var isInAllDayZone: Bool = false
 }
 
+struct CommittedTaskDropState {
+  let originalFrame: CGRect
+  let isOriginalAllDay: Bool
+  let dropFrame: CGRect
+  let color: Color
+  let isAllDay: Bool
+  let label: String?
+}
+
 struct ScheduleCalendarDragState {
   let eventID: String
   let originalDay: Date
@@ -650,6 +659,8 @@ struct ScheduleBoardView: View {
   @State var activeScheduleDayHeaderDate: Date?
   @State var scheduleDayHeaderShowWorkItem: DispatchWorkItem?
   @State var scheduleDayHeaderHideWorkItem: DispatchWorkItem?
+  @State var isCalendarPickerShown = false
+  @State var committedTaskDrop: CommittedTaskDropState?
 
   let titleColumnWidth: CGFloat = 76
   let calendarMenuLeadingInset: CGFloat = 18
