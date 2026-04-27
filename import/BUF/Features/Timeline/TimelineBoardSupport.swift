@@ -911,9 +911,13 @@ struct UnifiedTimelineBoardScrollView<
         return
       }
       let contentLocation = clipView.convert(windowLocation, from: nil)
-      let nextBadgeID = taskBadgeHitTargets.first { target in
-        target.rect.contains(contentLocation)
-      }?.badgeID
+      let nextBadgeID = TimelineBoardReadPath.taskBadgeHoverID(
+        contentLocation: contentLocation,
+        visibleBoundsOrigin: clipView.bounds.origin,
+        titleColumnWidth: titleColumnWidth,
+        headerHeight: headerHeight,
+        targets: taskBadgeHitTargets
+      )
 
       guard hoveredTaskBadgeID != nextBadgeID else { return }
       if let hoveredTaskBadgeID {

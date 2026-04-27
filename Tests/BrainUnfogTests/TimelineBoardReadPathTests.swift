@@ -276,6 +276,41 @@ final class TimelineBoardReadPathTests: XCTestCase {
     )
   }
 
+  func testTaskBadgeHoverIgnoresBadgesObscuredByPinnedLeftColumn() {
+    let target = TimelineTaskBadgeHitTarget(
+      badgeID: "badge",
+      rect: CGRect(x: 88 + 300, y: 120 + 80, width: 40, height: 24)
+    )
+
+    XCTAssertNil(
+      TimelineBoardReadPath.taskBadgeHoverID(
+        contentLocation: CGPoint(x: 88 + 319, y: 120 + 88),
+        visibleBoundsOrigin: CGPoint(x: 88, y: 120),
+        titleColumnWidth: 320,
+        headerHeight: 64,
+        targets: [target]
+      )
+    )
+  }
+
+  func testTaskBadgeHoverAllowsVisibleBadgesAfterPinnedLeftColumn() {
+    let target = TimelineTaskBadgeHitTarget(
+      badgeID: "badge",
+      rect: CGRect(x: 88 + 320, y: 120 + 80, width: 40, height: 24)
+    )
+
+    XCTAssertEqual(
+      TimelineBoardReadPath.taskBadgeHoverID(
+        contentLocation: CGPoint(x: 88 + 321, y: 120 + 88),
+        visibleBoundsOrigin: CGPoint(x: 88, y: 120),
+        titleColumnWidth: 320,
+        headerHeight: 64,
+        targets: [target]
+      ),
+      "badge"
+    )
+  }
+
   func testProjectColorHexUsesTimelineBarColorForOverlayReference() {
     let projectID = UUID()
 

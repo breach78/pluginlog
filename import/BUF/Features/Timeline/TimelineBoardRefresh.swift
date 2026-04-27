@@ -75,6 +75,23 @@ enum TimelineBoardReadPath {
     )
   }
 
+  static func taskBadgeHoverID(
+    contentLocation: CGPoint,
+    visibleBoundsOrigin: CGPoint,
+    titleColumnWidth: CGFloat,
+    headerHeight: CGFloat,
+    targets: [TimelineTaskBadgeHitTarget]
+  ) -> String? {
+    let visibleX = contentLocation.x - visibleBoundsOrigin.x
+    let visibleY = contentLocation.y - visibleBoundsOrigin.y
+    guard visibleX >= titleColumnWidth, visibleY >= headerHeight else {
+      return nil
+    }
+    return targets.first { target in
+      target.rect.contains(contentLocation)
+    }?.badgeID
+  }
+
   static func projectColorHex(
     forProjectReference reference: WorkspaceProjectReference,
     in bars: [TimelineProjectBar]
