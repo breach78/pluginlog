@@ -554,6 +554,15 @@ struct TimelineBoardView: View {
           && !isInteractionObscured
           && !isTimelineScrolling
           && !appState.isEditorMotionSuppressed,
+        isTaskBadgeHoverEnabled:
+          isActive
+          && !isInteractionObscured
+          && !isTimelineScrolling
+          && !appState.isEditorMotionSuppressed,
+        taskBadgeHitTargets: timelineTaskBadgeHitTargets(
+          bars: snapshot.bars,
+          rowLayouts: snapshot.rowLayouts
+        ),
         scrollHoverSuppressionInterval: timelineScrollIdleDelay,
         offsetX: $horizontalOffsetX,
         offsetY: $verticalOffsetY,
@@ -567,6 +576,9 @@ struct TimelineBoardView: View {
         },
         onDayHeaderHover: { offset, isHovering in
           updateTimelineDayHeaderHover(offset, isHovering: isHovering)
+        },
+        onTaskBadgeHover: { badgeID, isHovering in
+          updateTimelineTaskBadgeHover(badgeID, isHovering: isHovering)
         }
       ) {
         boardContent(

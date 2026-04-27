@@ -490,16 +490,19 @@ extension TimelineBoardView {
 
     if isHoveringPinnedLeftColumn {
       if isHovering {
-        cancelTimelineTaskBadgeOverlay()
+        isHoveringPinnedLeftColumn = false
+      } else {
+        return
       }
-      return
     }
 
     if activeTimelineDayHeaderOffset != nil || appState.isHoveringTimelineDayHeaderOverlay {
       if isHovering {
+        cancelTimelineDayHeaderOverlay()
+      } else {
         timelineTaskBadgeShowWorkItem?.cancel()
+        return
       }
-      return
     }
 
     if isHovering,
@@ -507,8 +510,7 @@ extension TimelineBoardView {
       let activeTimelineTaskBadgeID,
       activeTimelineTaskBadgeID != badgeID
     {
-      timelineTaskBadgeShowWorkItem?.cancel()
-      return
+      appState.isHoveringTimelineTaskBadgeOverlay = false
     }
 
     if isHovering {

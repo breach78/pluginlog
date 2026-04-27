@@ -468,6 +468,11 @@ struct TimelineTaskBadgeLayout: Identifiable {
   let visualStyle: TimelineTaskBadgeVisualStyle
 }
 
+struct TimelineTaskBadgeHitTarget: Equatable {
+  let badgeID: String
+  let rect: CGRect
+}
+
 struct TimelineTaskBadgeOverlayContext {
   let badgeID: String
   let projectReference: WorkspaceProjectReference
@@ -558,6 +563,8 @@ struct UnifiedTimelineBoardScrollView<
   let publishOffsetY: Bool
   let publishPreciseHoverOffsets: Bool
   let isDayHeaderHoverEnabled: Bool
+  let isTaskBadgeHoverEnabled: Bool
+  let taskBadgeHitTargets: [TimelineTaskBadgeHitTarget]
   let scrollHoverSuppressionInterval: TimeInterval
 
   @Binding var offsetX: CGFloat
@@ -565,6 +572,7 @@ struct UnifiedTimelineBoardScrollView<
   @Binding var requestedOffsetX: CGFloat?
   let onScrollActivity: (CGFloat, CGFloat, Bool) -> Void
   let onDayHeaderHover: (Int, Bool) -> Void
+  let onTaskBadgeHover: (String, Bool) -> Void
 
   let boardContent: BoardContent
   let pinnedLeft: PinnedLeft
@@ -583,12 +591,15 @@ struct UnifiedTimelineBoardScrollView<
     publishOffsetY: Bool,
     publishPreciseHoverOffsets: Bool,
     isDayHeaderHoverEnabled: Bool,
+    isTaskBadgeHoverEnabled: Bool,
+    taskBadgeHitTargets: [TimelineTaskBadgeHitTarget],
     scrollHoverSuppressionInterval: TimeInterval,
     offsetX: Binding<CGFloat>,
     offsetY: Binding<CGFloat>,
     requestedOffsetX: Binding<CGFloat?>,
     onScrollActivity: @escaping (CGFloat, CGFloat, Bool) -> Void,
     onDayHeaderHover: @escaping (Int, Bool) -> Void,
+    onTaskBadgeHover: @escaping (String, Bool) -> Void,
     @ViewBuilder boardContent: () -> BoardContent,
     @ViewBuilder pinnedLeft: () -> PinnedLeft,
     @ViewBuilder pinnedTop: () -> PinnedTop
@@ -605,12 +616,15 @@ struct UnifiedTimelineBoardScrollView<
     self.publishOffsetY = publishOffsetY
     self.publishPreciseHoverOffsets = publishPreciseHoverOffsets
     self.isDayHeaderHoverEnabled = isDayHeaderHoverEnabled
+    self.isTaskBadgeHoverEnabled = isTaskBadgeHoverEnabled
+    self.taskBadgeHitTargets = taskBadgeHitTargets
     self.scrollHoverSuppressionInterval = scrollHoverSuppressionInterval
     self._offsetX = offsetX
     self._offsetY = offsetY
     self._requestedOffsetX = requestedOffsetX
     self.onScrollActivity = onScrollActivity
     self.onDayHeaderHover = onDayHeaderHover
+    self.onTaskBadgeHover = onTaskBadgeHover
     self.boardContent = boardContent()
     self.pinnedLeft = pinnedLeft()
     self.pinnedTop = pinnedTop()
@@ -634,6 +648,8 @@ struct UnifiedTimelineBoardScrollView<
     var publishOffsetY: Bool
     var publishPreciseHoverOffsets: Bool
     var isDayHeaderHoverEnabled: Bool
+    var isTaskBadgeHoverEnabled: Bool
+    var taskBadgeHitTargets: [TimelineTaskBadgeHitTarget]
     var scrollHoverSuppressionInterval: TimeInterval
     var lastPublishedDayBucket: Int = .min
     var lastPublishedVerticalBucket: Int = .min
@@ -642,8 +658,10 @@ struct UnifiedTimelineBoardScrollView<
     var didPrimeInitialVerticalOrigin = false
     var scrollHoverSuppressionDeadline: TimeInterval = 0
     var hoveredDayHeaderOffset: Int?
+    var hoveredTaskBadgeID: String?
     var onScrollActivity: (CGFloat, CGFloat, Bool) -> Void
     var onDayHeaderHover: (Int, Bool) -> Void
+    var onTaskBadgeHover: (String, Bool) -> Void
     weak var scrollView: NSScrollView?
 
     init(
@@ -662,10 +680,13 @@ struct UnifiedTimelineBoardScrollView<
       publishOffsetY: Bool,
       publishPreciseHoverOffsets: Bool,
       isDayHeaderHoverEnabled: Bool,
+      isTaskBadgeHoverEnabled: Bool,
+      taskBadgeHitTargets: [TimelineTaskBadgeHitTarget],
       scrollHoverSuppressionInterval: TimeInterval,
       scrollRequestGeneration: Int,
       onScrollActivity: @escaping (CGFloat, CGFloat, Bool) -> Void,
-      onDayHeaderHover: @escaping (Int, Bool) -> Void
+      onDayHeaderHover: @escaping (Int, Bool) -> Void,
+      onTaskBadgeHover: @escaping (String, Bool) -> Void
     ) {
       self.boardHosting = ScrollPassthroughHostingView(rootView: boardContent)
       self.leftHosting = ScrollPassthroughHostingView(rootView: pinnedLeft)
@@ -682,10 +703,13 @@ struct UnifiedTimelineBoardScrollView<
       self.publishOffsetY = publishOffsetY
       self.publishPreciseHoverOffsets = publishPreciseHoverOffsets
       self.isDayHeaderHoverEnabled = isDayHeaderHoverEnabled
+      self.isTaskBadgeHoverEnabled = isTaskBadgeHoverEnabled
+      self.taskBadgeHitTargets = taskBadgeHitTargets
       self.scrollHoverSuppressionInterval = scrollHoverSuppressionInterval
       self.lastScrollRequestGeneration = scrollRequestGeneration
       self.onScrollActivity = onScrollActivity
       self.onDayHeaderHover = onDayHeaderHover
+      self.onTaskBadgeHover = onTaskBadgeHover
       super.init()
       documentView.addSubview(boardHosting)
     }
@@ -827,12 +851,24 @@ struct UnifiedTimelineBoardScrollView<
       updateDayHeaderHover(windowLocation: event.locationInWindow, in: clipView)
     }
 
+    func updateTaskBadgeHover(with event: NSEvent, in clipView: FlippedTimelineClipView) {
+      updateTaskBadgeHover(windowLocation: event.locationInWindow, in: clipView)
+    }
+
     func refreshDayHeaderHoverIfNeeded(in clipView: FlippedTimelineClipView) {
       guard let window = clipView.window else {
         clearDayHeaderHover()
         return
       }
       updateDayHeaderHover(windowLocation: window.mouseLocationOutsideOfEventStream, in: clipView)
+    }
+
+    func refreshTaskBadgeHoverIfNeeded(in clipView: FlippedTimelineClipView) {
+      guard let window = clipView.window else {
+        clearTaskBadgeHover()
+        return
+      }
+      updateTaskBadgeHover(windowLocation: window.mouseLocationOutsideOfEventStream, in: clipView)
     }
 
     func updateDayHeaderHover(
@@ -866,10 +902,39 @@ struct UnifiedTimelineBoardScrollView<
       onDayHeaderHover(nextOffset, true)
     }
 
+    func updateTaskBadgeHover(
+      windowLocation: NSPoint,
+      in clipView: FlippedTimelineClipView
+    ) {
+      guard isTaskBadgeHoverEnabled else {
+        clearTaskBadgeHover()
+        return
+      }
+      let contentLocation = clipView.convert(windowLocation, from: nil)
+      let nextBadgeID = taskBadgeHitTargets.first { target in
+        target.rect.contains(contentLocation)
+      }?.badgeID
+
+      guard hoveredTaskBadgeID != nextBadgeID else { return }
+      if let hoveredTaskBadgeID {
+        onTaskBadgeHover(hoveredTaskBadgeID, false)
+      }
+      hoveredTaskBadgeID = nextBadgeID
+      if let nextBadgeID {
+        onTaskBadgeHover(nextBadgeID, true)
+      }
+    }
+
     func clearDayHeaderHover() {
       guard let hoveredDayHeaderOffset else { return }
       self.hoveredDayHeaderOffset = nil
       onDayHeaderHover(hoveredDayHeaderOffset, false)
+    }
+
+    func clearTaskBadgeHover() {
+      guard let hoveredTaskBadgeID else { return }
+      self.hoveredTaskBadgeID = nil
+      onTaskBadgeHover(hoveredTaskBadgeID, false)
     }
   }
 
@@ -890,10 +955,13 @@ struct UnifiedTimelineBoardScrollView<
       publishOffsetY: publishOffsetY,
       publishPreciseHoverOffsets: publishPreciseHoverOffsets,
       isDayHeaderHoverEnabled: isDayHeaderHoverEnabled,
+      isTaskBadgeHoverEnabled: isTaskBadgeHoverEnabled,
+      taskBadgeHitTargets: taskBadgeHitTargets,
       scrollHoverSuppressionInterval: scrollHoverSuppressionInterval,
       scrollRequestGeneration: scrollRequestGeneration,
       onScrollActivity: onScrollActivity,
-      onDayHeaderHover: onDayHeaderHover
+      onDayHeaderHover: onDayHeaderHover,
+      onTaskBadgeHover: onTaskBadgeHover
     )
   }
 
@@ -921,9 +989,11 @@ struct UnifiedTimelineBoardScrollView<
     }
     clipView.onMouseMovedInVisibleRect = { [weak coordinator = context.coordinator] event, clipView in
       coordinator?.updateDayHeaderHover(with: event, in: clipView)
+      coordinator?.updateTaskBadgeHover(with: event, in: clipView)
     }
     clipView.onMouseExitedVisibleRect = { [weak coordinator = context.coordinator] in
       coordinator?.clearDayHeaderHover()
+      coordinator?.clearTaskBadgeHover()
     }
 
     context.coordinator.leftHosting.wantsLayer = true
@@ -976,9 +1046,12 @@ struct UnifiedTimelineBoardScrollView<
     coordinator.publishOffsetY = publishOffsetY
     coordinator.publishPreciseHoverOffsets = publishPreciseHoverOffsets
     coordinator.isDayHeaderHoverEnabled = isDayHeaderHoverEnabled
+    coordinator.isTaskBadgeHoverEnabled = isTaskBadgeHoverEnabled
+    coordinator.taskBadgeHitTargets = taskBadgeHitTargets
     coordinator.scrollHoverSuppressionInterval = scrollHoverSuppressionInterval
     coordinator.onScrollActivity = onScrollActivity
     coordinator.onDayHeaderHover = onDayHeaderHover
+    coordinator.onTaskBadgeHover = onTaskBadgeHover
     if let interactiveScrollView = scrollView as? TimelineInteractionScrollView {
       interactiveScrollView.noteUserScrollActivity = { [weak coordinator] in
         coordinator?.noteUserScrollActivity()
@@ -990,9 +1063,11 @@ struct UnifiedTimelineBoardScrollView<
     if let clipView = scrollView.contentView as? FlippedTimelineClipView {
       clipView.onMouseMovedInVisibleRect = { [weak coordinator] event, clipView in
         coordinator?.updateDayHeaderHover(with: event, in: clipView)
+        coordinator?.updateTaskBadgeHover(with: event, in: clipView)
       }
       clipView.onMouseExitedVisibleRect = { [weak coordinator] in
         coordinator?.clearDayHeaderHover()
+        coordinator?.clearTaskBadgeHover()
       }
     }
     if coordinator.lastScrollRequestGeneration != scrollRequestGeneration {
@@ -1066,6 +1141,11 @@ struct UnifiedTimelineBoardScrollView<
         coordinator.refreshDayHeaderHoverIfNeeded(in: clipView)
       } else {
         coordinator.clearDayHeaderHover()
+      }
+      if isTaskBadgeHoverEnabled {
+        coordinator.refreshTaskBadgeHoverIfNeeded(in: clipView)
+      } else {
+        coordinator.clearTaskBadgeHover()
       }
     }
 

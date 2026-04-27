@@ -737,11 +737,8 @@ extension TimelineBoardView {
           }
         }
       }
-      .allowsHitTesting(!isTimelineScrolling && !isInteractionObscured)
       .contentShape(Rectangle())
-      .onHover { isHovering in
-        updateTimelineTaskBadgeHover(badge.id, isHovering: isHovering)
-      }
+      .allowsHitTesting(false)
   }
 
   func timelineCompletedCountLabel(
@@ -751,11 +748,8 @@ extension TimelineBoardView {
     Text("\(layout.count)")
       .font(.system(size: 10, weight: .regular, design: .rounded))
       .foregroundStyle(projectColor)
-      .allowsHitTesting(!isTimelineScrolling && !isInteractionObscured)
       .contentShape(Rectangle())
-      .onHover { isHovering in
-        updateTimelineTaskBadgeHover(layout.hoverTargetID, isHovering: isHovering)
-      }
+      .allowsHitTesting(false)
   }
 
   func timelineTaskBadgeWidth(for count: Int) -> CGFloat {
@@ -861,6 +855,63 @@ extension TimelineBoardView {
       )
     }
     .sorted { $0.date < $1.date }
+  }
+
+  func timelineTaskBadgeHitTargets(
+    bars: [TimelineProjectBar],
+    rowLayouts: [TimelineRowLayout]
+  ) -> [TimelineTaskBadgeHitTarget] {
+    var targets: [TimelineTaskBadgeHitTarget] = []
+    for (rowIndex, bar) in bars.enumerated() {
+      guard rowLayouts.indices.contains(rowIndex) else { continue }
+      let rowLayout = rowLayouts[rowIndex]
+      let centerY = headerHeight + rowLayout.topY + rowLayout.metrics.midpointY
+
+      for badge in timelineTaskBadges(for: bar, rowIndex: rowIndex) {
+        targets.append(
+          timelineTaskBadgeHitTarget(
+            badgeID: badge.id,
+            centerX: titleColumnWidth + badge.x,
+            centerY: centerY,
+            width: badge.badgeWidth
+          )
+        )
+      }
+
+      for completedCount in timelineCompletedCountLayouts(
+        for: bar,
+        suppressOnDatesWithPendingWork: true
+      ) {
+        targets.append(
+          timelineTaskBadgeHitTarget(
+            badgeID: completedCount.hoverTargetID,
+            centerX: titleColumnWidth + completedCount.x,
+            centerY: centerY,
+            width: completedCount.badgeWidth
+          )
+        )
+      }
+    }
+    return targets
+  }
+
+  private func timelineTaskBadgeHitTarget(
+    badgeID: String,
+    centerX: CGFloat,
+    centerY: CGFloat,
+    width: CGFloat
+  ) -> TimelineTaskBadgeHitTarget {
+    let hitWidth = max(28, width + 10)
+    let hitHeight = max(24, timelineTaskBadgeHeight + 10)
+    return TimelineTaskBadgeHitTarget(
+      badgeID: badgeID,
+      rect: CGRect(
+        x: centerX - hitWidth * 0.5,
+        y: centerY - hitHeight * 0.5,
+        width: hitWidth,
+        height: hitHeight
+      )
+    )
   }
 
   func buildRowLayouts(for bars: [TimelineProjectBar]) -> [TimelineRowLayout] {
