@@ -176,8 +176,7 @@ extension MainWorkspaceView {
   }
 
   func showTimelineTaskEditor(taskID: UUID, projectID: UUID) {
-    selectProjectContext(projectID)
-    activeWorkspaceTaskEditPanelTarget = WorkspaceTaskEditPanelTarget(
+    let target = WorkspaceTaskEditPanelTarget(
       projectID: projectID,
       taskID: taskID,
       initialFields: timelineTaskEditFallbackFields(
@@ -185,6 +184,7 @@ extension MainWorkspaceView {
         date: nil
       )
     )
+    showTimelineTaskEditor(target)
   }
 
   func dismissTimelineTaskEditor() {

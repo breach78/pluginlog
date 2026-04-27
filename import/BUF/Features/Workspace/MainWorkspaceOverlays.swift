@@ -339,15 +339,13 @@ extension MainWorkspaceView {
       TimelineOverlayHoverTrackingSurface { isHovering in
         if isHovering {
           appState.isHoveringTimelineTaskBadgeOverlay = true
-        } else if activeWorkspaceTaskEditPanelTarget == nil {
+        } else {
           appState.isHoveringTimelineTaskBadgeOverlay = false
         }
       }
     }
     .onDisappear {
-      if activeWorkspaceTaskEditPanelTarget == nil {
-        appState.isHoveringTimelineTaskBadgeOverlay = false
-      }
+      appState.isHoveringTimelineTaskBadgeOverlay = false
     }
   }
 
@@ -448,15 +446,13 @@ extension MainWorkspaceView {
       TimelineOverlayHoverTrackingSurface { isHovering in
         if isHovering {
           appState.isHoveringTimelineDayHeaderOverlay = true
-        } else if activeWorkspaceTaskEditPanelTarget == nil {
+        } else {
           appState.isHoveringTimelineDayHeaderOverlay = false
         }
       }
     }
     .onDisappear {
-      if activeWorkspaceTaskEditPanelTarget == nil {
-        appState.isHoveringTimelineDayHeaderOverlay = false
-      }
+      appState.isHoveringTimelineDayHeaderOverlay = false
     }
   }
 
