@@ -164,7 +164,7 @@ enum ObsidianReminderImportFormatting {
   static func parseTaskLineIndentation(_ line: String) -> String? {
     let indentation = String(line.prefix { $0 == " " || $0 == "\t" })
     let marker = line.dropFirst(indentation.count)
-    guard marker.hasPrefix("- [") else { return nil }
+    guard checkboxTaskTitleStart(in: marker) != nil else { return nil }
     return indentation
   }
 
@@ -595,16 +595,30 @@ enum ObsidianReminderImportFormatting {
   }
 
   private static func markdownListContent(from trimmedLine: String) -> String {
-    if trimmedLine.hasPrefix("- [") {
-      let end = trimmedLine.index(trimmedLine.startIndex, offsetBy: 5, limitedBy: trimmedLine.endIndex)
-      if let end, end <= trimmedLine.endIndex {
-        return String(trimmedLine[end...]).trimmingCharacters(in: .whitespaces)
-      }
+    if let titleStart = checkboxTaskTitleStart(in: trimmedLine[...]) {
+      return String(trimmedLine[titleStart...]).trimmingCharacters(in: .whitespaces)
     }
     if trimmedLine.hasPrefix("- ") {
       return String(trimmedLine.dropFirst(2)).trimmingCharacters(in: .whitespaces)
     }
     return trimmedLine
+  }
+
+  private static func checkboxTaskTitleStart(in marker: Substring) -> String.Index? {
+    guard marker.hasPrefix("- [") else { return nil }
+    let markerEndIndex = marker.index(marker.startIndex, offsetBy: 4, limitedBy: marker.endIndex)
+    guard let markerEndIndex,
+      markerEndIndex < marker.endIndex,
+      marker[markerEndIndex] == "]",
+      marker.index(after: markerEndIndex) < marker.endIndex,
+      marker[marker.index(after: markerEndIndex)] == " "
+    else {
+      return nil
+    }
+    let statusIndex = marker.index(marker.startIndex, offsetBy: 3)
+    let status = marker[statusIndex]
+    guard status == " " || status == "x" || status == "X" else { return nil }
+    return marker.index(markerEndIndex, offsetBy: 2)
   }
 
   private static func encodeRepeat(_ rawValue: String?) -> String? {

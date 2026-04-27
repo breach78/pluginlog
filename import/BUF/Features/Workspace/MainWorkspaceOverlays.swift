@@ -3,11 +3,15 @@ import SwiftUI
 
 extension MainWorkspaceView {
   @ViewBuilder
-  func workspaceInspectorReservation(selection: UUID?) -> some View {
-    let isVisible = selection != nil && !showArchive
+  func workspaceInspectorReservation(
+    selection: UUID?,
+    taskEditTarget: WorkspaceTaskEditPanelTarget?
+  ) -> some View {
+    let isVisible = (selection != nil && !showArchive) || taskEditTarget != nil
+    let reservedWidth = taskEditTarget == nil ? inspectorFixedWidth : workspaceTaskEditPanelWidth
 
     Color.clear
-      .frame(width: isVisible ? inspectorFixedWidth : 0, alignment: .trailing)
+      .frame(width: isVisible ? reservedWidth : 0, alignment: .trailing)
       .contentShape(Rectangle())
       .allowsHitTesting(false)
       .accessibilityHidden(true)
@@ -16,12 +20,19 @@ extension MainWorkspaceView {
   }
 
   @ViewBuilder
-  func workspaceInspectorOverlayHost(selection: UUID?) -> some View {
-    let isVisible = selection != nil && !showArchive
+  func workspaceInspectorOverlayHost(
+    selection: UUID?,
+    taskEditTarget: WorkspaceTaskEditPanelTarget?
+  ) -> some View {
+    let isVisible = (selection != nil && !showArchive) || taskEditTarget != nil
 
     GeometryReader { _ in
       ZStack(alignment: .topTrailing) {
-        if let selection, !showArchive {
+        if let taskEditTarget {
+          workspaceTaskEditPanel(taskEditTarget)
+            .zIndex(2)
+            .transition(.move(edge: .trailing).combined(with: .opacity))
+        } else if let selection, !showArchive {
           inspectorPane(selection: selection)
             .zIndex(1)
             .transition(
@@ -35,6 +46,40 @@ extension MainWorkspaceView {
       .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
     }
     .animation(workspacePanelTransitionAnimation, value: isVisible)
+  }
+
+  func workspaceTaskEditPanel(_ target: WorkspaceTaskEditPanelTarget) -> some View {
+    TimelineTaskEditPopoverContent(
+      initialFields: target.initialFields,
+      presentationStyle: .panel,
+      vaultRootURL: appState.obsidianVaultRootURL,
+      loadFields: {
+        await loadTimelineTaskEditFields(
+          projectID: target.projectID,
+          taskID: target.taskID,
+          fallback: target.initialFields
+        )
+      },
+      saveFields: { fields in
+        try await saveTimelineTaskEditFields(
+          fields,
+          projectID: target.projectID,
+          taskID: target.taskID
+        )
+      },
+      onCancel: {
+        dismissTimelineTaskEditor()
+      }
+    )
+    .id("\(target.projectID.uuidString)-\(target.taskID.uuidString)")
+    .frame(width: workspaceTaskEditPanelWidth, alignment: .topLeading)
+    .frame(maxHeight: .infinity, alignment: .topLeading)
+    .background(Color(nsColor: NSColor(calibratedWhite: 1, alpha: 1)))
+    .overlay(alignment: .leading) {
+      Rectangle()
+        .fill(Color(nsColor: .separatorColor))
+        .frame(width: 1)
+    }
   }
 
   @ViewBuilder
@@ -114,7 +159,12 @@ extension MainWorkspaceView {
                 .buttonStyle(.plain)
 
                 Button {
-                  revealTimelineTaskDetail(taskID: task.taskID, projectID: presentation.projectReference.id)
+                  showTimelineTaskEditor(
+                    taskID: task.taskID,
+                    projectID: presentation.projectReference.id,
+                    title: task.title,
+                    date: presentation.date
+                  )
                 } label: {
                   HStack(spacing: 0) {
                     Text(task.title)
@@ -163,7 +213,12 @@ extension MainWorkspaceView {
                 .buttonStyle(.plain)
 
                 Button {
-                  revealTimelineTaskDetail(taskID: task.taskID, projectID: presentation.projectReference.id)
+                  showTimelineTaskEditor(
+                    taskID: task.taskID,
+                    projectID: presentation.projectReference.id,
+                    title: task.title,
+                    date: presentation.date
+                  )
                 } label: {
                   HStack(spacing: 0) {
                     Text(task.title)
@@ -196,7 +251,12 @@ extension MainWorkspaceView {
           VStack(alignment: .leading, spacing: 6) {
             ForEach(presentation.completedTasks) { task in
               Button {
-                revealTimelineTaskDetail(taskID: task.taskID, projectID: presentation.projectReference.id)
+                showTimelineTaskEditor(
+                  taskID: task.taskID,
+                  projectID: presentation.projectReference.id,
+                  title: task.title,
+                  date: presentation.date
+                )
               } label: {
                 HStack(spacing: 8) {
                   timelineDayHeaderCompletedMarker(color: projectColor)
@@ -233,10 +293,16 @@ extension MainWorkspaceView {
       style: timelineOverlayStyle(isHovering: appState.isHoveringTimelineTaskBadgeOverlay)
     )
     .onHover { isHovering in
-      appState.isHoveringTimelineTaskBadgeOverlay = isHovering
+      if isHovering {
+        appState.isHoveringTimelineTaskBadgeOverlay = true
+      } else if activeWorkspaceTaskEditPanelTarget == nil {
+        appState.isHoveringTimelineTaskBadgeOverlay = false
+      }
     }
     .onDisappear {
-      appState.isHoveringTimelineTaskBadgeOverlay = false
+      if activeWorkspaceTaskEditPanelTarget == nil {
+        appState.isHoveringTimelineTaskBadgeOverlay = false
+      }
     }
   }
 
@@ -259,7 +325,12 @@ extension MainWorkspaceView {
           ForEach(section.tasks) { task in
             if task.isCompleted {
               Button {
-                revealTimelineTaskDetail(taskID: task.taskID, projectID: task.projectReference.id)
+                showTimelineTaskEditor(
+                  taskID: task.taskID,
+                  projectID: task.projectReference.id,
+                  title: task.title,
+                  date: presentation.date
+                )
               } label: {
                 HStack(spacing: 8) {
                   timelineDayHeaderCompletedMarker(color: sectionColor)
@@ -291,7 +362,12 @@ extension MainWorkspaceView {
                 .buttonStyle(.plain)
 
                 Button {
-                  revealTimelineTaskDetail(taskID: task.taskID, projectID: task.projectReference.id)
+                  showTimelineTaskEditor(
+                    taskID: task.taskID,
+                    projectID: task.projectReference.id,
+                    title: task.title,
+                    date: presentation.date
+                  )
                 } label: {
                   HStack(spacing: 0) {
                     Text(task.title)
@@ -324,10 +400,16 @@ extension MainWorkspaceView {
       style: timelineOverlayStyle(isHovering: appState.isHoveringTimelineDayHeaderOverlay)
     )
     .onHover { isHovering in
-      appState.isHoveringTimelineDayHeaderOverlay = isHovering
+      if isHovering {
+        appState.isHoveringTimelineDayHeaderOverlay = true
+      } else if activeWorkspaceTaskEditPanelTarget == nil {
+        appState.isHoveringTimelineDayHeaderOverlay = false
+      }
     }
     .onDisappear {
-      appState.isHoveringTimelineDayHeaderOverlay = false
+      if activeWorkspaceTaskEditPanelTarget == nil {
+        appState.isHoveringTimelineDayHeaderOverlay = false
+      }
     }
   }
 

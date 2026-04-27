@@ -290,6 +290,7 @@ struct MainWorkspaceView: View {
   @State var sidebarTaskDropTargetProjectID: UUID?
   @State var showSidebarAddProjectPopover = false
   @State var isCreatingSidebarProject = false
+  @State var activeWorkspaceTaskEditPanelTarget: WorkspaceTaskEditPanelTarget?
 
   struct ProjectSortOrderUndoSnapshot {
     let sortOrdersByProjectID: [UUID: Int]
@@ -554,6 +555,7 @@ struct MainWorkspaceView: View {
   }
 
   let inspectorFixedWidth: CGFloat = projectDetailEmbeddedFixedWidth
+  let workspaceTaskEditPanelWidth: CGFloat = 484
   let workspaceSearchFieldIdealWidth: CGFloat = 320
   let workspaceSearchFieldMinWidth: CGFloat = 36
   let workspaceSearchPanelWidth: CGFloat = 430

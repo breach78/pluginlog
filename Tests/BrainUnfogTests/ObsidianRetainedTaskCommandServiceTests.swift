@@ -90,6 +90,128 @@ final class ObsidianRetainedTaskCommandServiceTests: XCTestCase {
     XCTAssertEqual(ReminderSyncBaselineStore.baseline(for: "task-1")?.state.date, "2026-04-25 09:30")
   }
 
+  func testTaskEditFieldsLoadAndUpdateTitleNoteAndSchedule() async throws {
+    let dataRoot = try makeTemporaryDirectory(prefix: "ObsidianCommandData")
+    ReminderSyncBaselineStore.install(dataDirectory: dataRoot)
+    let vault = try makeTemporaryVault()
+    _ = try writeProjectNote(
+      vault: vault,
+      body: projectNote(
+        body: """
+        - [ ] Task one
+          %% brain-unfog: {"reminder_external_id":"task-1","date":"2026-04-25"} %%
+          - Existing note
+        """
+      )
+    )
+    let provider = FakeObsidianCommandReminderProjectProvider()
+    provider.snapshots["task-1"] = remoteSnapshot(
+      title: "Task one",
+      date: "2026-04-25",
+      noteText: "Existing note"
+    )
+    upsertBaseline(
+      title: "Task one",
+      isCompleted: false,
+      date: "2026-04-25",
+      noteText: "Existing note"
+    )
+    let nextDay = makeDate(year: 2026, month: 4, day: 26)
+
+    let loaded = try await ObsidianRetainedTaskCommandService.taskEditFields(
+      vaultRootURL: vault,
+      projectID: projectID,
+      taskID: taskID,
+      calendar: calendar
+    )
+    XCTAssertEqual(loaded.title, "Task one")
+    XCTAssertEqual(loaded.noteText, "Existing note")
+    XCTAssertEqual(loaded.day.map(dateString), "2026-04-25")
+    XCTAssertNil(loaded.timeMinutes)
+
+    _ = try await ObsidianRetainedTaskCommandService.updateTaskEditFields(
+      vaultRootURL: vault,
+      projectID: projectID,
+      taskID: taskID,
+      fields: RetainedTaskEditFields(
+        title: "Edited task",
+        noteText: "Edited note",
+        day: nextDay,
+        timeMinutes: 8 * 60 + 15,
+        durationMinutes: nil
+      ),
+      calendar: calendar,
+      reminderProjectProvider: provider
+    )
+
+    let raw = try await firstRawMarkdown(in: vault)
+    XCTAssertTrue(raw.contains("- [ ] Edited task"))
+    XCTAssertTrue(raw.contains(#""date":"2026-04-26","time":"08:15""#))
+    XCTAssertTrue(raw.contains("  - Edited note"))
+    XCTAssertEqual(provider.titleWrites.map(\.title), ["Edited task"])
+    XCTAssertEqual(provider.noteWrites.map(\.noteText), ["Edited note"])
+    XCTAssertEqual(provider.scheduleWrites.first?.dueDate.map(dateTimeString), "2026-04-26 08:15")
+    let baseline = try XCTUnwrap(ReminderSyncBaselineStore.baseline(for: "task-1"))
+    XCTAssertEqual(baseline.state.title, "Edited task")
+    XCTAssertEqual(baseline.state.noteText, "Edited note")
+    XCTAssertEqual(baseline.state.date, "2026-04-26 08:15")
+  }
+
+  func testTaskEditFieldsRoundTripsAttachmentLinksInNoteText() async throws {
+    let dataRoot = try makeTemporaryDirectory(prefix: "ObsidianCommandData")
+    ReminderSyncBaselineStore.install(dataDirectory: dataRoot)
+    let vault = try makeTemporaryVault()
+    _ = try writeProjectNote(
+      vault: vault,
+      body: projectNote(
+        body: """
+        - [ ] Task one
+          %% brain-unfog: {"reminder_external_id":"task-1"} %%
+          - Existing note
+        """
+      )
+    )
+    let provider = FakeObsidianCommandReminderProjectProvider()
+    provider.snapshots["task-1"] = remoteSnapshot(title: "Task one", noteText: "Existing note")
+    upsertBaseline(
+      title: "Task one",
+      isCompleted: false,
+      date: nil,
+      noteText: "Existing note"
+    )
+    let attachmentNote = """
+    Edited note
+    [Screenshot 2026-04-27.jpg](raw/assets/Screenshot%202026-04-27.jpg)
+    """
+
+    _ = try await ObsidianRetainedTaskCommandService.updateTaskEditFields(
+      vaultRootURL: vault,
+      projectID: projectID,
+      taskID: taskID,
+      fields: RetainedTaskEditFields(
+        title: "Task one",
+        noteText: attachmentNote,
+        day: nil,
+        timeMinutes: nil,
+        durationMinutes: nil
+      ),
+      calendar: calendar,
+      reminderProjectProvider: provider
+    )
+
+    let raw = try await firstRawMarkdown(in: vault)
+    XCTAssertTrue(raw.contains("  - [Screenshot 2026-04-27.jpg](raw/assets/Screenshot%202026-04-27.jpg)"))
+    let reloaded = try await ObsidianRetainedTaskCommandService.taskEditFields(
+      vaultRootURL: vault,
+      projectID: projectID,
+      taskID: taskID,
+      calendar: calendar
+    )
+    XCTAssertEqual(reloaded.noteText, attachmentNote)
+    XCTAssertEqual(provider.noteWrites.map(\.noteText), [attachmentNote])
+    XCTAssertEqual(ReminderSyncBaselineStore.baseline(for: "task-1")?.state.noteText, attachmentNote)
+  }
+
   func testDurationOnlyEditDoesNotWriteReminderSchedule() async throws {
     let vault = try makeTemporaryVault()
     _ = try writeProjectNote(
@@ -330,10 +452,15 @@ final class ObsidianRetainedTaskCommandServiceTests: XCTestCase {
     return formatter.string(from: date)
   }
 
+  private func dateString(_ date: Date) -> String {
+    dayFormatter.string(from: date)
+  }
+
   private func upsertBaseline(
     title: String,
     isCompleted: Bool,
-    date: String?
+    date: String?,
+    noteText: String? = nil
   ) {
     ReminderSyncBaselineStore.upsert(
       reminderExternalIdentifier: "task-1",
@@ -342,7 +469,7 @@ final class ObsidianRetainedTaskCommandServiceTests: XCTestCase {
         isCompleted: isCompleted,
         date: date,
         repeatRule: nil,
-        noteText: nil
+        noteText: noteText
       ),
       remoteModifiedAt: fixedRemoteDate,
       now: fixedNow
@@ -353,6 +480,7 @@ final class ObsidianRetainedTaskCommandServiceTests: XCTestCase {
     title: String,
     isCompleted: Bool = false,
     date: String? = nil,
+    noteText: String = "",
     modifiedAt: Date? = nil
   ) -> ReminderTaskRemoteSnapshot {
     let dueDate: Date?
@@ -372,7 +500,7 @@ final class ObsidianRetainedTaskCommandServiceTests: XCTestCase {
       externalIdentifier: "task-1",
       calendarIdentifier: "list-1",
       title: title,
-      noteText: "",
+      noteText: noteText,
       isCompleted: isCompleted,
       dueDate: dueDate,
       hasExplicitTime: hasExplicitTime,
@@ -436,6 +564,14 @@ private final class FakeObsidianCommandReminderProjectProvider: ReminderProjectP
     var hasExplicitTime: Bool
   }
 
+  struct TitleWrite: Equatable {
+    var title: String
+  }
+
+  struct NoteWrite: Equatable {
+    var noteText: String
+  }
+
   struct CreatedTask: Equatable {
     var listID: String
     var title: String
@@ -446,6 +582,8 @@ private final class FakeObsidianCommandReminderProjectProvider: ReminderProjectP
 
   var completionWrites: [CompletionWrite] = []
   var scheduleWrites: [ScheduleWrite] = []
+  var titleWrites: [TitleWrite] = []
+  var noteWrites: [NoteWrite] = []
   var createdTasks: [CreatedTask] = []
   var snapshots: [String: ReminderTaskRemoteSnapshot] = [:]
   var completionError: Error?
@@ -525,8 +663,20 @@ private final class FakeObsidianCommandReminderProjectProvider: ReminderProjectP
     guard let identifier = task.reminderExternalIdentifier else { return nil }
     return snapshots[identifier]
   }
-  func setTaskTitle(for task: ReminderTaskReference, title: String) throws -> ReminderTaskRemoteMetadata? { nil }
-  func setTaskReminderNote(for task: ReminderTaskReference, noteText: String) throws -> ReminderTaskRemoteMetadata? { nil }
+  func setTaskTitle(
+    for task: ReminderTaskReference,
+    title: String
+  ) throws -> ReminderTaskRemoteMetadata? {
+    titleWrites.append(TitleWrite(title: title))
+    return metadata(for: task)
+  }
+  func setTaskReminderNote(
+    for task: ReminderTaskReference,
+    noteText: String
+  ) throws -> ReminderTaskRemoteMetadata? {
+    noteWrites.append(NoteWrite(noteText: noteText))
+    return metadata(for: task)
+  }
   func setTaskRecurrence(for task: ReminderTaskReference, recurrenceRuleRaw: String?) throws -> ReminderTaskRemoteMetadata? { nil }
   func setTaskPresentation(for task: ReminderTaskReference, priority: Int) throws -> ReminderTaskRemoteMetadata? { nil }
   func moveTaskReminder(for task: ReminderTaskReference, toProject identifier: String) throws -> ReminderTaskRemoteMetadata? { nil }

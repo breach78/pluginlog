@@ -1,0 +1,647 @@
+import AppKit
+import SwiftUI
+import UniformTypeIdentifiers
+
+struct TimelineTaskEditTarget: Equatable, Sendable {
+  let projectID: UUID
+  let taskID: UUID
+}
+
+struct WorkspaceTaskEditPanelTarget: Equatable, Sendable {
+  let projectID: UUID
+  let taskID: UUID
+  let initialFields: RetainedTaskEditFields
+}
+
+enum TimelineTaskEditPresentationStyle {
+  case popover
+  case panel
+}
+
+struct TimelineTaskEditPopoverContent: View {
+  let initialFields: RetainedTaskEditFields
+  let presentationStyle: TimelineTaskEditPresentationStyle
+  let vaultRootURL: URL?
+  let loadFields: () async -> RetainedTaskEditFields
+  let saveFields: (RetainedTaskEditFields) async throws -> Void
+  let onCancel: () -> Void
+
+  @State private var title: String
+  @State private var noteText: String
+  @State private var attachments: [TaskEditAttachment]
+  @State private var titleHeight: CGFloat = TaskEditTypography.titleMinimumHeight
+  @State private var noteHeight: CGFloat = TaskEditTypography.noteMinimumHeight
+  @State private var hasDate: Bool
+  @State private var selectedDate: Date
+  @State private var hasTime: Bool
+  @State private var selectedTime: Date
+  @State private var durationMinutes: Int?
+  @State private var lastCommittedFields: RetainedTaskEditFields
+  @State private var autoSaveTask: Task<Void, Never>?
+  @State private var saveAgainAfterCurrent = false
+  @State private var isLoading = false
+  @State private var isSaving = false
+  @State private var isAttachmentDropTargeted = false
+  @State private var isImportingAttachments = false
+  @State private var pendingAttachmentDelete: TaskEditAttachment?
+  @State private var errorText: String?
+
+  private let calendar = Calendar.autoupdatingCurrent
+  private static let autoSaveDelayNanoseconds: UInt64 = 1_200_000_000
+
+  init(
+    initialFields: RetainedTaskEditFields,
+    presentationStyle: TimelineTaskEditPresentationStyle = .popover,
+    vaultRootURL: URL? = nil,
+    loadFields: @escaping () async -> RetainedTaskEditFields,
+    saveFields: @escaping (RetainedTaskEditFields) async throws -> Void,
+    onCancel: @escaping () -> Void
+  ) {
+    let initialNoteText = TaskEditAttachmentService.noteTextByRemovingAttachmentLinks(
+      from: initialFields.noteText
+    )
+    let initialAttachments = TaskEditAttachmentService.attachments(
+      in: initialFields.noteText,
+      vaultRootURL: vaultRootURL
+    )
+    self.initialFields = initialFields
+    self.presentationStyle = presentationStyle
+    self.vaultRootURL = vaultRootURL
+    self.loadFields = loadFields
+    self.saveFields = saveFields
+    self.onCancel = onCancel
+    _title = State(initialValue: initialFields.title)
+    _noteText = State(initialValue: initialNoteText)
+    _attachments = State(initialValue: initialAttachments)
+    _hasDate = State(initialValue: initialFields.day != nil)
+    _selectedDate = State(initialValue: initialFields.day ?? .now)
+    _hasTime = State(initialValue: initialFields.timeMinutes != nil)
+    _selectedTime = State(initialValue: Self.timeDate(minutes: initialFields.timeMinutes))
+    _durationMinutes = State(initialValue: initialFields.durationMinutes)
+    _lastCommittedFields = State(
+      initialValue: Self.savingFields(
+        title: initialFields.title,
+        noteText: initialNoteText,
+        attachments: initialAttachments,
+        day: initialFields.day,
+        timeMinutes: initialFields.timeMinutes,
+        durationMinutes: initialFields.durationMinutes
+      )
+    )
+  }
+
+  var body: some View {
+    styledContent
+      .alert(item: $pendingAttachmentDelete) { attachment in
+        Alert(
+          title: Text("첨부파일 삭제"),
+          message: Text("\(attachment.displayName)을 삭제합니다. raw/assets 폴더의 파일도 함께 삭제됩니다."),
+          primaryButton: .destructive(Text("삭제")) {
+            deleteAttachment(attachment)
+          },
+          secondaryButton: .cancel(Text("취소")) {
+            pendingAttachmentDelete = nil
+          }
+        )
+      }
+      .onChange(of: hasDate) { _, enabled in
+        if !enabled {
+          hasTime = false
+        }
+        scheduleAutoSave()
+      }
+      .onChange(of: hasTime) { _, _ in
+        scheduleAutoSave()
+      }
+      .onChange(of: selectedDate) { _, _ in
+        scheduleAutoSave()
+      }
+      .onChange(of: selectedTime) { _, _ in
+        scheduleAutoSave()
+      }
+      .onChange(of: title) { _, _ in
+        scheduleAutoSave()
+      }
+      .onChange(of: noteText) { _, _ in
+        scheduleAutoSave()
+      }
+      .onChange(of: attachments) { _, _ in
+        scheduleAutoSave()
+      }
+      .task {
+        await loadLatest()
+      }
+      .onDisappear {
+        flushPendingChangesOnDisappear()
+      }
+  }
+
+  @ViewBuilder
+  private var styledContent: some View {
+    switch presentationStyle {
+    case .popover:
+      formContent
+        .padding(12)
+        .frame(width: 340, alignment: .topLeading)
+        .overlaySurface(
+          cornerRadius: 12,
+          fillColor: Color(nsColor: NSColor(calibratedWhite: 0.985, alpha: 1)),
+          strokeColor: .secondary,
+          style: .card()
+        )
+    case .panel:
+      ScrollView {
+        formContent
+          .padding(16)
+          .frame(maxWidth: .infinity, alignment: .topLeading)
+          .background(TaskEditFieldStyle.panelBackgroundColor)
+      }
+      .background(TaskEditFieldStyle.panelBackgroundColor)
+      .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+  }
+
+  private var formContent: some View {
+    VStack(alignment: .leading, spacing: 13) {
+      HStack(spacing: 8) {
+        Text("할일 편집")
+          .font(TaskEditTypography.headerFont)
+          .foregroundStyle(.secondary)
+        Spacer(minLength: 0)
+        if isLoading || isSaving {
+          ProgressView()
+            .controlSize(.small)
+        }
+        Button {
+          closeEditor()
+        } label: {
+          Image(systemName: "xmark")
+            .font(.system(size: 14, weight: .semibold))
+            .frame(width: 28, height: 28)
+        }
+        .buttonStyle(.plain)
+        .help("닫기")
+      }
+
+      VStack(alignment: .leading, spacing: 6) {
+        Text("제목")
+          .font(TaskEditTypography.labelFont)
+          .foregroundStyle(.secondary)
+        LinkedTextEditor(
+          text: $title,
+          measuredHeight: $titleHeight,
+          font: TaskEditTypography.titleNSFont,
+          vaultRootURL: vaultRootURL,
+          allowsNewlines: false,
+          lineHeightMultiple: 1
+        )
+        .frame(minHeight: TaskEditTypography.titleMinimumHeight)
+        .frame(height: max(TaskEditTypography.titleMinimumHeight, titleHeight))
+        .taskEditFieldBackground(cornerRadius: 1)
+      }
+
+      VStack(alignment: .leading, spacing: 6) {
+        Text("내용")
+          .font(TaskEditTypography.labelFont)
+          .foregroundStyle(.secondary)
+        LinkedTextEditor(
+          text: $noteText,
+          measuredHeight: $noteHeight,
+          font: TaskEditTypography.noteNSFont,
+          vaultRootURL: vaultRootURL,
+          allowsNewlines: true,
+          lineHeightMultiple: 1.1
+        )
+        .frame(minHeight: TaskEditTypography.noteMinimumHeight)
+        .frame(height: max(TaskEditTypography.noteMinimumHeight, noteHeight))
+        .taskEditFieldBackground(cornerRadius: 1)
+      }
+
+      attachmentSection
+
+      dateTimeSection
+
+      if let errorText {
+        Text(errorText)
+          .font(TaskEditTypography.labelFont)
+          .foregroundStyle(.red)
+          .lineLimit(2)
+      }
+
+    }
+  }
+
+  private var dateTimeSection: some View {
+    HStack(alignment: .top, spacing: 18) {
+      VStack(alignment: .leading, spacing: 8) {
+        Toggle("날짜", isOn: $hasDate)
+          .toggleStyle(.checkbox)
+          .font(TaskEditTypography.controlFont)
+        if hasDate {
+          DatePicker("", selection: $selectedDate, displayedComponents: .date)
+            .datePickerStyle(.graphical)
+            .labelsHidden()
+            .frame(width: 276, alignment: .leading)
+            .background(TaskEditFieldStyle.panelBackgroundColor)
+        }
+      }
+      .frame(maxWidth: .infinity, alignment: .topLeading)
+
+      VStack(alignment: .leading, spacing: 8) {
+        Toggle("시간 설정", isOn: $hasTime)
+          .toggleStyle(.checkbox)
+          .font(TaskEditTypography.controlFont)
+          .disabled(!hasDate)
+        DatePicker("", selection: $selectedTime, displayedComponents: .hourAndMinute)
+          .labelsHidden()
+          .disabled(!hasDate || !hasTime)
+      }
+      .frame(width: 132, alignment: .topLeading)
+    }
+    .frame(maxWidth: .infinity, alignment: .leading)
+  }
+
+  private var attachmentSection: some View {
+    VStack(alignment: .leading, spacing: 8) {
+      Text("첨부파일")
+        .font(TaskEditTypography.labelFont)
+        .foregroundStyle(.secondary)
+
+      VStack(alignment: .leading, spacing: 7) {
+        ForEach(attachmentItems) { attachment in
+          HStack(spacing: 8) {
+            Button {
+              NSWorkspace.shared.open(attachment.fileURL)
+            } label: {
+              HStack(spacing: 8) {
+                Image(systemName: "paperclip")
+                  .font(.system(size: 14, weight: .semibold))
+                  .foregroundStyle(.secondary)
+                Text(attachment.displayName)
+                  .font(TaskEditTypography.controlFont)
+                  .lineLimit(1)
+                Spacer(minLength: 0)
+              }
+              .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            Button {
+              pendingAttachmentDelete = attachment
+            } label: {
+              Text("x")
+                .font(TaskEditTypography.buttonFont)
+                .foregroundStyle(.secondary)
+                .frame(width: 24, height: 24)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help("첨부파일 삭제")
+          }
+          .onDrag {
+            attachmentItemProvider(for: attachment)
+          }
+          .padding(.vertical, 2)
+          .frame(maxWidth: .infinity, alignment: .leading)
+        }
+
+        Text(isImportingAttachments ? "첨부파일 복사 중..." : "파일을 여기에 드래그")
+          .font(TaskEditTypography.controlFont)
+          .foregroundStyle(isAttachmentDropTargeted ? Color.accentColor : Color.secondary)
+          .frame(maxWidth: .infinity, minHeight: 42, alignment: .center)
+          .background(
+            Rectangle()
+              .fill(
+                isAttachmentDropTargeted
+                  ? Color.accentColor.opacity(0.07)
+                  : Color(nsColor: .controlBackgroundColor).opacity(0.62)
+              )
+          )
+          .overlay(
+            Rectangle()
+              .stroke(
+                isAttachmentDropTargeted
+                  ? Color.accentColor.opacity(0.65)
+                  : Color.secondary.opacity(0.22),
+                style: StrokeStyle(lineWidth: 1, dash: [5, 4])
+              )
+          )
+          .onDrop(
+            of: [UTType.fileURL.identifier],
+            isTargeted: $isAttachmentDropTargeted
+          ) { providers in
+            Task {
+              await importDroppedAttachmentProviders(providers)
+            }
+            return true
+          }
+      }
+    }
+  }
+
+  private var attachmentItems: [TaskEditAttachment] {
+    attachments
+  }
+
+  private func attachmentItemProvider(for attachment: TaskEditAttachment) -> NSItemProvider {
+    NSItemProvider(contentsOf: attachment.fileURL)
+      ?? NSItemProvider(object: attachment.fileURL as NSURL)
+  }
+
+  @MainActor
+  private func importDroppedAttachmentProviders(_ providers: [NSItemProvider]) async {
+    guard !providers.isEmpty else { return }
+    isImportingAttachments = true
+    errorText = nil
+    defer {
+      isImportingAttachments = false
+    }
+    do {
+      let sourceURLs = try await TaskEditAttachmentDropLoader.fileURLs(from: providers)
+      let vaultRootURL = vaultRootURL
+      let importedAttachments = try await Task.detached {
+        try TaskEditAttachmentService.copyFilesToRawAssets(
+          sourceURLs: sourceURLs,
+          vaultRootURL: vaultRootURL
+        )
+      }.value
+      attachments.append(contentsOf: importedAttachments)
+      autoSaveTask?.cancel()
+      autoSaveTask = nil
+      _ = await savePendingChanges(afterCurrent: true)
+    } catch {
+      errorText = error.localizedDescription
+    }
+  }
+
+  private func deleteAttachment(_ attachment: TaskEditAttachment) {
+    do {
+      try TaskEditAttachmentService.deleteAttachment(
+        attachment,
+        vaultRootURL: vaultRootURL
+      )
+      attachments.removeAll { $0.id == attachment.id }
+      pendingAttachmentDelete = nil
+      errorText = nil
+      autoSaveTask?.cancel()
+      autoSaveTask = nil
+      Task { @MainActor in
+        _ = await savePendingChanges(afterCurrent: true)
+      }
+    } catch {
+      pendingAttachmentDelete = nil
+      errorText = error.localizedDescription
+    }
+  }
+
+  private func loadLatest() async {
+    isLoading = true
+    let fields = await loadFields()
+    guard currentFields() == lastCommittedFields else {
+      isLoading = false
+      return
+    }
+    apply(fields)
+    isLoading = false
+  }
+
+  private func apply(_ fields: RetainedTaskEditFields) {
+    autoSaveTask?.cancel()
+    autoSaveTask = nil
+    let nextNoteText = TaskEditAttachmentService.noteTextByRemovingAttachmentLinks(from: fields.noteText)
+    let nextAttachments = TaskEditAttachmentService.attachments(in: fields.noteText, vaultRootURL: vaultRootURL)
+    title = fields.title
+    noteText = nextNoteText
+    attachments = nextAttachments
+    hasDate = fields.day != nil
+    selectedDate = fields.day ?? .now
+    hasTime = fields.timeMinutes != nil
+    selectedTime = Self.timeDate(minutes: fields.timeMinutes)
+    durationMinutes = fields.durationMinutes
+    lastCommittedFields = Self.savingFields(
+      title: fields.title,
+      noteText: nextNoteText,
+      attachments: nextAttachments,
+      day: fields.day,
+      timeMinutes: fields.timeMinutes,
+      durationMinutes: fields.durationMinutes
+    )
+  }
+
+  private func closeEditor() {
+    Task { @MainActor in
+      guard await flushPendingChanges() else { return }
+      onCancel()
+    }
+  }
+
+  @MainActor
+  private func scheduleAutoSave() {
+    guard shouldSave(currentFields()) else { return }
+    autoSaveTask?.cancel()
+    autoSaveTask = Task { @MainActor in
+      do {
+        try await Task.sleep(nanoseconds: Self.autoSaveDelayNanoseconds)
+      } catch {
+        return
+      }
+      autoSaveTask = nil
+      _ = await savePendingChanges()
+    }
+  }
+
+  @MainActor
+  private func flushPendingChanges() async -> Bool {
+    autoSaveTask?.cancel()
+    autoSaveTask = nil
+    return await savePendingChanges()
+  }
+
+  private func flushPendingChangesOnDisappear() {
+    autoSaveTask?.cancel()
+    autoSaveTask = nil
+    Task { @MainActor in
+      _ = await savePendingChanges(afterCurrent: true)
+    }
+  }
+
+  @MainActor
+  private func savePendingChanges(afterCurrent: Bool = false) async -> Bool {
+    guard !isSaving else {
+      if afterCurrent {
+        saveAgainAfterCurrent = true
+      } else {
+        scheduleAutoSave()
+      }
+      return true
+    }
+    let fields = currentFields()
+    guard shouldSave(fields) else { return true }
+    isSaving = true
+    errorText = nil
+    do {
+      try await saveFields(fields)
+      lastCommittedFields = fields
+      isSaving = false
+      let shouldSaveImmediately = saveAgainAfterCurrent
+      saveAgainAfterCurrent = false
+      if shouldSaveImmediately {
+        return await savePendingChanges(afterCurrent: true)
+      }
+      if currentFields() != fields {
+        scheduleAutoSave()
+      }
+      return true
+    } catch {
+      isSaving = false
+      saveAgainAfterCurrent = false
+      errorText = error.localizedDescription
+      return false
+    }
+  }
+
+  private func currentFields() -> RetainedTaskEditFields {
+    Self.savingFields(
+      title: title,
+      noteText: noteText,
+      attachments: attachments,
+      day: hasDate ? calendar.startOfDay(for: selectedDate) : nil,
+      timeMinutes: hasDate && hasTime ? Self.timeMinutes(from: selectedTime) : nil,
+      durationMinutes: durationMinutes
+    )
+  }
+
+  private func shouldSave(_ fields: RetainedTaskEditFields) -> Bool {
+    guard fields != lastCommittedFields else { return false }
+    return !fields.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+  }
+
+  private static func savingFields(
+    title: String,
+    noteText: String,
+    attachments: [TaskEditAttachment],
+    day: Date?,
+    timeMinutes: Int?,
+    durationMinutes: Int?
+  ) -> RetainedTaskEditFields {
+    RetainedTaskEditFields(
+      title: title.replacingOccurrences(of: "\n", with: " "),
+      noteText: TaskEditAttachmentService.noteTextByAppendingAttachments(attachments, to: noteText),
+      day: day,
+      timeMinutes: timeMinutes,
+      durationMinutes: durationMinutes
+    )
+  }
+
+  private static func timeDate(minutes: Int?) -> Date {
+    let boundedMinutes = min(max(0, minutes ?? 9 * 60), 23 * 60 + 59)
+    return Calendar.autoupdatingCurrent.date(
+      bySettingHour: boundedMinutes / 60,
+      minute: boundedMinutes % 60,
+      second: 0,
+      of: .now
+    ) ?? .now
+  }
+
+  private static func timeMinutes(from date: Date) -> Int {
+    let components = Calendar.autoupdatingCurrent.dateComponents([.hour, .minute], from: date)
+    return (components.hour ?? 0) * 60 + (components.minute ?? 0)
+  }
+}
+
+private enum TaskEditTypography {
+  static let scale: CGFloat = 1.3
+  static let labelSize: CGFloat = 10 * scale
+  static let bodySize: CGFloat = 12 * scale
+  static let titleSize: CGFloat = 14 * scale
+  static let headerSize: CGFloat = 12 * scale
+  static let titleMinimumHeight: CGFloat = 42
+  static let noteMinimumHeight: CGFloat = 150
+
+  static let headerFont = Font.custom("SansMonoCJKFinalDraft", size: headerSize).weight(.semibold)
+  static let labelFont = Font.custom("SansMonoCJKFinalDraft", size: labelSize)
+  static let controlFont = Font.custom("SansMonoCJKFinalDraft", size: bodySize)
+  static let buttonFont = Font.custom("SansMonoCJKFinalDraft", size: bodySize)
+
+  static var titleNSFont: NSFont {
+    NSFont(name: "SansMonoCJKFinalDraft-Bold", size: titleSize)
+      ?? NSFont.monospacedSystemFont(ofSize: titleSize, weight: .bold)
+  }
+
+  static var noteNSFont: NSFont {
+    NSFont(name: "SansMonoCJKFinalDraft", size: bodySize)
+      ?? NSFont.monospacedSystemFont(ofSize: bodySize, weight: .regular)
+  }
+}
+
+private struct TaskEditFieldBackground: ViewModifier {
+  let cornerRadius: CGFloat
+
+  func body(content: Content) -> some View {
+    content
+      .padding(.horizontal, 12)
+      .padding(.vertical, 10)
+      .background(
+        RoundedRectangle(cornerRadius: cornerRadius)
+          .fill(TaskEditFieldStyle.backgroundColor)
+      )
+  }
+}
+
+private enum TaskEditFieldStyle {
+  static let panelBackgroundColor = Color(
+    nsColor: NSColor(calibratedWhite: 1, alpha: 1)
+  )
+
+  static let backgroundColor = Color(
+    nsColor: NSColor(calibratedWhite: 0.925, alpha: 1)
+  )
+}
+
+private extension View {
+  func taskEditFieldBackground(cornerRadius: CGFloat) -> some View {
+    modifier(TaskEditFieldBackground(cornerRadius: cornerRadius))
+  }
+}
+
+@MainActor
+private enum TaskEditAttachmentDropLoader {
+  static func fileURLs(from providers: [NSItemProvider]) async throws -> [URL] {
+    var urls: [URL] = []
+    for provider in providers where provider.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier) {
+      if let url = try await fileURL(from: provider) {
+        urls.append(url)
+      }
+    }
+    return urls
+  }
+
+  private static func fileURL(from provider: NSItemProvider) async throws -> URL? {
+    try await withCheckedThrowingContinuation { continuation in
+      provider.loadItem(forTypeIdentifier: UTType.fileURL.identifier, options: nil) { item, error in
+        if let error {
+          continuation.resume(throwing: error)
+          return
+        }
+        continuation.resume(returning: decodeFileURL(from: item))
+      }
+    }
+  }
+
+  nonisolated private static func decodeFileURL(from item: NSSecureCoding?) -> URL? {
+    if let url = item as? URL {
+      return url
+    }
+    if let nsURL = item as? NSURL {
+      return nsURL as URL
+    }
+    if let data = item as? Data {
+      return URL(dataRepresentation: data, relativeTo: nil)
+    }
+    if let string = item as? String {
+      return URL(string: string) ?? URL(fileURLWithPath: string)
+    }
+    return nil
+  }
+}

@@ -962,20 +962,48 @@ extension ScheduleBoardView {
   }
 
   func revealScheduleTask(taskID: UUID, projectID: UUID) {
-    selectedScheduleTaskID = taskID
-    appState.selectedProjectID = projectID
-    Task { @MainActor in
-      do {
-        try await ObsidianTaskOpenService.openTask(
-          vaultRootURL: appState.obsidianVaultRootURL,
+    guard let taskDescriptor = scheduleTaskDescriptor(for: taskID) else {
+      selectedScheduleTaskID = taskID
+      appState.selectedProjectID = projectID
+      onEditTask(
+        WorkspaceTaskEditPanelTarget(
           projectID: projectID,
           taskID: taskID,
-          documentOpener: appState.platformUIFoundation.documentOpener
+          initialFields: RetainedTaskEditFields(
+            title: "",
+            noteText: "",
+            day: nil,
+            timeMinutes: nil,
+            durationMinutes: nil
+          )
         )
-      } catch {
-        appState.errorMessage = error.localizedDescription
-      }
+      )
+      return
     }
+    showScheduleTaskEditor(taskDescriptor)
+  }
+
+  func showScheduleTaskEditor(_ taskDescriptor: WorkspaceScheduleTaskDescriptor) {
+    let taskRow = taskDescriptor.taskRow
+    selectedScheduleTaskID = taskRow.id
+    appState.selectedProjectID = taskDescriptor.projectID
+    onEditTask(
+      WorkspaceTaskEditPanelTarget(
+        projectID: taskDescriptor.projectID,
+        taskID: taskRow.id,
+        initialFields: scheduleTaskEditFields(for: taskRow)
+      )
+    )
+  }
+
+  func scheduleTaskEditFields(for taskRow: TaskRowSnapshot) -> RetainedTaskEditFields {
+    RetainedTaskEditFields(
+      title: taskRow.title,
+      noteText: "",
+      day: taskRow.reminderDate.map { calendar.startOfDay(for: $0) },
+      timeMinutes: taskRow.scheduleHasExplicitTime ? taskRow.reminderDate.map(timeMinutes) : nil,
+      durationMinutes: taskRow.scheduledDurationMinutes
+    )
   }
 
   func selectScheduleTask(_ taskID: UUID) {

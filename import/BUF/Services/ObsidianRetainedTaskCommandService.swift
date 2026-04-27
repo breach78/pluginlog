@@ -200,6 +200,150 @@ enum ObsidianRetainedTaskCommandService {
     return try result(projectID: projectID, taskID: taskID, snapshot: writtenSnapshot)
   }
 
+  static func taskEditFields(
+    vaultRootURL: URL?,
+    projectID: UUID,
+    taskID: UUID,
+    calendar: Calendar = .autoupdatingCurrent
+  ) async throws -> RetainedTaskEditFields {
+    let context = try await commandContext(
+      vaultRootURL: vaultRootURL,
+      projectID: projectID,
+      taskID: taskID
+    )
+    let parsedDate = context.retainedTask.schedule.parsedDate
+    return RetainedTaskEditFields(
+      title: context.task.title,
+      noteText: ObsidianReminderImportFormatting.reminderNoteText(for: context.task),
+      day: parsedDate.map { calendar.startOfDay(for: $0) },
+      timeMinutes: context.retainedTask.schedule.hasExplicitTime
+        ? parsedDate.map { minutesSinceStartOfDay(for: $0, calendar: calendar) }
+        : nil,
+      durationMinutes: context.retainedTask.schedule.durationMinutes
+    )
+  }
+
+  static func updateTaskEditFields(
+    vaultRootURL: URL?,
+    projectID: UUID,
+    taskID: UUID,
+    fields rawFields: RetainedTaskEditFields,
+    calendar: Calendar = .autoupdatingCurrent,
+    reminderProjectProvider: ReminderProjectProvider
+  ) async throws -> RetainedTaskCommandResult {
+    let title = rawFields.title.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !title.isEmpty else {
+      throw RetainedTaskCommandError.retainedProjectionFailed("empty task title")
+    }
+
+    let context = try await commandContext(
+      vaultRootURL: vaultRootURL,
+      projectID: projectID,
+      taskID: taskID
+    )
+    let reminderReference = try reminderReference(for: context.task, taskID: taskID)
+    let previousState = ObsidianReminderImportFormatting.taskState(
+      context.task,
+      calendar: calendar
+    )
+    let dueDate = scheduledDate(day: rawFields.day, timeMinutes: rawFields.timeMinutes, calendar: calendar)
+    let hasExplicitTime = dueDate != nil && rawFields.timeMinutes != nil
+    let nextState = ReminderSyncTaskState(
+      title: title,
+      isCompleted: previousState.isCompleted,
+      date: ReminderScheduleMetadataCodec.encodeDate(dueDate, hasExplicitTime: hasExplicitTime),
+      repeatRule: previousState.repeatRule,
+      noteText: rawFields.noteText
+    )
+    let changedFields = editableChangedFields(from: previousState, to: nextState)
+    guard !changedFields.isEmpty else {
+      return try result(projectID: projectID, taskID: taskID, snapshot: context.snapshot)
+    }
+
+    var originalBaseline: ReminderSyncTaskBaselineRecord?
+    for field in changedFields {
+      let baseline = try assertReminderWriteAllowed(
+        reference: reminderReference,
+        field: field,
+        reminderProjectProvider: reminderProjectProvider
+      )
+      originalBaseline = originalBaseline ?? baseline
+    }
+
+    let writtenSnapshot = try await writeTask(
+      using: context,
+      mutate: { task, bodyLines in
+        bodyLines[task.bodyLineIndex] = ObsidianReminderImportFormatting.taskLine(
+          nextState,
+          existing: task
+        )
+        let metadata = scheduleMetadata(
+          existing: task.metadata,
+          reminderExternalIdentifier: task.reminderExternalIdentifier,
+          day: rawFields.day,
+          timeMinutes: rawFields.timeMinutes,
+          durationMinutes: hasExplicitTime ? rawFields.durationMinutes : nil,
+          calendar: calendar
+        )
+        let metadataLineIndex = applyMetadata(metadata, to: task, in: &bodyLines)
+        replaceTaskNoteSubtree(
+          nextState.noteText,
+          task: task,
+          metadataLineIndex: metadataLineIndex,
+          in: &bodyLines
+        )
+      }
+    )
+
+    do {
+      var remoteModifiedAt: Date?
+      if changedFields.contains(.title) {
+        guard let metadata = try reminderProjectProvider.setTaskTitle(
+          for: reminderReference,
+          title: nextState.title
+        ) else {
+          throw RetainedTaskCommandError.reminderOwnerUnresolved(taskID)
+        }
+        remoteModifiedAt = metadata.modifiedAt
+      }
+      if changedFields.contains(.noteText) {
+        guard let metadata = try reminderProjectProvider.setTaskReminderNote(
+          for: reminderReference,
+          noteText: nextState.noteText ?? ""
+        ) else {
+          throw RetainedTaskCommandError.reminderOwnerUnresolved(taskID)
+        }
+        remoteModifiedAt = metadata.modifiedAt
+      }
+      if changedFields.contains(.date) {
+        guard let metadata = try reminderProjectProvider.setTaskSchedule(
+          for: reminderReference,
+          dueDate: dueDate,
+          hasExplicitTime: hasExplicitTime
+        ) else {
+          throw RetainedTaskCommandError.reminderOwnerUnresolved(taskID)
+        }
+        remoteModifiedAt = metadata.modifiedAt
+      }
+      try updateBaseline(
+        from: writtenSnapshot,
+        taskID: taskID,
+        reminderExternalIdentifier: reminderReference.reminderExternalIdentifier,
+        remoteModifiedAt: remoteModifiedAt,
+        pushedFields: changedFields,
+        previousBaseline: originalBaseline
+      )
+    } catch {
+      try await rollbackObsidianWrite(
+        context: context,
+        writtenSnapshot: writtenSnapshot,
+        writeError: error
+      )
+    }
+
+    return try result(projectID: projectID, taskID: taskID, snapshot: writtenSnapshot)
+  }
+
   private struct CommandContext {
     let store: ObsidianProjectMarkdownStore
     let snapshot: ObsidianProjectMarkdownStore.Snapshot
@@ -383,11 +527,12 @@ enum ObsidianRetainedTaskCommandService {
     applyMetadata(metadata, to: task, in: &bodyLines)
   }
 
+  @discardableResult
   private static func applyMetadata(
     _ metadata: ObsidianTaskMetadata,
     to task: ObsidianProjectTask,
     in bodyLines: inout [String]
-  ) {
+  ) -> Int {
     let metadataLine = ObsidianReminderImportFormatting.renderMetadataLine(
       metadata,
       indentation: task.indentation + "  "
@@ -396,9 +541,78 @@ enum ObsidianRetainedTaskCommandService {
       bodyLines.indices.contains(metadataLineIndex)
     {
       bodyLines[metadataLineIndex] = metadataLine
+      return metadataLineIndex
     } else {
-      bodyLines.insert(metadataLine, at: min(task.bodyLineIndex + 1, bodyLines.count))
+      let insertionIndex = min(task.bodyLineIndex + 1, bodyLines.count)
+      bodyLines.insert(metadataLine, at: insertionIndex)
+      return insertionIndex
     }
+  }
+
+  private static func replaceTaskNoteSubtree(
+    _ noteText: String?,
+    task: ObsidianProjectTask,
+    metadataLineIndex: Int,
+    in bodyLines: inout [String]
+  ) {
+    let subtreeEndIndex = ObsidianReminderImportFormatting.taskSubtreeEndIndex(
+      from: task.bodyLineIndex,
+      task: task,
+      in: bodyLines
+    )
+    let ownContentEndIndex = min(metadataLineIndex + 1, bodyLines.count)
+    let preserved = preservedDescendantTaskBlocks(
+      from: ownContentEndIndex,
+      to: subtreeEndIndex,
+      parentTask: task,
+      in: bodyLines
+    )
+    let replacement = ObsidianReminderImportFormatting.renderedSubtreeLines(
+      fromReminderNote: noteText,
+      parentIndentation: task.indentation,
+      preservedTaskBlocks: preserved
+    )
+    bodyLines.replaceSubrange(ownContentEndIndex..<subtreeEndIndex, with: replacement)
+  }
+
+  private static func preservedDescendantTaskBlocks(
+    from startIndex: Int,
+    to endIndex: Int,
+    parentTask: ObsidianProjectTask,
+    in bodyLines: [String]
+  ) -> ObsidianReminderImportFormatting.PreservedDescendantTaskBlocks {
+    var orderedIdentifiers: [String] = []
+    var blocksByIdentifier: [String: [String]] = [:]
+    var index = startIndex
+    while index < endIndex {
+      guard
+        bodyLines.indices.contains(index),
+        let parsedIndentation = ObsidianReminderImportFormatting.parseTaskLineIndentation(
+          bodyLines[index]
+        ),
+        ObsidianReminderImportFormatting.indentationWidth(parsedIndentation)
+          > ObsidianReminderImportFormatting.indentationWidth(parentTask.indentation)
+      else {
+        index += 1
+        continue
+      }
+      let blockEnd = ObsidianReminderImportFormatting.taskSubtreeEndIndex(
+        from: index,
+        taskIndentation: parsedIndentation,
+        in: bodyLines
+      )
+      if let identifier = ObsidianReminderImportFormatting.reminderIdentifier(
+        in: Array(bodyLines[index..<blockEnd])
+      ), blocksByIdentifier[identifier] == nil {
+        orderedIdentifiers.append(identifier)
+        blocksByIdentifier[identifier] = Array(bodyLines[index..<blockEnd])
+      }
+      index = blockEnd
+    }
+    return ObsidianReminderImportFormatting.PreservedDescendantTaskBlocks(
+      orderedIdentifiers: orderedIdentifiers,
+      blocksByIdentifier: blocksByIdentifier
+    )
   }
 
   private static func updateBaseline(
@@ -523,6 +737,20 @@ enum ObsidianRetainedTaskCommandService {
       second: 0,
       of: normalizedDay
     ) ?? normalizedDay
+  }
+
+  private static func editableChangedFields(
+    from previous: ReminderSyncTaskState,
+    to next: ReminderSyncTaskState
+  ) -> [ReminderSyncTaskField] {
+    [.title, .noteText, .date].filter {
+      previous.value(for: $0) != next.value(for: $0)
+    }
+  }
+
+  private static func minutesSinceStartOfDay(for date: Date, calendar: Calendar) -> Int {
+    let components = calendar.dateComponents([.hour, .minute], from: date)
+    return (components.hour ?? 0) * 60 + (components.minute ?? 0)
   }
 
   private static func normalizedDuration(_ durationMinutes: Int?) -> Int? {

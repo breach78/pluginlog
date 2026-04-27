@@ -84,7 +84,14 @@ extension TimelineBoardView {
                 .disabled(!canInteractWithProject)
 
                 Button {
-                  revealTimelineTaskDetail(taskID: task.taskID, projectID: projectID)
+                  onEditTask(
+                    timelineTaskEditPanelTarget(
+                      taskID: task.taskID,
+                      projectID: projectID,
+                      title: timelinePreviewTitle(for: task.title),
+                      date: context.date
+                    )
+                  )
                 } label: {
                   HStack(spacing: 0) {
                     Text(timelinePreviewTitle(for: task.title))
@@ -133,7 +140,14 @@ extension TimelineBoardView {
                 .disabled(!canInteractWithProject)
 
                 Button {
-                  revealTimelineTaskDetail(taskID: task.taskID, projectID: projectID)
+                  onEditTask(
+                    timelineTaskEditPanelTarget(
+                      taskID: task.taskID,
+                      projectID: projectID,
+                      title: timelinePreviewTitle(for: task.title),
+                      date: context.date
+                    )
+                  )
                 } label: {
                   HStack(spacing: 0) {
                     Text(timelinePreviewTitle(for: task.title))
@@ -171,7 +185,14 @@ extension TimelineBoardView {
           VStack(alignment: .leading, spacing: 6) {
             ForEach(completedPreview.tasks, id: \.id) { task in
               Button {
-                revealTimelineTaskDetail(taskID: task.taskID, projectID: projectID)
+                onEditTask(
+                  timelineTaskEditPanelTarget(
+                    taskID: task.taskID,
+                    projectID: projectID,
+                    title: timelinePreviewTitle(for: task.title),
+                    date: context.date
+                  )
+                )
               } label: {
                 HStack(spacing: 8) {
                   Image(systemName: "checkmark.circle.fill")
@@ -221,6 +242,25 @@ extension TimelineBoardView {
         scheduleTimelineTaskBadgeOverlayHideIfNeeded()
       }
     }
+  }
+
+  func timelineTaskEditPanelTarget(
+    taskID: UUID,
+    projectID: UUID,
+    title: String,
+    date: Date?
+  ) -> WorkspaceTaskEditPanelTarget {
+    WorkspaceTaskEditPanelTarget(
+      projectID: projectID,
+      taskID: taskID,
+      initialFields: RetainedTaskEditFields(
+        title: title,
+        noteText: "",
+        day: date.map { calendar.startOfDay(for: $0) },
+        timeMinutes: nil,
+        durationMinutes: nil
+      )
+    )
   }
 
   func timelineTaskBadgeOverlayLayout(

@@ -52,6 +52,114 @@ extension MainWorkspaceView {
     openProjectTaskInSource(projectID: projectID, taskID: taskID)
   }
 
+  func showTimelineTaskEditor(_ target: WorkspaceTaskEditPanelTarget) {
+    showArchive = false
+    inspectorSelection = nil
+    appState.isHoveringTimelineTaskBadgeOverlay = false
+    appState.isHoveringTimelineDayHeaderOverlay = false
+    activeWorkspaceTaskEditPanelTarget = target
+    selectProjectContext(target.projectID)
+  }
+
+  func showTimelineTaskEditor(
+    taskID: UUID,
+    projectID: UUID,
+    title: String,
+    date: Date?,
+    hasExplicitTime: Bool = false,
+    durationMinutes: Int? = nil
+  ) {
+    let target = WorkspaceTaskEditPanelTarget(
+      projectID: projectID,
+      taskID: taskID,
+      initialFields: timelineTaskEditFallbackFields(
+        title: title,
+        date: date,
+        hasExplicitTime: hasExplicitTime,
+        durationMinutes: durationMinutes
+      )
+    )
+    showTimelineTaskEditor(target)
+  }
+
+  func showTimelineTaskEditor(taskID: UUID, projectID: UUID) {
+    selectProjectContext(projectID)
+    activeWorkspaceTaskEditPanelTarget = WorkspaceTaskEditPanelTarget(
+      projectID: projectID,
+      taskID: taskID,
+      initialFields: timelineTaskEditFallbackFields(
+        title: "",
+        date: nil
+      )
+    )
+  }
+
+  func dismissTimelineTaskEditor() {
+    activeWorkspaceTaskEditPanelTarget = nil
+    appState.isHoveringTimelineTaskBadgeOverlay = false
+    appState.isHoveringTimelineDayHeaderOverlay = false
+  }
+
+  func timelineTaskEditFallbackFields(
+    title: String,
+    date: Date?,
+    hasExplicitTime: Bool = false,
+    durationMinutes: Int? = nil
+  ) -> RetainedTaskEditFields {
+    let calendar = Calendar.autoupdatingCurrent
+    return RetainedTaskEditFields(
+      title: title,
+      noteText: "",
+      day: date.map { calendar.startOfDay(for: $0) },
+      timeMinutes: hasExplicitTime ? date.map(timelineTaskEditTimeMinutes) : nil,
+      durationMinutes: durationMinutes
+    )
+  }
+
+  func loadTimelineTaskEditFields(
+    projectID: UUID,
+    taskID: UUID,
+    fallback: RetainedTaskEditFields
+  ) async -> RetainedTaskEditFields {
+    do {
+      return try await ObsidianRetainedTaskCommandService.taskEditFields(
+        vaultRootURL: appState.obsidianVaultRootURL,
+        projectID: projectID,
+        taskID: taskID,
+        calendar: .autoupdatingCurrent
+      )
+    } catch {
+      appState.errorMessage = error.localizedDescription
+      return fallback
+    }
+  }
+
+  func saveTimelineTaskEditFields(
+    _ fields: RetainedTaskEditFields,
+    projectID: UUID,
+    taskID: UUID
+  ) async throws {
+    do {
+      _ = try await ObsidianRetainedTaskCommandService.updateTaskEditFields(
+        vaultRootURL: appState.obsidianVaultRootURL,
+        projectID: projectID,
+        taskID: taskID,
+        fields: fields,
+        calendar: .autoupdatingCurrent,
+        reminderProjectProvider: appState.reminderProjectProvider
+      )
+      appState.bumpWorkspaceTreeRevision()
+    } catch {
+      appState.errorMessage = error.localizedDescription
+      throw error
+    }
+  }
+
+  private func timelineTaskEditTimeMinutes(for date: Date) -> Int {
+    let components = Calendar.autoupdatingCurrent.dateComponents([.hour, .minute], from: date)
+    return (components.hour ?? 0) * 60 + (components.minute ?? 0)
+  }
+
   func completeTimelineTask(_ taskID: UUID, projectID: UUID) {
     Task { @MainActor in
       _ = await appState.saveProjectDetailTaskCompletion(

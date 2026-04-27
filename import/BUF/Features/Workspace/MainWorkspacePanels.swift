@@ -69,6 +69,9 @@ extension MainWorkspaceView {
         },
         onToggleProjectSelection: { projectID in
           presentInspector(for: projectID)
+        },
+        onEditTask: { target in
+          showTimelineTaskEditor(target)
         }
       )
     case .schedule:
@@ -81,7 +84,10 @@ extension MainWorkspaceView {
         onTapEmptyArea: {
           dismissInspectorSelection()
         },
-        isActive: isActive
+        isActive: isActive,
+        onEditTask: { target in
+          showTimelineTaskEditor(target)
+        }
       )
       .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
@@ -175,10 +181,16 @@ extension MainWorkspaceView {
   }
 
   var workspaceInspectorReservationSection: some View {
-    workspaceInspectorReservation(selection: inspectorSelection)
+    workspaceInspectorReservation(
+      selection: inspectorSelection,
+      taskEditTarget: activeWorkspaceTaskEditPanelTarget
+    )
   }
 
   var workspaceOverlaySection: some View {
-    workspaceInspectorOverlayHost(selection: inspectorSelection)
+    workspaceInspectorOverlayHost(
+      selection: inspectorSelection,
+      taskEditTarget: activeWorkspaceTaskEditPanelTarget
+    )
   }
 }

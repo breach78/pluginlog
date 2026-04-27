@@ -38,6 +38,7 @@ extension TimelineBoardView {
   func revealTimelineTaskDetail(taskID: UUID, projectID: UUID) {
     appState.selectedProjectID = projectID
     activeTimelineProjectListPopoverProjectID = nil
+    activeTimelineTaskEditTarget = nil
     Task { @MainActor in
       do {
         try await RemindersAppOpenService.openTask(taskID: taskID)
@@ -71,6 +72,96 @@ extension TimelineBoardView {
         }
       }
     )
+  }
+
+  func showTimelineTaskEditor(taskID: UUID, projectID: UUID) {
+    activeTimelineTaskEditTarget = TimelineTaskEditTarget(
+      projectID: projectID,
+      taskID: taskID
+    )
+  }
+
+  func timelineTaskEditorBinding(taskID: UUID, projectID: UUID) -> Binding<Bool> {
+    Binding(
+      get: {
+        activeTimelineTaskEditTarget == TimelineTaskEditTarget(
+          projectID: projectID,
+          taskID: taskID
+        )
+      },
+      set: { isPresented in
+        if isPresented {
+          showTimelineTaskEditor(taskID: taskID, projectID: projectID)
+        } else if activeTimelineTaskEditTarget == TimelineTaskEditTarget(
+          projectID: projectID,
+          taskID: taskID
+        ) {
+          activeTimelineTaskEditTarget = nil
+        }
+      }
+    )
+  }
+
+  func timelineTaskEditFields(for entry: ScheduleSliceEntry) -> RetainedTaskEditFields {
+    let date = ReminderTaskDateCanonicalizer.unifiedDate(
+      dueDate: entry.dueDate,
+      startDate: entry.startDate,
+      displayedDate: entry.displayedDate
+    )
+    return RetainedTaskEditFields(
+      title: timelinePreviewTitle(for: entry.title),
+      noteText: entry.reminderNoteText,
+      day: date.map { calendar.startOfDay(for: $0) },
+      timeMinutes: entry.scheduleHasExplicitTime ? date.map(timelineTaskEditTimeMinutes) : nil,
+      durationMinutes: entry.scheduledDurationMinutes
+    )
+  }
+
+  func loadTimelineTaskEditFields(
+    projectID: UUID,
+    taskID: UUID,
+    fallback: RetainedTaskEditFields
+  ) async -> RetainedTaskEditFields {
+    do {
+      return try await ObsidianRetainedTaskCommandService.taskEditFields(
+        vaultRootURL: appState.obsidianVaultRootURL,
+        projectID: projectID,
+        taskID: taskID,
+        calendar: calendar
+      )
+    } catch {
+      appState.errorMessage = error.localizedDescription
+      return fallback
+    }
+  }
+
+  func saveTimelineTaskEditFields(
+    _ fields: RetainedTaskEditFields,
+    projectID: UUID,
+    taskID: UUID
+  ) async throws {
+    do {
+      let result = try await ObsidianRetainedTaskCommandService.updateTaskEditFields(
+        vaultRootURL: appState.obsidianVaultRootURL,
+        projectID: projectID,
+        taskID: taskID,
+        fields: fields,
+        calendar: calendar,
+        reminderProjectProvider: appState.reminderProjectProvider
+      )
+      await refreshTimelineProjectState(including: [projectID])
+      retainedTimelineCalendarBridgeDecisionsByTaskID[taskID] = result.calendarBridgeDecision
+      retainedTimelineCalendarBridgeWriteMarkersByTaskID[taskID] = result.calendarWriteMarker
+      activeTimelineTaskEditTarget = nil
+    } catch {
+      appState.errorMessage = error.localizedDescription
+      throw error
+    }
+  }
+
+  private func timelineTaskEditTimeMinutes(for date: Date) -> Int {
+    let components = calendar.dateComponents([.hour, .minute], from: date)
+    return (components.hour ?? 0) * 60 + (components.minute ?? 0)
   }
 
   func completeTimelineTask(_ taskID: UUID, projectID: UUID) {

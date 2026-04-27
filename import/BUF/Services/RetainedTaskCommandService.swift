@@ -7,6 +7,14 @@ struct RetainedTaskCommandResult: Equatable, Sendable {
   let calendarWriteMarker: RetainedCalendarBridgeWriteMarker?
 }
 
+struct RetainedTaskEditFields: Equatable, Sendable {
+  var title: String
+  var noteText: String
+  var day: Date?
+  var timeMinutes: Int?
+  var durationMinutes: Int?
+}
+
 struct RetainedCalendarBridgeWriteMarker: Equatable, Hashable, Sendable {
   enum Operation: String, Equatable, Hashable, Sendable {
     case upsertOwnedEvent

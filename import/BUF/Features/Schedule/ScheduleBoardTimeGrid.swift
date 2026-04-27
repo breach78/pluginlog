@@ -516,7 +516,7 @@ extension ScheduleBoardView {
       TapGesture()
         .onEnded {
           guard shouldHandleTaskTap() else { return }
-          selectScheduleTask(taskRow.id)
+          showScheduleTaskEditor(taskDescriptor)
         }
     )
     .contextMenu {
@@ -918,7 +918,7 @@ extension ScheduleBoardView {
       TapGesture()
         .onEnded {
           guard shouldHandleTaskTap() else { return }
-          selectScheduleTask(taskRow.id)
+          showScheduleTaskEditor(taskDescriptor)
         }
     )
     .contextMenu {

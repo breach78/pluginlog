@@ -258,7 +258,12 @@ extension MainWorkspaceView {
     }
 
     if let taskID = result.navigationTarget.taskID {
-      openProjectTaskInSource(projectID: result.navigationTarget.projectID, taskID: taskID)
+      showTimelineTaskEditor(
+        taskID: taskID,
+        projectID: result.navigationTarget.projectID,
+        title: result.title,
+        date: nil
+      )
       return
     }
 

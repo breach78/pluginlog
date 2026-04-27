@@ -69,6 +69,7 @@ struct TimelineBoardView: View {
   let selectedProjectID: UUID?
   let onSelectProject: (UUID) -> Void
   let onToggleProjectSelection: (UUID) -> Void
+  let onEditTask: (WorkspaceTaskEditPanelTarget) -> Void
 
   @State var anchorDate = Calendar.autoupdatingCurrent.startOfDay(for: .now)
   @State var dayRange: ClosedRange<Int> = TimelineBoardReadPath.visibleDayRange
@@ -107,6 +108,7 @@ struct TimelineBoardView: View {
   @State var timelineDayHeaderShowWorkItem: DispatchWorkItem?
   @State var timelineDayHeaderHideWorkItem: DispatchWorkItem?
   @State var activeTimelineProjectListPopoverProjectID: UUID?
+  @State var activeTimelineTaskEditTarget: TimelineTaskEditTarget?
   @State var timelineProjectManualOrder = TimelineProjectManualOrderStore.load()
   @State var hiddenTimelineProjectIDs = TimelineHiddenProjectStore.load()
   @State var midnightRefreshTimer: Timer?
@@ -200,7 +202,8 @@ struct TimelineBoardView: View {
     isInteractionObscured: Bool = false,
     selectedProjectID: UUID? = nil,
     onSelectProject: @escaping (UUID) -> Void,
-    onToggleProjectSelection: @escaping (UUID) -> Void
+    onToggleProjectSelection: @escaping (UUID) -> Void,
+    onEditTask: @escaping (WorkspaceTaskEditPanelTarget) -> Void = { _ in }
   ) {
     _projectListSortMode = projectListSortMode
     self.projectIDs = projectIDs
@@ -210,6 +213,7 @@ struct TimelineBoardView: View {
     self.selectedProjectID = selectedProjectID
     self.onSelectProject = onSelectProject
     self.onToggleProjectSelection = onToggleProjectSelection
+    self.onEditTask = onEditTask
   }
 
   var body: some View {
@@ -479,6 +483,7 @@ struct TimelineBoardView: View {
         visibleUpperOffset: visibleUpperOffset,
         selectedProjectID: selectedProjectID,
         activeProjectListPopoverProjectID: activeTimelineProjectListPopoverProjectID,
+        activeTaskEditTarget: activeTimelineTaskEditTarget,
         draggingProjectID: draggingProjectID,
         dropIndicator: projectDropIndicator,
         taskDropTargetProjectID: taskDropTargetProjectID
@@ -672,6 +677,7 @@ struct TimelineBoardView: View {
     visibleUpperOffset: Int,
     selectedProjectID: UUID?,
     activeProjectListPopoverProjectID: UUID?,
+    activeTaskEditTarget: TimelineTaskEditTarget?,
     draggingProjectID: UUID?,
     dropIndicator: TimelineProjectDropIndicator?,
     taskDropTargetProjectID: UUID?
@@ -683,6 +689,8 @@ struct TimelineBoardView: View {
     hasher.combine(visibleUpperOffset)
     hasher.combine(selectedProjectID)
     hasher.combine(activeProjectListPopoverProjectID)
+    hasher.combine(activeTaskEditTarget?.projectID)
+    hasher.combine(activeTaskEditTarget?.taskID)
     hasher.combine(draggingProjectID)
     hasher.combine(dropIndicator?.targetProjectID)
     hasher.combine(dropIndicator?.placement == .before)

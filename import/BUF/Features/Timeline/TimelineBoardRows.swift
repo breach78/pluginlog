@@ -522,7 +522,13 @@ extension TimelineBoardView {
       }
 
       Button {
-        revealTimelineTaskDetail(taskID: entry.taskID, projectID: projectID)
+        onEditTask(
+          WorkspaceTaskEditPanelTarget(
+            projectID: projectID,
+            taskID: entry.taskID,
+            initialFields: timelineTaskEditFields(for: entry)
+          )
+        )
       } label: {
         VStack(alignment: .leading, spacing: 2) {
           Text(timelinePreviewTitle(for: entry.title))
