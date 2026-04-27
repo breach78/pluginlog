@@ -291,6 +291,7 @@ struct MainWorkspaceView: View {
   @State var showSidebarAddProjectPopover = false
   @State var isCreatingSidebarProject = false
   @State var activeWorkspaceTaskEditPanelTarget: WorkspaceTaskEditPanelTarget?
+  @State var hiddenTimelineProjectIDs = TimelineHiddenProjectStore.load()
 
   struct ProjectSortOrderUndoSnapshot {
     let sortOrdersByProjectID: [UUID: Int]

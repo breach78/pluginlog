@@ -58,6 +58,7 @@ struct TimelineBoardView: View {
   }
 
   @Binding var projectListSortMode: ProjectListSortMode
+  @Binding var hiddenTimelineProjectIDs: Set<UUID>
   @EnvironmentObject var appState: AppState
   @Environment(\.modelContext) var modelContext
   @Environment(\.undoManager) var undoManager
@@ -110,7 +111,6 @@ struct TimelineBoardView: View {
   @State var activeTimelineProjectListPopoverProjectID: UUID?
   @State var activeTimelineTaskEditTarget: TimelineTaskEditTarget?
   @State var timelineProjectManualOrder = TimelineProjectManualOrderStore.load()
-  @State var hiddenTimelineProjectIDs = TimelineHiddenProjectStore.load()
   @State var midnightRefreshTimer: Timer?
   @State var isHoveringPinnedLeftColumn = false
   @State var overlayMetricsCache = TimelineOverlayMetricsCache()
@@ -196,6 +196,7 @@ struct TimelineBoardView: View {
 
   init(
     projectListSortMode: Binding<ProjectListSortMode>,
+    hiddenProjectIDs: Binding<Set<UUID>>,
     projectIDs: [UUID] = [],
     showsProjectPassthroughFrames: Bool = false,
     isActive: Bool = true,
@@ -206,6 +207,7 @@ struct TimelineBoardView: View {
     onEditTask: @escaping (WorkspaceTaskEditPanelTarget) -> Void = { _ in }
   ) {
     _projectListSortMode = projectListSortMode
+    _hiddenTimelineProjectIDs = hiddenProjectIDs
     self.projectIDs = projectIDs
     self.showsProjectPassthroughFrames = showsProjectPassthroughFrames
     self.isActive = isActive

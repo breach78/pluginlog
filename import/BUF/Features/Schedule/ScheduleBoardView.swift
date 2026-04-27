@@ -594,6 +594,7 @@ struct ScheduleBoardView: View {
   @Environment(\.undoManager) var undoManager
 
   let projectIDs: [UUID]
+  let quickAddProjectIDs: [UUID]?
   let selectedProjectID: UUID?
   let onSelectProject: (UUID) -> Void
   let dragProjectionCoordinateSpaceName: String
@@ -688,6 +689,7 @@ struct ScheduleBoardView: View {
 
   init(
     projectIDs: [UUID] = [],
+    quickAddProjectIDs: [UUID]? = nil,
     selectedProjectID: UUID? = nil,
     onSelectProject: @escaping (UUID) -> Void,
     dragProjectionCoordinateSpaceName: String = "scheduleWorkspaceBoard",
@@ -699,6 +701,7 @@ struct ScheduleBoardView: View {
     onEditTask: @escaping (WorkspaceTaskEditPanelTarget) -> Void = { _ in }
   ) {
     self.projectIDs = projectIDs
+    self.quickAddProjectIDs = quickAddProjectIDs
     self.selectedProjectID = selectedProjectID
     self.onSelectProject = onSelectProject
     self.dragProjectionCoordinateSpaceName = dragProjectionCoordinateSpaceName
@@ -766,6 +769,11 @@ struct ScheduleBoardView: View {
       projectIDs: projectIDs
     )
   }
+  var activeQuickAddProjectIDs: [UUID] {
+    ScheduleBoardReadPath.normalizedProjectIDs(
+      projectIDs: quickAddProjectIDs ?? activeProjectIDs
+    )
+  }
   var workspaceScheduleTasks: [WorkspaceScheduleTaskDescriptor] {
     ScheduleProjectionService.taskDescriptors(
       projectIDs: activeProjectIDs,
@@ -778,7 +786,7 @@ struct ScheduleBoardView: View {
   }
   var scheduleQuickAddState: ScheduleBoardReadPath.QuickAddState {
     ScheduleBoardReadPath.quickAddState(
-      projectIDs: activeProjectIDs,
+      projectIDs: activeQuickAddProjectIDs,
       projectSnapshots: workspaceScheduleProjectSnapshots,
       selectedProjectID: selectedProjectID,
       appSelectedProjectID: appState.selectedProjectID,
