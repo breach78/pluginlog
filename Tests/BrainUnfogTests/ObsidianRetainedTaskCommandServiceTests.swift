@@ -8,10 +8,12 @@ final class ObsidianRetainedTaskCommandServiceTests: XCTestCase {
   override func setUp() async throws {
     try await super.setUp()
     ReminderSyncBaselineStore.reset()
+    TaskIdentityBridgeStore.reset()
   }
 
   override func tearDown() async throws {
     ReminderSyncBaselineStore.reset()
+    TaskIdentityBridgeStore.reset()
     for root in temporaryRoots {
       try? FileManager.default.removeItem(at: root)
     }
@@ -370,6 +372,86 @@ final class ObsidianRetainedTaskCommandServiceTests: XCTestCase {
     XCTAssertFalse(raw.contains(#""date":"2026-04-26""#))
   }
 
+  func testDeleteTaskRemovesMarkdownReminderAndSidecars() async throws {
+    let dataRoot = try makeTemporaryDirectory(prefix: "ObsidianCommandData")
+    ReminderSyncBaselineStore.install(dataDirectory: dataRoot)
+    let vault = try makeTemporaryVault()
+    _ = try writeProjectNote(
+      vault: vault,
+      body: projectNote(
+        body: """
+        - [ ] Task one
+          %% brain-unfog: {"reminder_external_id":"task-1","date":"2026-04-25"} %%
+          - Sub note
+        - [ ] Task two
+          %% brain-unfog: {"reminder_external_id":"task-2"} %%
+        """
+      )
+    )
+    TaskIdentityBridgeStore.reset()
+    TaskIdentityBridgeStore.upsertTask(
+      taskID: taskID,
+      title: "Task one",
+      reminderExternalIdentifier: "task-1",
+      ownerProjectID: projectID
+    )
+    let provider = FakeObsidianCommandReminderProjectProvider()
+    provider.snapshots["task-1"] = remoteSnapshot(title: "Task one", date: "2026-04-25")
+    upsertBaseline(title: "Task one", isCompleted: false, date: "2026-04-25")
+
+    let result = try await ObsidianRetainedTaskCommandService.deleteTask(
+      vaultRootURL: vault,
+      projectID: projectID,
+      taskID: taskID,
+      reminderProjectProvider: provider
+    )
+
+    let raw = try await firstRawMarkdown(in: vault)
+    XCTAssertFalse(raw.contains("Task one"))
+    XCTAssertFalse(raw.contains("Sub note"))
+    XCTAssertTrue(raw.contains("Task two"))
+    XCTAssertEqual(provider.removedTaskExternalIdentifiers, ["task-1"])
+    XCTAssertNil(ReminderSyncBaselineStore.baseline(for: "task-1"))
+    XCTAssertNil(TaskIdentityBridgeStore.taskRecord(for: taskID))
+    XCTAssertEqual(result.reminderExternalIdentifier, "task-1")
+  }
+
+  func testDeleteReminderFailureRollsBackMarkdown() async throws {
+    let dataRoot = try makeTemporaryDirectory(prefix: "ObsidianCommandData")
+    ReminderSyncBaselineStore.install(dataDirectory: dataRoot)
+    let vault = try makeTemporaryVault()
+    _ = try writeProjectNote(
+      vault: vault,
+      body: projectNote(
+        body: """
+        - [ ] Task one
+          %% brain-unfog: {"reminder_external_id":"task-1"} %%
+        """
+      )
+    )
+    let provider = FakeObsidianCommandReminderProjectProvider()
+    provider.snapshots["task-1"] = remoteSnapshot(title: "Task one")
+    provider.removeTaskError = FakeObsidianCommandReminderError.requestedFailure
+    upsertBaseline(title: "Task one", isCompleted: false, date: nil)
+
+    do {
+      _ = try await ObsidianRetainedTaskCommandService.deleteTask(
+        vaultRootURL: vault,
+        projectID: projectID,
+        taskID: taskID,
+        reminderProjectProvider: provider
+      )
+      XCTFail("Expected delete failure")
+    } catch FakeObsidianCommandReminderError.requestedFailure {
+    } catch {
+      XCTFail("Unexpected error: \(error)")
+    }
+
+    let raw = try await firstRawMarkdown(in: vault)
+    XCTAssertTrue(raw.contains("Task one"))
+    XCTAssertNotNil(ReminderSyncBaselineStore.baseline(for: "task-1"))
+  }
+
   func testDuplicateTaskIDsFailBeforeMarkdownOrReminderWrite() async throws {
     let vault = try makeTemporaryVault()
     _ = try writeProjectNote(
@@ -636,9 +718,11 @@ private final class FakeObsidianCommandReminderProjectProvider: ReminderProjectP
   var titleWrites: [TitleWrite] = []
   var noteWrites: [NoteWrite] = []
   var createdTasks: [CreatedTask] = []
+  var removedTaskExternalIdentifiers: [String] = []
   var snapshots: [String: ReminderTaskRemoteSnapshot] = [:]
   var completionError: Error?
   var scheduleError: Error?
+  var removeTaskError: Error?
   let remoteModificationDate = Date(timeIntervalSince1970: 1_000)
   let writeModificationDate = Date(timeIntervalSince1970: 3_000)
 
@@ -748,7 +832,13 @@ private final class FakeObsidianCommandReminderProjectProvider: ReminderProjectP
       modifiedAt: remoteModificationDate
     )
   }
-  func removeTaskReminder(for task: ReminderTaskReference) throws -> Bool { false }
+  func removeTaskReminder(for task: ReminderTaskReference) throws -> Bool {
+    if let removeTaskError { throw removeTaskError }
+    guard let identifier = task.reminderExternalIdentifier else { return false }
+    removedTaskExternalIdentifiers.append(identifier)
+    snapshots.removeValue(forKey: identifier)
+    return true
+  }
   func taskSnapshot(for task: ReminderTaskReference) throws -> ReminderTaskRemoteSnapshot? {
     guard let identifier = task.reminderExternalIdentifier else { return nil }
     return snapshots[identifier]

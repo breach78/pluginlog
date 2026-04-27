@@ -249,6 +249,50 @@ enum ObsidianRetainedTaskCommandService {
     return try result(projectID: projectID, taskID: taskID, snapshot: writtenSnapshot)
   }
 
+  static func deleteTask(
+    vaultRootURL: URL?,
+    projectID: UUID,
+    taskID: UUID,
+    reminderProjectProvider: ReminderProjectProvider
+  ) async throws -> RetainedTaskDeletionResult {
+    let context = try await commandContext(
+      vaultRootURL: vaultRootURL,
+      projectID: projectID,
+      taskID: taskID
+    )
+    let reminderReference = try reminderReference(for: context.task, taskID: taskID)
+    guard let reminderExternalIdentifier = reminderReference.reminderExternalIdentifier else {
+      throw RetainedTaskCommandError.missingReminderExternalIdentifier(taskID)
+    }
+    _ = try assertReminderDeleteAllowed(
+      reference: reminderReference,
+      reminderProjectProvider: reminderProjectProvider
+    )
+
+    let writtenSnapshot = try await writeDeletedTask(using: context)
+    do {
+      guard try reminderProjectProvider.removeTaskReminder(for: reminderReference) else {
+        throw RetainedTaskCommandError.reminderOwnerUnresolved(taskID)
+      }
+    } catch {
+      try await rollbackObsidianWrite(
+        context: context,
+        writtenSnapshot: writtenSnapshot,
+        writeError: error
+      )
+    }
+
+    ReminderSyncBaselineStore.remove(
+      reminderExternalIdentifier: reminderExternalIdentifier
+    )
+    TaskIdentityBridgeStore.removeTask(taskID: taskID)
+    return RetainedTaskDeletionResult(
+      projectID: projectID,
+      taskID: taskID,
+      reminderExternalIdentifier: reminderExternalIdentifier
+    )
+  }
+
   static func taskEditFields(
     vaultRootURL: URL?,
     projectID: UUID,
@@ -478,6 +522,27 @@ enum ObsidianRetainedTaskCommandService {
       throw RetainedTaskCommandError.unmanagedTask(context.retainedTask.identity.taskID ?? UUID())
     }
     mutate(context.task, &bodyLines)
+    let note = ObsidianReminderImportFormatting.reparsedNote(
+      from: context.snapshot.note,
+      bodyLines: bodyLines
+    )
+    try validateNotes([note])
+    return try await context.store.writeProjectNote(
+      note,
+      preferredFileName: context.snapshot.fileURL.lastPathComponent,
+      expectedBaseline: ObsidianProjectMarkdownStore.WriteBaseline(snapshot: context.snapshot)
+    )
+  }
+
+  private static func writeDeletedTask(
+    using context: CommandContext
+  ) async throws -> ObsidianProjectMarkdownStore.Snapshot {
+    var bodyLines = context.snapshot.note.bodyMarkdown.components(separatedBy: "\n")
+    guard bodyLines.indices.contains(context.task.bodyLineIndex) else {
+      throw RetainedTaskCommandError.unmanagedTask(context.retainedTask.identity.taskID ?? UUID())
+    }
+    let deletionRange = taskDeletionRange(for: context.task, in: bodyLines)
+    bodyLines.removeSubrange(deletionRange)
     let note = ObsidianReminderImportFormatting.reparsedNote(
       from: context.snapshot.note,
       bodyLines: bodyLines
@@ -788,6 +853,27 @@ enum ObsidianRetainedTaskCommandService {
     return baseline
   }
 
+  private static func assertReminderDeleteAllowed(
+    reference: ReminderTaskReference,
+    reminderProjectProvider: ReminderProjectProvider
+  ) throws -> ReminderSyncTaskBaselineRecord {
+    guard let baseline = ReminderSyncBaselineStore.baseline(
+      for: reference.reminderExternalIdentifier
+    ) else {
+      throw RetainedTaskCommandError.retainedProjectionFailed("missing reminder sync baseline")
+    }
+    guard let baselineRemoteModifiedAt = baseline.remoteModifiedAt else {
+      throw RetainedTaskCommandError.retainedProjectionFailed("missing reminder baseline timestamp")
+    }
+    guard let remoteSnapshot = try reminderProjectProvider.taskSnapshot(for: reference) else {
+      throw RetainedTaskCommandError.reminderOwnerUnresolved(reference.taskID)
+    }
+    guard remoteSnapshot.modifiedAt.timeIntervalSince(baselineRemoteModifiedAt) <= 0.5 else {
+      throw RetainedTaskCommandError.retainedProjectionFailed("stale reminder sync baseline")
+    }
+    return baseline
+  }
+
   private static func result(
     projectID: UUID,
     taskID: UUID,
@@ -821,6 +907,28 @@ enum ObsidianRetainedTaskCommandService {
       reminderIdentifier: nil,
       reminderExternalIdentifier: reminderExternalIdentifier
     )
+  }
+
+  private static func taskDeletionRange(
+    for task: ObsidianProjectTask,
+    in bodyLines: [String]
+  ) -> Range<Int> {
+    let taskIndentationWidth = ObsidianReminderImportFormatting.indentationWidth(task.indentation)
+    let lowerBound = task.bodyLineIndex
+    let upperBound = bodyLines.indices.dropFirst(task.bodyLineIndex + 1).first { index in
+      guard index != task.metadataLineIndex else { return false }
+      let line = bodyLines[index]
+      if line.trimmingCharacters(in: .whitespaces).isEmpty {
+        return false
+      }
+      return leadingIndentationWidth(of: line) <= taskIndentationWidth
+    } ?? bodyLines.count
+    return lowerBound..<upperBound
+  }
+
+  private static func leadingIndentationWidth(of line: String) -> Int {
+    let indentation = String(line.prefix { $0 == " " || $0 == "\t" })
+    return ObsidianReminderImportFormatting.indentationWidth(indentation)
   }
 
   private static func scheduleMetadata(

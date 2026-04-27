@@ -46,6 +46,7 @@ extension MainWorkspaceView {
       }
 
       workspaceQuickAddSection
+      overdueRolloverButton
 
       if appState.viewMode == .timeline {
         Button("오늘") {
@@ -88,6 +89,22 @@ extension MainWorkspaceView {
     syncStatusIndicator
   }
 
+  var overdueRolloverButton: some View {
+    Button {
+      rollOverdueTasksToTodayAllDay()
+    } label: {
+      roundWorkspaceToolbarIcon(
+        systemName: "arrow.right.to.line",
+        isLoading: isRollingOverdueTasksToToday,
+        tintColor: .orange,
+        symbolOffsetX: -3
+      )
+    }
+    .buttonStyle(.plain)
+    .disabled(isRollingOverdueTasksToToday)
+    .help("오늘 이전 미완료 할일을 오늘 올데이로 이동")
+  }
+
   var syncStatusIndicator: some View {
     syncStatusIndicatorButton
       .popover(isPresented: $chromeState.showSyncQuickAddPopover, arrowEdge: .bottom) {
@@ -120,21 +137,39 @@ extension MainWorkspaceView {
   }
 
   var syncStatusIndicatorLabel: some View {
-    ZStack {
+    roundWorkspaceToolbarIcon(systemName: "plus")
+  }
+
+  func roundWorkspaceToolbarIcon(
+    systemName: String,
+    isLoading: Bool = false,
+    tintColor: Color? = nil,
+    symbolOffsetX: CGFloat = 0
+  ) -> some View {
+    let iconColor = tintColor ?? syncIndicatorColor
+    return ZStack {
       Color.clear
 
       ZStack {
         Circle()
           .fill(Color(nsColor: .windowBackgroundColor).opacity(0.96))
 
-        Image(systemName: "plus")
-          .font(.system(size: 11, weight: .bold))
-          .foregroundStyle(syncIndicatorColor)
+        if isLoading {
+          ProgressView()
+            .controlSize(.small)
+            .scaleEffect(0.7)
+            .tint(iconColor)
+        } else {
+          Image(systemName: systemName)
+            .font(.system(size: 11, weight: .bold))
+            .foregroundStyle(iconColor)
+            .offset(x: symbolOffsetX)
+        }
       }
       .frame(width: 18, height: 18)
       .overlay {
         Circle()
-          .stroke(syncIndicatorColor, lineWidth: 1.5)
+          .stroke(iconColor, lineWidth: 1.5)
       }
       .offset(x: -7)
     }

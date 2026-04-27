@@ -285,11 +285,13 @@ struct MainWorkspaceView: View {
   @State var workspaceOnlySearchResults: [WorkspaceSearchResult] = []
   @State var inspectorSelection: UUID?
   @State var localKeyMonitor: Any?
+  @State var localMouseDownMonitor: Any?
   @State var pendingPermanentDeleteProject: PendingPermanentDeleteProject?
   @State var showInitialSyncAlert = false
   @State var sidebarTaskDropTargetProjectID: UUID?
   @State var showSidebarAddProjectPopover = false
   @State var isCreatingSidebarProject = false
+  @State var isRollingOverdueTasksToToday = false
   @State var activeWorkspaceTaskEditPanelTarget: WorkspaceTaskEditPanelTarget?
   @State var activeWorkspaceCalendarEventEditPanelTarget: WorkspaceCalendarEventEditPanelTarget?
   @State var hiddenTimelineProjectIDs = TimelineHiddenProjectStore.load()

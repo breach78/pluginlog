@@ -1,6 +1,42 @@
 import AppKit
 import SwiftUI
 
+struct WorkspaceOverdueTaskRolloverTarget: Equatable {
+  let projectID: UUID
+  let taskID: UUID
+}
+
+enum WorkspaceOverdueTaskRolloverPlanner {
+  static func targets(
+    projectIDs: [UUID],
+    projectSnapshots: [UUID: WorkspaceProjectRuntimeRecord],
+    scheduleEntriesByProjectID: [UUID: [ScheduleSliceEntry]],
+    today: Date,
+    calendar: Calendar = .autoupdatingCurrent
+  ) -> [WorkspaceOverdueTaskRolloverTarget] {
+    let normalizedToday = calendar.startOfDay(for: today)
+    var seenTaskIDs = Set<UUID>()
+    var targets: [WorkspaceOverdueTaskRolloverTarget] = []
+
+    for projectID in projectIDs {
+      guard projectSnapshots[projectID]?.isArchived != true else { continue }
+
+      for entry in scheduleEntriesByProjectID[projectID] ?? [] {
+        guard !entry.isArchived, !entry.isCompleted else { continue }
+        guard seenTaskIDs.insert(entry.taskID).inserted else { continue }
+        guard let scheduledDate = entry.displayedDate ?? entry.dueDate ?? entry.startDate else {
+          continue
+        }
+        guard calendar.startOfDay(for: scheduledDate) < normalizedToday else { continue }
+
+        targets.append(WorkspaceOverdueTaskRolloverTarget(projectID: projectID, taskID: entry.taskID))
+      }
+    }
+
+    return targets
+  }
+}
+
 extension MainWorkspaceView {
   func toggleSyncQuickAddPopover() {
     guard !syncQuickAddProjects.isEmpty else {
@@ -26,6 +62,62 @@ extension MainWorkspaceView {
       )
       selectProjectContext(projectID)
       dismissSyncQuickAddPopover()
+    }
+  }
+
+  func rollOverdueTasksToTodayAllDay() {
+    guard !isRollingOverdueTasksToToday else { return }
+    let projectIDs = WorkspaceProjectReadPath.timelineInputProjectIDsInOrder(
+      timelineOrderedProjectIDs: sidebarRootProjectIDs,
+      sidebarProjects: workspaceSidebarProjects
+    )
+    guard !projectIDs.isEmpty else { return }
+
+    isRollingOverdueTasksToToday = true
+    Task { @MainActor in
+      defer { isRollingOverdueTasksToToday = false }
+
+      let retainedResult = await RetainedWorkspaceSurfaceProjectionBuilder.load(
+        obsidianVaultRootURL: appState.obsidianVaultRootURL,
+        projectIDs: projectIDs
+      )
+      let resolvedRead = RetainedWorkspaceSurfaceProjectionBuilder.resolveRetainedOnly(retainedResult)
+      if case .blocked(let blocker) = resolvedRead.source {
+        appState.errorMessage = blocker.userMessage
+        return
+      }
+
+      let today = Calendar.autoupdatingCurrent.startOfDay(for: appState.currentDayStart)
+      let targets = WorkspaceOverdueTaskRolloverPlanner.targets(
+        projectIDs: projectIDs,
+        projectSnapshots: resolvedRead.projectSnapshots,
+        scheduleEntriesByProjectID: resolvedRead.scheduleEntriesByProjectID,
+        today: today
+      )
+      guard !targets.isEmpty else { return }
+
+      var appliedCount = 0
+      do {
+        for target in targets {
+          _ = try await ObsidianRetainedTaskCommandService.setTaskSchedule(
+            vaultRootURL: appState.obsidianVaultRootURL,
+            projectID: target.projectID,
+            taskID: target.taskID,
+            day: today,
+            timeMinutes: nil,
+            durationMinutes: nil,
+            reminderProjectProvider: appState.reminderProjectProvider
+          )
+          appliedCount += 1
+        }
+
+        appState.bumpWorkspaceTreeRevision()
+      } catch {
+        if appliedCount > 0 {
+          appState.bumpWorkspaceTreeRevision()
+        }
+        appState.errorMessage = error.localizedDescription
+      }
     }
   }
 
@@ -305,9 +397,17 @@ extension MainWorkspaceView {
   }
 
   func installLocalKeyMonitor() {
-    guard localKeyMonitor == nil else { return }
-    localKeyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
-      handleKeyDown(event)
+    if localKeyMonitor == nil {
+      localKeyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+        handleKeyDown(event)
+      }
+    }
+    if localMouseDownMonitor == nil {
+      localMouseDownMonitor = NSEvent.addLocalMonitorForEvents(
+        matching: [.leftMouseDown, .rightMouseDown, .otherMouseDown]
+      ) { event in
+        handleMouseDown(event)
+      }
     }
   }
 
@@ -316,10 +416,17 @@ extension MainWorkspaceView {
       NSEvent.removeMonitor(localKeyMonitor)
     }
     localKeyMonitor = nil
+    if let localMouseDownMonitor {
+      NSEvent.removeMonitor(localMouseDownMonitor)
+    }
+    localMouseDownMonitor = nil
   }
 
   private func handleKeyDown(_ event: NSEvent) -> NSEvent? {
     if event.keyCode == 53 {
+      if releaseActiveEditPanelTextResponder() {
+        return nil
+      }
       if !chromeState.workspaceSearchQuery.isEmpty {
         clearWorkspaceSearch()
         return nil
@@ -330,6 +437,38 @@ extension MainWorkspaceView {
       }
     }
     return event
+  }
+
+  private func handleMouseDown(_ event: NSEvent) -> NSEvent? {
+    releaseActiveEditPanelTextResponder(for: event)
+    return event
+  }
+
+  @discardableResult
+  private func releaseActiveEditPanelTextResponder(for event: NSEvent? = nil) -> Bool {
+    let hasActiveEditPanel =
+      activeWorkspaceTaskEditPanelTarget != nil || activeWorkspaceCalendarEventEditPanelTarget != nil
+    let window = event?.window ?? NSApp.keyWindow ?? NSApp.mainWindow
+    guard let window else { return false }
+    let hitView = event.flatMap { mouseHitView(for: $0, in: window) }
+    guard
+      WorkspaceTextResponderReleasePolicy.shouldReleaseTextResponder(
+        hasActiveEditPanel: hasActiveEditPanel,
+        firstResponder: window.firstResponder,
+        mouseHitView: hitView
+      )
+    else {
+      return false
+    }
+    window.endEditing(for: nil)
+    window.makeFirstResponder(nil)
+    return true
+  }
+
+  private func mouseHitView(for event: NSEvent, in window: NSWindow) -> NSView? {
+    guard let contentView = window.contentView else { return nil }
+    let point = contentView.convert(event.locationInWindow, from: nil)
+    return contentView.hitTest(point)
   }
 
   func presentInitialSyncAlertIfNeeded() {

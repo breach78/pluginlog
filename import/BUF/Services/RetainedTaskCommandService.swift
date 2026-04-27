@@ -7,6 +7,12 @@ struct RetainedTaskCommandResult: Equatable, Sendable {
   let calendarWriteMarker: RetainedCalendarBridgeWriteMarker?
 }
 
+struct RetainedTaskDeletionResult: Equatable, Sendable {
+  let projectID: UUID
+  let taskID: UUID
+  let reminderExternalIdentifier: String
+}
+
 struct RetainedTaskEditFields: Equatable, Sendable {
   var title: String
   var noteText: String

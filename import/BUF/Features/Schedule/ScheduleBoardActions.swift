@@ -1071,7 +1071,30 @@ extension ScheduleBoardView {
     if selectedScheduleTaskID == taskID {
       selectedScheduleTaskID = nil
     }
-    guard allowScheduleMutation("delete-task") else { return }
+    guard let taskDescriptor = scheduleTaskDescriptor(for: taskID) else { return }
+    scheduleTaskWriteNotice = nil
+    Task { @MainActor in
+      do {
+        _ = try await ObsidianRetainedTaskCommandService.deleteTask(
+          vaultRootURL: appState.obsidianVaultRootURL,
+          projectID: taskDescriptor.projectID,
+          taskID: taskID,
+          reminderProjectProvider: appState.reminderProjectProvider
+        )
+        appState.recordAppAuthoredReminderPush()
+        appState.bumpWorkspaceTreeRevision()
+        await reloadWorkspaceScheduleProjectDetails(for: activeProjectIDs)
+        retainedScheduleCalendarBridgeDecisionsByTaskID.removeValue(forKey: taskID)
+        retainedScheduleCalendarBridgeWriteMarkersByTaskID.removeValue(forKey: taskID)
+        refreshCalendarOverlay(force: true)
+        _ = actionName
+      } catch {
+        if await handleRetainedScheduleWriteFailure(error) {
+          return
+        }
+        appState.errorMessage = error.localizedDescription
+      }
+    }
   }
 
   func deleteScheduleCalendarEvent(
