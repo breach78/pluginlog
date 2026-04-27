@@ -31,7 +31,7 @@ final class ScrollPassthroughScheduleHostingView<Content: View>: NSHostingView<C
 }
 
 final class HorizontalPassthroughScheduleScrollView: NSScrollView {
-  weak var horizontalScrollTarget: NSScrollView?
+  weak var horizontalScrollTarget: SnappingScheduleScrollView?
 
   private enum ScrollAxisLock {
     case horizontal
@@ -72,6 +72,10 @@ final class HorizontalPassthroughScheduleScrollView: NSScrollView {
       }
     case .horizontal:
       guard let horizontalScrollTarget else { break }
+      // Cancel any snap that fired prematurely before momentum arrived
+      if horizontalScrollTarget.isSnapping {
+        horizontalScrollTarget.cancelSnap()
+      }
       scrollHorizontally(
         horizontalScrollTarget,
         contentDelta: horizontalContentDelta(from: event)
@@ -109,6 +113,9 @@ final class HorizontalPassthroughScheduleScrollView: NSScrollView {
       && !event.momentumPhase.contains(.cancelled)
 
     if momentumEnded || (gestureEnded && !hasActiveMomentum) {
+      if activeAxisLock == .horizontal {
+        horizontalScrollTarget?.notifyExternalHorizontalScrollEnded()
+      }
       activeAxisLock = nil
     }
   }
@@ -170,6 +177,144 @@ final class HorizontalPassthroughScheduleScrollView: NSScrollView {
     for field in fields {
       event.setIntegerValueField(field, value: 0)
     }
+  }
+}
+
+final class SnappingScheduleScrollView: NSScrollView {
+  var dayColumnWidth: CGFloat = 0
+  private(set) var isSnapping = false
+  var onSnapDidFinish: (() -> Void)?
+  private var activeSnap: ScheduleSnapAnimation?
+
+  func notifyExternalHorizontalScrollEnded() {
+    triggerSnap()
+  }
+
+  func cancelSnap() {
+    cancelActiveSnap()
+  }
+
+  override func scrollWheel(with event: NSEvent) {
+    // Cancel any snap that may have started prematurely (before momentum began)
+    if event.phase.contains(.began) || event.momentumPhase.contains(.began) {
+      cancelActiveSnap()
+    }
+
+    // Also cancel if ongoing momentum arrives while we're already snapping
+    let hasActiveMomentum =
+      !event.momentumPhase.isEmpty
+      && !event.momentumPhase.contains(.ended)
+      && !event.momentumPhase.contains(.cancelled)
+    if isSnapping && hasActiveMomentum {
+      cancelActiveSnap()
+    }
+
+    super.scrollWheel(with: event)
+
+    let gestureEnded = event.phase.contains(.ended) || event.phase.contains(.cancelled)
+    let momentumEnded =
+      event.momentumPhase.contains(.ended) || event.momentumPhase.contains(.cancelled)
+
+    if momentumEnded || (gestureEnded && !hasActiveMomentum) {
+      triggerSnap()
+    }
+  }
+
+  private func cancelActiveSnap() {
+    activeSnap?.cancel()
+    activeSnap = nil
+    isSnapping = false
+  }
+
+  private func triggerSnap() {
+    guard dayColumnWidth > 0.5 else { return }
+    let bounds = contentView.bounds
+    guard let docWidth = documentView?.frame.width else { return }
+    let maxX = max(0, docWidth - bounds.width)
+    let targetX = min(max(0, round(bounds.origin.x / dayColumnWidth) * dayColumnWidth), maxX)
+    guard abs(targetX - bounds.origin.x) > 0.5 else { return }
+
+    activeSnap?.cancel()
+    let distance = abs(targetX - bounds.origin.x)
+    let fraction = min(1, distance / max(1, dayColumnWidth))
+    let duration = 0.14 + 0.16 * CFTimeInterval(fraction)
+    isSnapping = true
+    let snap = ScheduleSnapAnimation(
+      scrollView: self,
+      fromX: bounds.origin.x,
+      fromY: bounds.origin.y,
+      targetX: targetX,
+      duration: duration,
+      onCompletion: { [weak self] in
+        guard let self else { return }
+        self.isSnapping = false
+        self.activeSnap = nil
+        self.onSnapDidFinish?()
+      }
+    )
+    activeSnap = snap
+    snap.start()
+  }
+}
+
+@MainActor
+final class ScheduleSnapAnimation {
+  private weak var scrollView: NSScrollView?
+  private let fromX: CGFloat
+  private let fromY: CGFloat
+  private let targetX: CGFloat
+  private let duration: CFTimeInterval
+  private let startedAt = CACurrentMediaTime()
+  private var timer: Timer?
+  private var onCompletion: (() -> Void)?
+
+  init(
+    scrollView: NSScrollView,
+    fromX: CGFloat,
+    fromY: CGFloat,
+    targetX: CGFloat,
+    duration: CFTimeInterval,
+    onCompletion: (() -> Void)? = nil
+  ) {
+    self.scrollView = scrollView
+    self.fromX = fromX
+    self.fromY = fromY
+    self.targetX = targetX
+    self.duration = duration
+    self.onCompletion = onCompletion
+  }
+
+  func start() {
+    timer = Timer.scheduledTimer(withTimeInterval: 1.0 / 60.0, repeats: true) { [weak self] _ in
+      MainActor.assumeIsolated { self?.tick() }
+    }
+  }
+
+  private func tick() {
+    guard let scrollView else { stopTimer(); return }
+    let elapsed = CACurrentMediaTime() - startedAt
+    let t = min(1, elapsed / max(0.001, duration))
+    let eased = 1 - pow(1 - t, 3)
+    let x = fromX + (targetX - fromX) * CGFloat(eased)
+    let currentY = scrollView.contentView.bounds.origin.y
+    scrollView.contentView.scroll(to: CGPoint(x: x, y: currentY))
+    scrollView.reflectScrolledClipView(scrollView.contentView)
+    if t >= 1 {
+      stopTimer()
+      let completion = onCompletion
+      onCompletion = nil
+      completion?()
+    }
+  }
+
+  func cancel() {
+    onCompletion = nil
+    stopTimer()
+  }
+
+  private func stopTimer() {
+    timer?.invalidate()
+    timer = nil
   }
 }
 
@@ -310,7 +455,7 @@ struct ScheduleVerticalRailScrollView<Content: View>: NSViewRepresentable {
 final class ScheduleScrollViewportState {
   var liveOffsetX: CGFloat = 0
   var liveOffsetY: CGFloat = 0
-  weak var scrollView: NSScrollView?
+  weak var scrollView: SnappingScheduleScrollView?
   private var viewportChangeListeners: [UUID: () -> Void] = [:]
 
   func pointerViewportLocation() -> CGPoint? {
@@ -461,12 +606,17 @@ struct UnifiedScheduleBoardScrollView<
     }
 
     @objc func boundsDidChange(_ notification: Notification) {
-      clampVisibleOriginIfNeeded()
       guard let scrollView else { return }
+      let isSnapping = (scrollView as? SnappingScheduleScrollView)?.isSnapping ?? false
+      if !isSnapping {
+        clampVisibleOriginIfNeeded()
+      }
       let origin = scrollView.contentView.bounds.origin
       let x = max(0, origin.x)
       let y = max(0, origin.y)
-      publishVisibleOffsets(x: x, y: y)
+      if !isSnapping {
+        publishVisibleOffsets(x: x, y: y)
+      }
       layoutPinnedOverlays(boardSize: documentView.frame.size)
     }
 
@@ -572,7 +722,8 @@ struct UnifiedScheduleBoardScrollView<
   }
 
   func makeNSView(context: Context) -> NSScrollView {
-    let scrollView = NSScrollView()
+    let scrollView = SnappingScheduleScrollView()
+    scrollView.dayColumnWidth = dayColumnWidth
     let clipView = FlippedScheduleClipView()
     clipView.drawsBackground = false
     scrollView.contentView = clipView
@@ -588,6 +739,15 @@ struct UnifiedScheduleBoardScrollView<
     scrollView.documentView = context.coordinator.documentView
     context.coordinator.scrollView = scrollView
     viewportState.scrollView = scrollView
+
+    scrollView.onSnapDidFinish = { [weak coordinator = context.coordinator, weak scrollView] in
+      guard let coordinator, let scrollView else { return }
+      let origin = scrollView.contentView.bounds.origin
+      coordinator.publishVisibleOffsets(
+        x: max(0, origin.x),
+        y: max(0, origin.y)
+      )
+    }
 
     context.coordinator.leftHosting.wantsLayer = true
     context.coordinator.topHosting.wantsLayer = true
@@ -618,7 +778,8 @@ struct UnifiedScheduleBoardScrollView<
 
   func updateNSView(_ scrollView: NSScrollView, context: Context) {
     let coordinator = context.coordinator
-    viewportState.scrollView = scrollView
+    viewportState.scrollView = scrollView as? SnappingScheduleScrollView
+    (scrollView as? SnappingScheduleScrollView)?.dayColumnWidth = dayColumnWidth
 
     if coordinator.lastBoardContentVersion != boardContentVersion {
       coordinator.boardHosting.rootView = boardContent
@@ -681,18 +842,24 @@ struct UnifiedScheduleBoardScrollView<
       }
     }
 
-    let clampedX = min(max(0, current.x), maxX)
-    let clampedY = min(max(0, current.y), maxY)
-    if abs(current.x - clampedX) > 0.5 || abs(current.y - clampedY) > 0.5 {
-      scrollView.contentView.scroll(to: CGPoint(x: clampedX, y: clampedY))
-      scrollView.reflectScrolledClipView(scrollView.contentView)
+    let isSnapping = (scrollView as? SnappingScheduleScrollView)?.isSnapping ?? false
+
+    if !isSnapping {
+      let clampedX = min(max(0, current.x), maxX)
+      let clampedY = min(max(0, current.y), maxY)
+      if abs(current.x - clampedX) > 0.5 || abs(current.y - clampedY) > 0.5 {
+        scrollView.contentView.scroll(to: CGPoint(x: clampedX, y: clampedY))
+        scrollView.reflectScrolledClipView(scrollView.contentView)
+      }
     }
 
     coordinator.layoutPinnedOverlays(boardSize: boardSize)
 
-    let liveX = max(0, scrollView.contentView.bounds.origin.x)
-    let liveY = max(0, scrollView.contentView.bounds.origin.y)
-    coordinator.publishVisibleOffsets(x: liveX, y: liveY)
+    if !isSnapping {
+      let liveX = max(0, scrollView.contentView.bounds.origin.x)
+      let liveY = max(0, scrollView.contentView.bounds.origin.y)
+      coordinator.publishVisibleOffsets(x: liveX, y: liveY)
+    }
   }
 
   static func dismantleNSView(_ scrollView: NSScrollView, coordinator: Coordinator) {
