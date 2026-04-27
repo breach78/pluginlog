@@ -613,6 +613,7 @@ struct ScheduleBoardView: View {
   let onTapEmptyArea: () -> Void
   let isActive: Bool
   let onEditTask: (WorkspaceTaskEditPanelTarget) -> Void
+  let onEditCalendarEvent: (ScheduleCalendarEvent) -> Void
 
   @State var dayRange: ClosedRange<Int> = -2...30
   // Root retains the shared scroll and quick-create state consumed by both the all-day rail and timed grid.
@@ -709,7 +710,8 @@ struct ScheduleBoardView: View {
     onTaskDragEndedAtPoint: ((UUID, CGPoint?, CGRect?) -> Bool)? = nil,
     onTapEmptyArea: @escaping () -> Void,
     isActive: Bool,
-    onEditTask: @escaping (WorkspaceTaskEditPanelTarget) -> Void = { _ in }
+    onEditTask: @escaping (WorkspaceTaskEditPanelTarget) -> Void = { _ in },
+    onEditCalendarEvent: @escaping (ScheduleCalendarEvent) -> Void = { _ in }
   ) {
     self.projectIDs = projectIDs
     self.quickAddProjectIDs = quickAddProjectIDs
@@ -722,6 +724,7 @@ struct ScheduleBoardView: View {
     self.onTapEmptyArea = onTapEmptyArea
     self.isActive = isActive
     self.onEditTask = onEditTask
+    self.onEditCalendarEvent = onEditCalendarEvent
   }
 
   var allDayDropZoneFrame: CGRect {

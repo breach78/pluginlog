@@ -92,6 +92,9 @@ extension MainWorkspaceView {
         isActive: isActive,
         onEditTask: { target in
           showTimelineTaskEditor(target)
+        },
+        onEditCalendarEvent: { event in
+          showCalendarEventEditor(event)
         }
       )
       .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -188,14 +191,16 @@ extension MainWorkspaceView {
   var workspaceInspectorReservationSection: some View {
     workspaceInspectorReservation(
       selection: inspectorSelection,
-      taskEditTarget: activeWorkspaceTaskEditPanelTarget
+      taskEditTarget: activeWorkspaceTaskEditPanelTarget,
+      calendarEventEditTarget: activeWorkspaceCalendarEventEditPanelTarget
     )
   }
 
   var workspaceOverlaySection: some View {
     workspaceInspectorOverlayHost(
       selection: inspectorSelection,
-      taskEditTarget: activeWorkspaceTaskEditPanelTarget
+      taskEditTarget: activeWorkspaceTaskEditPanelTarget,
+      calendarEventEditTarget: activeWorkspaceCalendarEventEditPanelTarget
     )
   }
 }

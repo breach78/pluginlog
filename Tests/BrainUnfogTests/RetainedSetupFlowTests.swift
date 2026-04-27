@@ -704,6 +704,15 @@ private final class RecordingScheduleCalendarService: ScheduleCalendarServicing 
     _ = scope
     return event
   }
+  func applyFieldChange(
+    to event: ScheduleCalendarEvent,
+    fields: ScheduleCalendarEventEditFields,
+    scope: ScheduleCalendarRecurringEditScope
+  ) async throws -> ScheduleCalendarEvent {
+    _ = fields
+    _ = scope
+    return event
+  }
   func delete(
     _ event: ScheduleCalendarEvent,
     scope: ScheduleCalendarRecurringEditScope

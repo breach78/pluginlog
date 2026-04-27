@@ -20,6 +20,7 @@ struct ScheduleCalendarEvent: Identifiable, Hashable, Sendable {
   let calendarTitle: String
   let calendarColorHex: String?
   let title: String
+  let notes: String
   let startDate: Date
   let endDate: Date
   let isAllDay: Bool
@@ -37,6 +38,15 @@ struct ScheduleCalendarEvent: Identifiable, Hashable, Sendable {
     }
     return nil
   }
+}
+
+struct ScheduleCalendarEventEditFields: Equatable, Sendable {
+  var title: String
+  var noteText: String
+  var day: Date
+  var isAllDay: Bool
+  var startMinutes: Int?
+  var endMinutes: Int?
 }
 
 struct DeletedScheduleCalendarEventSnapshot {
@@ -152,6 +162,11 @@ protocol ScheduleCalendarMirrorFetching: AnyObject {
 @MainActor
 protocol ScheduleCalendarCapabilityProviding: AnyObject {
   func reveal(_ event: ScheduleCalendarEvent)
+  func applyFieldChange(
+    to event: ScheduleCalendarEvent,
+    fields: ScheduleCalendarEventEditFields,
+    scope: ScheduleCalendarRecurringEditScope
+  ) async throws -> ScheduleCalendarEvent
   func applyTimingChange(
     to event: ScheduleCalendarEvent,
     preview: ScheduleInteractionPreview,
@@ -439,7 +454,9 @@ private protocol ScheduleCalendarCapabilitySupporting: ScheduleCalendarMirrorFet
   ) throws -> ScheduleResolvedTimingTarget
   func moveRecurringOccurrenceAsStandalone(
     _ event: EKEvent,
-    to target: ScheduleResolvedTimingTarget
+    to target: ScheduleResolvedTimingTarget,
+    title: String?,
+    notes: String?
   ) throws -> EKEvent
   func matchingVisibleEvent(for event: EKEvent) -> ScheduleCalendarEvent?
   func scheduleEvent(from event: EKEvent) -> ScheduleCalendarEvent?
@@ -491,6 +508,61 @@ private final class DefaultScheduleCalendarCapabilityService: ScheduleCalendarCa
     }
   }
 
+  func applyFieldChange(
+    to event: ScheduleCalendarEvent,
+    fields: ScheduleCalendarEventEditFields,
+    scope: ScheduleCalendarRecurringEditScope
+  ) async throws -> ScheduleCalendarEvent {
+    let target = try resolvedFieldTarget(from: fields)
+    let liveEvent = try support.resolvedEvent(for: event)
+    let editability = support.timingEditability(for: liveEvent, calendar: .autoupdatingCurrent)
+    guard editability.canEditTiming else {
+      throw ScheduleCalendarEditError.readOnlyCalendar(editability.restrictionReason)
+    }
+
+    let trimmedTitle = fields.title.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !trimmedTitle.isEmpty else {
+      throw ScheduleCalendarEditError.invalidTarget
+    }
+    let normalizedNotes = fields.noteText.trimmingCharacters(in: .whitespacesAndNewlines)
+    let notes = normalizedNotes.isEmpty ? "" : fields.noteText
+
+    let eventStore = support.eventStoreForCapabilities
+    let savedEvent: EKEvent
+    do {
+      if scope == .thisEvent, event.isRecurring {
+        savedEvent = try support.moveRecurringOccurrenceAsStandalone(
+          liveEvent,
+          to: target,
+          title: trimmedTitle,
+          notes: notes
+        )
+      } else {
+        liveEvent.title = trimmedTitle
+        liveEvent.notes = notes
+        liveEvent.startDate = target.startDate
+        liveEvent.endDate = target.endDate
+        liveEvent.isAllDay = target.isAllDay
+        try eventStore.save(liveEvent, span: scope.eventKitSpan)
+        savedEvent = liveEvent
+      }
+    } catch let error as ScheduleCalendarEditError {
+      throw error
+    } catch {
+      AppLogger.sync.error(
+        "calendar event field save failed: \(error.localizedDescription, privacy: .public)"
+      )
+      throw ScheduleCalendarEditError.saveFailed(error.localizedDescription)
+    }
+
+    await support.reloadCurrentRange(force: true)
+    support.captureOwnedEventInvalidationBaseline()
+    if let updatedEvent = support.matchingVisibleEvent(for: savedEvent) ?? support.scheduleEvent(from: savedEvent) {
+      return updatedEvent
+    }
+    throw ScheduleCalendarEditError.eventNotFound
+  }
+
   func applyTimingChange(
     to event: ScheduleCalendarEvent,
     preview: ScheduleInteractionPreview,
@@ -507,7 +579,12 @@ private final class DefaultScheduleCalendarCapabilityService: ScheduleCalendarCa
     let savedEvent: EKEvent
     do {
       if scope == .thisEvent, event.isRecurring {
-        savedEvent = try support.moveRecurringOccurrenceAsStandalone(liveEvent, to: target)
+        savedEvent = try support.moveRecurringOccurrenceAsStandalone(
+          liveEvent,
+          to: target,
+          title: nil,
+          notes: nil
+        )
       } else {
         liveEvent.startDate = target.startDate
         liveEvent.endDate = target.endDate
@@ -530,6 +607,44 @@ private final class DefaultScheduleCalendarCapabilityService: ScheduleCalendarCa
       return updatedEvent
     }
     throw ScheduleCalendarEditError.eventNotFound
+  }
+
+  private func resolvedFieldTarget(
+    from fields: ScheduleCalendarEventEditFields
+  ) throws -> ScheduleResolvedTimingTarget {
+    let calendar = Calendar.autoupdatingCurrent
+    let normalizedDay = calendar.startOfDay(for: fields.day)
+    if fields.isAllDay {
+      guard let endDate = calendar.date(byAdding: .day, value: 1, to: normalizedDay) else {
+        throw ScheduleCalendarEditError.invalidTarget
+      }
+      return ScheduleResolvedTimingTarget(startDate: normalizedDay, endDate: endDate, isAllDay: true)
+    }
+
+    guard let startMinutes = fields.startMinutes,
+      let endMinutes = fields.endMinutes,
+      startMinutes >= 0,
+      endMinutes <= 24 * 60,
+      endMinutes > startMinutes
+    else {
+      throw ScheduleCalendarEditError.invalidTarget
+    }
+
+    guard
+      let startDate = calendar.date(
+        byAdding: DateComponents(hour: startMinutes / 60, minute: startMinutes % 60),
+        to: normalizedDay
+      ),
+      let endDate = calendar.date(
+        byAdding: DateComponents(hour: endMinutes / 60, minute: endMinutes % 60),
+        to: normalizedDay
+      ),
+      calendar.isDate(startDate, inSameDayAs: endDate)
+    else {
+      throw ScheduleCalendarEditError.invalidTarget
+    }
+
+    return ScheduleResolvedTimingTarget(startDate: startDate, endDate: endDate, isAllDay: false)
   }
 
   func delete(
@@ -721,6 +836,14 @@ final class ScheduleCalendarStore: ObservableObject, ScheduleCalendarServicing,
     capabilityService.reveal(event)
   }
 
+  func applyFieldChange(
+    to event: ScheduleCalendarEvent,
+    fields: ScheduleCalendarEventEditFields,
+    scope: ScheduleCalendarRecurringEditScope
+  ) async throws -> ScheduleCalendarEvent {
+    try await capabilityService.applyFieldChange(to: event, fields: fields, scope: scope)
+  }
+
   func applyTimingChange(
     to event: ScheduleCalendarEvent,
     preview: ScheduleInteractionPreview,
@@ -733,6 +856,12 @@ final class ScheduleCalendarStore: ObservableObject, ScheduleCalendarServicing,
     _ write: CalendarEventFieldsWrite
   ) async throws -> ScheduleCalendarEvent {
     switch write.mutation {
+    case let .fields(fields, scope):
+      return try await applyFieldChange(
+        to: write.event,
+        fields: fields,
+        scope: scope
+      )
     case let .timing(preview, scope):
       return try await applyTimingChange(
         to: write.event,
@@ -744,12 +873,14 @@ final class ScheduleCalendarStore: ObservableObject, ScheduleCalendarServicing,
 
   fileprivate func moveRecurringOccurrenceAsStandalone(
     _ event: EKEvent,
-    to target: ScheduleResolvedTimingTarget
+    to target: ScheduleResolvedTimingTarget,
+    title: String?,
+    notes: String?
   ) throws -> EKEvent {
     let replacement = EKEvent(eventStore: eventStore)
     replacement.calendar = event.calendar
-    replacement.title = event.title
-    replacement.notes = event.notes
+    replacement.title = title ?? event.title
+    replacement.notes = notes ?? event.notes
     replacement.location = event.location
     replacement.url = event.url
     replacement.timeZone = event.timeZone
@@ -926,6 +1057,7 @@ final class ScheduleCalendarStore: ObservableObject, ScheduleCalendarServicing,
       title: event.title?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
         ? (event.title ?? "")
         : "Untitled Event",
+      notes: event.notes ?? "",
       startDate: startDate,
       endDate: endDate,
       isAllDay: event.isAllDay,

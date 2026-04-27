@@ -576,6 +576,10 @@ extension ScheduleBoardView {
     }
     .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
     .allowsHitTesting(!isBackgroundCalendar)
+    .onTapGesture {
+      guard !isBackgroundCalendar else { return }
+      showScheduleCalendarEventEditor(event)
+    }
     .contextMenu {
       if !isBackgroundCalendar {
         scheduleEventContextMenu(event)
@@ -951,6 +955,10 @@ extension ScheduleBoardView {
     }
     .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
     .allowsHitTesting(!isBackgroundCalendar)
+    .onTapGesture {
+      guard !isBackgroundCalendar else { return }
+      showScheduleCalendarEventEditor(event)
+    }
     .contextMenu {
       if !isBackgroundCalendar {
         scheduleEventContextMenu(event)
@@ -1116,6 +1124,90 @@ extension ScheduleBoardView {
       .offset(x: frame.minX, y: frame.minY)
       .allowsHitTesting(false)
       .zIndex(1997)
+  }
+
+  func resizePreviewComparison(
+    originalFrame: CGRect,
+    targetFrame: CGRect,
+    color: Color,
+    timeLabel: String?,
+    cornerRadius: CGFloat
+  ) -> some View {
+    let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+    let highlightFrames = resizeHighlightFrames(originalFrame: originalFrame, targetFrame: targetFrame)
+
+    return ZStack(alignment: .topLeading) {
+      shape
+        .fill(color.opacity(0.12))
+        .overlay {
+          shape.stroke(color.opacity(0.26), lineWidth: 1)
+        }
+        .frame(width: originalFrame.width, height: originalFrame.height, alignment: .topLeading)
+        .offset(x: originalFrame.minX, y: originalFrame.minY)
+
+      ForEach(highlightFrames.indices, id: \.self) { index in
+        let frame = highlightFrames[index]
+        shape
+          .fill(color.opacity(0.68))
+          .frame(width: frame.width, height: frame.height, alignment: .topLeading)
+          .offset(x: frame.minX, y: frame.minY)
+      }
+
+      shape
+        .stroke(
+          color.opacity(0.86),
+          style: StrokeStyle(lineWidth: 1.35, lineCap: .round, dash: [5, 4])
+        )
+        .frame(width: targetFrame.width, height: targetFrame.height, alignment: .topLeading)
+        .offset(x: targetFrame.minX, y: targetFrame.minY)
+
+      if let timeLabel {
+        Text(timeLabel)
+          .font(.system(size: 10, weight: .semibold, design: .monospaced))
+          .foregroundStyle(color.opacity(0.95))
+          .lineLimit(1)
+          .padding(.horizontal, 6)
+          .padding(.vertical, 4)
+          .background(Color(nsColor: .windowBackgroundColor).opacity(0.82))
+          .clipShape(RoundedRectangle(cornerRadius: 5, style: .continuous))
+          .offset(x: targetFrame.minX + 7, y: targetFrame.minY + 6)
+      }
+    }
+    .allowsHitTesting(false)
+  }
+
+  func resizeHighlightFrames(originalFrame: CGRect, targetFrame: CGRect) -> [CGRect] {
+    let tolerance: CGFloat = 0.5
+    let sameHorizontalTrack = abs(originalFrame.minX - targetFrame.minX) <= tolerance
+      && abs(originalFrame.width - targetFrame.width) <= tolerance
+    guard sameHorizontalTrack else { return [targetFrame] }
+
+    let targetInsideOriginal = targetFrame.minY >= originalFrame.minY - tolerance
+      && targetFrame.maxY <= originalFrame.maxY + tolerance
+    guard !targetInsideOriginal else { return [targetFrame] }
+
+    var frames: [CGRect] = []
+    if targetFrame.minY < originalFrame.minY - tolerance {
+      frames.append(
+        CGRect(
+          x: targetFrame.minX,
+          y: targetFrame.minY,
+          width: targetFrame.width,
+          height: originalFrame.minY - targetFrame.minY
+        )
+      )
+    }
+    if targetFrame.maxY > originalFrame.maxY + tolerance {
+      frames.append(
+        CGRect(
+          x: targetFrame.minX,
+          y: originalFrame.maxY,
+          width: targetFrame.width,
+          height: targetFrame.maxY - originalFrame.maxY
+        )
+      )
+    }
+    return frames.isEmpty ? [targetFrame] : frames
   }
 
   func recurrenceIndicator(fontSize: CGFloat) -> some View {
@@ -1558,21 +1650,14 @@ extension ScheduleBoardView {
           let preview = preview(for: resizeState)
           let frame = resizePreviewViewportFrame(for: resizeState, preview: preview)
           let color = scheduleColor(for: taskDescriptor.projectColorHex)
-          let taskRow = taskDescriptor.taskRow
 
-          dragPreviewBlock(
-            taskDescriptor: taskDescriptor,
-            title: taskRow.title,
-            subtitle: taskDescriptor.projectTitle,
+          resizePreviewComparison(
+            originalFrame: resizeState.originalViewportFrame,
+            targetFrame: frame,
             color: color,
-            isSelected: selectedScheduleTaskID == taskRow.id,
-            isPreparationSlot: resizeState.isPreparationSlot,
-            targetCompletedWorkUnits: resizeState.targetCompletedWorkUnits,
             timeLabel: scheduleDragPreviewLabel(for: preview),
-            blockHeight: frame.height
+            cornerRadius: 10
           )
-          .frame(width: frame.width, height: frame.height, alignment: .topLeading)
-          .offset(x: frame.minX, y: frame.minY)
           .zIndex(2001)
         }
 
@@ -1583,17 +1668,13 @@ extension ScheduleBoardView {
           let frame = resizePreviewViewportFrame(for: resizeState, preview: preview)
           let color = scheduleColor(for: event.calendarColorHex, fallback: .secondary)
 
-          dragPreviewEventBlock(
-            event: event,
-            title: event.title,
-            subtitle: event.calendarTitle,
+          resizePreviewComparison(
+            originalFrame: resizeState.originalViewportFrame,
+            targetFrame: frame,
             color: color,
             timeLabel: scheduleDragPreviewLabel(for: preview),
-            blockHeight: frame.height,
-            durationMinutes: preview.durationMinutes ?? timedMinimumDuration
+            cornerRadius: 10
           )
-          .frame(width: frame.width, height: frame.height, alignment: .topLeading)
-          .offset(x: frame.minX, y: frame.minY)
           .zIndex(2002)
         }
       }
@@ -1868,15 +1949,7 @@ extension ScheduleBoardView {
     isSelected: Bool,
     postponeAction: (() -> Void)?
   ) -> some View {
-    if let postponeAction {
-      SchedulePostponeAffordance(
-        compact: compact,
-        motionQuality: scheduleOverlayMotionQuality,
-        isPinnedVisible: isSelected,
-        onTrigger: postponeAction
-      )
-      .padding(.trailing, compact ? 4 : 5)
-    }
+    EmptyView()
   }
 
   func scheduleColor(for colorHex: String?, fallback: Color = .accentColor) -> Color {

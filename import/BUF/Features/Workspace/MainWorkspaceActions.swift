@@ -55,6 +55,7 @@ extension MainWorkspaceView {
   func showTimelineTaskEditor(_ target: WorkspaceTaskEditPanelTarget) {
     showArchive = false
     inspectorSelection = nil
+    activeWorkspaceCalendarEventEditPanelTarget = nil
     appState.isHoveringTimelineTaskBadgeOverlay = false
     appState.isHoveringTimelineDayHeaderOverlay = false
     activeWorkspaceTaskEditPanelTarget = target
@@ -98,6 +99,63 @@ extension MainWorkspaceView {
     activeWorkspaceTaskEditPanelTarget = nil
     appState.isHoveringTimelineTaskBadgeOverlay = false
     appState.isHoveringTimelineDayHeaderOverlay = false
+  }
+
+  func showCalendarEventEditor(_ event: ScheduleCalendarEvent) {
+    showArchive = false
+    inspectorSelection = nil
+    activeWorkspaceTaskEditPanelTarget = nil
+    appState.isHoveringTimelineTaskBadgeOverlay = false
+    appState.isHoveringTimelineDayHeaderOverlay = false
+    activeWorkspaceCalendarEventEditPanelTarget = WorkspaceCalendarEventEditPanelTarget(
+      eventID: event.id,
+      event: event,
+      initialFields: ScheduleCalendarEventEditPanelContent.editFields(for: event)
+    )
+  }
+
+  func dismissCalendarEventEditor() {
+    activeWorkspaceCalendarEventEditPanelTarget = nil
+  }
+
+  func loadCalendarEventEditFields(
+    eventID: String,
+    fallback: ScheduleCalendarEventEditFields
+  ) async -> ScheduleCalendarEventEditFields {
+    guard let event = appState.resolvedScheduleCalendarEvent(eventID: eventID) else {
+      return fallback
+    }
+    return ScheduleCalendarEventEditPanelContent.editFields(for: event)
+  }
+
+  func saveCalendarEventEditFields(
+    _ fields: ScheduleCalendarEventEditFields,
+    eventID: String,
+    fallbackEvent: ScheduleCalendarEvent,
+    scope: ScheduleCalendarRecurringEditScope
+  ) async throws -> ScheduleCalendarEventEditFields {
+    let event = appState.resolvedScheduleCalendarEvent(eventID: eventID) ?? fallbackEvent
+    do {
+      let updatedEvent = try await appState.writeScheduleCalendarEventFields(
+        event,
+        fields: fields,
+        scope: scope
+      )
+      let updatedFields = ScheduleCalendarEventEditPanelContent.editFields(for: updatedEvent)
+      if activeWorkspaceCalendarEventEditPanelTarget?.eventID == eventID,
+        updatedEvent.id != eventID
+      {
+        activeWorkspaceCalendarEventEditPanelTarget = WorkspaceCalendarEventEditPanelTarget(
+          eventID: updatedEvent.id,
+          event: updatedEvent,
+          initialFields: updatedFields
+        )
+      }
+      return updatedFields
+    } catch {
+      appState.errorMessage = error.localizedDescription
+      throw error
+    }
   }
 
   func timelineTaskEditFallbackFields(

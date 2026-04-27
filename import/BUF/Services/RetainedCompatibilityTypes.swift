@@ -300,6 +300,7 @@ enum ReminderTaskDateCanonicalizer {
 struct CalendarEventFieldsWrite {
   enum Mutation {
     case timing(ScheduleInteractionPreview, ScheduleCalendarRecurringEditScope)
+    case fields(ScheduleCalendarEventEditFields, ScheduleCalendarRecurringEditScope)
   }
 
   let event: ScheduleCalendarEvent

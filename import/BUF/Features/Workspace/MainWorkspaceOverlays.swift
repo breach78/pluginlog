@@ -5,10 +5,12 @@ extension MainWorkspaceView {
   @ViewBuilder
   func workspaceInspectorReservation(
     selection: UUID?,
-    taskEditTarget: WorkspaceTaskEditPanelTarget?
+    taskEditTarget: WorkspaceTaskEditPanelTarget?,
+    calendarEventEditTarget: WorkspaceCalendarEventEditPanelTarget?
   ) -> some View {
-    let isVisible = (selection != nil && !showArchive) || taskEditTarget != nil
-    let reservedWidth = taskEditTarget == nil ? inspectorFixedWidth : workspaceTaskEditPanelWidth
+    let isEditPanelVisible = taskEditTarget != nil || calendarEventEditTarget != nil
+    let isVisible = (selection != nil && !showArchive) || isEditPanelVisible
+    let reservedWidth = isEditPanelVisible ? workspaceTaskEditPanelWidth : inspectorFixedWidth
 
     Color.clear
       .frame(width: isVisible ? reservedWidth : 0, alignment: .trailing)
@@ -22,14 +24,20 @@ extension MainWorkspaceView {
   @ViewBuilder
   func workspaceInspectorOverlayHost(
     selection: UUID?,
-    taskEditTarget: WorkspaceTaskEditPanelTarget?
+    taskEditTarget: WorkspaceTaskEditPanelTarget?,
+    calendarEventEditTarget: WorkspaceCalendarEventEditPanelTarget?
   ) -> some View {
-    let isVisible = (selection != nil && !showArchive) || taskEditTarget != nil
+    let isEditPanelVisible = taskEditTarget != nil || calendarEventEditTarget != nil
+    let isVisible = (selection != nil && !showArchive) || isEditPanelVisible
 
     GeometryReader { _ in
       ZStack(alignment: .topTrailing) {
         if let taskEditTarget {
           workspaceTaskEditPanel(taskEditTarget)
+            .zIndex(2)
+            .transition(.move(edge: .trailing).combined(with: .opacity))
+        } else if let calendarEventEditTarget {
+          workspaceCalendarEventEditPanel(calendarEventEditTarget)
             .zIndex(2)
             .transition(.move(edge: .trailing).combined(with: .opacity))
         } else if let selection, !showArchive {
@@ -46,6 +54,41 @@ extension MainWorkspaceView {
       .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
     }
     .animation(workspacePanelTransitionAnimation, value: isVisible)
+  }
+
+  func workspaceCalendarEventEditPanel(
+    _ target: WorkspaceCalendarEventEditPanelTarget
+  ) -> some View {
+    ScheduleCalendarEventEditPanelContent(
+      event: target.event,
+      initialFields: target.initialFields,
+      loadFields: {
+        await loadCalendarEventEditFields(
+          eventID: target.eventID,
+          fallback: target.initialFields
+        )
+      },
+      saveFields: { fields, scope in
+        try await saveCalendarEventEditFields(
+          fields,
+          eventID: target.eventID,
+          fallbackEvent: target.event,
+          scope: scope
+        )
+      },
+      onCancel: {
+        dismissCalendarEventEditor()
+      }
+    )
+    .id(target.eventID)
+    .frame(width: workspaceTaskEditPanelWidth, alignment: .topLeading)
+    .frame(maxHeight: .infinity, alignment: .topLeading)
+    .background(Color(nsColor: NSColor(calibratedWhite: 1, alpha: 1)))
+    .overlay(alignment: .leading) {
+      Rectangle()
+        .fill(Color(nsColor: .separatorColor))
+        .frame(width: 1)
+    }
   }
 
   func workspaceTaskEditPanel(_ target: WorkspaceTaskEditPanelTarget) -> some View {

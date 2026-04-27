@@ -952,7 +952,36 @@ extension ScheduleBoardView {
     actionName: String,
     registerUndo: Bool = true
   ) {
-    guard allowScheduleMutation("calendar-timing") else { return }
+    let previousPreview = schedulePreview(for: event)
+    Task { @MainActor in
+      do {
+        let updatedEvent = try await appState.writeScheduleCalendarEventTiming(
+          event,
+          preview: preview,
+          scope: scope
+        )
+        calendarEditError = nil
+
+        guard registerUndo else { return }
+        appState.registerUndo(with: undoManager, actionName: actionName) {
+          self.applyCalendarPreview(
+            previousPreview,
+            to: updatedEvent,
+            scope: scope,
+            actionName: actionName,
+            registerUndo: true
+          )
+        }
+      } catch let error as ScheduleCalendarEditError {
+        handleScheduleCalendarEditError(error, context: .applyPreview)
+      } catch {
+        handleScheduleCalendarEditFailure(
+          error,
+          context: .applyPreview,
+          fallback: .saveFailed(error.localizedDescription)
+        )
+      }
+    }
   }
 
   func calendarPreviewDiffers(
@@ -1008,6 +1037,11 @@ extension ScheduleBoardView {
         initialFields: scheduleTaskEditFields(for: taskRow)
       )
     )
+  }
+
+  func showScheduleCalendarEventEditor(_ event: ScheduleCalendarEvent) {
+    selectedScheduleTaskID = nil
+    onEditCalendarEvent(event)
   }
 
   func scheduleTaskEditFields(for taskRow: TaskRowSnapshot) -> RetainedTaskEditFields {

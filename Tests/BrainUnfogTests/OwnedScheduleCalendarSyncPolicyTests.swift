@@ -79,6 +79,7 @@ final class OwnedScheduleCalendarSyncPolicyTests: XCTestCase {
       calendarTitle: "BUF",
       calendarColorHex: nil,
       title: "Prepare launch",
+      notes: "",
       startDate: startDate,
       endDate: endDate,
       isAllDay: false,

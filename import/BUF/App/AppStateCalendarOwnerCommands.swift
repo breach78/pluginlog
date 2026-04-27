@@ -49,11 +49,29 @@ extension AppState {
     preview: ScheduleInteractionPreview,
     scope: ScheduleCalendarRecurringEditScope
   ) async throws -> ScheduleCalendarEvent {
-    try await calendarServiceRegistry.scheduleCalendarService.applyTimingChange(
+    let updatedEvent = try await calendarServiceRegistry.scheduleCalendarService.applyTimingChange(
       to: event,
       preview: preview,
       scope: scope
     )
+    scheduleCalendarOverlayProjection =
+      calendarServiceRegistry.scheduleCalendarService.overlayProjection
+    return updatedEvent
+  }
+
+  func writeScheduleCalendarEventFields(
+    _ event: ScheduleCalendarEvent,
+    fields: ScheduleCalendarEventEditFields,
+    scope: ScheduleCalendarRecurringEditScope
+  ) async throws -> ScheduleCalendarEvent {
+    let updatedEvent = try await calendarServiceRegistry.scheduleCalendarService.applyFieldChange(
+      to: event,
+      fields: fields,
+      scope: scope
+    )
+    scheduleCalendarOverlayProjection =
+      calendarServiceRegistry.scheduleCalendarService.overlayProjection
+    return updatedEvent
   }
 
   func deleteScheduleCalendarEvent(

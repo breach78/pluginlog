@@ -53,6 +53,54 @@ final class ObsidianRetainedTaskCommandServiceTests: XCTestCase {
     XCTAssertEqual(ReminderSyncBaselineStore.baseline(for: "task-1")?.state.isCompleted, true)
   }
 
+  func testCompletingTimedRecurringTaskClearsNextReminderTime() async throws {
+    let dataRoot = try makeTemporaryDirectory(prefix: "ObsidianCommandData")
+    ReminderSyncBaselineStore.install(dataDirectory: dataRoot)
+    let vault = try makeTemporaryVault()
+    _ = try writeProjectNote(
+      vault: vault,
+      body: projectNote(
+        body: """
+        - [ ] Task one
+          %% brain-unfog: {"reminder_external_id":"task-1","date":"2026-04-25","time":"09:30","duration":45,"repeat":"daily"} %%
+        """
+      )
+    )
+    let provider = FakeObsidianCommandReminderProjectProvider()
+    provider.snapshots["task-1"] = remoteSnapshot(
+      title: "Task one",
+      date: "2026-04-25 09:30",
+      recurrenceRuleRaw: "daily"
+    )
+    upsertBaseline(
+      title: "Task one",
+      isCompleted: false,
+      date: "2026-04-25 09:30",
+      repeatRule: "reminder"
+    )
+
+    _ = try await ObsidianRetainedTaskCommandService.setTaskCompletion(
+      vaultRootURL: vault,
+      projectID: projectID,
+      taskID: taskID,
+      isCompleted: true,
+      completionDate: fixedNow,
+      reminderProjectProvider: provider
+    )
+
+    let raw = try await firstRawMarkdown(in: vault)
+    XCTAssertTrue(raw.contains("- [x] Task one"))
+    XCTAssertTrue(raw.contains(#""date":"2026-04-25""#))
+    XCTAssertTrue(raw.contains(#""repeat":"reminder""#))
+    XCTAssertFalse(raw.contains(#""time":"09:30""#))
+    XCTAssertFalse(raw.contains(#""duration":45"#))
+    XCTAssertEqual(provider.scheduleWrites.map(\.hasExplicitTime), [false])
+    XCTAssertEqual(provider.scheduleWrites.first?.dueDate.map(dateString), "2026-04-25")
+    let baseline = try XCTUnwrap(ReminderSyncBaselineStore.baseline(for: "task-1"))
+    XCTAssertEqual(baseline.state.isCompleted, true)
+    XCTAssertEqual(baseline.state.date, "2026-04-25")
+  }
+
   func testScheduleWritesObsidianMetadataAndReminderDueDate() async throws {
     let dataRoot = try makeTemporaryDirectory(prefix: "ObsidianCommandData")
     ReminderSyncBaselineStore.install(dataDirectory: dataRoot)
@@ -460,6 +508,7 @@ final class ObsidianRetainedTaskCommandServiceTests: XCTestCase {
     title: String,
     isCompleted: Bool,
     date: String?,
+    repeatRule: String? = nil,
     noteText: String? = nil
   ) {
     ReminderSyncBaselineStore.upsert(
@@ -468,7 +517,7 @@ final class ObsidianRetainedTaskCommandServiceTests: XCTestCase {
         title: title,
         isCompleted: isCompleted,
         date: date,
-        repeatRule: nil,
+        repeatRule: repeatRule,
         noteText: noteText
       ),
       remoteModifiedAt: fixedRemoteDate,
@@ -481,6 +530,7 @@ final class ObsidianRetainedTaskCommandServiceTests: XCTestCase {
     isCompleted: Bool = false,
     date: String? = nil,
     noteText: String = "",
+    recurrenceRuleRaw: String? = nil,
     modifiedAt: Date? = nil
   ) -> ReminderTaskRemoteSnapshot {
     let dueDate: Date?
@@ -505,6 +555,7 @@ final class ObsidianRetainedTaskCommandServiceTests: XCTestCase {
       dueDate: dueDate,
       hasExplicitTime: hasExplicitTime,
       priority: 0,
+      recurrenceRuleRaw: recurrenceRuleRaw,
       modifiedAt: modifiedAt ?? fixedRemoteDate
     )
   }
@@ -589,6 +640,7 @@ private final class FakeObsidianCommandReminderProjectProvider: ReminderProjectP
   var completionError: Error?
   var scheduleError: Error?
   let remoteModificationDate = Date(timeIntervalSince1970: 1_000)
+  let writeModificationDate = Date(timeIntervalSince1970: 3_000)
 
   var reminderGateway: ReminderGateway? { nil }
   var defaultCalendarIdentifierForNewReminders: String? { nil }
@@ -604,6 +656,25 @@ private final class FakeObsidianCommandReminderProjectProvider: ReminderProjectP
       CompletionWrite(isCompleted: isCompleted, completionDate: completionDate)
     )
     if let completionError { throw completionError }
+    if let identifier = task.reminderExternalIdentifier,
+      let snapshot = snapshots[identifier]
+    {
+      snapshots[identifier] = ReminderTaskRemoteSnapshot(
+        identifier: snapshot.identifier,
+        externalIdentifier: snapshot.externalIdentifier,
+        calendarIdentifier: snapshot.calendarIdentifier,
+        title: snapshot.title,
+        noteText: snapshot.noteText,
+        isCompleted: isCompleted,
+        completionDate: isCompleted ? completionDate : nil,
+        startDate: snapshot.startDate,
+        dueDate: snapshot.dueDate,
+        hasExplicitTime: snapshot.hasExplicitTime,
+        priority: snapshot.priority,
+        recurrenceRuleRaw: snapshot.recurrenceRuleRaw,
+        modifiedAt: writeModificationDate
+      )
+    }
     return metadata(for: task)
   }
 
@@ -614,6 +685,25 @@ private final class FakeObsidianCommandReminderProjectProvider: ReminderProjectP
   ) throws -> ReminderTaskRemoteMetadata? {
     scheduleWrites.append(ScheduleWrite(dueDate: dueDate, hasExplicitTime: hasExplicitTime))
     if let scheduleError { throw scheduleError }
+    if let identifier = task.reminderExternalIdentifier,
+      let snapshot = snapshots[identifier]
+    {
+      snapshots[identifier] = ReminderTaskRemoteSnapshot(
+        identifier: snapshot.identifier,
+        externalIdentifier: snapshot.externalIdentifier,
+        calendarIdentifier: snapshot.calendarIdentifier,
+        title: snapshot.title,
+        noteText: snapshot.noteText,
+        isCompleted: snapshot.isCompleted,
+        completionDate: snapshot.completionDate,
+        startDate: snapshot.startDate,
+        dueDate: dueDate,
+        hasExplicitTime: hasExplicitTime,
+        priority: snapshot.priority,
+        recurrenceRuleRaw: snapshot.recurrenceRuleRaw,
+        modifiedAt: writeModificationDate
+      )
+    }
     return metadata(for: task)
   }
 
@@ -691,7 +781,7 @@ private final class FakeObsidianCommandReminderProjectProvider: ReminderProjectP
     ReminderTaskRemoteMetadata(
       identifier: task.reminderIdentifier ?? "task-1",
       externalIdentifier: task.reminderExternalIdentifier,
-      modifiedAt: Date(timeIntervalSince1970: 3_000)
+      modifiedAt: writeModificationDate
     )
   }
 }
