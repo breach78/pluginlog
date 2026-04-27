@@ -615,6 +615,8 @@ struct ScheduleBoardView: View {
   let onEditTask: (WorkspaceTaskEditPanelTarget) -> Void
   let onEditCalendarEvent: (ScheduleCalendarEvent) -> Void
 
+  @AppStorage("BrainUnfog.ScheduleBoard.allDayVisibleRowCount")
+  var storedAllDayVisibleRowCount: Int = 4
   @State var dayRange: ClosedRange<Int> = -2...30
   // Root retains the shared scroll and quick-create state consumed by both the all-day rail and timed grid.
   @State var horizontalOffsetX: CGFloat = 0
@@ -627,6 +629,8 @@ struct ScheduleBoardView: View {
   @State var activeTaskResize: ScheduleTaskResizeState?
   @State var activeCalendarDrag: ScheduleCalendarDragState?
   @State var activeCalendarResize: ScheduleCalendarResizeState?
+  @State var activeAllDayRailResizeStartRowCount: Int?
+  @State var activeAllDayRailResizeRowCount: Int?
   @State var activeTimedQuickCreateSelection: ScheduleTimedQuickCreateSelection?
   @State var pendingTimedQuickCreateSelection: ScheduleTimedQuickCreateSelection?
   @State var calendarOverlayRefreshTask: Task<Void, Never>?
@@ -672,7 +676,8 @@ struct ScheduleBoardView: View {
   let dayColumnWidth: CGFloat = 168 * 1.7
   let dateHeaderHeight: CGFloat = 32
   let allDayRowHeight: CGFloat = 24
-  let allDayVisibleRowCount = 4
+  let minimumAllDayVisibleRowCount = 1
+  let maximumAllDayVisibleRowCount = 10
 
   let allDayRailPadding: CGFloat = 6
   let allDayRailExtraVisibleHeight: CGFloat = 8
@@ -697,6 +702,15 @@ struct ScheduleBoardView: View {
   var today: Date { appState.currentDayStart }
   var headerHeight: CGFloat {
     dateHeaderHeight + allDayRailVisibleHeight
+  }
+  var isAllDayRailResizing: Bool {
+    activeAllDayRailResizeStartRowCount != nil
+  }
+  var canResizeAllDayRail: Bool {
+    activeTaskDrag == nil
+      && activeTaskResize == nil
+      && activeCalendarDrag == nil
+      && activeCalendarResize == nil
   }
 
   init(
@@ -739,6 +753,10 @@ struct ScheduleBoardView: View {
     CGFloat(allDayVisibleRowCount) * allDayRowHeight
       + allDayRailPadding * 2
       + allDayRailExtraVisibleHeight
+  }
+  var allDayVisibleRowCount: Int {
+    activeAllDayRailResizeRowCount
+      ?? clampedAllDayVisibleRowCount(storedAllDayVisibleRowCount)
   }
   var timeGridHeight: CGFloat {
     CGFloat(hourCount) * hourHeight
@@ -833,6 +851,7 @@ struct ScheduleBoardView: View {
         || activeTaskResize != nil
         || activeCalendarDrag != nil
         || activeCalendarResize != nil
+        || isAllDayRailResizing
     )
   }
   var scheduleOverlayMotionQuality: MotionQuality {
@@ -879,6 +898,7 @@ struct ScheduleBoardView: View {
     hasher.combine(activeCalendarDrag?.eventID)
     hasher.combine(activeCalendarResize?.eventID)
     hasher.combine(activeCalendarResize?.edge == .start ? 0 : 1)
+    hasher.combine(activeAllDayRailResizeRowCount)
     return hasher.finalize()
   }
   var overlayPresentationSignature: Int {
@@ -899,25 +919,66 @@ struct ScheduleBoardView: View {
     return hasher.finalize()
   }
   func boardContentVersion(layoutSourceSignature: Int) -> Int {
-    ScheduleBoardHostingInvalidationPolicy.boardContentVersion(
-      today: today,
-      dayRange: dayRange,
-      layoutSourceSignature: layoutSourceSignature,
-      selectedScheduleTaskID: selectedScheduleTaskID,
-      transientInteractionSignature: boardInteractionSignature
+    var hasher = Hasher()
+    hasher.combine(
+      ScheduleBoardHostingInvalidationPolicy.boardContentVersion(
+        today: today,
+        dayRange: dayRange,
+        layoutSourceSignature: layoutSourceSignature,
+        selectedScheduleTaskID: selectedScheduleTaskID,
+        transientInteractionSignature: boardInteractionSignature
+      )
     )
+    hasher.combine(allDayVisibleRowCount)
+    return hasher.finalize()
   }
-  let pinnedLeftVersion = 0
+  var pinnedLeftVersion: Int {
+    allDayVisibleRowCount
+  }
 
   func pinnedTopVersion(layoutSourceSignature: Int) -> Int {
-    ScheduleBoardHostingInvalidationPolicy.pinnedTopVersion(
-      today: today,
-      dayRange: dayRange,
-      layoutSourceSignature: layoutSourceSignature,
-      calendarSourcesSignature: scheduleCalendarOverlayProjection.calendarsSignature,
-      selectedScheduleTaskID: selectedScheduleTaskID,
-      transientInteractionSignature: boardInteractionSignature
+    var hasher = Hasher()
+    hasher.combine(
+      ScheduleBoardHostingInvalidationPolicy.pinnedTopVersion(
+        today: today,
+        dayRange: dayRange,
+        layoutSourceSignature: layoutSourceSignature,
+        calendarSourcesSignature: scheduleCalendarOverlayProjection.calendarsSignature,
+        selectedScheduleTaskID: selectedScheduleTaskID,
+        transientInteractionSignature: boardInteractionSignature
+      )
     )
+    hasher.combine(allDayVisibleRowCount)
+    return hasher.finalize()
+  }
+
+  func clampedAllDayVisibleRowCount(_ rowCount: Int) -> Int {
+    min(max(rowCount, minimumAllDayVisibleRowCount), maximumAllDayVisibleRowCount)
+  }
+
+  func updateAllDayRailResize(translationHeight: CGFloat) {
+    let startRowCount = activeAllDayRailResizeStartRowCount ?? allDayVisibleRowCount
+    activeAllDayRailResizeStartRowCount = startRowCount
+    let rowDelta = Int((translationHeight / allDayRowHeight).rounded())
+    let nextRowCount = clampedAllDayVisibleRowCount(startRowCount + rowDelta)
+    if activeAllDayRailResizeRowCount != nextRowCount {
+      activeAllDayRailResizeRowCount = nextRowCount
+    }
+  }
+
+  func commitAllDayRailResize() {
+    if let rowCount = activeAllDayRailResizeRowCount {
+      storedAllDayVisibleRowCount = clampedAllDayVisibleRowCount(rowCount)
+    } else {
+      storedAllDayVisibleRowCount = clampedAllDayVisibleRowCount(storedAllDayVisibleRowCount)
+    }
+    activeAllDayRailResizeStartRowCount = nil
+    activeAllDayRailResizeRowCount = nil
+  }
+
+  func cancelAllDayRailResize() {
+    activeAllDayRailResizeStartRowCount = nil
+    activeAllDayRailResizeRowCount = nil
   }
 
   struct ScheduleBoardBodyContext {

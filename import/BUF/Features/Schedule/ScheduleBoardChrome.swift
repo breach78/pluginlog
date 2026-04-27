@@ -235,9 +235,7 @@ extension ScheduleBoardView {
         .frame(width: 1)
     }
     .overlay(alignment: .bottom) {
-      Rectangle()
-        .fill(Color(nsColor: .systemGray).opacity(0.4))
-        .frame(height: 3)
+      allDayRailResizeDivider()
     }
   }
 
@@ -272,12 +270,56 @@ extension ScheduleBoardView {
         .fill(Color(nsColor: .windowBackgroundColor))
     )
     .overlay(alignment: .bottom) {
-      Rectangle()
-        .fill(Color(nsColor: .systemGray).opacity(0.4))
-        .frame(height: 3)
+      allDayRailResizeDivider()
     }
     .frame(width: dayColumnsWidth, height: headerHeight, alignment: .topLeading)
     .clipped()
+  }
+
+  func allDayRailResizeDivider() -> some View {
+    let dividerOpacity = isAllDayRailResizing ? 0.62 : 0.4
+    let dividerHeight: CGFloat = isAllDayRailResizing ? 4 : 3
+
+    return ZStack(alignment: .bottom) {
+      Rectangle()
+        .fill(Color(nsColor: .systemGray).opacity(dividerOpacity))
+        .frame(height: dividerHeight)
+    }
+    .frame(height: 10, alignment: .bottom)
+    .contentShape(Rectangle())
+    .overlay {
+      if canResizeAllDayRail {
+        ScheduleCursorRegion(cursor: .resizeUpDown)
+      }
+    }
+    .highPriorityGesture(allDayRailResizeGesture())
+    .help("올데이 영역 높이 조절")
+  }
+
+  func allDayRailResizeGesture() -> some Gesture {
+    DragGesture(minimumDistance: 0, coordinateSpace: .global)
+      .onChanged { value in
+        guard canResizeAllDayRail else {
+          cancelAllDayRailResize()
+          return
+        }
+        var transaction = Transaction()
+        transaction.disablesAnimations = true
+        withTransaction(transaction) {
+          updateAllDayRailResize(translationHeight: value.translation.height)
+        }
+      }
+      .onEnded { _ in
+        guard isAllDayRailResizing else {
+          cancelAllDayRailResize()
+          return
+        }
+        var transaction = Transaction()
+        transaction.disablesAnimations = true
+        withTransaction(transaction) {
+          commitAllDayRailResize()
+        }
+      }
   }
 
   func dayHeaderCell(day: Date, index: Int) -> some View {
