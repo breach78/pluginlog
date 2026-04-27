@@ -392,11 +392,15 @@ struct TimelineBoardView: View {
     }
     .onChange(of: appState.isHoveringTimelineTaskBadgeOverlay) { _, isHovering in
       if !isHovering {
+        hoveredTimelineTaskBadgeID = nil
+        timelineTaskBadgeShowWorkItem?.cancel()
         scheduleTimelineTaskBadgeOverlayHideIfNeeded()
       }
     }
     .onChange(of: appState.isHoveringTimelineDayHeaderOverlay) { _, isHovering in
       if !isHovering {
+        hoveredTimelineDayHeaderOffset = nil
+        timelineDayHeaderShowWorkItem?.cancel()
         scheduleTimelineDayHeaderOverlayHideIfNeeded()
       }
     }

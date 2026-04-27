@@ -292,11 +292,13 @@ extension MainWorkspaceView {
       strokeColor: .secondary,
       style: timelineOverlayStyle(isHovering: appState.isHoveringTimelineTaskBadgeOverlay)
     )
-    .onHover { isHovering in
-      if isHovering {
-        appState.isHoveringTimelineTaskBadgeOverlay = true
-      } else if activeWorkspaceTaskEditPanelTarget == nil {
-        appState.isHoveringTimelineTaskBadgeOverlay = false
+    .background {
+      TimelineOverlayHoverTrackingSurface { isHovering in
+        if isHovering {
+          appState.isHoveringTimelineTaskBadgeOverlay = true
+        } else if activeWorkspaceTaskEditPanelTarget == nil {
+          appState.isHoveringTimelineTaskBadgeOverlay = false
+        }
       }
     }
     .onDisappear {
@@ -399,11 +401,13 @@ extension MainWorkspaceView {
       strokeColor: .secondary,
       style: timelineOverlayStyle(isHovering: appState.isHoveringTimelineDayHeaderOverlay)
     )
-    .onHover { isHovering in
-      if isHovering {
-        appState.isHoveringTimelineDayHeaderOverlay = true
-      } else if activeWorkspaceTaskEditPanelTarget == nil {
-        appState.isHoveringTimelineDayHeaderOverlay = false
+    .background {
+      TimelineOverlayHoverTrackingSurface { isHovering in
+        if isHovering {
+          appState.isHoveringTimelineDayHeaderOverlay = true
+        } else if activeWorkspaceTaskEditPanelTarget == nil {
+          appState.isHoveringTimelineDayHeaderOverlay = false
+        }
       }
     }
     .onDisappear {
@@ -482,6 +486,123 @@ extension MainWorkspaceView {
           proxy.scrollTo(request.target.scrollAnchorID, anchor: .top)
         }
       }
+    }
+  }
+}
+
+private struct TimelineOverlayHoverTrackingSurface: NSViewRepresentable {
+  let onHoverChange: (Bool) -> Void
+
+  func makeNSView(context: Context) -> TrackingView {
+    let view = TrackingView()
+    view.onHoverChange = onHoverChange
+    return view
+  }
+
+  func updateNSView(_ nsView: TrackingView, context: Context) {
+    nsView.onHoverChange = onHoverChange
+  }
+
+  final class TrackingView: NSView {
+    var onHoverChange: ((Bool) -> Void)?
+    private var trackingArea: NSTrackingArea?
+    private var eventMonitor: Any?
+    private var isHovering = false
+
+    override func hitTest(_ point: NSPoint) -> NSView? {
+      nil
+    }
+
+    override func updateTrackingAreas() {
+      super.updateTrackingAreas()
+      if let trackingArea {
+        removeTrackingArea(trackingArea)
+      }
+      let nextTrackingArea = NSTrackingArea(
+        rect: bounds,
+        options: [.activeAlways, .inVisibleRect, .mouseEnteredAndExited, .mouseMoved],
+        owner: self,
+        userInfo: nil
+      )
+      addTrackingArea(nextTrackingArea)
+      trackingArea = nextTrackingArea
+      refreshHoverFromWindowLocation()
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+      refreshHover(with: event)
+      super.mouseEntered(with: event)
+    }
+
+    override func mouseMoved(with event: NSEvent) {
+      refreshHover(with: event)
+      super.mouseMoved(with: event)
+    }
+
+    override func mouseExited(with event: NSEvent) {
+      refreshHover(with: event)
+      super.mouseExited(with: event)
+    }
+
+    override func viewWillMove(toWindow newWindow: NSWindow?) {
+      if newWindow == nil {
+        removeEventMonitor()
+        setHovering(false)
+      }
+      super.viewWillMove(toWindow: newWindow)
+    }
+
+    override func viewDidMoveToWindow() {
+      super.viewDidMoveToWindow()
+      installEventMonitorIfNeeded()
+      DispatchQueue.main.async { [weak self] in
+        self?.refreshHoverFromWindowLocation()
+      }
+    }
+
+    override func layout() {
+      super.layout()
+      refreshHoverFromWindowLocation()
+    }
+
+    private func installEventMonitorIfNeeded() {
+      guard eventMonitor == nil else { return }
+      eventMonitor = NSEvent.addLocalMonitorForEvents(
+        matching: [.mouseMoved, .leftMouseDragged, .rightMouseDragged, .otherMouseDragged]
+      ) { [weak self] event in
+        self?.refreshHover(with: event)
+        return event
+      }
+    }
+
+    private func removeEventMonitor() {
+      if let eventMonitor {
+        NSEvent.removeMonitor(eventMonitor)
+      }
+      eventMonitor = nil
+    }
+
+    private func refreshHover(with event: NSEvent) {
+      guard let window, event.window === window else {
+        setHovering(false)
+        return
+      }
+      refreshHoverFromWindowLocation()
+    }
+
+    private func refreshHoverFromWindowLocation() {
+      guard let window else {
+        setHovering(false)
+        return
+      }
+      let localPoint = convert(window.mouseLocationOutsideOfEventStream, from: nil)
+      setHovering(bounds.contains(localPoint))
+    }
+
+    private func setHovering(_ nextValue: Bool) {
+      guard isHovering != nextValue else { return }
+      isHovering = nextValue
+      onHoverChange?(nextValue)
     }
   }
 }

@@ -496,7 +496,14 @@ extension TimelineBoardView {
       }
     }
 
-    if activeTimelineDayHeaderOffset != nil || appState.isHoveringTimelineDayHeaderOverlay {
+    if appState.isHoveringTimelineDayHeaderOverlay {
+      if isHovering {
+        timelineTaskBadgeShowWorkItem?.cancel()
+      }
+      return
+    }
+
+    if activeTimelineDayHeaderOffset != nil {
       if isHovering {
         cancelTimelineDayHeaderOverlay()
       } else {
@@ -510,7 +517,8 @@ extension TimelineBoardView {
       let activeTimelineTaskBadgeID,
       activeTimelineTaskBadgeID != badgeID
     {
-      appState.isHoveringTimelineTaskBadgeOverlay = false
+      timelineTaskBadgeShowWorkItem?.cancel()
+      return
     }
 
     if isHovering {
@@ -675,6 +683,11 @@ extension TimelineBoardView {
       if isHovering {
         cancelTimelineDayHeaderOverlay()
       }
+      return
+    }
+
+    if isHovering, appState.isHoveringTimelineTaskBadgeOverlay {
+      timelineDayHeaderShowWorkItem?.cancel()
       return
     }
 
