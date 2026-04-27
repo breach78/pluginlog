@@ -44,14 +44,17 @@
 		4546402CDA16A8C3BF9AE13F /* MainWorkspaceActions.swift in Sources */ = {isa = PBXBuildFile; fileRef = B5AE36B32C0EDF7D34991776 /* MainWorkspaceActions.swift */; };
 		4561B83B77DA18535CFBE0DC /* RetainedTaskCommandService.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1322A7BC684850631EFD07C /* RetainedTaskCommandService.swift */; };
 		46D2A6785BFCA3288CB60494 /* ExternalOwnerChangeCommand.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2C28AC864FE42F458D154D24 /* ExternalOwnerChangeCommand.swift */; };
+		49A2BE6603135C9BD9969F04 /* TimelineTaskEditPopover.swift in Sources */ = {isa = PBXBuildFile; fileRef = 21B3F453411E704B032D846B /* TimelineTaskEditPopover.swift */; };
 		4B4E96C30514DCCE0CBC9049 /* OverlaySurfaceStyle.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1DDCAE950594A8FA2ED69146 /* OverlaySurfaceStyle.swift */; };
 		4F0AD6FAB09831AEFC280666 /* WorkspaceProjectTaskDropSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0C5727D0F25B47FA2146FC37 /* WorkspaceProjectTaskDropSupport.swift */; };
 		51AF201EA8B756B65E708021 /* ContainerPaths.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB81C4E219964508523337A0 /* ContainerPaths.swift */; };
 		5246A73D9106689E69B02461 /* AppStateLaunchAndSetup.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7CA7B838EEC20DA2595C5EF4 /* AppStateLaunchAndSetup.swift */; };
+		52A9E7A7E320399EFDECE383 /* TaskEditAttachmentService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4CE3629EC27F6D670D342C38 /* TaskEditAttachmentService.swift */; };
 		536768A33F9FD85991F0D0B7 /* OwnedScheduleCalendarSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = B9F3B749E26A6113BF3A7DFF /* OwnedScheduleCalendarSupport.swift */; };
 		58190F552DC4EC92D8D5FC38 /* ObsidianRetainedProjectionAdapter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5F1FB1976D603BD1C6DA44D3 /* ObsidianRetainedProjectionAdapter.swift */; };
 		582BA253688A70E45046D5AF /* StorageCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5C813D49A9E2F2F4CF9C837D /* StorageCoordinator.swift */; };
 		5A52EF5572EB692B9FB41A3E /* AppStateSidecarOwnerCommands.swift in Sources */ = {isa = PBXBuildFile; fileRef = 05EB56ADD29B0BA7300FF058 /* AppStateSidecarOwnerCommands.swift */; };
+		5B7ED6388B384FEC4599DFFF /* LinkedTextEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = A356D89520042E10A54E9637 /* LinkedTextEditor.swift */; };
 		641D77AAC72A77812E5AEE9B /* ScheduleBoardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7D53DA6B6072B8D393E1B372 /* ScheduleBoardView.swift */; };
 		66EC2BD953375C73557E4AD8 /* WorkspaceChromeState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 62D0CFF62937A856D18C5367 /* WorkspaceChromeState.swift */; };
 		698DE5C553EC4257977A72A0 /* TaskDragPayload.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8F0B697C252AD3079D2D78FC /* TaskDragPayload.swift */; };
@@ -74,6 +77,7 @@
 		90FE80ACFCB640383A871E50 /* MainAppWindowPresenter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 84DE4B885239675E62B6AD15 /* MainAppWindowPresenter.swift */; };
 		919CF7EA865151D8B607F2D0 /* ReminderScheduleMetadataCodec.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6D38BE6D94F68942B5D1FECE /* ReminderScheduleMetadataCodec.swift */; };
 		94C0119007C802B76D907038 /* AppStateReminderOwnerCommands.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4BB7FCFB1657C01818652C36 /* AppStateReminderOwnerCommands.swift */; };
+		9690843C5C34363345EAE91D /* WorkspaceTextResponderReleasePolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = 611327F8893573CB9E81155C /* WorkspaceTextResponderReleasePolicy.swift */; };
 		9940CCC48C0890956952C7E7 /* ObsidianReminderImportSync.swift in Sources */ = {isa = PBXBuildFile; fileRef = F7460C2DA7B60C0D547A0E4E /* ObsidianReminderImportSync.swift */; };
 		9E7A0D8B88A81E17EDA46EE8 /* ScheduleEventModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 953E865BB9AC117C9E4B41C4 /* ScheduleEventModel.swift */; };
 		9E8D06355AD3B6C2D78A2A33 /* AppStateProjectActions.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3D774233C47764939765DB2C /* AppStateProjectActions.swift */; };
@@ -87,6 +91,7 @@
 		AC537CAEAA24777A7D6CD0BE /* Enums.swift in Sources */ = {isa = PBXBuildFile; fileRef = 38C371E07B5CA6F8E3BDE87D /* Enums.swift */; };
 		B37C86432227E4A03291A56F /* ReminderProjectionSidecarReadService.swift in Sources */ = {isa = PBXBuildFile; fileRef = DB2595F36C76B210A25B46DE /* ReminderProjectionSidecarReadService.swift */; };
 		B3C982A08ACC72DB32BAC13D /* ReminderSourceObserver.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0937F10A038D369C109EF411 /* ReminderSourceObserver.swift */; };
+		B592A27E3A55A36DBE7424F5 /* RemindersAppOpenService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0EFFB389B724BC541B1F2B98 /* RemindersAppOpenService.swift */; };
 		B66601F6D46196FF69BF3202 /* AppStateCalendarOwnerCommands.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4184F58A5B06559E5D869450 /* AppStateCalendarOwnerCommands.swift */; };
 		B8139BD89D9E9A58B639D845 /* SyncPerformanceCounter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8AEC9DA727BBE63AD723AAD4 /* SyncPerformanceCounter.swift */; };
 		B872F1BA0281B157FD116DE2 /* ObsidianHelperPluginInstaller.swift in Sources */ = {isa = PBXBuildFile; fileRef = F98F1E3EF6E9DBFFCA4A5065 /* ObsidianHelperPluginInstaller.swift */; };
@@ -101,6 +106,7 @@
 		CAF285095398F7FD047BE899 /* MainWorkspaceView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6540E234B4BDA17263FA7EC0 /* MainWorkspaceView.swift */; };
 		CC91DAFE3A315318A1608FBB /* ScheduleInteractionLayers.swift in Sources */ = {isa = PBXBuildFile; fileRef = 404EEC05F762B366FF0E433B /* ScheduleInteractionLayers.swift */; };
 		D122F5F877C71EE47A61F01C /* ObsidianProjectMarkdownStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 76535865A64D6A33162F8BFA /* ObsidianProjectMarkdownStore.swift */; };
+		D125610EC7ADA8FC8D25B431 /* ScheduleCalendarEventEditPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3E917A90708ECE9AACDC5CFA /* ScheduleCalendarEventEditPanel.swift */; };
 		D17F3660835F7A75CFFAEADF /* ProjectIdentityResolver.swift in Sources */ = {isa = PBXBuildFile; fileRef = 548DFBDD3433AE83FF2F7A1F /* ProjectIdentityResolver.swift */; };
 		D43FF730380E65AE617F0CEF /* ProjectLifecycleStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = ADD680BFD9F532796DA03A0F /* ProjectLifecycleStore.swift */; };
 		D45F2B27103A147659C70B93 /* ReminderConflictPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = D204F6E9D71A29AFE06D93E0 /* ReminderConflictPolicy.swift */; };
@@ -138,6 +144,7 @@
 		09F0490C3AC406527EA013C3 /* ScheduleBoardActions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScheduleBoardActions.swift; sourceTree = "<group>"; };
 		0BB678657E4B19917410AD1E /* ScheduleBoardAppKitBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScheduleBoardAppKitBridge.swift; sourceTree = "<group>"; };
 		0C5727D0F25B47FA2146FC37 /* WorkspaceProjectTaskDropSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkspaceProjectTaskDropSupport.swift; sourceTree = "<group>"; };
+		0EFFB389B724BC541B1F2B98 /* RemindersAppOpenService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemindersAppOpenService.swift; sourceTree = "<group>"; };
 		147891A3DBDC258040BF4175 /* ObsidianRetainedTaskCommandService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ObsidianRetainedTaskCommandService.swift; sourceTree = "<group>"; };
 		14C89AB224DB517C6C5F363F /* ScheduleBoardChrome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScheduleBoardChrome.swift; sourceTree = "<group>"; };
 		1807C4BA06415B0541021618 /* WorkspaceSearchInputField.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkspaceSearchInputField.swift; sourceTree = "<group>"; };
@@ -147,6 +154,7 @@
 		1E5DBCF3A6F86EDFF014FE24 /* AppStateSourceIO.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppStateSourceIO.swift; sourceTree = "<group>"; };
 		20C566D141AFD6239A3995EB /* ObsidianProjectDeletionSync.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ObsidianProjectDeletionSync.swift; sourceTree = "<group>"; };
 		21B3D5ADF2276F43CBDBA1A6 /* AppContainer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppContainer.swift; sourceTree = "<group>"; };
+		21B3F453411E704B032D846B /* TimelineTaskEditPopover.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimelineTaskEditPopover.swift; sourceTree = "<group>"; };
 		23C1D66F6964BCDFFCAEE6B3 /* ScheduleBoardAllDayRail.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScheduleBoardAllDayRail.swift; sourceTree = "<group>"; };
 		274E953D806A773B94AECC7F /* ScheduleEventStores.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScheduleEventStores.swift; sourceTree = "<group>"; };
 		28BF322306B285FCF5B91E92 /* ObsidianReminderBootstrapSync.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ObsidianReminderBootstrapSync.swift; sourceTree = "<group>"; };
@@ -161,6 +169,7 @@
 		3CC3B1FF6BCD93DE1B13C99F /* TimelineBoardRows.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimelineBoardRows.swift; sourceTree = "<group>"; };
 		3D774233C47764939765DB2C /* AppStateProjectActions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppStateProjectActions.swift; sourceTree = "<group>"; };
 		3DDCE35F1FC984743815F2CB /* ReminderSyncHardening.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReminderSyncHardening.swift; sourceTree = "<group>"; };
+		3E917A90708ECE9AACDC5CFA /* ScheduleCalendarEventEditPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScheduleCalendarEventEditPanel.swift; sourceTree = "<group>"; };
 		3E928C30D43B12FDB70057E4 /* TimelineBoardRefresh.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimelineBoardRefresh.swift; sourceTree = "<group>"; };
 		3E9AE8A4E470F7F0DEF3FCD8 /* ColorHexCodec.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ColorHexCodec.swift; sourceTree = "<group>"; };
 		404EEC05F762B366FF0E433B /* ScheduleInteractionLayers.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScheduleInteractionLayers.swift; sourceTree = "<group>"; };
@@ -169,6 +178,7 @@
 		48F8065CA817A0442A997D0A /* ReminderDeletedTaskTombstoneStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReminderDeletedTaskTombstoneStore.swift; sourceTree = "<group>"; };
 		48FB4D903F2B164D1E5FF5D9 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		4BB7FCFB1657C01818652C36 /* AppStateReminderOwnerCommands.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppStateReminderOwnerCommands.swift; sourceTree = "<group>"; };
+		4CE3629EC27F6D670D342C38 /* TaskEditAttachmentService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskEditAttachmentService.swift; sourceTree = "<group>"; };
 		548DFBDD3433AE83FF2F7A1F /* ProjectIdentityResolver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProjectIdentityResolver.swift; sourceTree = "<group>"; };
 		55F9F6FCA5E8411D7A3633D6 /* OwnershipTypes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OwnershipTypes.swift; sourceTree = "<group>"; };
 		574B3E6ABB66853539EE9014 /* AppCommand.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppCommand.swift; sourceTree = "<group>"; };
@@ -177,6 +187,7 @@
 		5C813D49A9E2F2F4CF9C837D /* StorageCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StorageCoordinator.swift; sourceTree = "<group>"; };
 		5F1FB1976D603BD1C6DA44D3 /* ObsidianRetainedProjectionAdapter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ObsidianRetainedProjectionAdapter.swift; sourceTree = "<group>"; };
 		60B651674EA099B1300A6F23 /* AppStateDiagnostics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppStateDiagnostics.swift; sourceTree = "<group>"; };
+		611327F8893573CB9E81155C /* WorkspaceTextResponderReleasePolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkspaceTextResponderReleasePolicy.swift; sourceTree = "<group>"; };
 		62D0CFF62937A856D18C5367 /* WorkspaceChromeState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkspaceChromeState.swift; sourceTree = "<group>"; };
 		6505481B83E40324311D478E /* ObsidianChangedProjectProjectionRefresh.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ObsidianChangedProjectProjectionRefresh.swift; sourceTree = "<group>"; };
 		6540E234B4BDA17263FA7EC0 /* MainWorkspaceView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainWorkspaceView.swift; sourceTree = "<group>"; };
@@ -212,6 +223,7 @@
 		927DAB678D8B2BFBA12C46E5 /* ObsidianReminderDeletionSync.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ObsidianReminderDeletionSync.swift; sourceTree = "<group>"; };
 		953E865BB9AC117C9E4B41C4 /* ScheduleEventModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScheduleEventModel.swift; sourceTree = "<group>"; };
 		97E7C405496B88B1BB63A7ED /* ScheduleCalendarStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScheduleCalendarStore.swift; sourceTree = "<group>"; };
+		A356D89520042E10A54E9637 /* LinkedTextEditor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LinkedTextEditor.swift; sourceTree = "<group>"; };
 		A704700F9EC8AE92D9D9F5DA /* AppSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppSettingsView.swift; sourceTree = "<group>"; };
 		A7C173752BD8789FFFEB2DF4 /* RetainedProjectionModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RetainedProjectionModels.swift; sourceTree = "<group>"; };
 		AC342E86ACACDCBFAFB011C4 /* PlatformUIFoundation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlatformUIFoundation.swift; sourceTree = "<group>"; };
@@ -316,6 +328,7 @@
 				5977385BE535538D7FF6CB4F /* WorkspaceOverlaySupport.swift */,
 				0C5727D0F25B47FA2146FC37 /* WorkspaceProjectTaskDropSupport.swift */,
 				1807C4BA06415B0541021618 /* WorkspaceSearchInputField.swift */,
+				611327F8893573CB9E81155C /* WorkspaceTextResponderReleasePolicy.swift */,
 			);
 			path = Workspace;
 			sourceTree = "<group>";
@@ -357,6 +370,7 @@
 				14C89AB224DB517C6C5F363F /* ScheduleBoardChrome.swift */,
 				F0586D4A7ECEDD9B85100E2F /* ScheduleBoardTimeGrid.swift */,
 				7D53DA6B6072B8D393E1B372 /* ScheduleBoardView.swift */,
+				3E917A90708ECE9AACDC5CFA /* ScheduleCalendarEventEditPanel.swift */,
 				C53B72857302D4F0FC5B1E6F /* ScheduleCollisionDetector.swift */,
 				C1072CF5D6C4D5DCABACCB1A /* ScheduleDayTimelineLayoutEngine.swift */,
 				953E865BB9AC117C9E4B41C4 /* ScheduleEventModel.swift */,
@@ -472,6 +486,7 @@
 				C0DE066B63133541C5037193 /* ReminderPendingBindingStore.swift */,
 				DB2595F36C76B210A25B46DE /* ReminderProjectionSidecarReadService.swift */,
 				668D5BC4DBF761A95ABD4A50 /* ReminderRecurrenceCodec.swift */,
+				0EFFB389B724BC541B1F2B98 /* RemindersAppOpenService.swift */,
 				6D38BE6D94F68942B5D1FECE /* ReminderScheduleMetadataCodec.swift */,
 				0937F10A038D369C109EF411 /* ReminderSourceObserver.swift */,
 				3DDCE35F1FC984743815F2CB /* ReminderSyncHardening.swift */,
@@ -485,6 +500,7 @@
 				B212FE0ABB16E5A836D161E7 /* RetainedWorkspaceSurfaceProjection.swift */,
 				97E7C405496B88B1BB63A7ED /* ScheduleCalendarStore.swift */,
 				8AEC9DA727BBE63AD723AAD4 /* SyncPerformanceCounter.swift */,
+				4CE3629EC27F6D670D342C38 /* TaskEditAttachmentService.swift */,
 			);
 			path = Services;
 			sourceTree = "<group>";
@@ -492,6 +508,7 @@
 		B08BF4E4D3BF2C85A0D4296D /* Timeline */ = {
 			isa = PBXGroup;
 			children = (
+				A356D89520042E10A54E9637 /* LinkedTextEditor.swift */,
 				C5663DE261C721DC5E127FB1 /* TimelineBoardActions.swift */,
 				8243433AEAD40BA2F2B4CC17 /* TimelineBoardOverlays.swift */,
 				3E928C30D43B12FDB70057E4 /* TimelineBoardRefresh.swift */,
@@ -499,6 +516,7 @@
 				C6831C9F59899B48478AF9B0 /* TimelineBoardSupport.swift */,
 				8B721AD98A258C527A77D282 /* TimelineBoardView.swift */,
 				679A55D0A210BC487FE136C2 /* TimelineProjectDropSupport.swift */,
+				21B3F453411E704B032D846B /* TimelineTaskEditPopover.swift */,
 			);
 			path = Timeline;
 			sourceTree = "<group>";
@@ -636,6 +654,7 @@
 				AB497253D10E59C837708B35 /* DragPayloadCodec.swift in Sources */,
 				AC537CAEAA24777A7D6CD0BE /* Enums.swift in Sources */,
 				46D2A6785BFCA3288CB60494 /* ExternalOwnerChangeCommand.swift in Sources */,
+				5B7ED6388B384FEC4599DFFF /* LinkedTextEditor.swift in Sources */,
 				90FE80ACFCB640383A871E50 /* MainAppWindowPresenter.swift in Sources */,
 				4546402CDA16A8C3BF9AE13F /* MainWorkspaceActions.swift in Sources */,
 				DCA591DD00534F89F9E6ECD9 /* MainWorkspaceChrome.swift in Sources */,
@@ -690,6 +709,7 @@
 				25E1835F5DD87BAE3FB5BB75 /* ReminderSyncBaseline.swift in Sources */,
 				0CFBA650BE7005AFC3555F98 /* ReminderSyncHardening.swift in Sources */,
 				D7B7C72B11C375F86DF95048 /* ReminderTaskAdoptionPolicy.swift in Sources */,
+				B592A27E3A55A36DBE7424F5 /* RemindersAppOpenService.swift in Sources */,
 				F5BDD9334F9C458993FE8A52 /* ResourceBundleCompatibility.swift in Sources */,
 				0C43CF95D89D8F96A0857B6D /* RetainedCalendarBridgePolicy.swift in Sources */,
 				B88BD8153442E4FF2727F8E7 /* RetainedCompatibilityTypes.swift in Sources */,
@@ -706,6 +726,7 @@
 				D518E446DB82481E727D21BF /* ScheduleBoardChrome.swift in Sources */,
 				8261CB6B1B21F77F4571076F /* ScheduleBoardTimeGrid.swift in Sources */,
 				641D77AAC72A77812E5AEE9B /* ScheduleBoardView.swift in Sources */,
+				D125610EC7ADA8FC8D25B431 /* ScheduleCalendarEventEditPanel.swift in Sources */,
 				E29EFEA2126D080A3DD4C881 /* ScheduleCalendarStore.swift in Sources */,
 				BB1DD981D82C4D84465940AF /* ScheduleCollisionDetector.swift in Sources */,
 				0799FA5AE1418503BAB99408 /* ScheduleDayTimelineLayoutEngine.swift in Sources */,
@@ -717,6 +738,7 @@
 				582BA253688A70E45046D5AF /* StorageCoordinator.swift in Sources */,
 				B8139BD89D9E9A58B639D845 /* SyncPerformanceCounter.swift in Sources */,
 				698DE5C553EC4257977A72A0 /* TaskDragPayload.swift in Sources */,
+				52A9E7A7E320399EFDECE383 /* TaskEditAttachmentService.swift in Sources */,
 				03C3E7396753DCD4DA867BBC /* TimelineBoardActions.swift in Sources */,
 				395B021D5FCF157C5EE7467E /* TimelineBoardOverlays.swift in Sources */,
 				BA3549ECC2E9FC1AA80B41A6 /* TimelineBoardRefresh.swift in Sources */,
@@ -724,11 +746,13 @@
 				2608B23AD464F6314FADD096 /* TimelineBoardSupport.swift in Sources */,
 				D7E5DD01F876A85563529DEF /* TimelineBoardView.swift in Sources */,
 				ABD6CD9F9A35FF12D207682F /* TimelineProjectDropSupport.swift in Sources */,
+				49A2BE6603135C9BD9969F04 /* TimelineTaskEditPopover.swift in Sources */,
 				66EC2BD953375C73557E4AD8 /* WorkspaceChromeState.swift in Sources */,
 				CA1560A7A8C8C83D72F7F12D /* WorkspaceNavigation.swift in Sources */,
 				42E285DF09680AF855DD96A3 /* WorkspaceOverlaySupport.swift in Sources */,
 				4F0AD6FAB09831AEFC280666 /* WorkspaceProjectTaskDropSupport.swift in Sources */,
 				AB0C001663695BFB0347B57A /* WorkspaceSearchInputField.swift in Sources */,
+				9690843C5C34363345EAE91D /* WorkspaceTextResponderReleasePolicy.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

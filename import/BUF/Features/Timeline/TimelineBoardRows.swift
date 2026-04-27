@@ -296,17 +296,17 @@ extension TimelineBoardView {
     .padding(.bottom, interRowBottomPadding(for: index, totalCount: totalCount, rowLayout: rowLayout))
     .contentShape(Rectangle())
     .modifier(TimelineProjectDragModifier(bar: bar, draggingProjectID: $draggingProjectID))
-    .gesture(
+    .simultaneousGesture(
+      TapGesture()
+        .onEnded {
+          selectTimelineProject(bar.projectID)
+        }
+    )
+    .simultaneousGesture(
       TapGesture(count: 2)
         .onEnded {
           showTimelineProjectListPopover(bar.projectID)
         }
-        .exclusively(
-          before: TapGesture()
-            .onEnded {
-              onSelectProject(bar.projectID)
-            }
-        )
     )
     .overlay(alignment: .top) {
       if showsPriorityBoundary {
@@ -415,17 +415,17 @@ extension TimelineBoardView {
     )
     .contentShape(Rectangle())
     .modifier(TimelineProjectDragModifier(bar: bar, draggingProjectID: $draggingProjectID))
-    .gesture(
+    .simultaneousGesture(
+      TapGesture()
+        .onEnded {
+          selectTimelineProject(bar.projectID)
+        }
+    )
+    .simultaneousGesture(
       TapGesture(count: 2)
         .onEnded {
           showTimelineProjectListPopover(bar.projectID)
         }
-        .exclusively(
-          before: TapGesture()
-            .onEnded {
-              onSelectProject(bar.projectID)
-            }
-        )
     )
     .popover(isPresented: timelineProjectListPopoverBinding(for: bar.projectID)) {
       timelineProjectListPopover(for: bar)
@@ -1233,7 +1233,7 @@ extension TimelineBoardView {
   }
 
   func projectIsSelected(_ projectID: UUID) -> Bool {
-    selectedProjectID == projectID
+    immediateSelectedProjectID == projectID
   }
 
   @ViewBuilder

@@ -117,6 +117,8 @@ struct TimelineBoardView: View {
   @State var timelineScrollSession: TimelineScrollSessionMetrics?
   @State var timelineScrollIdleWorkItem: DispatchWorkItem?
   @State var didPrewarmTimelineScrollMode = false
+  @State var immediateSelectedProjectID: UUID?
+  @State var selectionCommitTask: Task<Void, Never>?
 
   let titleColumnWidth: CGFloat = 200
   let timelineTitleColumnHorizontalPadding: CGFloat = 12
@@ -213,6 +215,7 @@ struct TimelineBoardView: View {
     self.isActive = isActive
     self.isInteractionObscured = isInteractionObscured
     self.selectedProjectID = selectedProjectID
+    _immediateSelectedProjectID = State(initialValue: selectedProjectID)
     self.onSelectProject = onSelectProject
     self.onToggleProjectSelection = onToggleProjectSelection
     self.onEditTask = onEditTask
@@ -418,7 +421,11 @@ struct TimelineBoardView: View {
     .onChange(of: dayColumnWidth) { oldWidth, newWidth in
       preserveLeftVisibleDayOnZoom(oldWidth: oldWidth, newWidth: newWidth)
     }
+    .onChange(of: selectedProjectID) { _, projectID in
+      immediateSelectedProjectID = projectID
+    }
     .onDisappear {
+      selectionCommitTask?.cancel()
       cancelTimelineTaskBadgeOverlay()
       cancelTimelineDayHeaderOverlay()
       cancelTimelineScrollSession()

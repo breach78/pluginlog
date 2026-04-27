@@ -36,7 +36,7 @@ extension TimelineBoardView {
   }
 
   func revealTimelineTaskDetail(taskID: UUID, projectID: UUID) {
-    appState.selectedProjectID = projectID
+    selectTimelineProject(projectID, commitDelay: .zero)
     activeTimelineProjectListPopoverProjectID = nil
     activeTimelineTaskEditTarget = nil
     Task { @MainActor in
@@ -51,8 +51,7 @@ extension TimelineBoardView {
   }
 
   func showTimelineProjectListPopover(_ projectID: UUID) {
-    onSelectProject(projectID)
-    appState.selectedProjectID = projectID
+    selectTimelineProject(projectID, commitDelay: .zero)
     activeTimelineProjectListPopoverProjectID = nil
     DispatchQueue.main.async {
       activeTimelineProjectListPopoverProjectID = projectID
@@ -132,6 +131,33 @@ extension TimelineBoardView {
     } catch {
       appState.errorMessage = error.localizedDescription
       return fallback
+    }
+  }
+
+  func selectTimelineProject(
+    _ projectID: UUID,
+    commitDelay: Duration = .milliseconds(140)
+  ) {
+    if immediateSelectedProjectID != projectID {
+      immediateSelectedProjectID = projectID
+    }
+
+    selectionCommitTask?.cancel()
+    guard selectedProjectID != projectID else {
+      selectionCommitTask = nil
+      return
+    }
+
+    selectionCommitTask = Task { @MainActor in
+      if commitDelay > .zero {
+        do {
+          try await Task.sleep(for: commitDelay)
+        } catch {
+          return
+        }
+      }
+      guard !Task.isCancelled, immediateSelectedProjectID == projectID else { return }
+      onSelectProject(projectID)
     }
   }
 
