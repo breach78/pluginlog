@@ -17,16 +17,13 @@ extension TimelineBoardView {
     isCreatingProject = true
     Task { @MainActor in
       defer { isCreatingProject = false }
-      guard let snapshot = await appState.createProjectStub(context: modelContext) else { return }
-      do {
-        try ObsidianTaskOpenService.openProjectNoteFile(
-          fileURL: snapshot.fileURL,
-          documentOpener: appState.platformUIFoundation.documentOpener
-        )
-      } catch {
-        appState.errorMessage = error.localizedDescription
+      guard let projectID = await appState.createProjectList(
+        named: "새 프로젝트",
+        context: modelContext
+      ) else {
+        return
       }
-      await appState.handleObsidianProjectDirectoryChange([snapshot.fileURL])
+      selectTimelineProject(projectID, commitDelay: .zero)
     }
   }
 
@@ -322,7 +319,6 @@ extension TimelineBoardView {
           colorHex: hex,
           reminderProjectProvider: appState.reminderProjectProvider
         )
-        appState.recordAppAuthoredReminderPush()
         await refreshTimelineProjectState(including: [projectID])
       } catch {
         appState.errorMessage = error.localizedDescription

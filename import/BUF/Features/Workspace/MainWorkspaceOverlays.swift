@@ -92,9 +92,18 @@ extension MainWorkspaceView {
   }
 
   func workspaceTaskEditPanel(_ target: WorkspaceTaskEditPanelTarget) -> some View {
-    TimelineTaskEditPopoverContent(
+    let syncSessionID = TaskEditSyncSessionID.workspacePanel(
+      projectID: target.projectID,
+      taskID: target.taskID
+    )
+    return TimelineTaskEditPopoverContent(
       initialFields: target.initialFields,
       presentationStyle: .panel,
+      reloadToken: TaskEditReloadToken.workspacePanel(
+        projectID: target.projectID,
+        taskID: target.taskID,
+        workspaceTreeRevision: appState.workspaceTreeRevision
+      ),
       vaultRootURL: appState.obsidianVaultRootURL,
       loadFields: {
         await loadTimelineTaskEditFields(
@@ -109,6 +118,21 @@ extension MainWorkspaceView {
           projectID: target.projectID,
           taskID: target.taskID
         )
+      },
+      onSyncEditingChanged: { isEditing in
+        if isEditing {
+          appState.beginEditorSession(
+            id: syncSessionID,
+            syncRelevant: true,
+            contentID: target.taskID,
+            projectID: target.projectID
+          )
+        } else {
+          appState.endEditorSession(id: syncSessionID)
+        }
+      },
+      onSyncEditingActivity: {
+        appState.notifyEditorActivity()
       },
       onCancel: {
         dismissTimelineTaskEditor()
@@ -337,15 +361,15 @@ extension MainWorkspaceView {
     )
     .background {
       TimelineOverlayHoverTrackingSurface { isHovering in
-        if isHovering {
-          appState.isHoveringTimelineTaskBadgeOverlay = true
-        } else {
-          appState.isHoveringTimelineTaskBadgeOverlay = false
-        }
+        guard appState.isHoveringTimelineTaskBadgeOverlay != isHovering else { return }
+        appState.isHoveringTimelineTaskBadgeOverlay = isHovering
       }
     }
     .onDisappear {
-      appState.isHoveringTimelineTaskBadgeOverlay = false
+      DispatchQueue.main.async {
+        guard appState.isHoveringTimelineTaskBadgeOverlay else { return }
+        appState.isHoveringTimelineTaskBadgeOverlay = false
+      }
     }
   }
 
@@ -444,15 +468,15 @@ extension MainWorkspaceView {
     )
     .background {
       TimelineOverlayHoverTrackingSurface { isHovering in
-        if isHovering {
-          appState.isHoveringTimelineDayHeaderOverlay = true
-        } else {
-          appState.isHoveringTimelineDayHeaderOverlay = false
-        }
+        guard appState.isHoveringTimelineDayHeaderOverlay != isHovering else { return }
+        appState.isHoveringTimelineDayHeaderOverlay = isHovering
       }
     }
     .onDisappear {
-      appState.isHoveringTimelineDayHeaderOverlay = false
+      DispatchQueue.main.async {
+        guard appState.isHoveringTimelineDayHeaderOverlay else { return }
+        appState.isHoveringTimelineDayHeaderOverlay = false
+      }
     }
   }
 
@@ -547,6 +571,7 @@ private struct TimelineOverlayHoverTrackingSurface: NSViewRepresentable {
     private var trackingArea: NSTrackingArea?
     private var eventMonitor: Any?
     private var isHovering = false
+    private var scheduledHoverChange: Bool?
 
     override func hitTest(_ point: NSPoint) -> NSView? {
       nil
@@ -641,7 +666,12 @@ private struct TimelineOverlayHoverTrackingSurface: NSViewRepresentable {
     private func setHovering(_ nextValue: Bool) {
       guard isHovering != nextValue else { return }
       isHovering = nextValue
-      onHoverChange?(nextValue)
+      scheduledHoverChange = nextValue
+      DispatchQueue.main.async { [weak self] in
+        guard let self, let nextValue = self.scheduledHoverChange else { return }
+        self.scheduledHoverChange = nil
+        self.onHoverChange?(nextValue)
+      }
     }
   }
 }

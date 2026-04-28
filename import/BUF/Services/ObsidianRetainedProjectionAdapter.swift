@@ -66,6 +66,7 @@ enum ObsidianRetainedProjectionAdapter {
         calendarEventExternalIdentifier: nil
       ),
       title: task.title,
+      noteText: ObsidianReminderImportFormatting.reminderNoteText(for: task),
       isCompleted: task.isCompleted,
       schedule: buildSchedule(task.metadata, calendar: calendar),
       isManagedTask: reminderID != nil
@@ -130,6 +131,7 @@ enum ObsidianRetainedProjectionAdapter {
         calendarEventExternalIdentifier: nil
       ),
       title: task.title,
+      noteText: ObsidianReminderImportFormatting.reminderNoteText(for: task),
       isCompleted: task.isCompleted,
       schedule: buildSchedule(task.metadata, calendar: calendar),
       isManagedTask: false

@@ -13,6 +13,22 @@ struct WorkspaceTaskEditPanelTarget: Equatable, Sendable {
   let initialFields: RetainedTaskEditFields
 }
 
+enum TaskEditReloadToken {
+  static func workspacePanel(
+    projectID: UUID,
+    taskID: UUID,
+    workspaceTreeRevision: Int
+  ) -> String {
+    "\(projectID.uuidString)-\(taskID.uuidString)-\(workspaceTreeRevision)"
+  }
+}
+
+enum TaskEditSyncSessionID {
+  static func workspacePanel(projectID: UUID, taskID: UUID) -> String {
+    "workspace-task-edit-\(projectID.uuidString)-\(taskID.uuidString)"
+  }
+}
+
 enum TimelineTaskEditPresentationStyle {
   case popover
   case panel
@@ -21,9 +37,12 @@ enum TimelineTaskEditPresentationStyle {
 struct TimelineTaskEditPopoverContent: View {
   let initialFields: RetainedTaskEditFields
   let presentationStyle: TimelineTaskEditPresentationStyle
+  let reloadToken: String
   let vaultRootURL: URL?
   let loadFields: () async -> RetainedTaskEditFields
   let saveFields: (RetainedTaskEditFields) async throws -> Void
+  let onSyncEditingChanged: (Bool) -> Void
+  let onSyncEditingActivity: () -> Void
   let onCancel: () -> Void
 
   @State private var title: String
@@ -45,6 +64,7 @@ struct TimelineTaskEditPopoverContent: View {
   @State private var isImportingAttachments = false
   @State private var pendingAttachmentDelete: TaskEditAttachment?
   @State private var errorText: String?
+  @State private var isSyncEditingActive = false
 
   private let calendar = Calendar.autoupdatingCurrent
   private static let autoSaveDelayNanoseconds: UInt64 = 1_200_000_000
@@ -52,9 +72,12 @@ struct TimelineTaskEditPopoverContent: View {
   init(
     initialFields: RetainedTaskEditFields,
     presentationStyle: TimelineTaskEditPresentationStyle = .popover,
+    reloadToken: String = "initial",
     vaultRootURL: URL? = nil,
     loadFields: @escaping () async -> RetainedTaskEditFields,
     saveFields: @escaping (RetainedTaskEditFields) async throws -> Void,
+    onSyncEditingChanged: @escaping (Bool) -> Void = { _ in },
+    onSyncEditingActivity: @escaping () -> Void = {},
     onCancel: @escaping () -> Void
   ) {
     let initialNoteText = TaskEditAttachmentService.noteTextByRemovingAttachmentLinks(
@@ -66,9 +89,12 @@ struct TimelineTaskEditPopoverContent: View {
     )
     self.initialFields = initialFields
     self.presentationStyle = presentationStyle
+    self.reloadToken = reloadToken
     self.vaultRootURL = vaultRootURL
     self.loadFields = loadFields
     self.saveFields = saveFields
+    self.onSyncEditingChanged = onSyncEditingChanged
+    self.onSyncEditingActivity = onSyncEditingActivity
     self.onCancel = onCancel
     _title = State(initialValue: initialFields.title)
     _noteText = State(initialValue: initialNoteText)
@@ -128,11 +154,12 @@ struct TimelineTaskEditPopoverContent: View {
       .onChange(of: attachments) { _, _ in
         scheduleAutoSave()
       }
-      .task {
+      .task(id: reloadToken) {
         await loadLatest()
       }
       .onDisappear {
         flushPendingChangesOnDisappear()
+        endSyncEditingSession()
       }
   }
 
@@ -367,6 +394,7 @@ struct TimelineTaskEditPopoverContent: View {
         )
       }.value
       attachments.append(contentsOf: importedAttachments)
+      markSyncEditingActivity()
       autoSaveTask?.cancel()
       autoSaveTask = nil
       _ = await savePendingChanges(afterCurrent: true)
@@ -384,6 +412,7 @@ struct TimelineTaskEditPopoverContent: View {
       attachments.removeAll { $0.id == attachment.id }
       pendingAttachmentDelete = nil
       errorText = nil
+      markSyncEditingActivity()
       autoSaveTask?.cancel()
       autoSaveTask = nil
       Task { @MainActor in
@@ -427,6 +456,7 @@ struct TimelineTaskEditPopoverContent: View {
       timeMinutes: fields.timeMinutes,
       durationMinutes: fields.durationMinutes
     )
+    endSyncEditingSessionIfClean()
   }
 
   private func closeEditor() {
@@ -438,7 +468,12 @@ struct TimelineTaskEditPopoverContent: View {
 
   @MainActor
   private func scheduleAutoSave() {
-    guard shouldSave(currentFields()) else { return }
+    let fields = currentFields()
+    guard shouldSave(fields) else {
+      endSyncEditingSessionIfClean()
+      return
+    }
+    markSyncEditingActivity()
     autoSaveTask?.cancel()
     autoSaveTask = Task { @MainActor in
       do {
@@ -463,6 +498,7 @@ struct TimelineTaskEditPopoverContent: View {
     autoSaveTask = nil
     Task { @MainActor in
       _ = await savePendingChanges(afterCurrent: true)
+      endSyncEditingSession()
     }
   }
 
@@ -477,7 +513,11 @@ struct TimelineTaskEditPopoverContent: View {
       return true
     }
     let fields = currentFields()
-    guard shouldSave(fields) else { return true }
+    guard shouldSave(fields) else {
+      endSyncEditingSessionIfClean()
+      return true
+    }
+    markSyncEditingActivity()
     isSaving = true
     errorText = nil
     do {
@@ -491,14 +531,37 @@ struct TimelineTaskEditPopoverContent: View {
       }
       if currentFields() != fields {
         scheduleAutoSave()
+      } else {
+        endSyncEditingSession()
       }
       return true
     } catch {
       isSaving = false
       saveAgainAfterCurrent = false
       errorText = error.localizedDescription
+      endSyncEditingSession()
       return false
     }
+  }
+
+  private func markSyncEditingActivity() {
+    onSyncEditingActivity()
+    guard !isSyncEditingActive else { return }
+    isSyncEditingActive = true
+    onSyncEditingChanged(true)
+  }
+
+  private func endSyncEditingSessionIfClean() {
+    guard currentFields() == lastCommittedFields, !isSaving, autoSaveTask == nil else {
+      return
+    }
+    endSyncEditingSession()
+  }
+
+  private func endSyncEditingSession() {
+    guard isSyncEditingActive else { return }
+    isSyncEditingActive = false
+    onSyncEditingChanged(false)
   }
 
   private func currentFields() -> RetainedTaskEditFields {

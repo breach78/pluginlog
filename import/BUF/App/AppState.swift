@@ -86,9 +86,6 @@ final class AppState: ObservableObject {
   var reminderSourceObserver: ReminderSourceObserver?
   var obsidianProjectDirectoryWatcher: ObsidianProjectDirectoryWatcher?
   var pendingReminderSourceRefreshReason: SyncReason?
-  var appAuthoredReminderEchoSuppressionDeadline: Date?
-  var appAuthoredReminderEchoRefreshTask: Task<Void, Never>?
-  let appAuthoredReminderEchoSuppressionInterval: TimeInterval = 8
   var confirmObsidianArchive: (ObsidianArchiveConfirmationRequest) -> Bool = { request in
     let alert = NSAlert()
     alert.messageText = "프로젝트를 아카이브할까요?"
@@ -220,7 +217,6 @@ final class AppState: ObservableObject {
   deinit {
     editorIdleTask?.cancel()
     editorMotionReleaseTask?.cancel()
-    appAuthoredReminderEchoRefreshTask?.cancel()
     scheduleCalendarOverlayProjectionCancellable?.cancel()
     scheduleCalendarOwnedEventInvalidationCancellable?.cancel()
     obsidianProjectDirectoryWatcher?.stop()

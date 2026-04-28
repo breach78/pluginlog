@@ -89,12 +89,14 @@ extension AppState {
     }
 
     do {
+      let store = ObsidianProjectMarkdownStore(vaultRootURL: obsidianVaultRootURL)
+      let preferredFileName = try await store.availableProjectFileName(preferredTitle: title)
       let reminderList = try reminderProjectProvider.createProjectList(title: title)
       let projectID = RetainedProjectionBuilder.derivedProjectID(
         for: reminderList.externalIdentifier
       )
-      _ = try await ObsidianProjectMarkdownStore(vaultRootURL: obsidianVaultRootURL)
-        .writeProjectNote(
+      do {
+        _ = try await store.writeProjectNote(
           ObsidianProjectNote(
             frontmatter: ObsidianProjectFrontmatter(
               tags: ["프로젝트"],
@@ -107,8 +109,12 @@ extension AppState {
             diagnostics: [],
             normalizedContentHash: ""
           ),
-          preferredFileName: title
+          preferredFileName: preferredFileName
         )
+      } catch {
+        try? reminderProjectProvider.removeProjectList(identifier: reminderList.identifier)
+        throw error
+      }
       TaskIdentityBridgeStore.upsertProject(
         projectID: projectID,
         title: title,
@@ -389,7 +395,6 @@ extension AppState {
       if selectedProjectID == result.deletedProjectID {
         selectedProjectID = nil
       }
-      recordAppAuthoredReminderPush()
       syncStatus = "Deleted project"
       bumpWorkspaceTreeRevision()
       return true

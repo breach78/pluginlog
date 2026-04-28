@@ -387,23 +387,7 @@ enum ObsidianReminderImportSync {
     baseline: ReminderSyncTaskBaselineRecord?
   ) -> MergeDecision {
     guard let baseline else {
-      if local == remote {
-        return MergeDecision(
-          state: local,
-          nextBaseline: remote,
-          conflictedFields: [],
-          changedFields: []
-        )
-      }
-      let conflicts = ReminderSyncTaskField.allCases.filter {
-        local.value(for: $0) != remote.value(for: $0)
-      }
-      return MergeDecision(
-        state: local,
-        nextBaseline: local,
-        conflictedFields: conflicts,
-        changedFields: []
-      )
+      return reminderAuthoritativeMergeDecision(local: local, remote: remote)
     }
     if remoteSnapshotIsOlderThanBaseline(
       remoteModifiedAt: remoteModifiedAt,
@@ -417,38 +401,23 @@ enum ObsidianReminderImportSync {
       )
     }
 
-    var merged = local
-    var nextBaseline = baseline.state
-    var conflicts = baseline.conflictedFields
+    return reminderAuthoritativeMergeDecision(local: local, remote: remote)
+  }
+
+  private static func reminderAuthoritativeMergeDecision(
+    local: ReminderSyncTaskState,
+    remote: ReminderSyncTaskState
+  ) -> MergeDecision {
     var changedFields = Set<ReminderSyncTaskField>()
-
-    for field in ReminderSyncTaskField.allCases {
-      let baseValue = baseline.state.value(for: field)
-      let localValue = local.value(for: field)
-      let remoteValue = remote.value(for: field)
-      let localChanged = localValue != baseValue
-      let remoteChanged = remoteValue != baseValue
-
-      if localChanged && remoteChanged && localValue != remoteValue {
-        conflicts.append(field)
-        continue
-      }
-      conflicts.removeAll { $0 == field }
-      if remoteChanged {
-        merged = merged.replacing(field: field, with: remote)
-        nextBaseline = nextBaseline.replacing(field: field, with: remote)
-        if localValue != remoteValue {
-          changedFields.insert(field)
-        }
-      } else if !localChanged {
-        nextBaseline = nextBaseline.replacing(field: field, with: local)
-      }
+    for field in ReminderSyncTaskField.allCases
+    where local.value(for: field) != remote.value(for: field) {
+      changedFields.insert(field)
     }
 
     return MergeDecision(
-      state: merged,
-      nextBaseline: nextBaseline,
-      conflictedFields: Array(Set(conflicts)).sorted { $0.rawValue < $1.rawValue },
+      state: remote,
+      nextBaseline: remote,
+      conflictedFields: [],
       changedFields: changedFields
     )
   }

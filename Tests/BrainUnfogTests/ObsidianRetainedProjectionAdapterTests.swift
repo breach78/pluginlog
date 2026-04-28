@@ -109,6 +109,35 @@ final class ObsidianRetainedProjectionAdapterTests: XCTestCase {
     XCTAssertEqual(task.schedule.canonicalRepeatRule, "reminder")
   }
 
+  func testBuildCarriesObsidianTaskNoteIntoRetainedTask() async throws {
+    let vaultURL = try makeVault()
+    try writeProject(
+      """
+      ---
+      tags:
+        - 프로젝트
+      reminder_list_external_id: LIST-1
+      ---
+      - [ ] Task with note
+        %% brain-unfog: {"reminder_external_id":"TASK-1"} %%
+        - First note line
+        - Second note line
+      """,
+      named: "Notes.md",
+      in: vaultURL
+    )
+    let snapshots = try await ObsidianProjectMarkdownStore(vaultRootURL: vaultURL)
+      .loadProjectNotesInScope()
+
+    let retained = try ObsidianRetainedProjectionAdapter.build(
+      snapshots: snapshots,
+      calendar: Self.calendar
+    )
+
+    let task = try XCTUnwrap(retained.projects.first?.tasks.first)
+    XCTAssertEqual(task.noteText, "First note line\nSecond note line")
+  }
+
   func testDuplicateObsidianReminderListIDFailsClosed() async throws {
     let vaultURL = try makeVault()
     try writeProject(

@@ -140,6 +140,91 @@ final class ObsidianRetainedTaskCommandServiceTests: XCTestCase {
     XCTAssertEqual(ReminderSyncBaselineStore.baseline(for: "task-1")?.state.date, "2026-04-25 09:30")
   }
 
+  func testTaskEditFieldsWritesReminderWhenOnlyTimeIsEnabled() async throws {
+    let dataRoot = try makeTemporaryDirectory(prefix: "ObsidianCommandData")
+    ReminderSyncBaselineStore.install(dataDirectory: dataRoot)
+    let vault = try makeTemporaryVault()
+    _ = try writeProjectNote(
+      vault: vault,
+      body: projectNote(
+        body: """
+        - [ ] Task one
+          %% brain-unfog: {"reminder_external_id":"task-1","date":"2026-04-25"} %%
+        """
+      )
+    )
+    let provider = FakeObsidianCommandReminderProjectProvider()
+    provider.snapshots["task-1"] = remoteSnapshot(title: "Task one", date: "2026-04-25")
+    upsertBaseline(title: "Task one", isCompleted: false, date: "2026-04-25")
+    let day = makeDate(year: 2026, month: 4, day: 25)
+
+    _ = try await ObsidianRetainedTaskCommandService.updateTaskEditFields(
+      vaultRootURL: vault,
+      projectID: projectID,
+      taskID: taskID,
+      fields: RetainedTaskEditFields(
+        title: "Task one",
+        noteText: "",
+        day: day,
+        timeMinutes: 9 * 60 + 30,
+        durationMinutes: nil
+      ),
+      calendar: calendar,
+      reminderProjectProvider: provider
+    )
+
+    let raw = try await firstRawMarkdown(in: vault)
+    XCTAssertTrue(raw.contains(#""date":"2026-04-25","time":"09:30""#))
+    XCTAssertEqual(provider.scheduleWrites.map(\.hasExplicitTime), [true])
+    XCTAssertEqual(provider.scheduleWrites.first?.dueDate.map(dateTimeString), "2026-04-25 09:30")
+    XCTAssertEqual(ReminderSyncBaselineStore.baseline(for: "task-1")?.state.date, "2026-04-25 09:30")
+  }
+
+  func testTaskEditFieldsWritesReminderWhenOnlyTimeIsDisabled() async throws {
+    let dataRoot = try makeTemporaryDirectory(prefix: "ObsidianCommandData")
+    ReminderSyncBaselineStore.install(dataDirectory: dataRoot)
+    let vault = try makeTemporaryVault()
+    _ = try writeProjectNote(
+      vault: vault,
+      body: projectNote(
+        body: """
+        - [ ] Task one
+          %% brain-unfog: {"reminder_external_id":"task-1","date":"2026-04-25","time":"09:30","duration":45} %%
+        """
+      )
+    )
+    let provider = FakeObsidianCommandReminderProjectProvider()
+    provider.snapshots["task-1"] = remoteSnapshot(
+      title: "Task one",
+      date: "2026-04-25 09:30"
+    )
+    upsertBaseline(title: "Task one", isCompleted: false, date: "2026-04-25 09:30")
+    let day = makeDate(year: 2026, month: 4, day: 25)
+
+    _ = try await ObsidianRetainedTaskCommandService.updateTaskEditFields(
+      vaultRootURL: vault,
+      projectID: projectID,
+      taskID: taskID,
+      fields: RetainedTaskEditFields(
+        title: "Task one",
+        noteText: "",
+        day: day,
+        timeMinutes: nil,
+        durationMinutes: nil
+      ),
+      calendar: calendar,
+      reminderProjectProvider: provider
+    )
+
+    let raw = try await firstRawMarkdown(in: vault)
+    XCTAssertTrue(raw.contains(#""date":"2026-04-25""#))
+    XCTAssertFalse(raw.contains(#""time":"09:30""#))
+    XCTAssertFalse(raw.contains(#""duration":45"#))
+    XCTAssertEqual(provider.scheduleWrites.map(\.hasExplicitTime), [false])
+    XCTAssertEqual(provider.scheduleWrites.first?.dueDate.map(dateString), "2026-04-25")
+    XCTAssertEqual(ReminderSyncBaselineStore.baseline(for: "task-1")?.state.date, "2026-04-25")
+  }
+
   func testTaskEditFieldsLoadAndUpdateTitleNoteAndSchedule() async throws {
     let dataRoot = try makeTemporaryDirectory(prefix: "ObsidianCommandData")
     ReminderSyncBaselineStore.install(dataDirectory: dataRoot)

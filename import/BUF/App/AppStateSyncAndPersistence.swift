@@ -20,10 +20,6 @@ extension AppState {
 
   @discardableResult
   func performReminderSourceRefresh(reason: SyncReason) async -> Bool {
-    if shouldSuppressReminderSourceRefresh(reason: reason) {
-      syncStatus = "Refreshed (\(reason.rawValue))"
-      return false
-    }
     guard !isInitialSyncRunning else {
       queueReminderSourceRefresh(reason: reason)
       return false
@@ -45,45 +41,6 @@ extension AppState {
       syncStatus = "Refreshed (\(reason.rawValue))"
     }
     return syncStatus != "Reminders access denied" && syncStatus != "Reminder sync failed"
-  }
-
-  func shouldSuppressReminderSourceRefresh(reason: SyncReason, now: Date = .now) -> Bool {
-    guard reason == .eventStoreChanged,
-      let deadline = appAuthoredReminderEchoSuppressionDeadline,
-      now < deadline
-    else {
-      return false
-    }
-    scheduleReminderEchoRepairRefresh(after: deadline, now: now)
-    AppLogger.sync.info("suppressed reminder event-store echo after app-authored push")
-    return true
-  }
-
-  func recordAppAuthoredReminderPush(now: Date = .now) {
-    let deadline = now.addingTimeInterval(appAuthoredReminderEchoSuppressionInterval)
-    appAuthoredReminderEchoSuppressionDeadline = max(
-      appAuthoredReminderEchoSuppressionDeadline ?? deadline,
-      deadline
-    )
-  }
-
-  private func scheduleReminderEchoRepairRefresh(after deadline: Date, now: Date) {
-    appAuthoredReminderEchoRefreshTask?.cancel()
-    let delay = max(0, deadline.timeIntervalSince(now))
-    appAuthoredReminderEchoRefreshTask = Task { @MainActor [weak self] in
-      let nanoseconds = UInt64(min(delay, Double(UInt64.max) / 1_000_000_000) * 1_000_000_000)
-      try? await Task.sleep(nanoseconds: nanoseconds)
-      guard let self, !Task.isCancelled else { return }
-      if let currentDeadline = self.appAuthoredReminderEchoSuppressionDeadline,
-        Date() < currentDeadline
-      {
-        self.scheduleReminderEchoRepairRefresh(after: currentDeadline, now: .now)
-        return
-      }
-      self.appAuthoredReminderEchoSuppressionDeadline = nil
-      self.appAuthoredReminderEchoRefreshTask = nil
-      _ = await self.performReminderSourceRefresh(reason: .periodic)
-    }
   }
 
   func queueReminderSourceRefresh(reason: SyncReason) {
@@ -119,7 +76,7 @@ extension AppState {
     reason: SyncReason,
     waitForEditorIdle: Bool = true
   ) async -> Bool {
-    _ = waitForEditorIdle
+    guard await waitForEditorIdleIfNeeded(waitForEditorIdle) else { return false }
     return await performReminderSourceRefresh(reason: reason)
   }
 
@@ -136,7 +93,7 @@ extension AppState {
     projectIDs: [UUID],
     waitForEditorIdle: Bool = true
   ) async -> Bool {
-    _ = waitForEditorIdle
+    guard await waitForEditorIdleIfNeeded(waitForEditorIdle) else { return false }
     _ = projectIDs
     bumpWorkspaceTreeRevision()
     return true
@@ -180,7 +137,7 @@ extension AppState {
     waitForEditorIdle: Bool = true
   ) async -> Bool {
     guard !ownerIDs.isEmpty else { return false }
-    _ = waitForEditorIdle
+    guard await waitForEditorIdleIfNeeded(waitForEditorIdle) else { return false }
     return await performReminderSourceRefresh(reason: .eventStoreChanged)
   }
 
@@ -192,7 +149,7 @@ extension AppState {
   ) async -> Bool {
     guard !ownerIDs.isEmpty else { return false }
     _ = changedFields
-    _ = waitForEditorIdle
+    guard await waitForEditorIdleIfNeeded(waitForEditorIdle) else { return false }
     return await performReminderSourceRefresh(reason: .eventStoreChanged)
   }
 
@@ -204,7 +161,7 @@ extension AppState {
   ) async -> Bool {
     _ = ownerIDs
     _ = changedFields
-    _ = waitForEditorIdle
+    guard await waitForEditorIdleIfNeeded(waitForEditorIdle) else { return false }
     bumpWorkspaceTreeRevision()
     return true
   }
@@ -217,5 +174,10 @@ extension AppState {
   func autoBootstrapSyncIfNeeded(projectCount: Int) {
     _ = projectCount
     requestStartupSyncIfNeeded()
+  }
+
+  private func waitForEditorIdleIfNeeded(_ shouldWait: Bool) async -> Bool {
+    guard shouldWait else { return true }
+    return await waitForEditorToBecomeIdle()
   }
 }

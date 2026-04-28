@@ -77,7 +77,7 @@ actor ObsidianProjectMarkdownStore: ProjectMarkdownStore {
       diagnostics: [],
       normalizedContentHash: ""
     )
-    let fileName = uniqueProjectStubFileName(preferredTitle: preferredTitle)
+    let fileName = uniqueProjectFileName(preferredTitle: preferredTitle)
     let fileURL = projectsRootURL.appendingPathComponent(fileName, isDirectory: false)
     guard isDirectMarkdownProjectFile(fileURL) else {
       throw StoreError.unsafeProjectFile(fileURL)
@@ -95,6 +95,11 @@ actor ObsidianProjectMarkdownStore: ProjectMarkdownStore {
 
   func vaultRoot() -> URL {
     vaultRootURL
+  }
+
+  func availableProjectFileName(preferredTitle: String) async throws -> String {
+    try prepareProjectDirectorySync()
+    return uniqueProjectFileName(preferredTitle: preferredTitle)
   }
 
   func loadProjectNotesInScope() async throws -> [Snapshot] {
@@ -309,7 +314,7 @@ actor ObsidianProjectMarkdownStore: ProjectMarkdownStore {
     return safeBase.lowercased().hasSuffix(".md") ? safeBase : "\(safeBase).md"
   }
 
-  private func uniqueProjectStubFileName(preferredTitle: String) -> String {
+  private func uniqueProjectFileName(preferredTitle: String) -> String {
     let base = safeMarkdownBaseName(preferredTitle)
     for index in 1..<10_000 {
       let title = index == 1 ? base : "\(base) \(index)"

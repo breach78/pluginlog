@@ -151,6 +151,7 @@ final class RetainedCalendarBridgePolicyTests: XCTestCase {
         calendarEventExternalIdentifier: nil
       ),
       title: "Plain task",
+      noteText: "",
       isCompleted: false,
       schedule: RetainedTaskSchedule(
         rawDate: "2026-04-25 14:30",
@@ -185,6 +186,7 @@ final class RetainedCalendarBridgePolicyTests: XCTestCase {
         calendarEventExternalIdentifier: calendarEventExternalIdentifier
       ),
       title: title,
+      noteText: "",
       isCompleted: false,
       schedule: RetainedTaskSchedule(
         rawDate: rawDate,

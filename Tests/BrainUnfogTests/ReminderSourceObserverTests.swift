@@ -26,6 +26,52 @@ final class ReminderSourceObserverTests: XCTestCase {
 
     XCTAssertEqual(invalidationReasons, [.eventStoreChanged, .eventStoreChanged])
   }
+
+  func testGlobalEventStoreChangeSchedulesImmediateAndDelayedRefresh() async throws {
+    let gateway = ObserverTestReminderGateway()
+    var invalidationReasons: [SyncReason] = []
+    let observer = ReminderSourceObserver(
+      gateway: gateway,
+      invalidateSource: { reason in
+        invalidationReasons.append(reason)
+        return true
+      },
+      handleExternalOwnerChange: { _ in true },
+      eventDebounceDelay: .milliseconds(1),
+      eventFollowUpDelay: .milliseconds(5),
+      authorizationStatusProvider: { .fullAccess }
+    )
+
+    await observer.startObserving()
+    NotificationCenter.default.post(name: .EKEventStoreChanged, object: nil)
+    try await Task.sleep(for: .milliseconds(60))
+    observer.stop()
+
+    XCTAssertEqual(invalidationReasons, [.eventStoreChanged, .eventStoreChanged])
+  }
+
+  func testPeriodicPollingRefreshesWhenEventStoreNotificationIsMissing() async throws {
+    let gateway = ObserverTestReminderGateway()
+    var invalidationReasons: [SyncReason] = []
+    let observer = ReminderSourceObserver(
+      gateway: gateway,
+      invalidateSource: { reason in
+        invalidationReasons.append(reason)
+        return true
+      },
+      handleExternalOwnerChange: { _ in true },
+      eventDebounceDelay: .milliseconds(1),
+      eventFollowUpDelay: .milliseconds(5),
+      pollingInterval: .milliseconds(5),
+      authorizationStatusProvider: { .fullAccess }
+    )
+
+    await observer.startObserving()
+    try await Task.sleep(for: .milliseconds(40))
+    observer.stop()
+
+    XCTAssertTrue(invalidationReasons.contains(.periodic))
+  }
 }
 
 @MainActor

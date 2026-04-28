@@ -25,6 +25,7 @@ final class RetainedWorkspaceSurfaceProjectionTests: XCTestCase {
             makeTask(
               taskID: dateOnlyTaskID,
               title: "Date only",
+              noteText: "Date-only note",
               parsedDate: day,
               hasExplicitTime: false,
               durationMinutes: nil,
@@ -72,6 +73,7 @@ final class RetainedWorkspaceSurfaceProjectionTests: XCTestCase {
     XCTAssertEqual(entries.map(\.taskID), [dateOnlyTaskID, timedTaskID, timedDefaultDurationTaskID])
     XCTAssertFalse(entries[0].scheduleHasExplicitTime)
     XCTAssertEqual(entries[0].dueDate, day)
+    XCTAssertEqual(entries[0].reminderNoteText, "Date-only note")
     XCTAssertTrue(entries[1].scheduleHasExplicitTime)
     XCTAssertEqual(entries[1].scheduledDurationMinutes, 45)
     XCTAssertEqual(entries[1].recurrenceRuleRaw, "weekly|1|")
@@ -475,6 +477,7 @@ final class RetainedWorkspaceSurfaceProjectionTests: XCTestCase {
   private func makeTask(
     taskID: UUID?,
     title: String,
+    noteText: String = "",
     parsedDate: Date? = nil,
     hasExplicitTime: Bool = false,
     durationMinutes: Int? = nil,
@@ -489,6 +492,7 @@ final class RetainedWorkspaceSurfaceProjectionTests: XCTestCase {
         calendarEventExternalIdentifier: calendarEventExternalIdentifier
       ),
       title: title,
+      noteText: noteText,
       isCompleted: false,
       schedule: RetainedTaskSchedule(
         rawDate: parsedDate.map {

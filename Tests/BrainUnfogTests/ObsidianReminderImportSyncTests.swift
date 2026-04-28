@@ -417,7 +417,7 @@ final class ObsidianReminderImportSyncTests: XCTestCase {
     )
   }
 
-  func testMissingBaselineDoesNotOverwriteDifferingLocalTask() async throws {
+  func testMissingBaselineImportsReminderTaskFieldsIntoGeneratedObsidianNote() async throws {
     let dataRoot = try makeTemporaryDirectory(prefix: "ObsidianImportData")
     ReminderSyncBaselineStore.install(dataDirectory: dataRoot)
     let vault = try makeTemporaryVault()
@@ -432,6 +432,7 @@ final class ObsidianReminderImportSyncTests: XCTestCase {
       ---
       - [ ] Local title
         %% brain-unfog: {"reminder_external_id":"task-1"} %%
+        - local note
       """
     )
     let list = makeList(identifier: "list-1", title: "Project")
@@ -441,7 +442,14 @@ final class ObsidianReminderImportSyncTests: XCTestCase {
         lists: [list],
         itemsByListIdentifier: [
           list.identifier: [
-            makeItem(identifier: "task-1", listIdentifier: list.identifier, title: "Remote title"),
+            makeItem(
+              identifier: "task-1",
+              listIdentifier: list.identifier,
+              title: "Remote title",
+              notes: "remote note",
+              dueDate: makeDate(year: 2026, month: 4, day: 25),
+              modifiedAt: fixedRemoteDate.addingTimeInterval(10)
+            ),
           ],
         ]
       ),
@@ -456,12 +464,86 @@ final class ObsidianReminderImportSyncTests: XCTestCase {
         .appendingPathComponent("Project.md"),
       encoding: .utf8
     )
-    XCTAssertTrue(raw.contains("Local title"))
-    XCTAssertFalse(raw.contains("Remote title"))
-    XCTAssertTrue(
-      ReminderSyncBaselineStore.baseline(for: "task-1")?.conflictedFields.contains(.title)
-        ?? false
+    XCTAssertFalse(raw.contains("Local title"))
+    XCTAssertFalse(raw.contains("local note"))
+    XCTAssertTrue(raw.contains("- [ ] Remote title"))
+    XCTAssertTrue(raw.contains(#""date":"2026-04-25""#))
+    XCTAssertTrue(raw.contains("  - remote note"))
+    XCTAssertEqual(ReminderSyncBaselineStore.baseline(for: "task-1")?.conflictedFields, [])
+    XCTAssertEqual(ReminderSyncBaselineStore.baseline(for: "task-1")?.state.title, "Remote title")
+    XCTAssertEqual(ReminderSyncBaselineStore.baseline(for: "task-1")?.state.noteText, "remote note")
+  }
+
+  func testReminderTaskFieldsWinWhenGeneratedObsidianNoteDriftsFromBaseline() async throws {
+    let dataRoot = try makeTemporaryDirectory(prefix: "ObsidianImportData")
+    ReminderSyncBaselineStore.install(dataDirectory: dataRoot)
+    let vault = try makeTemporaryVault()
+    _ = try writeProjectNote(
+      vault: vault,
+      fileName: "Project.md",
+      body: """
+      ---
+      tags:
+        - 프로젝트
+      reminder_list_external_id: list-1
+      ---
+      - [ ] Generated stale title
+        %% brain-unfog: {"reminder_external_id":"task-1","date":"2026-04-23","duration":30} %%
+        - generated stale note
+      """
     )
+    ReminderSyncBaselineStore.upsert(
+      reminderExternalIdentifier: "task-1",
+      state: ReminderSyncTaskState(
+        title: "Baseline title",
+        isCompleted: false,
+        date: "2026-04-24",
+        repeatRule: nil,
+        noteText: "baseline note"
+      ),
+      remoteModifiedAt: fixedRemoteDate,
+      now: fixedNow
+    )
+    let list = makeList(identifier: "list-1", title: "Project")
+
+    let result = try await ObsidianReminderImportSync.sync(
+      batch: ReminderImportSnapshotBatch(
+        lists: [list],
+        itemsByListIdentifier: [
+          list.identifier: [
+            makeItem(
+              identifier: "task-1",
+              listIdentifier: list.identifier,
+              title: "Remote title",
+              notes: "remote note",
+              isCompleted: true,
+              dueDate: makeDate(year: 2026, month: 4, day: 25, hour: 10, minute: 15),
+              hasExplicitTime: true,
+              modifiedAt: fixedRemoteDate.addingTimeInterval(10)
+            ),
+          ],
+        ]
+      ),
+      store: ObsidianProjectMarkdownStore(vaultRootURL: vault),
+      now: fixedNow
+    )
+
+    let raw = try String(
+      contentsOf: vault
+        .appendingPathComponent("raw", isDirectory: true)
+        .appendingPathComponent("projects", isDirectory: true)
+        .appendingPathComponent("Project.md"),
+      encoding: .utf8
+    )
+    XCTAssertEqual(result.updatedTaskCount, 1)
+    XCTAssertFalse(raw.contains("Generated stale title"))
+    XCTAssertFalse(raw.contains("generated stale note"))
+    XCTAssertTrue(raw.contains("- [x] Remote title"))
+    XCTAssertTrue(raw.contains(#""date":"2026-04-25","time":"10:15","duration":30"#))
+    XCTAssertTrue(raw.contains("  - remote note"))
+    XCTAssertEqual(ReminderSyncBaselineStore.baseline(for: "task-1")?.conflictedFields, [])
+    XCTAssertEqual(ReminderSyncBaselineStore.baseline(for: "task-1")?.state.title, "Remote title")
+    XCTAssertEqual(ReminderSyncBaselineStore.baseline(for: "task-1")?.state.noteText, "remote note")
   }
 
   func testUnknownReminderNoteTaskMarkerDoesNotRewriteSubtree() async throws {

@@ -1081,7 +1081,6 @@ extension ScheduleBoardView {
           taskID: taskID,
           reminderProjectProvider: appState.reminderProjectProvider
         )
-        appState.recordAppAuthoredReminderPush()
         appState.bumpWorkspaceTreeRevision()
         await reloadWorkspaceScheduleProjectDetails(for: activeProjectIDs)
         retainedScheduleCalendarBridgeDecisionsByTaskID.removeValue(forKey: taskID)

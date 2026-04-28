@@ -68,6 +68,7 @@ struct RetainedProjectIdentity: Equatable, Sendable {
 struct RetainedTask: Equatable, Sendable {
   let identity: RetainedTaskIdentity
   let title: String
+  let noteText: String
   let isCompleted: Bool
   let schedule: RetainedTaskSchedule
   let isManagedTask: Bool

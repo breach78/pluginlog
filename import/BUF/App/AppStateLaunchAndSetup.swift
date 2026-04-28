@@ -168,9 +168,6 @@ extension AppState {
     modelContainer = nil
     scheduleCalendarOverlayProjection = .empty
     isInitialSyncRunning = false
-    appAuthoredReminderEchoSuppressionDeadline = nil
-    appAuthoredReminderEchoRefreshTask?.cancel()
-    appAuthoredReminderEchoRefreshTask = nil
     syncStarted = false
     boardsLoaded = false
     syncStatus = isObsidianVaultConfigured

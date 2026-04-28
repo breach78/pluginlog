@@ -310,7 +310,7 @@ enum RetainedWorkspaceSurfaceProjectionBuilder {
       completionDate: nil,
       recurrenceRuleRaw: task.schedule.canonicalRepeatRule,
       attachmentCount: 0,
-      reminderNoteText: "",
+      reminderNoteText: task.noteText,
       requiredWorkDays: 0,
       completedWorkUnits: 0,
       completedWorkUnitDates: [],

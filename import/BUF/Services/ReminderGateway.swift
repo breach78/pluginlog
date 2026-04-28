@@ -896,14 +896,28 @@ final class EventKitReminderProjectProvider: ReminderProjectProvider {
     dueDate: Date?,
     hasExplicitTime: Bool
   ) throws -> ReminderTaskRemoteMetadata? {
-    try mutateReminder(for: task) { reminder in
-      reminder.startDateComponents = nil
-      reminder.dueDateComponents = normalizedDateComponentsForDirectSave(
-        from: dueDate,
-        existing: reminder.dueDateComponents,
-        hasExplicitTime: hasExplicitTime
-      )
+    guard let reminder = resolvedReminder(for: task) else { return nil }
+    let existingDueDateComponents = reminder.dueDateComponents
+    let nextDueDateComponents = normalizedDateComponentsForDirectSave(
+      from: dueDate,
+      existing: existingDueDateComponents,
+      hasExplicitTime: hasExplicitTime
+    )
+
+    reminder.startDateComponents = nil
+    let assignmentSteps = ReminderDueDateComponentsPolicy.assignmentSteps(
+      existing: existingDueDateComponents,
+      next: nextDueDateComponents
+    )
+    for dueDateComponents in assignmentSteps {
+      reminder.dueDateComponents = dueDateComponents
+      try gateway.save(reminder)
     }
+    return ReminderTaskRemoteMetadata(
+      identifier: reminder.calendarItemIdentifier,
+      externalIdentifier: reminder.calendarItemExternalIdentifier,
+      modifiedAt: gateway.lastModifiedDate(for: reminder) ?? .now
+    )
   }
 
   func setTaskRecurrence(
@@ -1121,11 +1135,27 @@ final class EventKitReminderProjectProvider: ReminderProjectProvider {
     existing: DateComponents?,
     hasExplicitTime: Bool
   ) -> DateComponents? {
+    ReminderDueDateComponentsPolicy.components(
+      from: localDate,
+      existing: existing,
+      hasExplicitTime: hasExplicitTime
+    )
+  }
+}
+
+enum ReminderDueDateComponentsPolicy {
+  static func components(
+    from localDate: Date?,
+    existing: DateComponents?,
+    hasExplicitTime: Bool,
+    calendar: Calendar = .autoupdatingCurrent
+  ) -> DateComponents? {
     guard let localDate else { return nil }
 
-    let calendar = Calendar.autoupdatingCurrent
-    guard hasExplicitTime else {
-      return calendar.dateComponents([.year, .month, .day], from: localDate)
+    if !hasExplicitTime {
+      var components = calendar.dateComponents([.year, .month, .day], from: localDate)
+      components.calendar = existing?.calendar ?? calendar
+      return components
     }
 
     var components = calendar.dateComponents(
@@ -1135,5 +1165,45 @@ final class EventKitReminderProjectProvider: ReminderProjectProvider {
     components.calendar = existing?.calendar ?? calendar
     components.timeZone = existing?.timeZone ?? components.timeZone ?? .current
     return components
+  }
+
+  static func shouldClearExistingDueDateBeforeAssigning(
+    existing: DateComponents?,
+    next: DateComponents?
+  ) -> Bool {
+    guard let existing, let next else { return false }
+    guard sameDay(existing, next) else { return false }
+    return !sameStoredDueDate(existing, next)
+  }
+
+  static func assignmentSteps(
+    existing: DateComponents?,
+    next: DateComponents?
+  ) -> [DateComponents?] {
+    guard shouldClearExistingDueDateBeforeAssigning(existing: existing, next: next) else {
+      return [next]
+    }
+    return [nil, next]
+  }
+
+  private static func sameDay(_ lhs: DateComponents, _ rhs: DateComponents) -> Bool {
+    lhs.year == rhs.year && lhs.month == rhs.month && lhs.day == rhs.day
+  }
+
+  private static func sameStoredDueDate(
+    _ lhs: DateComponents,
+    _ rhs: DateComponents
+  ) -> Bool {
+    let lhsHasTime = hasExplicitTime(lhs)
+    let rhsHasTime = hasExplicitTime(rhs)
+    guard lhsHasTime == rhsHasTime else { return false }
+    guard lhsHasTime else { return true }
+    return (lhs.hour ?? 0) == (rhs.hour ?? 0)
+      && (lhs.minute ?? 0) == (rhs.minute ?? 0)
+      && (lhs.second ?? 0) == (rhs.second ?? 0)
+  }
+
+  private static func hasExplicitTime(_ components: DateComponents) -> Bool {
+    components.hour != nil || components.minute != nil || components.second != nil
   }
 }

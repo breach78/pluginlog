@@ -52,10 +52,12 @@ final class ReminderSourceObserver: ObservableObject {
   private let handleExternalOwnerChange: ExternalOwnerChangeHandler
   private let eventDebounceDelay: Duration
   private let eventFollowUpDelay: Duration
+  private let pollingInterval: Duration?
   private let authorizationStatusProvider: () -> EKAuthorizationStatus
 
   private var storeObserver: StoreObserverBox?
   private var eventDebounceTask: Task<Void, Never>?
+  private var pollingTask: Task<Void, Never>?
   private var knownReminderListsByIdentifier: [String: ReminderListOwnerState] = [:]
   private var knownReminderTasksByIdentifier: [String: ReminderTaskOwnerState] = [:]
 
@@ -65,6 +67,7 @@ final class ReminderSourceObserver: ObservableObject {
     handleExternalOwnerChange: @escaping ExternalOwnerChangeHandler,
     eventDebounceDelay: Duration = .milliseconds(900),
     eventFollowUpDelay: Duration = .seconds(2),
+    pollingInterval: Duration? = .seconds(3),
     authorizationStatusProvider: @escaping () -> EKAuthorizationStatus = {
       EKEventStore.authorizationStatus(for: .reminder)
     }
@@ -74,11 +77,13 @@ final class ReminderSourceObserver: ObservableObject {
     self.handleExternalOwnerChange = handleExternalOwnerChange
     self.eventDebounceDelay = eventDebounceDelay
     self.eventFollowUpDelay = eventFollowUpDelay
+    self.pollingInterval = pollingInterval
     self.authorizationStatusProvider = authorizationStatusProvider
   }
 
   deinit {
     eventDebounceTask?.cancel()
+    pollingTask?.cancel()
     storeObserver?.unregister()
   }
 
@@ -87,11 +92,14 @@ final class ReminderSourceObserver: ObservableObject {
     guard await ensureReminderAccessIfNeeded() else { return }
     await invalidateReminderSource(reason: .bootstrap)
     await refreshKnownReminderOwners()
+    startPollingIfNeeded()
   }
 
   func startObserving() async {
     registerEventStoreObserverIfNeeded()
     guard await ensureReminderAccessIfNeeded() else { return }
+    await refreshKnownReminderOwners()
+    startPollingIfNeeded()
     status = "Observing"
   }
 
@@ -105,6 +113,8 @@ final class ReminderSourceObserver: ObservableObject {
   func stop() {
     eventDebounceTask?.cancel()
     eventDebounceTask = nil
+    pollingTask?.cancel()
+    pollingTask = nil
     storeObserver?.unregister()
     storeObserver = nil
   }
@@ -331,7 +341,7 @@ final class ReminderSourceObserver: ObservableObject {
 
     let token = NotificationCenter.default.addObserver(
       forName: .EKEventStoreChanged,
-      object: gateway.eventStore,
+      object: nil,
       queue: .main
     ) { [weak self] _ in
       Task { @MainActor [weak self] in
@@ -366,5 +376,24 @@ final class ReminderSourceObserver: ObservableObject {
     }
 
     storeObserver = StoreObserverBox(token: token)
+  }
+
+  private func startPollingIfNeeded() {
+    guard pollingTask == nil, let pollingInterval else { return }
+
+    pollingTask = Task { @MainActor [weak self] in
+      while !Task.isCancelled {
+        do {
+          try await Task.sleep(for: pollingInterval)
+        } catch {
+          return
+        }
+
+        guard let self, !Task.isCancelled else { return }
+        guard await self.ensureReminderAccessIfNeeded() else { continue }
+        AppLogger.sync.info("periodic reminder source refresh")
+        await self.invalidateReminderSource(reason: .periodic)
+      }
+    }
   }
 }
