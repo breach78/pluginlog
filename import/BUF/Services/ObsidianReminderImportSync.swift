@@ -111,14 +111,21 @@ enum ObsidianReminderImportSync {
           now: now,
           calendar: calendar
         )
+        var syncedSnapshot = snapshot
         if merge.noteChanged {
-          _ = try await store.writeProjectNote(
+          syncedSnapshot = try await store.writeProjectNote(
             merge.note,
             preferredFileName: snapshot.fileURL.lastPathComponent,
             expectedBaseline: ObsidianProjectMarkdownStore.WriteBaseline(snapshot: snapshot)
           )
           removeDeletedTaskSidecarRecords(merge.deletedReminderExternalIdentifiers)
         }
+        syncedSnapshot = try await renameProjectNoteIfNeeded(
+          snapshot: syncedSnapshot,
+          list: list,
+          duplicateTitleCounts: duplicateTitleCounts,
+          store: store
+        )
         ReminderSyncBaselineStore.upsertMany(merge.baselineUpdates)
         importedTaskCount += merge.importedTaskCount
         updatedTaskCount += merge.updatedTaskCount
@@ -126,10 +133,13 @@ enum ObsidianReminderImportSync {
         projectRecords.append(
           ProjectIdentityBridgeRecord(
             projectID: projectID,
-            title: projectTitle(from: snapshot),
+            title: list.title,
             reminderListExternalIdentifier: list.externalIdentifier,
             createdAt: now,
-            updatedAt: items.map(\.item.modifiedAt).max() ?? now
+            updatedAt: projectUpdatedAt(
+              items: items,
+              fallback: syncedSnapshot.contentModificationDate ?? now
+            )
           )
         )
         taskRecords.append(contentsOf: taskRecordsForItems(items, projectID: projectID, now: now))
@@ -378,6 +388,29 @@ enum ObsidianReminderImportSync {
         taskID: ReminderProjectionIdentity.taskID(for: identifier)
       )
     }
+  }
+
+  private static func renameProjectNoteIfNeeded(
+    snapshot: ObsidianProjectMarkdownStore.Snapshot,
+    list: NormalizedList,
+    duplicateTitleCounts: [String: Int],
+    store: ObsidianProjectMarkdownStore
+  ) async throws -> ObsidianProjectMarkdownStore.Snapshot {
+    try await store.renameProjectNote(
+      snapshot,
+      preferredFileName: preferredFileName(
+        for: list,
+        duplicateTitleCounts: duplicateTitleCounts
+      ),
+      expectedBaseline: ObsidianProjectMarkdownStore.WriteBaseline(snapshot: snapshot)
+    )
+  }
+
+  private static func projectUpdatedAt(
+    items: [NormalizedItem],
+    fallback: Date
+  ) -> Date {
+    items.map(\.item.modifiedAt).max() ?? fallback
   }
 
   private static func mergeDecision(
@@ -804,10 +837,6 @@ enum ObsidianReminderImportSync {
   ) -> Bool {
     guard let remoteModifiedAt, let baselineRemoteModifiedAt else { return false }
     return baselineRemoteModifiedAt.timeIntervalSince(remoteModifiedAt) > 0.5
-  }
-
-  private static func projectTitle(from snapshot: ObsidianProjectMarkdownStore.Snapshot) -> String {
-    snapshot.fileURL.deletingPathExtension().lastPathComponent
   }
 
   private static func duplicateTitleCounts(

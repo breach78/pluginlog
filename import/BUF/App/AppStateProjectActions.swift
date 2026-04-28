@@ -356,6 +356,35 @@ extension AppState {
   }
 
   @discardableResult
+  func renameProject(_ projectID: UUID, to rawTitle: String, context: ModelContext) async -> Bool {
+    _ = context
+    let title = rawTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !title.isEmpty else { return false }
+    let previousRecord = TaskIdentityBridgeStore.projectRecord(for: projectID)
+    do {
+      let updatedSnapshot = try await ObsidianRetainedProjectCommandService.setProjectTitle(
+        vaultRootURL: obsidianVaultRootURL,
+        projectID: projectID,
+        title: title,
+        reminderProjectProvider: reminderProjectProvider
+      )
+      let reminderListExternalIdentifier = updatedSnapshot.note.reminderListExternalIdentifier
+        ?? previousRecord?.reminderListExternalIdentifier
+      TaskIdentityBridgeStore.upsertProject(
+        projectID: projectID,
+        title: title,
+        reminderListExternalIdentifier: reminderListExternalIdentifier
+      )
+      syncStatus = "Renamed project"
+      bumpWorkspaceTreeRevision()
+      return true
+    } catch {
+      reportError(error, logMessage: "renameProject failed")
+      return false
+    }
+  }
+
+  @discardableResult
   func updateProjectColor(_ projectID: UUID, to colorHex: String?, context: ModelContext) async -> Bool {
     _ = projectID
     _ = colorHex

@@ -226,6 +226,133 @@ struct WorkspaceNewProjectPopoverContent: View {
   }
 }
 
+struct WorkspaceRenameProjectSheetContent: View {
+  let originalTitle: String
+  let isRenaming: Bool
+  let onSubmit: (String) -> Void
+  let onCancel: () -> Void
+
+  var body: some View {
+    WorkspaceProjectTitleSheetContent(
+      heading: "프로젝트 이름 변경",
+      initialTitle: originalTitle,
+      submitTitle: "변경",
+      inFlightSubmitTitle: "변경 중...",
+      isSubmitting: isRenaming,
+      requiresChangedTitle: true,
+      onSubmit: onSubmit,
+      onCancel: onCancel
+    )
+  }
+}
+
+struct WorkspaceNewProjectSheetContent: View {
+  let isCreating: Bool
+  let onSubmit: (String) -> Void
+  let onCancel: () -> Void
+
+  var body: some View {
+    WorkspaceProjectTitleSheetContent(
+      heading: "새 프로젝트",
+      initialTitle: "",
+      submitTitle: "추가",
+      inFlightSubmitTitle: "생성 중...",
+      isSubmitting: isCreating,
+      requiresChangedTitle: false,
+      onSubmit: onSubmit,
+      onCancel: onCancel
+    )
+  }
+}
+
+private struct WorkspaceProjectTitleSheetContent: View {
+  let heading: String
+  let initialTitle: String
+  let submitTitle: String
+  let inFlightSubmitTitle: String
+  let isSubmitting: Bool
+  let requiresChangedTitle: Bool
+  let onSubmit: (String) -> Void
+  let onCancel: () -> Void
+
+  @State private var title: String
+  @FocusState private var isFieldFocused: Bool
+
+  init(
+    heading: String,
+    initialTitle: String,
+    submitTitle: String,
+    inFlightSubmitTitle: String,
+    isSubmitting: Bool,
+    requiresChangedTitle: Bool,
+    onSubmit: @escaping (String) -> Void,
+    onCancel: @escaping () -> Void
+  ) {
+    self.heading = heading
+    self.initialTitle = initialTitle
+    self.submitTitle = submitTitle
+    self.inFlightSubmitTitle = inFlightSubmitTitle
+    self.isSubmitting = isSubmitting
+    self.requiresChangedTitle = requiresChangedTitle
+    self.onSubmit = onSubmit
+    self.onCancel = onCancel
+    _title = State(initialValue: initialTitle)
+  }
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 14) {
+      Text(heading)
+        .font(.system(size: 14, weight: .semibold))
+
+      TextField("프로젝트 이름", text: $title)
+        .textFieldStyle(.roundedBorder)
+        .font(AppInputTypography.font(size: AppInputTypography.defaultPointSize))
+        .focused($isFieldFocused)
+        .onSubmit {
+          submit()
+        }
+
+      HStack(spacing: 8) {
+        Spacer(minLength: 0)
+
+        Button("취소") {
+          onCancel()
+        }
+
+        Button(isSubmitting ? inFlightSubmitTitle : submitTitle) {
+          submit()
+        }
+        .buttonStyle(.borderedProminent)
+        .keyboardShortcut(.defaultAction)
+        .disabled(!canSubmit)
+      }
+    }
+    .padding(18)
+    .frame(width: 340)
+    .onAppear {
+      DispatchQueue.main.async {
+        isFieldFocused = true
+      }
+    }
+    .onExitCommand {
+      onCancel()
+    }
+  }
+
+  private var canSubmit: Bool {
+    let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
+    let initialTrimmed = initialTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+    return !isSubmitting
+      && !trimmed.isEmpty
+      && (!requiresChangedTitle || trimmed != initialTrimmed)
+  }
+
+  private func submit() {
+    guard canSubmit else { return }
+    onSubmit(title.trimmingCharacters(in: .whitespacesAndNewlines))
+  }
+}
+
 struct WorkspaceProjectSortButton: View {
   @Binding var sortMode: ProjectListSortMode
   let context: ProjectListSortPresentationContext
@@ -269,11 +396,19 @@ struct WorkspaceProjectSortButton: View {
   }
 }
 
+enum WorkspaceUserDefaultsKey {
+  static let sidebarProjectListSortMode = "workspace.sidebarProjectListSortMode"
+  static let timelineProjectListSortMode = "workspace.timelineProjectListSortMode"
+  static let timelineShowsHiddenProjectLists = "workspace.timelineShowsHiddenProjectLists"
+}
+
 struct MainWorkspaceView: View {
-  @AppStorage("workspace.sidebarProjectListSortMode")
+  @AppStorage(WorkspaceUserDefaultsKey.sidebarProjectListSortMode)
   var projectListSortModeRaw = ProjectListSortMode.manual.rawValue
-  @AppStorage("workspace.timelineProjectListSortMode")
+  @AppStorage(WorkspaceUserDefaultsKey.timelineProjectListSortMode)
   var timelineProjectListSortModeRaw = ProjectListSortMode.recent.rawValue
+  @AppStorage(WorkspaceUserDefaultsKey.timelineShowsHiddenProjectLists)
+  var timelineShowsHiddenProjectLists = false
   @AppStorage(ProjectProgressStage.boardOrderRevisionStorageKey)
   var projectBoardOrderRevision = 0
   @EnvironmentObject var appState: AppState
@@ -291,6 +426,8 @@ struct MainWorkspaceView: View {
   @State var sidebarTaskDropTargetProjectID: UUID?
   @State var showSidebarAddProjectPopover = false
   @State var isCreatingSidebarProject = false
+  @State var pendingRenameProject: PendingProjectRename?
+  @State var isRenamingProject = false
   @State var isRollingOverdueTasksToToday = false
   @State var activeWorkspaceTaskEditPanelTarget: WorkspaceTaskEditPanelTarget?
   @State var activeWorkspaceCalendarEventEditPanelTarget: WorkspaceCalendarEventEditPanelTarget?
@@ -305,6 +442,11 @@ struct MainWorkspaceView: View {
   }
 
   struct PendingPermanentDeleteProject: Equatable {
+    let id: UUID
+    let title: String
+  }
+
+  struct PendingProjectRename: Identifiable, Equatable {
     let id: UUID
     let title: String
   }
@@ -438,16 +580,31 @@ struct MainWorkspaceView: View {
     }
 
     static func activeQuickAddDescriptors(
-      from descriptors: [WorkspaceProjectDescriptor]
+      descriptors: [WorkspaceProjectDescriptor],
+      projectIDs: [UUID]
     ) -> [WorkspaceProjectDescriptor] {
-      descriptors
-        .filter { !$0.isArchived && !$0.reminderListIdentifier.isEmpty }
-        .sorted {
-          if $0.updatedAt != $1.updatedAt {
-            return $0.updatedAt > $1.updatedAt
-          }
-          return $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending
+      let descriptorsByID = Dictionary(uniqueKeysWithValues: descriptors.map { ($0.id, $0) })
+      return projectIDs.compactMap { projectID in
+        guard let descriptor = descriptorsByID[projectID],
+          !descriptor.isArchived,
+          !descriptor.reminderListIdentifier.isEmpty
+        else {
+          return nil
         }
+        return descriptor
+      }
+    }
+
+    static func quickAddProjectIDs(
+      _ projectIDs: [UUID],
+      hiddenProjectIDs: Set<UUID>,
+      showsHiddenProjects: Bool
+    ) -> [UUID] {
+      var seen = Set<UUID>()
+      return projectIDs.filter { projectID in
+        guard seen.insert(projectID).inserted else { return false }
+        return showsHiddenProjects || !hiddenProjectIDs.contains(projectID)
+      }
     }
 
     private static func orderedDescriptors(
@@ -499,6 +656,13 @@ struct MainWorkspaceView: View {
     )
   }
 
+  var workspaceFilteredProjectIDs: [UUID] {
+    WorkspaceProjectReadPath.visibleProjectIDs(
+      orderedProjectIDs: orderedVisibleProjectIDs,
+      sidebarProjects: filteredSidebarProjects
+    )
+  }
+
   var sidebarRootProjectIDs: [UUID] {
     WorkspaceProjectReadPath.orderedProjectIDs(
       descriptors: workspaceProjectDescriptors,
@@ -526,8 +690,19 @@ struct MainWorkspaceView: View {
     )
   }
 
+  var workspaceQuickAddProjectIDs: [UUID] {
+    WorkspaceProjectReadPath.quickAddProjectIDs(
+      timelineProjectIDs(from: workspaceFilteredProjectIDs),
+      hiddenProjectIDs: hiddenTimelineProjectIDs,
+      showsHiddenProjects: timelineShowsHiddenProjectLists
+    )
+  }
+
   var activeQuickAddProjects: [WorkspaceProjectDescriptor] {
-    WorkspaceProjectReadPath.activeQuickAddDescriptors(from: workspaceProjectDescriptors)
+    WorkspaceProjectReadPath.activeQuickAddDescriptors(
+      descriptors: workspaceProjectDescriptors,
+      projectIDs: workspaceQuickAddProjectIDs
+    )
   }
 
   var syncQuickAddProjects: [WorkspaceQuickAddProjectOption] {
@@ -566,8 +741,8 @@ struct MainWorkspaceView: View {
   let workspaceSearchPanelMaxHeight: CGFloat = 360
   let workspaceSearchPanelOffset: CGFloat = 6
   static let mainPaneCoordinateSpaceName = "workspaceMainPane"
-  static let sidebarProjectListSortModeKey = "workspace.sidebarProjectListSortMode"
-  static let timelineProjectListSortModeKey = "workspace.timelineProjectListSortMode"
+  static let sidebarProjectListSortModeKey = WorkspaceUserDefaultsKey.sidebarProjectListSortMode
+  static let timelineProjectListSortModeKey = WorkspaceUserDefaultsKey.timelineProjectListSortMode
 
   var projectListSortMode: ProjectListSortMode {
     get {
@@ -743,10 +918,7 @@ struct MainWorkspaceView: View {
     let isSearchPanelVisible =
       chromeState.workspaceSearchFocused
       && !chromeState.workspaceSearchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-    let filteredSidebarProjectIDs = WorkspaceProjectReadPath.visibleProjectIDs(
-      orderedProjectIDs: orderedVisibleProjectIDs,
-      sidebarProjects: filteredSidebarProjects
-    )
+    let filteredSidebarProjectIDs = workspaceFilteredProjectIDs
 
     return WorkspaceShellSnapshot(
       filteredProjectIDs: filteredSidebarProjectIDs,

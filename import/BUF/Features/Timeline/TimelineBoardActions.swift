@@ -12,17 +12,20 @@ extension TimelineBoardView {
     return true
   }
 
-  func createTimelineProject() {
+  func createTimelineProject(named rawTitle: String) {
+    let title = rawTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !title.isEmpty else { return }
     guard !isCreatingProject else { return }
     isCreatingProject = true
     Task { @MainActor in
       defer { isCreatingProject = false }
       guard let projectID = await appState.createProjectList(
-        named: "새 프로젝트",
+        named: title,
         context: modelContext
       ) else {
         return
       }
+      isNewProjectSheetPresented = false
       selectTimelineProject(projectID, commitDelay: .zero)
     }
   }
@@ -386,6 +389,29 @@ extension TimelineBoardView {
 
     pendingDeleteProjectID = bar.projectID
     pendingDeleteProjectTitle = bar.title
+  }
+
+  func requestRename(for bar: TimelineProjectBar) {
+    guard allowTimelineRetainedWrite("rename-project") else { return }
+    pendingRenameProject = TimelineProjectRenameRequest(id: bar.projectID, title: bar.title)
+  }
+
+  func submitTimelineProjectRename(projectID: UUID, title: String) {
+    guard !isRenamingProject else { return }
+    guard allowTimelineRetainedWrite("rename-project") else { return }
+    isRenamingProject = true
+    Task { @MainActor in
+      let didRename = await appState.renameProject(
+        projectID,
+        to: title,
+        context: modelContext
+      )
+      isRenamingProject = false
+      if didRename {
+        pendingRenameProject = nil
+        await refreshTimelineProjectState(including: [projectID])
+      }
+    }
   }
 
   func hideProjectFromTimeline(_ projectID: UUID) {

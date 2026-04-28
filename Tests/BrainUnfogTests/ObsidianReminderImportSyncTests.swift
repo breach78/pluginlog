@@ -262,6 +262,56 @@ final class ObsidianReminderImportSyncTests: XCTestCase {
     XCTAssertFalse(raw.contains("project_color_hex\":\"#0A84FF"))
   }
 
+  func testExistingReminderListTitleRenameUpdatesProjectRecordAndFileName() async throws {
+    let dataRoot = try makeTemporaryDirectory(prefix: "ObsidianImportData")
+    ReminderSyncBaselineStore.install(dataDirectory: dataRoot)
+    let vault = try makeTemporaryVault()
+    _ = try writeProjectNote(
+      vault: vault,
+      fileName: "Old Project.md",
+      body: """
+      ---
+      tags:
+        - 프로젝트
+      reminder_list_external_id: list-1
+      ---
+      - [ ] Stable task
+        %% brain-unfog: {"reminder_external_id":"task-1"} %%
+      """
+    )
+    ReminderSyncBaselineStore.upsert(
+      reminderExternalIdentifier: "task-1",
+      state: ReminderSyncTaskState(
+        title: "Stable task",
+        isCompleted: false,
+        date: nil,
+        repeatRule: nil,
+        noteText: nil
+      ),
+      remoteModifiedAt: fixedRemoteDate,
+      now: fixedNow
+    )
+    let list = makeList(identifier: "list-1", title: "New Project")
+
+    let result = try await ObsidianReminderImportSync.sync(
+      batch: ReminderImportSnapshotBatch(
+        lists: [list],
+        itemsByListIdentifier: [
+          list.identifier: [
+            makeItem(identifier: "task-1", listIdentifier: list.identifier, title: "Stable task"),
+          ],
+        ]
+      ),
+      store: ObsidianProjectMarkdownStore(vaultRootURL: vault),
+      now: fixedNow
+    )
+
+    let files = try projectMarkdownFiles(in: vault).map(\.lastPathComponent).sorted()
+    XCTAssertEqual(files, ["New Project.md"])
+    XCTAssertEqual(result.projectRecords.first?.title, "New Project")
+    XCTAssertEqual(result.updatedTaskCount, 0)
+  }
+
   func testExistingReminderEditsMergeIntoObsidianAndPreserveDuration() async throws {
     let dataRoot = try makeTemporaryDirectory(prefix: "ObsidianImportData")
     ReminderSyncBaselineStore.install(dataDirectory: dataRoot)

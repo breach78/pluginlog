@@ -136,4 +136,40 @@ final class TaskIdentityBridgeStoreTests: XCTestCase {
     XCTAssertEqual(TaskIdentityBridgeStore.taskRecord(for: existingTaskID)?.title, "Existing Task")
     XCTAssertEqual(TaskIdentityBridgeStore.taskRecord(for: incomingTaskID)?.title, "Incoming Task")
   }
+
+  func testUpsertAllAcceptsAuthoritativeProjectTitleEvenWhenTimestampIsOlder() {
+    let projectID = UUID()
+    let olderDate = Date(timeIntervalSince1970: 100)
+    let newerDate = Date(timeIntervalSince1970: 200)
+
+    TaskIdentityBridgeStore.replaceAll(
+      projects: [
+        ProjectIdentityBridgeRecord(
+          projectID: projectID,
+          title: "Old Title",
+          reminderListExternalIdentifier: "list-1",
+          createdAt: olderDate,
+          updatedAt: newerDate
+        ),
+      ],
+      tasks: []
+    )
+
+    TaskIdentityBridgeStore.upsertAll(
+      projects: [
+        ProjectIdentityBridgeRecord(
+          projectID: projectID,
+          title: "Reminder Title",
+          reminderListExternalIdentifier: "list-1",
+          createdAt: olderDate,
+          updatedAt: olderDate
+        ),
+      ],
+      tasks: []
+    )
+
+    let record = TaskIdentityBridgeStore.projectRecords().first
+    XCTAssertEqual(record?.title, "Reminder Title")
+    XCTAssertEqual(record?.updatedAt, newerDate)
+  }
 }

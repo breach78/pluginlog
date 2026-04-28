@@ -697,9 +697,23 @@ struct ScheduleBoardView: View {
   let scheduleDayHeaderOverlayWidth: CGFloat = 260
   let scheduleDayHeaderShowDelay: TimeInterval = 0.18
   let scheduleDayHeaderHideDelay: TimeInterval = 0.42
+  let scheduleItemFontScale: CGFloat = 1.265
 
   var calendar: Calendar { .autoupdatingCurrent }
   var today: Date { appState.currentDayStart }
+  func scheduleItemFontSize(_ baseSize: CGFloat) -> CGFloat {
+    baseSize * scheduleItemFontScale
+  }
+  func scheduleItemFont(_ size: CGFloat, weight: Font.Weight = .regular) -> Font {
+    .system(size: scheduleItemFontSize(size), weight: weight)
+  }
+  func scheduleItemFont(
+    _ size: CGFloat,
+    weight: Font.Weight,
+    design: Font.Design
+  ) -> Font {
+    .system(size: scheduleItemFontSize(size), weight: weight, design: design)
+  }
   var headerHeight: CGFloat {
     dateHeaderHeight + allDayRailVisibleHeight
   }

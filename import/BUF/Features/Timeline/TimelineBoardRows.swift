@@ -50,7 +50,7 @@ extension TimelineBoardView {
         )
 
         Button {
-          createTimelineProject()
+          isNewProjectSheetPresented = true
         } label: {
           Image(systemName: "plus.circle.fill")
             .font(.caption.weight(.semibold))
@@ -603,6 +603,14 @@ extension TimelineBoardView {
 
   @ViewBuilder
   func projectContextMenu(for bar: TimelineProjectBar) -> some View {
+    Button {
+      requestRename(for: bar)
+    } label: {
+      Label("이름 변경", systemImage: "pencil")
+    }
+
+    Divider()
+
     Menu("색상") {
       ForEach(reminderColorPalette, id: \.hex) { item in
         let selected = (bar.colorHex?.uppercased() == item.hex.uppercased())

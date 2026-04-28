@@ -21,6 +21,32 @@ final class ObsidianRetainedTaskCommandServiceTests: XCTestCase {
     try await super.tearDown()
   }
 
+  func testProjectTitleCommandWritesReminderAndRenamesProjectFile() async throws {
+    let vault = try makeTemporaryVault()
+    _ = try writeProjectNote(vault: vault, body: projectNote(body: ""))
+    let provider = FakeObsidianCommandReminderProjectProvider()
+
+    let result = try await ObsidianRetainedProjectCommandService.setProjectTitle(
+      vaultRootURL: vault,
+      projectID: projectID,
+      title: "Renamed Project",
+      reminderProjectProvider: provider
+    )
+
+    XCTAssertEqual(
+      provider.projectTitleWrites,
+      [FakeObsidianCommandReminderProjectProvider.ProjectTitleWrite(
+        identifier: "list-1",
+        title: "Renamed Project"
+      )]
+    )
+    XCTAssertEqual(result.vaultRelativePath, "raw/projects/Renamed Project.md")
+    let snapshots = try await ObsidianProjectMarkdownStore(vaultRootURL: vault)
+      .loadProjectNotesInScope()
+    XCTAssertEqual(snapshots.map(\.vaultRelativePath), ["raw/projects/Renamed Project.md"])
+    XCTAssertEqual(snapshots.first?.note.reminderListExternalIdentifier, "list-1")
+  }
+
   func testCompletionWritesObsidianTaskAndReminderWithoutCalendarWrite() async throws {
     let dataRoot = try makeTemporaryDirectory(prefix: "ObsidianCommandData")
     ReminderSyncBaselineStore.install(dataDirectory: dataRoot)
@@ -786,6 +812,11 @@ private final class FakeObsidianCommandReminderProjectProvider: ReminderProjectP
     var title: String
   }
 
+  struct ProjectTitleWrite: Equatable {
+    var identifier: String
+    var title: String
+  }
+
   struct NoteWrite: Equatable {
     var noteText: String
   }
@@ -801,6 +832,7 @@ private final class FakeObsidianCommandReminderProjectProvider: ReminderProjectP
   var completionWrites: [CompletionWrite] = []
   var scheduleWrites: [ScheduleWrite] = []
   var titleWrites: [TitleWrite] = []
+  var projectTitleWrites: [ProjectTitleWrite] = []
   var noteWrites: [NoteWrite] = []
   var createdTasks: [CreatedTask] = []
   var removedTaskExternalIdentifiers: [String] = []
@@ -880,7 +912,15 @@ private final class FakeObsidianCommandReminderProjectProvider: ReminderProjectP
     ReminderProjectListSnapshot(identifier: "list-1", externalIdentifier: "list-1", title: title, colorHex: nil)
   }
   func removeProjectList(identifier: String) throws {}
-  func setProjectTitle(identifier: String, title: String) throws -> ReminderProjectListSnapshot? { nil }
+  func setProjectTitle(identifier: String, title: String) throws -> ReminderProjectListSnapshot? {
+    projectTitleWrites.append(ProjectTitleWrite(identifier: identifier, title: title))
+    return ReminderProjectListSnapshot(
+      identifier: identifier,
+      externalIdentifier: identifier,
+      title: title,
+      colorHex: nil
+    )
+  }
   func setProjectColor(identifier: String, colorHex: String?) throws -> ReminderProjectListSnapshot? { nil }
   func createTaskReminder(
     inProject identifier: String,

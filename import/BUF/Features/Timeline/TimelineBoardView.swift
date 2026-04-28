@@ -29,6 +29,11 @@ struct TimelineBoardView: View {
     let shouldPublishPreciseHoverOffsets: Bool
   }
 
+  struct TimelineProjectRenameRequest: Identifiable, Equatable {
+    let id: UUID
+    let title: String
+  }
+
   final class TimelineScrollSessionMetrics {
     let startedAt: Date
     var offsetEvents: Int
@@ -63,6 +68,7 @@ struct TimelineBoardView: View {
   @Environment(\.modelContext) var modelContext
   @Environment(\.undoManager) var undoManager
 
+  let showsHiddenProjects: Bool
   let projectIDs: [UUID]
   let showsProjectPassthroughFrames: Bool
   let isActive: Bool
@@ -83,6 +89,9 @@ struct TimelineBoardView: View {
   @State var projectDropIndicator: TimelineProjectDropIndicator?
   @State var taskDropTargetProjectID: UUID?
   @State var isCreatingProject = false
+  @State var isNewProjectSheetPresented = false
+  @State var pendingRenameProject: TimelineProjectRenameRequest?
+  @State var isRenamingProject = false
   @State var pendingDeleteProjectID: UUID?
   @State var pendingDeleteProjectTitle: String = ""
   @State var workspaceTimelineProjectSnapshots: [UUID: WorkspaceProjectRuntimeRecord] = [:]
@@ -172,7 +181,7 @@ struct TimelineBoardView: View {
   var activeProjectIDs: [UUID] {
     TimelineBoardReadPath.visibleProjectIDs(
       projectIDs,
-      hiddenProjectIDs: hiddenTimelineProjectIDs
+      hiddenProjectIDs: showsHiddenProjects ? [] : hiddenTimelineProjectIDs
     )
   }
   var activeProjectIDSet: Set<UUID> {
@@ -199,6 +208,7 @@ struct TimelineBoardView: View {
   init(
     projectListSortMode: Binding<ProjectListSortMode>,
     hiddenProjectIDs: Binding<Set<UUID>>,
+    showsHiddenProjects: Bool = false,
     projectIDs: [UUID] = [],
     showsProjectPassthroughFrames: Bool = false,
     isActive: Bool = true,
@@ -210,6 +220,7 @@ struct TimelineBoardView: View {
   ) {
     _projectListSortMode = projectListSortMode
     _hiddenTimelineProjectIDs = hiddenProjectIDs
+    self.showsHiddenProjects = showsHiddenProjects
     self.projectIDs = projectIDs
     self.showsProjectPassthroughFrames = showsProjectPassthroughFrames
     self.isActive = isActive
@@ -429,6 +440,27 @@ struct TimelineBoardView: View {
       cancelTimelineScrollSession()
       didPrewarmTimelineScrollMode = false
       cancelMidnightRefresh()
+    }
+    .sheet(isPresented: $isNewProjectSheetPresented) {
+      WorkspaceNewProjectSheetContent(
+        isCreating: isCreatingProject,
+        onSubmit: createTimelineProject(named:),
+        onCancel: {
+          isNewProjectSheetPresented = false
+        }
+      )
+    }
+    .sheet(item: $pendingRenameProject) { request in
+      WorkspaceRenameProjectSheetContent(
+        originalTitle: request.title,
+        isRenaming: isRenamingProject,
+        onSubmit: { title in
+          submitTimelineProjectRename(projectID: request.id, title: title)
+        },
+        onCancel: {
+          pendingRenameProject = nil
+        }
+      )
     }
     .confirmationDialog(
       "프로젝트를 완전히 삭제할까요?",

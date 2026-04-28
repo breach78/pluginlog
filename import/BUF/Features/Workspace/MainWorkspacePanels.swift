@@ -51,9 +51,11 @@ extension MainWorkspaceView {
   ) -> some View {
     let isActive = appState.viewMode == mode
     let timelineSelectionProjectIDs = timelineProjectIDs(from: visibleProjects)
-    let scheduleQuickAddProjectIDs = timelineSelectionProjectIDs.filter {
-      !hiddenTimelineProjectIDs.contains($0)
-    }
+    let scheduleQuickAddProjectIDs = WorkspaceProjectReadPath.quickAddProjectIDs(
+      timelineSelectionProjectIDs,
+      hiddenProjectIDs: hiddenTimelineProjectIDs,
+      showsHiddenProjects: timelineShowsHiddenProjectLists
+    )
 
     switch mode {
     case .timeline:
@@ -63,6 +65,7 @@ extension MainWorkspaceView {
           set: { timelineProjectListSortMode = $0 }
         ),
         hiddenProjectIDs: $hiddenTimelineProjectIDs,
+        showsHiddenProjects: timelineShowsHiddenProjectLists,
         projectIDs: timelineSelectionProjectIDs,
         showsProjectPassthroughFrames: false,
         isActive: isActive,

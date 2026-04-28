@@ -72,6 +72,18 @@ extension MainWorkspaceView {
     }
     .padding(12)
     .frame(minWidth: 250)
+    .sheet(item: $pendingRenameProject) { request in
+      WorkspaceRenameProjectSheetContent(
+        originalTitle: request.title,
+        isRenaming: isRenamingProject,
+        onSubmit: { title in
+          submitProjectRename(projectID: request.id, title: title)
+        },
+        onCancel: {
+          pendingRenameProject = nil
+        }
+      )
+    }
     .simultaneousGesture(
       TapGesture().onEnded {
         dismissWorkspaceSearchPanel()
@@ -109,6 +121,14 @@ extension MainWorkspaceView {
     )
     .contextMenu {
       if let projectID = project.projectID {
+        Button {
+          pendingRenameProject = .init(id: projectID, title: project.title)
+        } label: {
+          Label("이름 변경", systemImage: "pencil")
+        }
+
+        Divider()
+
         Button(role: .destructive) {
           pendingPermanentDeleteProject = .init(id: projectID, title: project.title)
         } label: {
@@ -167,5 +187,21 @@ extension MainWorkspaceView {
       )
     }
     .help("새 프로젝트 생성")
+  }
+
+  func submitProjectRename(projectID: UUID, title: String) {
+    guard !isRenamingProject else { return }
+    isRenamingProject = true
+    Task { @MainActor in
+      let didRename = await appState.renameProject(
+        projectID,
+        to: title,
+        context: modelContext
+      )
+      isRenamingProject = false
+      if didRename {
+        pendingRenameProject = nil
+      }
+    }
   }
 }

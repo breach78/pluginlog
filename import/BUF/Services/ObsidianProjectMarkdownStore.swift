@@ -27,6 +27,7 @@ actor ObsidianProjectMarkdownStore: ProjectMarkdownStore {
     case missingExpectedBaseline
     case staleExpectedBaseline
     case conflictingReminderListIdentity(existing: String?, requested: String?)
+    case projectFileAlreadyExists(URL)
     case unsafeProjectFile(URL)
 
     var errorDescription: String? {
@@ -37,6 +38,8 @@ actor ObsidianProjectMarkdownStore: ProjectMarkdownStore {
         return "Obsidian 프로젝트 노트가 명령 준비 이후 변경되어 쓰기를 중단했습니다."
       case .conflictingReminderListIdentity:
         return "기존 Obsidian 프로젝트 노트의 Reminder list identity가 요청과 충돌합니다."
+      case .projectFileAlreadyExists(let url):
+        return "같은 이름의 Obsidian 프로젝트 노트가 이미 있습니다. \(url.path)"
       case .unsafeProjectFile(let url):
         return "raw/projects 밖의 Obsidian 파일은 프로젝트 노트로 처리하지 않습니다. \(url.path)"
       }
@@ -198,6 +201,44 @@ actor ObsidianProjectMarkdownStore: ProjectMarkdownStore {
     let snapshot = try loadSnapshot(at: fileURL)
     postWriteNotification(fileURL: snapshot.fileURL)
     return snapshot
+  }
+
+  @discardableResult
+  func renameProjectNote(
+    _ snapshot: Snapshot,
+    preferredFileName: String,
+    expectedBaseline: WriteBaseline
+  ) async throws -> Snapshot {
+    try prepareProjectDirectorySync()
+    let sourceURL = snapshot.fileURL.standardizedFileURL
+    let destinationURL = projectsRootURL.appendingPathComponent(
+      safeMarkdownFileName(preferredFileName),
+      isDirectory: false
+    )
+    guard isDirectMarkdownProjectFile(sourceURL) else {
+      throw StoreError.unsafeProjectFile(sourceURL)
+    }
+    guard isDirectMarkdownProjectFile(destinationURL) else {
+      throw StoreError.unsafeProjectFile(destinationURL)
+    }
+    guard canonicalPath(sourceURL) != canonicalPath(destinationURL) else {
+      return snapshot
+    }
+    guard fileManager.fileExists(atPath: sourceURL.path) else {
+      throw StoreError.unsafeProjectFile(sourceURL)
+    }
+    let currentSnapshot = try loadSnapshot(at: sourceURL)
+    guard expectedBaseline.normalizedContentHash == currentSnapshot.normalizedContentHash else {
+      throw StoreError.staleExpectedBaseline
+    }
+    guard !fileManager.fileExists(atPath: destinationURL.path) else {
+      throw StoreError.projectFileAlreadyExists(destinationURL)
+    }
+    try fileManager.moveItem(at: sourceURL, to: destinationURL)
+    postWriteNotification(fileURL: sourceURL)
+    let renamedSnapshot = try loadSnapshot(at: destinationURL)
+    postWriteNotification(fileURL: renamedSnapshot.fileURL)
+    return renamedSnapshot
   }
 
   func removeProjectNote(

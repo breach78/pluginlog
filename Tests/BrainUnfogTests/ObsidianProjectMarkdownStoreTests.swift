@@ -251,6 +251,27 @@ final class ObsidianProjectMarkdownStoreTests: XCTestCase {
     }
   }
 
+  func testRenameProjectNoteMovesFileAndKeepsReminderIdentity() async throws {
+    let vaultURL = try makeTemporaryDirectory(named: "ObsidianStoreRename")
+    defer { try? FileManager.default.removeItem(at: vaultURL) }
+    let store = ObsidianProjectMarkdownStore(vaultRootURL: vaultURL)
+    let original = try await store.writeProjectNote(
+      ObsidianProjectNoteParser.parse(projectMarkdown(listID: "LIST-1")),
+      preferredFileName: "Old Project.md"
+    )
+
+    let renamed = try await store.renameProjectNote(
+      original,
+      preferredFileName: "New/Project",
+      expectedBaseline: .init(snapshot: original)
+    )
+
+    XCTAssertEqual(renamed.vaultRelativePath, "raw/projects/New-Project.md")
+    XCTAssertEqual(renamed.note.reminderListExternalIdentifier, "LIST-1")
+    XCTAssertFalse(FileManager.default.fileExists(atPath: original.fileURL.path))
+    XCTAssertTrue(FileManager.default.fileExists(atPath: renamed.fileURL.path))
+  }
+
   private func projectMarkdown(listID: String) -> String {
     """
     ---

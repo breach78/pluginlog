@@ -2,6 +2,8 @@ import SwiftUI
 
 struct AppSettingsView: View {
   @EnvironmentObject private var appState: AppState
+  @AppStorage(WorkspaceUserDefaultsKey.timelineShowsHiddenProjectLists)
+  private var timelineShowsHiddenProjectLists = false
   @State private var isChangingObsidianVault = false
   @State private var isInstallingHelperPlugin = false
 
@@ -59,6 +61,18 @@ struct AppSettingsView: View {
           }
 
           Text("선택 직후 첫 sync는 Reminders -> Obsidian `raw/projects/` 방향입니다.")
+            .font(.footnote)
+            .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+      }
+
+      GroupBox("Workspace") {
+        VStack(alignment: .leading, spacing: 8) {
+          Toggle("숨긴 목록 표시", isOn: $timelineShowsHiddenProjectLists)
+            .toggleStyle(.switch)
+
+          Text("켜면 타임라인에서 숨김 처리한 목록도 다시 보입니다. 끄면 기존 숨김 목록을 다시 제외합니다.")
             .font(.footnote)
             .foregroundStyle(.secondary)
         }

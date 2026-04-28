@@ -641,7 +641,7 @@ extension ScheduleBoardView {
         )
 
         Text(title)
-          .font(.system(size: 11, weight: .semibold))
+          .font(scheduleItemFont(11, weight: .semibold))
           .foregroundStyle(primaryTextColor)
           .strikethrough(taskRow.isCompleted, color: secondaryTextColor)
           .lineLimit(1)
@@ -674,14 +674,14 @@ extension ScheduleBoardView {
 
         VStack(alignment: .leading, spacing: 2) {
           Text(title)
-            .font(.system(size: 11, weight: .semibold))
+            .font(scheduleItemFont(11, weight: .semibold))
             .foregroundStyle(primaryTextColor)
             .strikethrough(taskRow.isCompleted, color: secondaryTextColor)
             .lineLimit(titleLineLimit)
 
           if let timeLabel {
             Text(timeLabel)
-              .font(.system(size: 9, weight: .semibold, design: .monospaced))
+              .font(scheduleItemFont(9, weight: .semibold, design: .monospaced))
               .foregroundStyle(secondaryTextColor)
               .lineLimit(1)
           }
@@ -716,21 +716,21 @@ extension ScheduleBoardView {
 
         VStack(alignment: .leading, spacing: 3) {
           Text(title)
-            .font(.system(size: 12, weight: .semibold))
+            .font(scheduleItemFont(12, weight: .semibold))
             .foregroundStyle(primaryTextColor)
             .strikethrough(taskRow.isCompleted, color: secondaryTextColor)
             .lineLimit(titleLineLimit)
 
           if let subtitle, !subtitle.isEmpty {
             Text(subtitle)
-              .font(.caption2.weight(.medium))
+              .font(scheduleItemFont(11, weight: .medium))
               .foregroundStyle(secondaryTextColor)
               .lineLimit(scheduleTimedSupplementalLineLimit(for: blockHeight))
           }
 
           if let timeLabel {
             Text(timeLabel)
-              .font(.system(size: 10, weight: .semibold, design: .monospaced))
+              .font(scheduleItemFont(10, weight: .semibold, design: .monospaced))
               .foregroundStyle(secondaryTextColor)
               .lineLimit(1)
           }
@@ -770,7 +770,7 @@ extension ScheduleBoardView {
     case .compact:
       HStack(alignment: .center, spacing: 6) {
         Text(title)
-          .font(.system(size: 10.5, weight: .semibold))
+          .font(scheduleItemFont(10.5, weight: .semibold))
           .foregroundStyle(titleColor)
           .lineLimit(1)
 
@@ -784,13 +784,13 @@ extension ScheduleBoardView {
     case .standard:
       VStack(alignment: .leading, spacing: 2) {
         Text(title)
-          .font(.system(size: 11, weight: .semibold))
+          .font(scheduleItemFont(11, weight: .semibold))
           .foregroundStyle(titleColor)
           .lineLimit(max(durationMinutes >= 75 ? 2 : 1, titleLineLimit))
 
         if let timeLabel, !isBackgroundCalendar {
           Text(timeLabel)
-            .font(.system(size: 9, weight: .semibold, design: .monospaced))
+            .font(scheduleItemFont(9, weight: .semibold, design: .monospaced))
             .foregroundStyle(.secondary)
             .lineLimit(1)
         }
@@ -805,20 +805,20 @@ extension ScheduleBoardView {
     case .expanded:
       VStack(alignment: .leading, spacing: 3) {
         Text(title)
-          .font(.system(size: 11, weight: .semibold))
+          .font(scheduleItemFont(11, weight: .semibold))
           .foregroundStyle(titleColor)
           .lineLimit(max(durationMinutes >= 90 ? 3 : 2, titleLineLimit))
 
         if let subtitle, !subtitle.isEmpty, durationMinutes >= 60 {
           Text(subtitle)
-            .font(.caption2.weight(.medium))
+            .font(scheduleItemFont(11, weight: .medium))
             .foregroundStyle(subtitleColor)
             .lineLimit(scheduleTimedSupplementalLineLimit(for: blockHeight))
         }
 
         if let timeLabel, !isBackgroundCalendar {
           Text(timeLabel)
-            .font(.system(size: 9, weight: .semibold, design: .monospaced))
+            .font(scheduleItemFont(9, weight: .semibold, design: .monospaced))
             .foregroundStyle(.secondary)
             .lineLimit(1)
         }
@@ -864,7 +864,7 @@ extension ScheduleBoardView {
         )
 
         Text(title)
-          .font(.system(size: compact ? 11.5 : 12, weight: .semibold))
+          .font(scheduleItemFont(compact ? 11.5 : 12, weight: .semibold))
           .foregroundStyle(
             scheduleTaskPrimaryTextColor(
               isSelected: isSelected,
@@ -879,7 +879,7 @@ extension ScheduleBoardView {
 
         if !compact, let subtitle, !subtitle.isEmpty {
           Text(subtitle)
-            .font(.caption2.weight(.medium))
+            .font(scheduleItemFont(11, weight: .medium))
             .foregroundStyle(scheduleTaskSecondaryTextColor(isSelected: isSelected))
             .lineLimit(1)
         }
@@ -888,7 +888,7 @@ extension ScheduleBoardView {
 
         if let trailingLabel, !trailingLabel.isEmpty {
           Text(trailingLabel)
-            .font(.system(size: 10, weight: .medium, design: .monospaced))
+            .font(scheduleItemFont(10, weight: .medium, design: .monospaced))
             .foregroundStyle(scheduleTaskSecondaryTextColor(isSelected: isSelected))
             .lineLimit(1)
         }
@@ -936,12 +936,12 @@ extension ScheduleBoardView {
           .frame(width: 8, height: 8)
           .frame(width: 18, height: 18, alignment: .center)
         Text(title)
-          .font(.system(size: 11, weight: .semibold))
+          .font(scheduleItemFont(11, weight: .semibold))
           .foregroundStyle(titleColor)
           .lineLimit(1)
         if let subtitle, !subtitle.isEmpty {
           Text(subtitle)
-            .font(.caption2.weight(.medium))
+            .font(scheduleItemFont(11, weight: .medium))
             .foregroundStyle(subtitleColor)
             .lineLimit(1)
         }

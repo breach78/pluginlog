@@ -2,6 +2,29 @@ import Foundation
 
 @MainActor
 enum ObsidianRetainedProjectCommandService {
+  static func setProjectTitle(
+    vaultRootURL: URL?,
+    projectID: UUID,
+    title rawTitle: String,
+    reminderProjectProvider: ReminderProjectProvider
+  ) async throws -> ObsidianProjectMarkdownStore.Snapshot {
+    let title = rawTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !title.isEmpty else {
+      throw RetainedTaskCommandError.retainedProjectionFailed("empty project title")
+    }
+    let context = try await commandContext(vaultRootURL: vaultRootURL, projectID: projectID)
+    guard let listID = context.snapshot.note.reminderListExternalIdentifier else {
+      throw RetainedTaskCommandError.unsafeProjectNote(projectID)
+    }
+    let remote = try reminderProjectProvider.setProjectTitle(identifier: listID, title: title)
+    let resolvedTitle = normalized(remote?.title) ?? title
+    return try await context.store.renameProjectNote(
+      context.snapshot,
+      preferredFileName: resolvedTitle,
+      expectedBaseline: ObsidianProjectMarkdownStore.WriteBaseline(snapshot: context.snapshot)
+    )
+  }
+
   static func setProjectStage(
     vaultRootURL: URL?,
     projectID: UUID,

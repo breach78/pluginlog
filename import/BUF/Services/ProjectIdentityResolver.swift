@@ -262,6 +262,12 @@ enum TaskIdentityBridgeStore {
       if let previous = merged[record.projectID],
         previous.updatedAt > record.updatedAt
       {
+        if previous.title != record.title
+          || previous.reminderListExternalIdentifier != record.reminderListExternalIdentifier
+        {
+          next.updatedAt = previous.updatedAt
+          merged[record.projectID] = next
+        }
         continue
       }
       merged[record.projectID] = next
