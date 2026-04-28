@@ -126,12 +126,13 @@ final class TimelineBoardReadPathTests: XCTestCase {
     XCTAssertEqual(ordered.map(\.projectID), [doFirstID, doSecondID, decideID, areaID, laterID])
   }
 
-  func testTimelineSortModeSkipsLegacyManualMode() {
-    XCTAssertEqual(ProjectListSortMode.resolvedTimeline(storedRawValue: nil), .recent)
-    XCTAssertEqual(ProjectListSortMode.resolvedTimeline(storedRawValue: "manual"), .recent)
+  func testTimelineSortModeDefaultsToManualAndCyclesThroughModes() {
+    XCTAssertEqual(ProjectListSortMode.resolvedTimeline(storedRawValue: nil), .manual)
+    XCTAssertEqual(ProjectListSortMode.resolvedTimeline(storedRawValue: "manual"), .manual)
+    XCTAssertEqual(ProjectListSortMode.manual.nextTimeline, .recent)
     XCTAssertEqual(ProjectListSortMode.recent.nextTimeline, .title)
     XCTAssertEqual(ProjectListSortMode.title.nextTimeline, .priority)
-    XCTAssertEqual(ProjectListSortMode.priority.nextTimeline, .recent)
+    XCTAssertEqual(ProjectListSortMode.priority.nextTimeline, .manual)
   }
 
   func testVisibleProjectIDsFiltersTimelineHiddenProjectsAfterDeduping() {
@@ -161,6 +162,90 @@ final class TimelineBoardReadPathTests: XCTestCase {
     TimelineHiddenProjectStore.save([], defaults: defaults)
 
     XCTAssertEqual(TimelineHiddenProjectStore.load(defaults: defaults), [])
+  }
+
+  func testTimelineManualOrderSeedsMissingProjectsFromReminderOrder() {
+    let firstID = UUID()
+    let secondID = UUID()
+    let thirdID = UUID()
+    let unavailableID = UUID()
+
+    let order = TimelineProjectManualOrderStore.mergedOrder(
+      existing: [:],
+      reminderOrderedProjectIDs: [secondID, unavailableID, firstID, thirdID],
+      availableProjectIDs: [firstID, secondID, thirdID]
+    )
+
+    XCTAssertEqual(order[secondID], 0)
+    XCTAssertEqual(order[firstID], 1)
+    XCTAssertEqual(order[thirdID], 2)
+    XCTAssertNil(order[unavailableID])
+  }
+
+  func testTimelineManualOrderPreservesExistingDragOrderAndAppendsMissingReminderProjects() {
+    let firstID = UUID()
+    let secondID = UUID()
+    let thirdID = UUID()
+
+    let order = TimelineProjectManualOrderStore.mergedOrder(
+      existing: [thirdID: 0, firstID: 1],
+      reminderOrderedProjectIDs: [firstID, secondID, thirdID],
+      availableProjectIDs: [firstID, secondID, thirdID]
+    )
+
+    XCTAssertEqual(order[thirdID], 0)
+    XCTAssertEqual(order[firstID], 1)
+    XCTAssertEqual(order[secondID], 2)
+  }
+
+  func testTimelineProjectTaskManualOrderPersistsPerProject() throws {
+    let suiteName = "TimelineProjectTaskManualOrderStoreTests-\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+    defer { defaults.removePersistentDomain(forName: suiteName) }
+    let projectID = UUID()
+    let firstTaskID = UUID()
+    let secondTaskID = UUID()
+
+    TimelineProjectTaskManualOrderStore.saveProjectOrder(
+      [secondTaskID, firstTaskID],
+      for: projectID,
+      defaults: defaults
+    )
+
+    XCTAssertEqual(
+      TimelineProjectTaskManualOrderStore.projectOrder(for: projectID, defaults: defaults),
+      [secondTaskID: 0, firstTaskID: 1]
+    )
+  }
+
+  func testTimelineProjectTaskManualOrderAppliesStoredOrderAndAppendsNewTasks() {
+    let firstTaskID = UUID()
+    let secondTaskID = UUID()
+    let thirdTaskID = UUID()
+
+    XCTAssertEqual(
+      TimelineProjectTaskManualOrderStore.orderedTaskIDs(
+        [firstTaskID, secondTaskID, thirdTaskID],
+        using: [secondTaskID: 0, firstTaskID: 1]
+      ),
+      [secondTaskID, firstTaskID, thirdTaskID]
+    )
+  }
+
+  func testTaskDropReordersWithinProjectListWindow() {
+    let firstTaskID = UUID()
+    let secondTaskID = UUID()
+    let thirdTaskID = UUID()
+
+    XCTAssertEqual(
+      TimelineBoardReadPath.reorderedTaskIDsAfterDrop(
+        [firstTaskID, secondTaskID, thirdTaskID],
+        draggedID: firstTaskID,
+        targetID: thirdTaskID,
+        placement: .after
+      ),
+      [secondTaskID, thirdTaskID, firstTaskID]
+    )
   }
 
   func testProjectDropReordersWithinExistingGroup() {

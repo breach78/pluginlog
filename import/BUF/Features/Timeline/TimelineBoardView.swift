@@ -320,6 +320,9 @@ struct TimelineBoardView: View {
     ) {
       await reloadWorkspaceTimelineProjectDetails(for: activeProjectIDs)
     }
+    .task(id: activeProjectIDs) {
+      await seedTimelineProjectManualOrderFromRemindersIfNeeded(for: activeProjectIDs)
+    }
     .onChange(of: snapshot.watchedSourceSignature) { _, newSignature in
       guard isActive, !appState.isEditorMotionSuppressed else { return }
       let refreshedBars = refreshTimelineBarsIfNeeded(

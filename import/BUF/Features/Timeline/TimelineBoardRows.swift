@@ -305,7 +305,7 @@ extension TimelineBoardView {
     .simultaneousGesture(
       TapGesture(count: 2)
         .onEnded {
-          showTimelineProjectListPopover(bar.projectID)
+          openTimelineProjectListWindow(for: bar)
         }
     )
     .overlay(alignment: .top) {
@@ -424,12 +424,9 @@ extension TimelineBoardView {
     .simultaneousGesture(
       TapGesture(count: 2)
         .onEnded {
-          showTimelineProjectListPopover(bar.projectID)
+          openTimelineProjectListWindow(for: bar)
         }
     )
-    .popover(isPresented: timelineProjectListPopoverBinding(for: bar.projectID)) {
-      timelineProjectListPopover(for: bar)
-    }
     .overlay(alignment: .top) {
       if showsPriorityBoundary {
         priorityBoundaryLine

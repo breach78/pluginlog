@@ -25,14 +25,121 @@ extension TimelineBoardView {
       ) else {
         return
       }
+      appendTimelineProjectManualOrderIfNeeded(projectID)
       isNewProjectSheetPresented = false
       selectTimelineProject(projectID, commitDelay: .zero)
     }
   }
 
+  func seedTimelineProjectManualOrderFromRemindersIfNeeded(
+    for projectIDs: [UUID]
+  ) async {
+    guard !projectIDs.isEmpty else { return }
+    let reminderOrderedProjectIDs = await appState.reminderProjectIDsInCurrentListOrder()
+    let nextOrder = TimelineProjectManualOrderStore.mergedOrder(
+      existing: timelineProjectManualOrder,
+      reminderOrderedProjectIDs: reminderOrderedProjectIDs,
+      availableProjectIDs: projectIDs
+    )
+    applyTimelineProjectManualOrder(nextOrder)
+  }
+
+  func appendTimelineProjectManualOrderIfNeeded(_ projectID: UUID) {
+    guard timelineProjectManualOrder[projectID] == nil else { return }
+    var nextOrder = timelineProjectManualOrder
+    nextOrder[projectID] = (nextOrder.values.max() ?? -1) + 1
+    applyTimelineProjectManualOrder(nextOrder)
+  }
+
+  func applyTimelineProjectManualOrder(_ nextOrder: [UUID: Int64]) {
+    guard nextOrder != timelineProjectManualOrder else { return }
+    timelineProjectManualOrder = nextOrder
+    TimelineProjectManualOrderStore.save(nextOrder)
+    cachedTimelineBars = []
+    cachedTimelineRowLayouts = []
+    cachedTimelineBarsSourceSignature = nil
+    cachedTimelineBarsPresentationSignature = nil
+  }
+
   func openScheduleDay(for offset: Int) {
     cancelTimelineDayHeaderOverlay()
     appState.jumpSchedule(to: date(for: offset))
+  }
+
+  func openTimelineProjectListWindow(for bar: TimelineProjectBar) {
+    selectTimelineProject(bar.projectID, commitDelay: .zero)
+    activeTimelineProjectListPopoverProjectID = nil
+    cancelTimelineTaskBadgeOverlay()
+    cancelTimelineDayHeaderOverlay()
+
+    let projectID = bar.projectID
+    TimelineProjectListWindowPresenter.shared.present(
+      snapshot: timelineProjectListWindowSnapshot(for: bar),
+      onCompleteTask: { taskID in
+        self.completeTimelineTask(taskID, projectID: projectID)
+      },
+      onEditTask: { taskID in
+        self.editTimelineTaskFromProjectListWindow(taskID: taskID, projectID: projectID)
+      },
+      onReorderTasks: { projectID, orderedTaskIDs in
+        self.saveTimelineProjectListWindowTaskOrder(
+          projectID: projectID,
+          orderedTaskIDs: orderedTaskIDs
+        )
+      }
+    )
+  }
+
+  func saveTimelineProjectListWindowTaskOrder(
+    projectID: UUID,
+    orderedTaskIDs: [UUID]
+  ) {
+    TimelineProjectTaskManualOrderStore.saveProjectOrder(orderedTaskIDs, for: projectID)
+  }
+
+  func editTimelineTaskFromProjectListWindow(taskID: UUID, projectID: UUID) {
+    guard let entry = workspaceTimelineScheduleEntriesByProjectID[projectID]?.first(where: {
+      $0.taskID == taskID
+    }) else {
+      return
+    }
+    onEditTask(
+      WorkspaceTaskEditPanelTarget(
+        projectID: projectID,
+        taskID: taskID,
+        initialFields: timelineTaskEditFields(for: entry)
+      )
+    )
+  }
+
+  func timelineProjectListWindowSnapshot(
+    for bar: TimelineProjectBar
+  ) -> TimelineProjectListWindowSnapshot {
+    let entries = timelineProjectListWindowEntries(for: bar.projectID)
+    return TimelineProjectListWindowSnapshot(
+      projectID: bar.projectID,
+      title: bar.title,
+      colorHex: bar.colorHex,
+      tasks: entries.map { entry in
+        TimelineProjectListWindowSnapshot.Task(
+          id: entry.taskID,
+          title: timelinePreviewTitle(for: entry.title),
+          dateText: timelineProjectListDateText(for: entry),
+          isCompleted: entry.isCompleted,
+          isOverdue: timelineProjectListEntryIsOverdue(entry)
+        )
+      }
+    )
+  }
+
+  func timelineProjectListWindowEntries(for projectID: UUID) -> [ScheduleSliceEntry] {
+    let entries = timelineProjectListPopoverEntries(for: projectID)
+    let orderedTaskIDs = TimelineProjectTaskManualOrderStore.orderedTaskIDs(
+      entries.map(\.taskID),
+      using: TimelineProjectTaskManualOrderStore.projectOrder(for: projectID)
+    )
+    let entriesByTaskID = Dictionary(uniqueKeysWithValues: entries.map { ($0.taskID, $0) })
+    return orderedTaskIDs.compactMap { entriesByTaskID[$0] }
   }
 
   func revealTimelineTaskDetail(taskID: UUID, projectID: UUID) {
@@ -487,8 +594,7 @@ extension TimelineBoardView {
     for (index, projectID) in reordered.enumerated() {
       nextOrder[projectID] = Int64(index)
     }
-    timelineProjectManualOrder = nextOrder
-    TimelineProjectManualOrderStore.save(nextOrder)
+    applyTimelineProjectManualOrder(nextOrder)
 
     if draggedStage != targetStage {
       updateTimelineProjectStage(projectID: draggedID, stage: targetStage)

@@ -52,6 +52,17 @@ extension AppState {
     }
   }
 
+  func reminderProjectIDsInCurrentListOrder() async -> [UUID] {
+    do {
+      return try await reminderProjectProvider.fetchProjectListsInCurrentOrder().map { list in
+        RetainedProjectionBuilder.derivedProjectID(for: list.externalIdentifier)
+      }
+    } catch {
+      reportError(error, logMessage: "reminderProjectIDsInCurrentListOrder failed")
+      return []
+    }
+  }
+
   func resolvedRuntimeProjectionProjectIDs() -> Set<UUID> {
     TaskIdentityBridgeStore.projectIDs()
   }

@@ -399,6 +399,8 @@ struct WorkspaceProjectSortButton: View {
 enum WorkspaceUserDefaultsKey {
   static let sidebarProjectListSortMode = "workspace.sidebarProjectListSortMode"
   static let timelineProjectListSortMode = "workspace.timelineProjectListSortMode"
+  static let timelineProjectListSortModeReminderOrderMigration =
+    "workspace.timelineProjectListSortModeReminderOrderMigration"
   static let timelineShowsHiddenProjectLists = "workspace.timelineShowsHiddenProjectLists"
 }
 
@@ -406,7 +408,7 @@ struct MainWorkspaceView: View {
   @AppStorage(WorkspaceUserDefaultsKey.sidebarProjectListSortMode)
   var projectListSortModeRaw = ProjectListSortMode.manual.rawValue
   @AppStorage(WorkspaceUserDefaultsKey.timelineProjectListSortMode)
-  var timelineProjectListSortModeRaw = ProjectListSortMode.recent.rawValue
+  var timelineProjectListSortModeRaw = ProjectListSortMode.manual.rawValue
   @AppStorage(WorkspaceUserDefaultsKey.timelineShowsHiddenProjectLists)
   var timelineShowsHiddenProjectLists = false
   @AppStorage(ProjectProgressStage.boardOrderRevisionStorageKey)
@@ -997,6 +999,7 @@ struct MainWorkspaceView: View {
         chromeState.syncBoardLoadingState(isLoaded: appState.boardsLoaded, currentMode: appState.viewMode)
         chromeState.refreshProjectFilterImmediately(from: appState.searchText)
         chromeState.refreshWorkspaceSearchImmediately()
+        migrateTimelineSortModeToReminderOrderIfNeeded()
         appState.requestStartupSyncIfNeeded()
         presentInitialSyncAlertIfNeeded()
       }
@@ -1037,6 +1040,14 @@ struct MainWorkspaceView: View {
       ) { _ in
         focusWorkspaceSearch()
       }
+  }
+
+  private func migrateTimelineSortModeToReminderOrderIfNeeded() {
+    let defaults = UserDefaults.standard
+    let migrationKey = WorkspaceUserDefaultsKey.timelineProjectListSortModeReminderOrderMigration
+    guard !defaults.bool(forKey: migrationKey) else { return }
+    timelineProjectListSortMode = .manual
+    defaults.set(true, forKey: migrationKey)
   }
 
   private func workspaceDecoratedRootSection(snapshot: WorkspaceShellSnapshot) -> some View {

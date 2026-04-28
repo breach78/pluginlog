@@ -255,6 +255,104 @@ enum TimelineProjectManualOrderStore {
     guard let data = try? JSONEncoder().encode(raw) else { return }
     defaults.set(data, forKey: storageKey)
   }
+
+  static func mergedOrder(
+    existing: [UUID: Int64],
+    reminderOrderedProjectIDs: [UUID],
+    availableProjectIDs: [UUID]
+  ) -> [UUID: Int64] {
+    let availableSet = Set(availableProjectIDs)
+    var next = existing.filter { availableSet.contains($0.key) }
+    let knownProjectIDs = Set(next.keys)
+    let missingProjectIDs = reminderOrderedProjectIDs.filter { projectID in
+      availableSet.contains(projectID) && !knownProjectIDs.contains(projectID)
+    }
+    guard !missingProjectIDs.isEmpty else { return next }
+
+    let maxExistingOrder = next.values.max() ?? -1
+    for (offset, projectID) in missingProjectIDs.enumerated() {
+      next[projectID] = maxExistingOrder + Int64(offset) + 1
+    }
+    return next
+  }
+}
+
+enum TimelineProjectTaskManualOrderStore {
+  private static let storageKey = "workspace.timelineProjectTaskManualOrder.v1"
+
+  static func load(defaults: UserDefaults = .standard) -> [UUID: [UUID: Int64]] {
+    guard let data = defaults.data(forKey: storageKey),
+      let raw = try? JSONDecoder().decode([String: [String: Int64]].self, from: data)
+    else {
+      return [:]
+    }
+    return raw.reduce(into: [UUID: [UUID: Int64]]()) { result, projectItem in
+      guard let projectID = UUID(uuidString: projectItem.key) else { return }
+      result[projectID] = projectItem.value.reduce(into: [UUID: Int64]()) { tasks, taskItem in
+        guard let taskID = UUID(uuidString: taskItem.key) else { return }
+        tasks[taskID] = taskItem.value
+      }
+    }
+  }
+
+  static func save(_ order: [UUID: [UUID: Int64]], defaults: UserDefaults = .standard) {
+    let raw = Dictionary(
+      uniqueKeysWithValues: order.map { projectID, taskOrder in
+        (
+          projectID.uuidString,
+          Dictionary(uniqueKeysWithValues: taskOrder.map { ($0.key.uuidString, $0.value) })
+        )
+      }
+    )
+    guard let data = try? JSONEncoder().encode(raw) else { return }
+    defaults.set(data, forKey: storageKey)
+  }
+
+  static func projectOrder(
+    for projectID: UUID,
+    defaults: UserDefaults = .standard
+  ) -> [UUID: Int64] {
+    load(defaults: defaults)[projectID] ?? [:]
+  }
+
+  static func saveProjectOrder(
+    _ orderedTaskIDs: [UUID],
+    for projectID: UUID,
+    defaults: UserDefaults = .standard
+  ) {
+    var allOrders = load(defaults: defaults)
+    allOrders[projectID] = orderMap(for: orderedTaskIDs)
+    save(allOrders, defaults: defaults)
+  }
+
+  static func orderedTaskIDs(
+    _ taskIDs: [UUID],
+    using storedOrder: [UUID: Int64]
+  ) -> [UUID] {
+    guard !storedOrder.isEmpty else { return taskIDs }
+    let defaultIndexes = Dictionary(uniqueKeysWithValues: taskIDs.enumerated().map { ($0.element, $0.offset) })
+    return taskIDs.sorted { lhs, rhs in
+      switch (storedOrder[lhs], storedOrder[rhs]) {
+      case let (lhsOrder?, rhsOrder?):
+        if lhsOrder != rhsOrder {
+          return lhsOrder < rhsOrder
+        }
+        return (defaultIndexes[lhs] ?? 0) < (defaultIndexes[rhs] ?? 0)
+      case (_?, nil):
+        return true
+      case (nil, _?):
+        return false
+      case (nil, nil):
+        return (defaultIndexes[lhs] ?? 0) < (defaultIndexes[rhs] ?? 0)
+      }
+    }
+  }
+
+  static func orderMap(for orderedTaskIDs: [UUID]) -> [UUID: Int64] {
+    Dictionary(uniqueKeysWithValues: orderedTaskIDs.enumerated().map {
+      ($0.element, Int64($0.offset))
+    })
+  }
 }
 
 enum TimelineHiddenProjectStore {

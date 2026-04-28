@@ -713,6 +713,18 @@ extension ReminderProjectProvider {
 extension ReminderProjectProvider {
   var reminderGateway: ReminderGateway? { nil }
 
+  func fetchProjectListsInCurrentOrder() async throws -> [ReminderProjectListSnapshot] {
+    guard let gateway = reminderGateway else { return [] }
+    return try await gateway.fetchAllCalendars().map { calendar in
+      ReminderProjectListSnapshot(
+        identifier: calendar.calendarIdentifier,
+        externalIdentifier: calendar.calendarIdentifier,
+        title: calendar.title,
+        colorHex: ColorHexCodec.hexString(from: calendar.color)
+      )
+    }
+  }
+
   func fetchImportSnapshotBatch(
     forListIdentifiers identifiers: [String]
   ) async throws -> ReminderImportSnapshotBatch? {

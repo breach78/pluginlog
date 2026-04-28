@@ -44,6 +44,20 @@ enum TimelineBoardReadPath {
     return reordered == projectIDs ? nil : reordered
   }
 
+  static func reorderedTaskIDsAfterDrop(
+    _ taskIDs: [UUID],
+    draggedID: UUID,
+    targetID: UUID,
+    placement: TimelineProjectDropPlacement
+  ) -> [UUID]? {
+    reorderedProjectIDsAfterDrop(
+      taskIDs,
+      draggedID: draggedID,
+      targetID: targetID,
+      placement: placement
+    )
+  }
+
   static func dayHeaderHoverOffset(
     locationX: CGFloat,
     dayRange: ClosedRange<Int>,
