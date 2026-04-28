@@ -248,6 +248,54 @@ final class TimelineBoardReadPathTests: XCTestCase {
     )
   }
 
+  func testTimelineProjectTaskManualOrderInsertsCreatedTaskAfterAnchor() {
+    let firstTaskID = UUID()
+    let secondTaskID = UUID()
+    let createdTaskID = UUID()
+
+    XCTAssertEqual(
+      TimelineProjectTaskManualOrderStore.insertedTaskIDs(
+        [firstTaskID, secondTaskID],
+        insertedID: createdTaskID,
+        after: firstTaskID
+      ),
+      [firstTaskID, createdTaskID, secondTaskID]
+    )
+  }
+
+  func testTimelineProjectTaskManualOrderAppendsCreatedTaskWithoutAnchor() {
+    let firstTaskID = UUID()
+    let createdTaskID = UUID()
+
+    XCTAssertEqual(
+      TimelineProjectTaskManualOrderStore.insertedTaskIDs(
+        [firstTaskID],
+        insertedID: createdTaskID,
+        after: UUID()
+      ),
+      [firstTaskID, createdTaskID]
+    )
+  }
+
+  func testTimelineProjectListDraftPolicyCancelsOnlyEmptyDrafts() {
+    XCTAssertTrue(TimelineProjectListDraftPolicy.shouldCancelDraft(title: "   \n"))
+    XCTAssertFalse(TimelineProjectListDraftPolicy.shouldCancelDraft(title: "새 할일"))
+  }
+
+  func testTimelineProjectTaskManualOrderRemovesCompletedTask() {
+    let firstTaskID = UUID()
+    let completedTaskID = UUID()
+    let thirdTaskID = UUID()
+
+    XCTAssertEqual(
+      TimelineProjectTaskManualOrderStore.removedTaskIDs(
+        [firstTaskID, completedTaskID, thirdTaskID],
+        removedID: completedTaskID
+      ),
+      [firstTaskID, thirdTaskID]
+    )
+  }
+
   func testProjectDropReordersWithinExistingGroup() {
     let firstID = UUID()
     let secondID = UUID()

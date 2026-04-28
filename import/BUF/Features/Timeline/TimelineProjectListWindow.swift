@@ -25,17 +25,65 @@ final class TimelineProjectListWindowPresenter {
 
   private init() {}
 
+  static func configureWindowLevel(_ window: NSWindow) {
+    window.level = .normal
+  }
+
+  static func attachAboveApplicationWindow(
+    _ window: NSWindow,
+    in application: NSApplication = .shared
+  ) {
+    guard let parentWindow = preferredParentWindow(for: window, in: application) else {
+      window.parent?.removeChildWindow(window)
+      return
+    }
+
+    guard window.parent !== parentWindow else { return }
+    window.parent?.removeChildWindow(window)
+    parentWindow.addChildWindow(window, ordered: .above)
+  }
+
+  static func preferredParentWindow(
+    for window: NSWindow,
+    in application: NSApplication = .shared
+  ) -> NSWindow? {
+    if let keyWindow = application.keyWindow,
+      keyWindow !== window,
+      keyWindow.isVisible
+    {
+      return keyWindow
+    }
+
+    if let mainWindow = application.mainWindow,
+      mainWindow !== window,
+      mainWindow.isVisible
+    {
+      return mainWindow
+    }
+
+    return application.orderedWindows.first { candidate in
+      candidate !== window
+        && candidate.isVisible
+        && candidate.level == .normal
+        && candidate.parent !== window
+    }
+  }
+
   func present(
     snapshot: TimelineProjectListWindowSnapshot,
-    onCompleteTask: @escaping (UUID) -> Void,
+    onCompleteTask: @escaping (UUID) async -> Bool,
     onEditTask: @escaping (UUID) -> Void,
-    onReorderTasks: @escaping (UUID, [UUID]) -> Void
+    onReorderTasks: @escaping (UUID, [UUID]) -> Void,
+    onCreateTask: @escaping (UUID, String) async -> TimelineProjectListWindowSnapshot.Task?,
+    onRenameTask: @escaping (UUID, UUID, String) async -> TimelineProjectListWindowSnapshot.Task?
   ) {
     let content = TimelineProjectListWindowContent(
       snapshot: snapshot,
       onCompleteTask: onCompleteTask,
       onEditTask: onEditTask,
-      onReorderTasks: onReorderTasks
+      onReorderTasks: onReorderTasks,
+      onCreateTask: onCreateTask,
+      onRenameTask: onRenameTask
     )
 
     if let window,
@@ -44,6 +92,8 @@ final class TimelineProjectListWindowPresenter {
     {
       window.title = snapshot.title
       hostingController.rootView = content
+      Self.configureWindowLevel(window)
+      Self.attachAboveApplicationWindow(window)
       window.makeKeyAndOrderFront(nil)
       NSApp.activate(ignoringOtherApps: true)
       return
@@ -59,10 +109,12 @@ final class TimelineProjectListWindowPresenter {
     window.title = snapshot.title
     window.contentViewController = hostingController
     window.isReleasedWhenClosed = false
+    Self.configureWindowLevel(window)
     window.setFrameAutosaveName("TimelineProjectListWindow")
     window.center()
     self.window = window
 
+    Self.attachAboveApplicationWindow(window)
     window.makeKeyAndOrderFront(nil)
     NSApp.activate(ignoringOtherApps: true)
   }
@@ -70,24 +122,39 @@ final class TimelineProjectListWindowPresenter {
 
 private struct TimelineProjectListWindowContent: View {
   let snapshot: TimelineProjectListWindowSnapshot
-  let onCompleteTask: (UUID) -> Void
+  let onCompleteTask: (UUID) async -> Bool
   let onEditTask: (UUID) -> Void
   let onReorderTasks: (UUID, [UUID]) -> Void
+  let onCreateTask: (UUID, String) async -> TimelineProjectListWindowSnapshot.Task?
+  let onRenameTask: (UUID, UUID, String) async -> TimelineProjectListWindowSnapshot.Task?
 
   @State private var tasks: [TimelineProjectListWindowSnapshot.Task]
   @State private var draggingTaskID: UUID?
   @State private var dropIndicator: TimelineProjectListTaskDropIndicator?
+  @State private var editingTaskID: UUID?
+  @State private var editingTitle = ""
+  @State private var draftAnchor: TimelineProjectListDraftAnchor?
+  @State private var draftTitle = ""
+  @State private var isCreatingTask = false
+  @State private var isRenamingTask = false
+  @State private var completingTaskIDs: Set<UUID> = []
+  @State private var focusedEditingTaskID: UUID?
+  @State private var focusedDraftAnchor: TimelineProjectListDraftAnchor?
 
   init(
     snapshot: TimelineProjectListWindowSnapshot,
-    onCompleteTask: @escaping (UUID) -> Void,
+    onCompleteTask: @escaping (UUID) async -> Bool,
     onEditTask: @escaping (UUID) -> Void,
-    onReorderTasks: @escaping (UUID, [UUID]) -> Void
+    onReorderTasks: @escaping (UUID, [UUID]) -> Void,
+    onCreateTask: @escaping (UUID, String) async -> TimelineProjectListWindowSnapshot.Task?,
+    onRenameTask: @escaping (UUID, UUID, String) async -> TimelineProjectListWindowSnapshot.Task?
   ) {
     self.snapshot = snapshot
     self.onCompleteTask = onCompleteTask
     self.onEditTask = onEditTask
     self.onReorderTasks = onReorderTasks
+    self.onCreateTask = onCreateTask
+    self.onRenameTask = onRenameTask
     _tasks = State(initialValue: snapshot.tasks)
   }
 
@@ -97,7 +164,7 @@ private struct TimelineProjectListWindowContent: View {
 
       Divider()
 
-      if tasks.isEmpty {
+      if tasks.isEmpty && draftAnchor == nil {
         Text("할일 없음")
           .font(.system(size: 14))
           .foregroundStyle(.secondary)
@@ -105,6 +172,10 @@ private struct TimelineProjectListWindowContent: View {
       } else {
         ScrollView {
           LazyVStack(alignment: .leading, spacing: 0) {
+            if draftAnchor == .beginning {
+              draftRow(anchor: .beginning)
+            }
+
             ForEach(tasks) { task in
               dropLine(for: task, placement: .before)
               taskRow(task)
@@ -123,6 +194,9 @@ private struct TimelineProjectListWindowContent: View {
                   )
                 )
               dropLine(for: task, placement: .after)
+              if draftAnchor == .after(task.id) {
+                draftRow(anchor: .after(task.id))
+              }
               if task.id != tasks.last?.id {
                 Divider()
                   .padding(.leading, 32)
@@ -135,10 +209,22 @@ private struct TimelineProjectListWindowContent: View {
     }
     .frame(minWidth: 360, minHeight: 420)
     .background(Color(nsColor: .windowBackgroundColor))
+    .onExitCommand {
+      handleExitCommand()
+    }
     .onChange(of: snapshot) { _, nextSnapshot in
       tasks = nextSnapshot.tasks
       draggingTaskID = nil
       dropIndicator = nil
+      editingTaskID = nil
+      editingTitle = ""
+      draftAnchor = nil
+      draftTitle = ""
+      isCreatingTask = false
+      isRenamingTask = false
+      completingTaskIDs = []
+      focusedEditingTaskID = nil
+      focusedDraftAnchor = nil
     }
   }
 
@@ -157,6 +243,17 @@ private struct TimelineProjectListWindowContent: View {
       Text("\(tasks.count)")
         .font(.system(size: 13, weight: .medium).monospacedDigit())
         .foregroundStyle(.secondary)
+
+      Button {
+        startDraft(after: tasks.last?.id)
+      } label: {
+        Image(systemName: "plus")
+          .font(.system(size: 13, weight: .semibold))
+          .frame(width: 24, height: 24)
+      }
+      .buttonStyle(.borderless)
+      .disabled(isCreatingTask)
+      .help("할일 추가")
     }
     .padding(.horizontal, 18)
     .padding(.vertical, 14)
@@ -183,43 +280,153 @@ private struct TimelineProjectListWindowContent: View {
         Image(systemName: "checkmark.circle.fill")
           .font(.system(size: 14))
           .foregroundStyle(projectColor.opacity(0.9))
-          .frame(width: 18, height: 22, alignment: .top)
+        .frame(width: 18, height: 22, alignment: .top)
       } else {
         Button {
-          onCompleteTask(task.id)
+          cancelInlineEditing()
+          completeTask(task.id)
         } label: {
-          Image(systemName: task.isOverdue ? "exclamationmark.circle" : "circle")
+          Image(systemName: completingTaskIDs.contains(task.id) ? "checkmark.circle" : taskMarkerName(task))
             .font(.system(size: 14))
             .foregroundStyle(task.isOverdue ? .red : .secondary)
             .frame(width: 18, height: 22, alignment: .top)
         }
         .buttonStyle(.plain)
+        .disabled(completingTaskIDs.contains(task.id))
       }
 
-      Button {
-        onEditTask(task.id)
-      } label: {
-        VStack(alignment: .leading, spacing: 3) {
-          Text(task.title)
-            .font(.system(size: 13))
-            .foregroundStyle(task.isCompleted ? Color.secondary : Color.primary)
-            .strikethrough(task.isCompleted, color: Color.secondary.opacity(0.55))
-            .lineLimit(3)
-            .frame(maxWidth: .infinity, alignment: .leading)
-
-          if let dateText = task.dateText {
-            Text(dateText)
-              .font(.system(size: 11))
-              .foregroundStyle(task.isOverdue ? Color.red : Color.secondary)
-              .lineLimit(1)
-          }
-        }
-        .contentShape(Rectangle())
+      if editingTaskID == task.id {
+        inlineTitleEditor(for: task)
+      } else {
+        taskTitleContent(task)
+          .contentShape(Rectangle())
+          .gesture(taskTitleClickGesture(for: task))
       }
-      .buttonStyle(.plain)
     }
     .padding(.horizontal, 18)
     .padding(.vertical, 9)
+    .contextMenu {
+      Button("제목 수정") {
+        startEditing(task)
+      }
+      Button("패널 열기") {
+        cancelInlineEditing()
+        onEditTask(task.id)
+      }
+    }
+  }
+
+  private func taskMarkerName(_ task: TimelineProjectListWindowSnapshot.Task) -> String {
+    task.isOverdue ? "exclamationmark.circle" : "circle"
+  }
+
+  private func taskTitleContent(_ task: TimelineProjectListWindowSnapshot.Task) -> some View {
+    VStack(alignment: .leading, spacing: 3) {
+      Text(task.title)
+        .font(.system(size: 13))
+        .foregroundStyle(task.isCompleted ? Color.secondary : Color.primary)
+        .strikethrough(task.isCompleted, color: Color.secondary.opacity(0.55))
+        .lineLimit(3)
+        .frame(maxWidth: .infinity, alignment: .leading)
+
+      if let dateText = task.dateText {
+        Text(dateText)
+          .font(.system(size: 11))
+          .foregroundStyle(task.isOverdue ? Color.red : Color.secondary)
+          .lineLimit(1)
+      }
+    }
+  }
+
+  private func taskTitleClickGesture(
+    for task: TimelineProjectListWindowSnapshot.Task
+  ) -> some Gesture {
+    TapGesture(count: 2)
+      .onEnded {
+        startEditing(task)
+      }
+      .exclusively(
+        before: TapGesture(count: 1)
+          .onEnded {
+            cancelInlineEditing()
+            onEditTask(task.id)
+          }
+      )
+  }
+
+  private func inlineTitleEditor(
+    for task: TimelineProjectListWindowSnapshot.Task
+  ) -> some View {
+    EscapeAwareTextField(
+      text: $editingTitle,
+      isFocused: editingFocusBinding(for: task.id),
+      placeholder: "제목",
+      onSubmit: {
+        submitInlineTitle(for: task, createDraftBelow: true)
+      },
+      onEscape: cancelInlineEditing
+    )
+      .frame(height: 22)
+      .disabled(isRenamingTask)
+      .onExitCommand {
+        cancelInlineEditing()
+      }
+  }
+
+  private func draftRow(anchor: TimelineProjectListDraftAnchor) -> some View {
+    HStack(alignment: .center, spacing: 10) {
+      Image(systemName: "plus.circle")
+        .font(.system(size: 14))
+        .foregroundStyle(projectColor.opacity(0.9))
+        .frame(width: 18, height: 22, alignment: .center)
+
+      EscapeAwareTextField(
+        text: $draftTitle,
+        isFocused: draftFocusBinding(for: anchor),
+        placeholder: "새 할일",
+        onSubmit: {
+          submitInlineDraft(anchor: anchor)
+        },
+        onEscape: cancelDraftIfEmpty
+      )
+      .frame(height: 22)
+      .disabled(isCreatingTask)
+    }
+    .padding(.horizontal, 18)
+    .padding(.vertical, 9)
+    .onExitCommand {
+      cancelDraftIfEmpty()
+    }
+  }
+
+  private func draftFocusBinding(
+    for anchor: TimelineProjectListDraftAnchor
+  ) -> Binding<Bool> {
+    Binding(
+      get: { focusedDraftAnchor == anchor },
+      set: { isFocused in
+        if isFocused {
+          focusedEditingTaskID = nil
+          focusedDraftAnchor = anchor
+        } else if focusedDraftAnchor == anchor {
+          focusedDraftAnchor = nil
+        }
+      }
+    )
+  }
+
+  private func editingFocusBinding(for taskID: UUID) -> Binding<Bool> {
+    Binding(
+      get: { focusedEditingTaskID == taskID },
+      set: { isFocused in
+        if isFocused {
+          focusedDraftAnchor = nil
+          focusedEditingTaskID = taskID
+        } else if focusedEditingTaskID == taskID {
+          focusedEditingTaskID = nil
+        }
+      }
+    )
   }
 
   private func moveTask(
@@ -243,8 +450,182 @@ private struct TimelineProjectListWindowContent: View {
     dropIndicator = nil
   }
 
+  private func completeTask(_ taskID: UUID) {
+    guard !completingTaskIDs.contains(taskID) else { return }
+    completingTaskIDs.insert(taskID)
+    Task { @MainActor in
+      let didComplete = await onCompleteTask(taskID)
+      completingTaskIDs.remove(taskID)
+      guard didComplete else { return }
+      removeCompletedTask(taskID)
+      onReorderTasks(snapshot.projectID, tasks.map(\.id))
+    }
+  }
+
+  private func startEditing(_ task: TimelineProjectListWindowSnapshot.Task) {
+    guard !isRenamingTask, !isCreatingTask else { return }
+    draftAnchor = nil
+    draftTitle = ""
+    focusedDraftAnchor = nil
+    editingTaskID = task.id
+    editingTitle = task.title
+    DispatchQueue.main.async {
+      focusedEditingTaskID = task.id
+    }
+  }
+
+  private func submitInlineTitle(
+    for task: TimelineProjectListWindowSnapshot.Task,
+    createDraftBelow: Bool
+  ) {
+    let title = editingTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !title.isEmpty, !isRenamingTask else { return }
+    guard title != task.title else {
+      editingTaskID = nil
+      editingTitle = ""
+      focusedEditingTaskID = nil
+      if createDraftBelow {
+        startDraft(after: task.id)
+      }
+      return
+    }
+    isRenamingTask = true
+
+    Task { @MainActor in
+      defer { isRenamingTask = false }
+      guard let updatedTask = await onRenameTask(snapshot.projectID, task.id, title) else {
+        return
+      }
+      replaceTask(updatedTask)
+      editingTaskID = nil
+      editingTitle = ""
+      focusedEditingTaskID = nil
+      if createDraftBelow {
+        startDraft(after: updatedTask.id)
+      }
+    }
+  }
+
+  private func startDraft(after taskID: UUID?) {
+    guard !isCreatingTask, !isRenamingTask else { return }
+    editingTaskID = nil
+    editingTitle = ""
+    focusedEditingTaskID = nil
+    let anchor: TimelineProjectListDraftAnchor = taskID.map(TimelineProjectListDraftAnchor.after) ?? .beginning
+    draftAnchor = anchor
+    draftTitle = ""
+    focusDraft(anchor)
+  }
+
+  private func cancelInlineEditing() {
+    guard !isRenamingTask else { return }
+    editingTaskID = nil
+    editingTitle = ""
+    focusedEditingTaskID = nil
+  }
+
+  private func cancelDraftIfEmpty() {
+    guard TimelineProjectListDraftPolicy.shouldCancelDraft(title: draftTitle) else { return }
+    draftAnchor = nil
+    draftTitle = ""
+    focusedDraftAnchor = nil
+  }
+
+  private func handleExitCommand() {
+    if draftAnchor != nil {
+      cancelDraftIfEmpty()
+      return
+    }
+    cancelInlineEditing()
+  }
+
+  private func submitInlineDraft(anchor: TimelineProjectListDraftAnchor) {
+    let title = draftTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !title.isEmpty, !isCreatingTask else { return }
+    isCreatingTask = true
+
+    Task { @MainActor in
+      defer { isCreatingTask = false }
+      guard let createdTask = await onCreateTask(snapshot.projectID, title) else {
+        return
+      }
+
+      if !tasks.contains(where: { $0.id == createdTask.id }) {
+        insertCreatedTask(createdTask, after: anchor.taskID)
+      }
+      onReorderTasks(snapshot.projectID, tasks.map(\.id))
+      let nextAnchor = TimelineProjectListDraftAnchor.after(createdTask.id)
+      draftAnchor = nextAnchor
+      draftTitle = ""
+      focusDraft(nextAnchor)
+    }
+  }
+
+  private func focusDraft(_ anchor: TimelineProjectListDraftAnchor) {
+    DispatchQueue.main.async {
+      focusedDraftAnchor = anchor
+    }
+    DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(16)) {
+      if draftAnchor == anchor {
+        focusedDraftAnchor = anchor
+      }
+    }
+  }
+
+  private func replaceTask(_ task: TimelineProjectListWindowSnapshot.Task) {
+    guard let index = tasks.firstIndex(where: { $0.id == task.id }) else { return }
+    tasks[index] = task
+  }
+
+  private func removeCompletedTask(_ taskID: UUID) {
+    let orderedIDs = TimelineProjectTaskManualOrderStore.removedTaskIDs(
+      tasks.map(\.id),
+      removedID: taskID
+    )
+    let tasksByID = Dictionary(uniqueKeysWithValues: tasks.map { ($0.id, $0) })
+    tasks = orderedIDs.compactMap { tasksByID[$0] }
+    if editingTaskID == taskID {
+      editingTaskID = nil
+      editingTitle = ""
+      focusedEditingTaskID = nil
+    }
+    if draftAnchor == .after(taskID) {
+      draftAnchor = nil
+      draftTitle = ""
+      focusedDraftAnchor = nil
+    }
+  }
+
+  private func insertCreatedTask(
+    _ task: TimelineProjectListWindowSnapshot.Task,
+    after anchorID: UUID?
+  ) {
+    let orderedIDs = TimelineProjectTaskManualOrderStore.insertedTaskIDs(
+      tasks.map(\.id),
+      insertedID: task.id,
+      after: anchorID
+    )
+    var tasksByID = Dictionary(uniqueKeysWithValues: tasks.map { ($0.id, $0) })
+    tasksByID[task.id] = task
+    tasks = orderedIDs.compactMap { tasksByID[$0] }
+  }
+
   private var projectColor: Color {
     ColorHexCodec.color(from: snapshot.colorHex) ?? .accentColor
+  }
+}
+
+private enum TimelineProjectListDraftAnchor: Hashable {
+  case beginning
+  case after(UUID)
+
+  var taskID: UUID? {
+    switch self {
+    case .beginning:
+      return nil
+    case .after(let taskID):
+      return taskID
+    }
   }
 }
 

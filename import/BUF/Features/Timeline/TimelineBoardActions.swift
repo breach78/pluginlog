@@ -76,7 +76,7 @@ extension TimelineBoardView {
     TimelineProjectListWindowPresenter.shared.present(
       snapshot: timelineProjectListWindowSnapshot(for: bar),
       onCompleteTask: { taskID in
-        self.completeTimelineTask(taskID, projectID: projectID)
+        await self.completeTimelineProjectListWindowTask(taskID, projectID: projectID)
       },
       onEditTask: { taskID in
         self.editTimelineTaskFromProjectListWindow(taskID: taskID, projectID: projectID)
@@ -86,7 +86,103 @@ extension TimelineBoardView {
           projectID: projectID,
           orderedTaskIDs: orderedTaskIDs
         )
+      },
+      onCreateTask: { projectID, title in
+        await self.createTimelineProjectListWindowTask(title, projectID: projectID)
+      },
+      onRenameTask: { projectID, taskID, title in
+        await self.renameTimelineProjectListWindowTask(
+          title,
+          taskID: taskID,
+          projectID: projectID
+        )
       }
+    )
+  }
+
+  func createTimelineProjectListWindowTask(
+    _ rawTitle: String,
+    projectID: UUID
+  ) async -> TimelineProjectListWindowSnapshot.Task? {
+    let title = rawTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !title.isEmpty else { return nil }
+
+    do {
+      let result = try await ObsidianRetainedTaskCommandService.createTask(
+        vaultRootURL: appState.obsidianVaultRootURL,
+        projectID: projectID,
+        title: title,
+        day: nil,
+        timeMinutes: nil,
+        durationMinutes: nil,
+        calendar: calendar,
+        reminderProjectProvider: appState.reminderProjectProvider
+      )
+      await refreshTimelineProjectState(including: [projectID])
+      retainedTimelineCalendarBridgeDecisionsByTaskID[result.taskID] = result.calendarBridgeDecision
+      retainedTimelineCalendarBridgeWriteMarkersByTaskID[result.taskID] = result.calendarWriteMarker
+      appState.bumpWorkspaceTreeRevision()
+      return TimelineProjectListWindowSnapshot.Task(
+        id: result.taskID,
+        title: timelinePreviewTitle(for: title),
+        dateText: nil,
+        isCompleted: false,
+        isOverdue: false
+      )
+    } catch {
+      appState.reportError(error, logMessage: "timeline project list createTask failed")
+      return nil
+    }
+  }
+
+  func renameTimelineProjectListWindowTask(
+    _ rawTitle: String,
+    taskID: UUID,
+    projectID: UUID
+  ) async -> TimelineProjectListWindowSnapshot.Task? {
+    let title = rawTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !title.isEmpty else { return nil }
+    guard let entry = scheduleEntry(taskID: taskID, projectID: projectID) else { return nil }
+    var fields = timelineTaskEditFields(for: entry)
+    fields.title = title
+
+    do {
+      let result = try await ObsidianRetainedTaskCommandService.updateTaskEditFields(
+        vaultRootURL: appState.obsidianVaultRootURL,
+        projectID: projectID,
+        taskID: taskID,
+        fields: fields,
+        calendar: calendar,
+        reminderProjectProvider: appState.reminderProjectProvider
+      )
+      await refreshTimelineProjectState(including: [projectID])
+      retainedTimelineCalendarBridgeDecisionsByTaskID[taskID] = result.calendarBridgeDecision
+      retainedTimelineCalendarBridgeWriteMarkersByTaskID[taskID] = result.calendarWriteMarker
+      appState.bumpWorkspaceTreeRevision()
+      return TimelineProjectListWindowSnapshot.Task(
+        id: taskID,
+        title: timelinePreviewTitle(for: title),
+        dateText: timelineProjectListDateText(for: entry),
+        isCompleted: entry.isCompleted,
+        isOverdue: timelineProjectListEntryIsOverdue(entry)
+      )
+    } catch {
+      appState.reportError(error, logMessage: "timeline project list renameTask failed")
+      return nil
+    }
+  }
+
+  func completeTimelineProjectListWindowTask(
+    _ taskID: UUID,
+    projectID: UUID
+  ) async -> Bool {
+    await updateTimelineTaskCompletionAndWait(
+      taskID: taskID,
+      projectID: projectID,
+      isCompleted: true,
+      completionDate: .now,
+      targetState: nil,
+      registerUndo: true
     )
   }
 
@@ -333,38 +429,90 @@ extension TimelineBoardView {
       )
     guard previousState != nextState else { return }
     Task { @MainActor in
-      do {
-        let result = try await ObsidianRetainedTaskCommandService.setTaskCompletion(
-          vaultRootURL: appState.obsidianVaultRootURL,
-          projectID: projectID,
-          taskID: taskID,
-          isCompleted: nextState.isCompleted,
-          completionDate: nextState.isCompleted && nextState.isRecurring
-            ? (nextState.occurrenceDate ?? nextState.completionDate)
-            : nextState.completionDate,
-          reminderProjectProvider: appState.reminderProjectProvider
-        )
-        await refreshTimelineProjectState(including: [projectID])
-        retainedTimelineCalendarBridgeDecisionsByTaskID[taskID] = result.calendarBridgeDecision
-        retainedTimelineCalendarBridgeWriteMarkersByTaskID[taskID] = result.calendarWriteMarker
+      await updateTimelineTaskCompletionAndWait(
+        taskID: taskID,
+        projectID: projectID,
+        previousState: previousState,
+        nextState: nextState,
+        registerUndo: registerUndo
+      )
+    }
+  }
 
-        guard registerUndo else { return }
-        appState.registerUndo(
-          with: undoManager,
-          actionName: nextState.isCompleted ? "할일 완료" : "할일 완료 취소"
-        ) {
-          self.updateTimelineTaskCompletion(
-            taskID: taskID,
-            projectID: projectID,
-            isCompleted: previousState.isCompleted,
-            completionDate: previousState.completionDate,
-            targetState: previousState,
-            registerUndo: true
-          )
-        }
-      } catch {
-        appState.errorMessage = error.localizedDescription
+  @discardableResult
+  private func updateTimelineTaskCompletionAndWait(
+    taskID: UUID,
+    projectID: UUID,
+    isCompleted: Bool,
+    completionDate: Date?,
+    targetState: TimelineTaskCompletionUndoSnapshot?,
+    registerUndo: Bool
+  ) async -> Bool {
+    guard allowTimelineRetainedWrite("task-completion") else { return false }
+    guard let previousState = timelineTaskCompletionState(taskID: taskID, projectID: projectID) else {
+      return false
+    }
+    let nextState =
+      targetState
+      ?? TimelineTaskCompletionUndoSnapshot(
+        taskID: taskID,
+        projectID: projectID,
+        isCompleted: isCompleted,
+        completionDate: isCompleted ? (completionDate ?? .now) : nil,
+        isRecurring: previousState.isRecurring,
+        occurrenceDate: previousState.occurrenceDate
+      )
+    guard previousState != nextState else { return true }
+    return await updateTimelineTaskCompletionAndWait(
+      taskID: taskID,
+      projectID: projectID,
+      previousState: previousState,
+      nextState: nextState,
+      registerUndo: registerUndo
+    )
+  }
+
+  @discardableResult
+  private func updateTimelineTaskCompletionAndWait(
+    taskID: UUID,
+    projectID: UUID,
+    previousState: TimelineTaskCompletionUndoSnapshot,
+    nextState: TimelineTaskCompletionUndoSnapshot,
+    registerUndo: Bool
+  ) async -> Bool {
+    do {
+      let result = try await ObsidianRetainedTaskCommandService.setTaskCompletion(
+        vaultRootURL: appState.obsidianVaultRootURL,
+        projectID: projectID,
+        taskID: taskID,
+        isCompleted: nextState.isCompleted,
+        completionDate: nextState.isCompleted && nextState.isRecurring
+          ? (nextState.occurrenceDate ?? nextState.completionDate)
+          : nextState.completionDate,
+        reminderProjectProvider: appState.reminderProjectProvider
+      )
+      await refreshTimelineProjectState(including: [projectID])
+      retainedTimelineCalendarBridgeDecisionsByTaskID[taskID] = result.calendarBridgeDecision
+      retainedTimelineCalendarBridgeWriteMarkersByTaskID[taskID] = result.calendarWriteMarker
+
+      guard registerUndo else { return true }
+      appState.registerUndo(
+        with: undoManager,
+        actionName: nextState.isCompleted ? "할일 완료" : "할일 완료 취소"
+      ) {
+        self.updateTimelineTaskCompletion(
+          taskID: taskID,
+          projectID: projectID,
+          isCompleted: previousState.isCompleted,
+          completionDate: previousState.completionDate,
+          targetState: previousState,
+          registerUndo: true
+        )
       }
+      return true
+    } catch {
+      appState.errorMessage = error.localizedDescription
+      return false
     }
   }
 

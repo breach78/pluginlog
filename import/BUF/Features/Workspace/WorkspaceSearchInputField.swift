@@ -190,6 +190,30 @@ struct EscapeAwareTextField: NSViewRepresentable {
   let onSubmit: () -> Void
   let onEscape: () -> Void
 
+  final class CommandTextField: NSTextField {
+    var onSubmitCommand: (() -> Void)?
+    var onEscapeCommand: (() -> Void)?
+
+    override func keyDown(with event: NSEvent) {
+      switch event.keyCode {
+      case 36, 76:
+        onSubmitCommand?()
+      case 53:
+        onEscapeCommand?()
+      default:
+        super.keyDown(with: event)
+      }
+    }
+
+    override func insertNewline(_ sender: Any?) {
+      onSubmitCommand?()
+    }
+
+    override func cancelOperation(_ sender: Any?) {
+      onEscapeCommand?()
+    }
+  }
+
   @MainActor
   final class Coordinator: NSObject, NSTextFieldDelegate {
     var parent: EscapeAwareTextField
@@ -299,8 +323,8 @@ struct EscapeAwareTextField: NSViewRepresentable {
     Coordinator(parent: self)
   }
 
-  func makeNSView(context: Context) -> NSTextField {
-    let field = NSTextField()
+  func makeNSView(context: Context) -> CommandTextField {
+    let field = CommandTextField()
     field.delegate = context.coordinator
     field.isBordered = true
     field.isBezeled = true
@@ -311,11 +335,23 @@ struct EscapeAwareTextField: NSViewRepresentable {
     field.font = AppInputTypography.nsFont(size: AppInputTypography.defaultPointSize)
     field.placeholderString = placeholder
     field.stringValue = text
+    field.onSubmitCommand = { [weak coordinator = context.coordinator] in
+      coordinator?.parent.onSubmit()
+    }
+    field.onEscapeCommand = { [weak coordinator = context.coordinator] in
+      coordinator?.parent.onEscape()
+    }
     return field
   }
 
-  func updateNSView(_ field: NSTextField, context: Context) {
+  func updateNSView(_ field: CommandTextField, context: Context) {
     context.coordinator.parent = self
+    field.onSubmitCommand = { [weak coordinator = context.coordinator] in
+      coordinator?.parent.onSubmit()
+    }
+    field.onEscapeCommand = { [weak coordinator = context.coordinator] in
+      coordinator?.parent.onEscape()
+    }
     let targetFont = AppInputTypography.nsFont(size: AppInputTypography.defaultPointSize)
     if field.font?.fontName != targetFont.fontName
       || abs((field.font?.pointSize ?? 0) - targetFont.pointSize) > 0.5

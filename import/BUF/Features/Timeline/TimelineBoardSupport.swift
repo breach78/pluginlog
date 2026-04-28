@@ -353,6 +353,33 @@ enum TimelineProjectTaskManualOrderStore {
       ($0.element, Int64($0.offset))
     })
   }
+
+  static func insertedTaskIDs(
+    _ taskIDs: [UUID],
+    insertedID: UUID,
+    after anchorID: UUID?
+  ) -> [UUID] {
+    var ordered = taskIDs.filter { $0 != insertedID }
+    guard let anchorID, let anchorIndex = ordered.firstIndex(of: anchorID) else {
+      ordered.append(insertedID)
+      return ordered
+    }
+    ordered.insert(insertedID, at: min(anchorIndex + 1, ordered.count))
+    return ordered
+  }
+
+  static func removedTaskIDs(
+    _ taskIDs: [UUID],
+    removedID: UUID
+  ) -> [UUID] {
+    taskIDs.filter { $0 != removedID }
+  }
+}
+
+enum TimelineProjectListDraftPolicy {
+  static func shouldCancelDraft(title: String) -> Bool {
+    title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+  }
 }
 
 enum TimelineHiddenProjectStore {
