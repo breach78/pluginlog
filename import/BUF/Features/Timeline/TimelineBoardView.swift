@@ -143,8 +143,8 @@ struct TimelineBoardView: View {
   let timelineTaskBadgeOverlayBelowOffset: CGFloat = -4
   let timelineTaskBadgeShowDelay: TimeInterval = 0.20
   let timelineTaskBadgeHideDelay: TimeInterval = 0.26
-  let timelineDayHeaderShowDelay: TimeInterval = 0.18
-  let timelineDayHeaderHideDelay: TimeInterval = 0.42
+  let timelineDayHeaderShowDelay: TimeInterval = 0.20
+  let timelineDayHeaderHideDelay: TimeInterval = 0.26
   let timelineScrollIdleDelay: TimeInterval = 0.18
   let deadlineMarkerWidth: CGFloat = 10
   let completedHistoryVisiblePastDays = 14
@@ -397,14 +397,12 @@ struct TimelineBoardView: View {
     }
     .onChange(of: appState.isHoveringTimelineTaskBadgeOverlay) { _, isHovering in
       if !isHovering {
-        hoveredTimelineTaskBadgeID = nil
         timelineTaskBadgeShowWorkItem?.cancel()
         scheduleTimelineTaskBadgeOverlayHideIfNeeded()
       }
     }
     .onChange(of: appState.isHoveringTimelineDayHeaderOverlay) { _, isHovering in
       if !isHovering {
-        hoveredTimelineDayHeaderOffset = nil
         timelineDayHeaderShowWorkItem?.cancel()
         scheduleTimelineDayHeaderOverlayHideIfNeeded()
       }

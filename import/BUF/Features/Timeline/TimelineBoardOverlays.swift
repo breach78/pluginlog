@@ -496,32 +496,8 @@ extension TimelineBoardView {
       }
     }
 
-    if appState.isHoveringTimelineDayHeaderOverlay {
-      if isHovering {
-        timelineTaskBadgeShowWorkItem?.cancel()
-      }
-      return
-    }
-
-    if activeTimelineDayHeaderOffset != nil {
-      if isHovering {
-        cancelTimelineDayHeaderOverlay()
-      } else {
-        timelineTaskBadgeShowWorkItem?.cancel()
-        return
-      }
-    }
-
-    if isHovering,
-      appState.isHoveringTimelineTaskBadgeOverlay,
-      let activeTimelineTaskBadgeID,
-      activeTimelineTaskBadgeID != badgeID
-    {
-      timelineTaskBadgeShowWorkItem?.cancel()
-      return
-    }
-
     if isHovering {
+      cancelTimelineDayHeaderOverlay()
       hoveredTimelineTaskBadgeID = badgeID
       timelineTaskBadgeHideWorkItem?.cancel()
 
@@ -529,6 +505,9 @@ extension TimelineBoardView {
         return
       }
 
+      if activeTimelineTaskBadgeID != nil {
+        activeTimelineTaskBadgeID = nil
+      }
       timelineTaskBadgeShowWorkItem?.cancel()
       let workItem = DispatchWorkItem {
         guard hoveredTimelineTaskBadgeID == badgeID else { return }
@@ -686,11 +665,6 @@ extension TimelineBoardView {
       return
     }
 
-    if isHovering, appState.isHoveringTimelineTaskBadgeOverlay {
-      timelineDayHeaderShowWorkItem?.cancel()
-      return
-    }
-
     if isHovering {
       cancelTimelineTaskBadgeOverlay()
       hoveredTimelineDayHeaderOffset = offset
@@ -700,6 +674,9 @@ extension TimelineBoardView {
         return
       }
 
+      if activeTimelineDayHeaderOffset != nil {
+        activeTimelineDayHeaderOffset = nil
+      }
       timelineDayHeaderShowWorkItem?.cancel()
       let workItem = DispatchWorkItem {
         guard hoveredTimelineDayHeaderOffset == offset else { return }

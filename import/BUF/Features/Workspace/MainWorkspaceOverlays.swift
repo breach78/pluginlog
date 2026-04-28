@@ -157,7 +157,6 @@ extension MainWorkspaceView {
       if let presentation {
         timelineTaskBadgeOverlayCard(presentation)
           .offset(x: presentation.frame.minX, y: presentation.frame.minY)
-          .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
           .transition(.offset(y: -3).combined(with: .opacity))
           .zIndex(7)
       }
@@ -176,7 +175,6 @@ extension MainWorkspaceView {
       if let presentation {
         timelineDayHeaderOverlayCard(presentation)
           .offset(x: presentation.frame.minX, y: presentation.frame.minY)
-          .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
           .transition(.offset(y: -3).combined(with: .opacity))
           .zIndex(7)
       }
