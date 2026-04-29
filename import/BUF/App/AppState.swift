@@ -86,6 +86,7 @@ final class AppState: ObservableObject {
   var reminderSourceObserver: ReminderSourceObserver?
   var obsidianProjectDirectoryWatcher: ObsidianProjectDirectoryWatcher?
   var pendingReminderSourceRefreshReason: SyncReason?
+  private var undoRedoDepth = 0
   var confirmObsidianArchive: (ObsidianArchiveConfirmationRequest) -> Bool = { request in
     let alert = NSAlert()
     alert.messageText = "프로젝트를 아카이브할까요?"
@@ -235,16 +236,22 @@ final class AppState: ObservableObject {
     isContainerConfigured && isObsidianVaultConfigured && hasSyncConsentDecision
   }
 
-  var isUndoRedoInFlight: Bool { false }
+  var isUndoRedoInFlight: Bool { undoRedoDepth > 0 }
 
   func registerUndo(
     with undoManager: UndoManager?,
     actionName: String,
     handler: @escaping @MainActor () -> Void
   ) {
-    _ = undoManager
-    _ = actionName
-    _ = handler
+    guard let undoManager else { return }
+    undoManager.registerUndo(withTarget: self) { target in
+      Task { @MainActor in
+        target.undoRedoDepth += 1
+        defer { target.undoRedoDepth -= 1 }
+        handler()
+      }
+    }
+    undoManager.setActionName(actionName)
   }
 
   func reportError(_ error: Error, logMessage: String? = nil) {

@@ -21,6 +21,12 @@ struct RetainedTaskEditFields: Equatable, Sendable {
   var durationMinutes: Int?
 }
 
+struct RetainedTaskUndoSnapshot: Equatable, Sendable {
+  let fields: RetainedTaskEditFields
+  let isCompleted: Bool
+  let completionDate: Date?
+}
+
 struct RetainedCalendarBridgeWriteMarker: Equatable, Hashable, Sendable {
   enum Operation: String, Equatable, Hashable, Sendable {
     case upsertOwnedEvent

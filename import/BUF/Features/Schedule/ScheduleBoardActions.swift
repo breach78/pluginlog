@@ -1054,6 +1054,14 @@ extension ScheduleBoardView {
     )
   }
 
+  func taskUndoSnapshot(for taskRow: TaskRowSnapshot) -> RetainedTaskUndoSnapshot {
+    RetainedTaskUndoSnapshot(
+      fields: scheduleTaskEditFields(for: taskRow),
+      isCompleted: taskRow.isCompleted,
+      completionDate: taskRow.completionDate
+    )
+  }
+
   func selectScheduleTask(_ taskID: UUID) {
     MotionTransaction.withoutAnimation {
       selectedScheduleTaskID = taskID
@@ -1067,14 +1075,31 @@ extension ScheduleBoardView {
     onTapEmptyArea()
   }
 
-  func deleteScheduleTask(_ taskID: UUID, actionName: String = "할일 삭제") {
+  func deleteScheduleTask(
+    _ taskID: UUID,
+    actionName: String = "할일 삭제",
+    registerUndo: Bool = true
+  ) {
     if selectedScheduleTaskID == taskID {
       selectedScheduleTaskID = nil
     }
     guard let taskDescriptor = scheduleTaskDescriptor(for: taskID) else { return }
+    let undoSnapshot = taskUndoSnapshot(for: taskDescriptor.taskRow)
     scheduleTaskWriteNotice = nil
     Task { @MainActor in
       do {
+        let fullUndoFields =
+          (try? await ObsidianRetainedTaskCommandService.taskEditFields(
+            vaultRootURL: appState.obsidianVaultRootURL,
+            projectID: taskDescriptor.projectID,
+            taskID: taskID,
+            calendar: calendar
+          )) ?? undoSnapshot.fields
+        let fullUndoSnapshot = RetainedTaskUndoSnapshot(
+          fields: fullUndoFields,
+          isCompleted: undoSnapshot.isCompleted,
+          completionDate: undoSnapshot.completionDate
+        )
         _ = try await ObsidianRetainedTaskCommandService.deleteTask(
           vaultRootURL: appState.obsidianVaultRootURL,
           projectID: taskDescriptor.projectID,
@@ -1086,7 +1111,16 @@ extension ScheduleBoardView {
         retainedScheduleCalendarBridgeDecisionsByTaskID.removeValue(forKey: taskID)
         retainedScheduleCalendarBridgeWriteMarkersByTaskID.removeValue(forKey: taskID)
         refreshCalendarOverlay(force: true)
-        _ = actionName
+        guard registerUndo else { return }
+        appState.registerUndo(with: undoManager, actionName: actionName) {
+          Task { @MainActor in
+            _ = await self.recreateScheduleTask(
+              fullUndoSnapshot,
+              projectID: taskDescriptor.projectID,
+              registerUndo: false
+            )
+          }
+        }
       } catch {
         if await handleRetainedScheduleWriteFailure(error) {
           return
@@ -1345,7 +1379,8 @@ extension ScheduleBoardView {
     projectID: UUID,
     day: Date,
     timeMinutes: Int?,
-    durationMinutes: Int?
+    durationMinutes: Int?,
+    registerUndo: Bool = true
   ) {
     let normalizedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !normalizedTitle.isEmpty else { return }
@@ -1368,9 +1403,65 @@ extension ScheduleBoardView {
         retainedScheduleCalendarBridgeWriteMarkersByTaskID[result.taskID] = result.calendarWriteMarker
         appState.bumpWorkspaceTreeRevision()
         refreshCalendarOverlay(force: true)
+        guard registerUndo else { return }
+        appState.registerUndo(with: undoManager, actionName: "할일 추가") {
+          self.deleteScheduleTask(result.taskID, actionName: "할일 추가", registerUndo: false)
+        }
       } catch {
         appState.reportError(error, logMessage: "schedule createTask failed")
       }
+    }
+  }
+
+  func recreateScheduleTask(
+    _ snapshot: RetainedTaskUndoSnapshot,
+    projectID: UUID,
+    registerUndo: Bool = true
+  ) async -> UUID? {
+    do {
+      let result = try await ObsidianRetainedTaskCommandService.createTask(
+        vaultRootURL: appState.obsidianVaultRootURL,
+        projectID: projectID,
+        title: snapshot.fields.title,
+        day: snapshot.fields.day,
+        timeMinutes: snapshot.fields.timeMinutes,
+        durationMinutes: snapshot.fields.durationMinutes,
+        calendar: calendar,
+        reminderProjectProvider: appState.reminderProjectProvider
+      )
+      _ = try await ObsidianRetainedTaskCommandService.updateTaskEditFields(
+        vaultRootURL: appState.obsidianVaultRootURL,
+        projectID: projectID,
+        taskID: result.taskID,
+        fields: snapshot.fields,
+        calendar: calendar,
+        reminderProjectProvider: appState.reminderProjectProvider
+      )
+      if snapshot.isCompleted {
+        _ = try await ObsidianRetainedTaskCommandService.setTaskCompletion(
+          vaultRootURL: appState.obsidianVaultRootURL,
+          projectID: projectID,
+          taskID: result.taskID,
+          isCompleted: true,
+          completionDate: snapshot.completionDate,
+          reminderProjectProvider: appState.reminderProjectProvider
+        )
+      }
+      selectedScheduleTaskID = result.taskID
+      await reloadWorkspaceScheduleProjectDetails(for: activeProjectIDs)
+      retainedScheduleCalendarBridgeDecisionsByTaskID[result.taskID] = result.calendarBridgeDecision
+      retainedScheduleCalendarBridgeWriteMarkersByTaskID[result.taskID] = result.calendarWriteMarker
+      appState.bumpWorkspaceTreeRevision()
+      refreshCalendarOverlay(force: true)
+      if registerUndo {
+        appState.registerUndo(with: undoManager, actionName: "할일 삭제 취소") {
+          self.deleteScheduleTask(result.taskID, actionName: "할일 삭제 취소", registerUndo: false)
+        }
+      }
+      return result.taskID
+    } catch {
+      appState.reportError(error, logMessage: "schedule recreateTask failed")
+      return nil
     }
   }
 

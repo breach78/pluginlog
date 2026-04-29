@@ -85,10 +85,11 @@ extension TimelineBoardView {
       onEditTask: { taskID in
         self.editTimelineTaskFromProjectListWindow(taskID: taskID, projectID: projectID)
       },
-      onReorderTasks: { projectID, orderedTaskIDs in
+      onReorderTasks: { projectID, orderedTaskIDs, registerUndo in
         self.saveTimelineProjectListWindowTaskOrder(
           projectID: projectID,
-          orderedTaskIDs: orderedTaskIDs
+          orderedTaskIDs: orderedTaskIDs,
+          registerUndo: registerUndo
         )
       },
       onCreateTask: { projectID, title in
@@ -112,7 +113,8 @@ extension TimelineBoardView {
 
   func createTimelineProjectListWindowTask(
     _ rawTitle: String,
-    projectID: UUID
+    projectID: UUID,
+    registerUndo: Bool = true
   ) async -> TimelineProjectListWindowSnapshot.Task? {
     let title = rawTitle.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !title.isEmpty else { return nil }
@@ -132,6 +134,17 @@ extension TimelineBoardView {
       retainedTimelineCalendarBridgeDecisionsByTaskID[result.taskID] = result.calendarBridgeDecision
       retainedTimelineCalendarBridgeWriteMarkersByTaskID[result.taskID] = result.calendarWriteMarker
       appState.bumpWorkspaceTreeRevision()
+      if registerUndo {
+        appState.registerUndo(with: undoManager, actionName: "할일 추가") {
+          Task { @MainActor in
+            _ = await self.deleteTimelineProjectListWindowTask(
+              result.taskID,
+              projectID: projectID,
+              registerUndo: false
+            )
+          }
+        }
+      }
       return TimelineProjectListWindowSnapshot.Task(
         id: result.taskID,
         title: timelinePreviewTitle(for: title),
@@ -148,7 +161,9 @@ extension TimelineBoardView {
   func renameTimelineProjectListWindowTask(
     _ rawTitle: String,
     taskID: UUID,
-    projectID: UUID
+    projectID: UUID,
+    registerUndo: Bool = true,
+    undoTitle: String? = nil
   ) async -> TimelineProjectListWindowSnapshot.Task? {
     let title = rawTitle.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !title.isEmpty else { return nil }
@@ -169,6 +184,20 @@ extension TimelineBoardView {
       retainedTimelineCalendarBridgeDecisionsByTaskID[taskID] = result.calendarBridgeDecision
       retainedTimelineCalendarBridgeWriteMarkersByTaskID[taskID] = result.calendarWriteMarker
       appState.bumpWorkspaceTreeRevision()
+      let previousTitle = undoTitle ?? entry.title
+      if registerUndo, previousTitle != title {
+        appState.registerUndo(with: undoManager, actionName: "할일 이름 변경") {
+          Task { @MainActor in
+            _ = await self.renameTimelineProjectListWindowTask(
+              previousTitle,
+              taskID: taskID,
+              projectID: projectID,
+              registerUndo: true,
+              undoTitle: title
+            )
+          }
+        }
+      }
       return TimelineProjectListWindowSnapshot.Task(
         id: taskID,
         title: timelinePreviewTitle(for: title),
@@ -204,8 +233,10 @@ extension TimelineBoardView {
 
   func deleteTimelineProjectListWindowTask(
     _ taskID: UUID,
-    projectID: UUID
+    projectID: UUID,
+    registerUndo: Bool = true
   ) async -> Bool {
+    let undoSnapshot = scheduleEntry(taskID: taskID, projectID: projectID).map(taskUndoSnapshot)
     do {
       _ = try await ObsidianRetainedTaskCommandService.deleteTask(
         vaultRootURL: appState.obsidianVaultRootURL,
@@ -217,6 +248,17 @@ extension TimelineBoardView {
       retainedTimelineCalendarBridgeDecisionsByTaskID.removeValue(forKey: taskID)
       retainedTimelineCalendarBridgeWriteMarkersByTaskID.removeValue(forKey: taskID)
       appState.bumpWorkspaceTreeRevision()
+      if registerUndo, let undoSnapshot {
+        appState.registerUndo(with: undoManager, actionName: "할일 삭제") {
+          Task { @MainActor in
+            _ = await self.recreateTimelineProjectListWindowTask(
+              undoSnapshot,
+              projectID: projectID,
+              registerUndo: false
+            )
+          }
+        }
+      }
       return true
     } catch {
       appState.reportError(error, logMessage: "timeline project list deleteTask failed")
@@ -226,9 +268,84 @@ extension TimelineBoardView {
 
   func saveTimelineProjectListWindowTaskOrder(
     projectID: UUID,
-    orderedTaskIDs: [UUID]
+    orderedTaskIDs: [UUID],
+    registerUndo: Bool = true
   ) {
+    let previousOrder = TimelineProjectTaskManualOrderStore.orderedTaskIDs(
+      orderedTaskIDs,
+      using: TimelineProjectTaskManualOrderStore.projectOrder(for: projectID)
+    )
+    guard previousOrder != orderedTaskIDs else { return }
     TimelineProjectTaskManualOrderStore.saveProjectOrder(orderedTaskIDs, for: projectID)
+    guard registerUndo else { return }
+    appState.registerUndo(with: undoManager, actionName: "목록 순서 변경") {
+      self.saveTimelineProjectListWindowTaskOrder(
+        projectID: projectID,
+        orderedTaskIDs: previousOrder,
+        registerUndo: true
+      )
+    }
+  }
+
+  func recreateTimelineProjectListWindowTask(
+    _ snapshot: RetainedTaskUndoSnapshot,
+    projectID: UUID,
+    registerUndo: Bool = true
+  ) async -> TimelineProjectListWindowSnapshot.Task? {
+    guard let created = await createTimelineProjectListWindowTask(
+      snapshot.fields.title,
+      projectID: projectID,
+      registerUndo: false
+    ) else {
+      return nil
+    }
+
+    do {
+      let result = try await ObsidianRetainedTaskCommandService.updateTaskEditFields(
+        vaultRootURL: appState.obsidianVaultRootURL,
+        projectID: projectID,
+        taskID: created.id,
+        fields: snapshot.fields,
+        calendar: calendar,
+        reminderProjectProvider: appState.reminderProjectProvider
+      )
+      retainedTimelineCalendarBridgeDecisionsByTaskID[created.id] = result.calendarBridgeDecision
+      retainedTimelineCalendarBridgeWriteMarkersByTaskID[created.id] = result.calendarWriteMarker
+      if snapshot.isCompleted {
+        _ = await updateTimelineTaskCompletionAndWait(
+          taskID: created.id,
+          projectID: projectID,
+          isCompleted: true,
+          completionDate: snapshot.completionDate,
+          targetState: nil,
+          registerUndo: false
+        )
+      } else {
+        await refreshTimelineProjectState(including: [projectID])
+      }
+      appState.bumpWorkspaceTreeRevision()
+      if registerUndo {
+        appState.registerUndo(with: undoManager, actionName: "할일 삭제 취소") {
+          Task { @MainActor in
+            _ = await self.deleteTimelineProjectListWindowTask(
+              created.id,
+              projectID: projectID,
+              registerUndo: false
+            )
+          }
+        }
+      }
+      return TimelineProjectListWindowSnapshot.Task(
+        id: created.id,
+        title: timelinePreviewTitle(for: snapshot.fields.title),
+        dateText: nil,
+        isCompleted: snapshot.isCompleted,
+        isOverdue: false
+      )
+    } catch {
+      appState.reportError(error, logMessage: "timeline project list recreateTask failed")
+      return nil
+    }
   }
 
   func editTimelineTaskFromProjectListWindow(taskID: UUID, projectID: UUID) {
@@ -370,6 +487,14 @@ extension TimelineBoardView {
     )
   }
 
+  func taskUndoSnapshot(for entry: ScheduleSliceEntry) -> RetainedTaskUndoSnapshot {
+    RetainedTaskUndoSnapshot(
+      fields: timelineTaskEditFields(for: entry),
+      isCompleted: entry.isCompleted,
+      completionDate: entry.completionDate
+    )
+  }
+
   func loadTimelineTaskEditFields(
     projectID: UUID,
     taskID: UUID,
@@ -418,8 +543,21 @@ extension TimelineBoardView {
   func saveTimelineTaskEditFields(
     _ fields: RetainedTaskEditFields,
     projectID: UUID,
-    taskID: UUID
+    taskID: UUID,
+    registerUndo: Bool = true,
+    undoFields: RetainedTaskEditFields? = nil
   ) async throws {
+    let previousFields: RetainedTaskEditFields?
+    if let undoFields {
+      previousFields = undoFields
+    } else {
+      previousFields = try? await ObsidianRetainedTaskCommandService.taskEditFields(
+        vaultRootURL: appState.obsidianVaultRootURL,
+        projectID: projectID,
+        taskID: taskID,
+        calendar: calendar
+      )
+    }
     do {
       let result = try await ObsidianRetainedTaskCommandService.updateTaskEditFields(
         vaultRootURL: appState.obsidianVaultRootURL,
@@ -433,6 +571,19 @@ extension TimelineBoardView {
       retainedTimelineCalendarBridgeDecisionsByTaskID[taskID] = result.calendarBridgeDecision
       retainedTimelineCalendarBridgeWriteMarkersByTaskID[taskID] = result.calendarWriteMarker
       activeTimelineTaskEditTarget = nil
+      if registerUndo, let previousFields, previousFields != fields {
+        appState.registerUndo(with: undoManager, actionName: "할일 편집") {
+          Task { @MainActor in
+            try? await self.saveTimelineTaskEditFields(
+              previousFields,
+              projectID: projectID,
+              taskID: taskID,
+              registerUndo: true,
+              undoFields: fields
+            )
+          }
+        }
+      }
     } catch {
       appState.errorMessage = error.localizedDescription
       throw error
@@ -802,11 +953,15 @@ extension TimelineBoardView {
       return
     }
 
+    let previousOrder = timelineProjectManualOrder
     var nextOrder = timelineProjectManualOrder
     for (index, projectID) in reordered.enumerated() {
       nextOrder[projectID] = Int64(index)
     }
     applyTimelineProjectManualOrder(nextOrder)
+    appState.registerUndo(with: undoManager, actionName: "프로젝트 순서 변경") {
+      self.applyTimelineProjectManualOrder(previousOrder)
+    }
 
     if draggedStage != targetStage {
       updateTimelineProjectStage(projectID: draggedID, stage: targetStage)

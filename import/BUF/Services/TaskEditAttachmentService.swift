@@ -98,19 +98,22 @@ enum TaskEditAttachmentService {
       .trimmingCharacters(in: .newlines)
   }
 
+  @discardableResult
   static func deleteAttachment(
     _ attachment: TaskEditAttachment,
     vaultRootURL: URL?,
     fileManager: FileManager = .default
-  ) throws {
+  ) throws -> URL? {
     guard let vaultRootURL else { throw AttachmentError.obsidianVaultNotConfigured }
     let assetsRootURL = rawAssetsRootURL(vaultRootURL: vaultRootURL).standardizedFileURL
     let fileURL = attachment.fileURL.standardizedFileURL
     guard fileURL.path.hasPrefix("\(assetsRootURL.path)/") else {
       throw AttachmentError.invalidAttachmentLocation(attachment.displayName)
     }
-    guard fileManager.fileExists(atPath: fileURL.path) else { return }
-    try fileManager.removeItem(at: fileURL)
+    guard fileManager.fileExists(atPath: fileURL.path) else { return nil }
+    var trashedURL: NSURL?
+    try fileManager.trashItem(at: fileURL, resultingItemURL: &trashedURL)
+    return trashedURL as URL?
   }
 
   private static func rawAssetsRootURL(vaultRootURL: URL) -> URL {

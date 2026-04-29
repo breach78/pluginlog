@@ -121,7 +121,9 @@ struct TimelineTaskEditPopoverContent: View {
       .alert(item: $pendingAttachmentDelete) { attachment in
         Alert(
           title: Text("첨부파일 삭제"),
-          message: Text("\(attachment.displayName)을 삭제합니다. raw/assets 폴더의 파일도 함께 삭제됩니다."),
+          message: Text(
+            "\(attachment.displayName)을 삭제합니다. 이 작업은 앱에서 되돌릴 수 없습니다. 파일은 macOS 휴지통으로 이동합니다."
+          ),
           primaryButton: .destructive(Text("삭제")) {
             deleteAttachment(attachment)
           },

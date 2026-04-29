@@ -53,13 +53,30 @@ extension MainWorkspaceView {
 
   func createSyncQuickAddTask(_ title: String, projectID: UUID) {
     Task { @MainActor in
-      _ = await appState.createTask(
+      let taskID = await appState.createTask(
         inProjectID: projectID,
         title: title,
         startDate: Calendar.autoupdatingCurrent.startOfDay(for: .now),
         durationMinutes: nil,
         context: modelContext
       )
+      if let taskID {
+        appState.registerUndo(with: undoManager, actionName: "할일 추가") {
+          Task { @MainActor in
+            do {
+              _ = try await ObsidianRetainedTaskCommandService.deleteTask(
+                vaultRootURL: appState.obsidianVaultRootURL,
+                projectID: projectID,
+                taskID: taskID,
+                reminderProjectProvider: appState.reminderProjectProvider
+              )
+              appState.bumpWorkspaceTreeRevision()
+            } catch {
+              appState.reportError(error, logMessage: "quick add undo deleteTask failed")
+            }
+          }
+        }
+      }
       selectProjectContext(projectID)
       dismissSyncQuickAddPopover()
     }
@@ -287,8 +304,21 @@ extension MainWorkspaceView {
   func saveTimelineTaskEditFields(
     _ fields: RetainedTaskEditFields,
     projectID: UUID,
-    taskID: UUID
+    taskID: UUID,
+    registerUndo: Bool = true,
+    undoFields: RetainedTaskEditFields? = nil
   ) async throws {
+    let previousFields: RetainedTaskEditFields?
+    if let undoFields {
+      previousFields = undoFields
+    } else {
+      previousFields = try? await ObsidianRetainedTaskCommandService.taskEditFields(
+        vaultRootURL: appState.obsidianVaultRootURL,
+        projectID: projectID,
+        taskID: taskID,
+        calendar: .autoupdatingCurrent
+      )
+    }
     do {
       _ = try await ObsidianRetainedTaskCommandService.updateTaskEditFields(
         vaultRootURL: appState.obsidianVaultRootURL,
@@ -299,6 +329,19 @@ extension MainWorkspaceView {
         reminderProjectProvider: appState.reminderProjectProvider
       )
       appState.bumpWorkspaceTreeRevision()
+      if registerUndo, let previousFields, previousFields != fields {
+        appState.registerUndo(with: undoManager, actionName: "할일 편집") {
+          Task { @MainActor in
+            try? await self.saveTimelineTaskEditFields(
+              previousFields,
+              projectID: projectID,
+              taskID: taskID,
+              registerUndo: true,
+              undoFields: fields
+            )
+          }
+        }
+      }
     } catch {
       appState.errorMessage = error.localizedDescription
       throw error
@@ -319,7 +362,7 @@ extension MainWorkspaceView {
       currentIsCompleted: isCompleted
     )
     Task { @MainActor in
-      _ = await appState.saveProjectDetailTaskCompletion(
+      let didSave = await appState.saveProjectDetailTaskCompletion(
         taskID: taskID,
         isCompleted: nextIsCompleted,
         completionDate: TimelineTaskCompletionTogglePolicy.completionDate(
@@ -327,6 +370,14 @@ extension MainWorkspaceView {
         ),
         context: modelContext
       )
+      if didSave {
+        appState.registerUndo(
+          with: undoManager,
+          actionName: nextIsCompleted ? "할일 완료" : "할일 완료 취소"
+        ) {
+          self.toggleTimelineTaskCompletion(taskID, projectID: projectID, isCompleted: nextIsCompleted)
+        }
+      }
       selectProjectContext(projectID)
     }
   }

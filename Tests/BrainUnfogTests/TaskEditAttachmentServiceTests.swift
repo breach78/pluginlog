@@ -33,7 +33,7 @@ final class TaskEditAttachmentServiceTests: XCTestCase {
     )
   }
 
-  func testDeleteAttachmentRemovesFileInsideRawAssets() throws {
+  func testDeleteAttachmentMovesFileInsideRawAssetsToTrash() throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("TaskEditAttachmentDeleteTests-\(UUID().uuidString)", isDirectory: true)
     defer { try? FileManager.default.removeItem(at: root) }
@@ -50,9 +50,15 @@ final class TaskEditAttachmentServiceTests: XCTestCase {
       fileURL: file
     )
 
-    try TaskEditAttachmentService.deleteAttachment(attachment, vaultRootURL: root)
+    let trashedURL = try TaskEditAttachmentService.deleteAttachment(attachment, vaultRootURL: root)
+    defer {
+      if let trashedURL {
+        try? FileManager.default.removeItem(at: trashedURL)
+      }
+    }
 
     XCTAssertFalse(FileManager.default.fileExists(atPath: file.path))
+    XCTAssertNotNil(trashedURL)
   }
 
   func testCopyFilesToRawAssetsAddsNumberWhenFileAlreadyExists() throws {

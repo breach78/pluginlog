@@ -89,7 +89,7 @@ final class TimelineProjectListWindowPresenter {
     snapshot: TimelineProjectListWindowSnapshot,
     onToggleTaskCompletion: @escaping (UUID, Bool) async -> Bool,
     onEditTask: @escaping (UUID) -> Void,
-    onReorderTasks: @escaping (UUID, [UUID]) -> Void,
+    onReorderTasks: @escaping (UUID, [UUID], Bool) -> Void,
     onCreateTask: @escaping (UUID, String) async -> TimelineProjectListWindowSnapshot.Task?,
     onRenameTask: @escaping (UUID, UUID, String) async -> TimelineProjectListWindowSnapshot.Task?,
     onDeleteTask: @escaping (UUID, UUID) async -> Bool,
@@ -219,7 +219,7 @@ private struct TimelineProjectListWindowContent: View {
   let snapshot: TimelineProjectListWindowSnapshot
   let onToggleTaskCompletion: (UUID, Bool) async -> Bool
   let onEditTask: (UUID) -> Void
-  let onReorderTasks: (UUID, [UUID]) -> Void
+  let onReorderTasks: (UUID, [UUID], Bool) -> Void
   let onCreateTask: (UUID, String) async -> TimelineProjectListWindowSnapshot.Task?
   let onRenameTask: (UUID, UUID, String) async -> TimelineProjectListWindowSnapshot.Task?
   let onDeleteTask: (UUID, UUID) async -> Bool
@@ -244,7 +244,7 @@ private struct TimelineProjectListWindowContent: View {
     snapshot: TimelineProjectListWindowSnapshot,
     onToggleTaskCompletion: @escaping (UUID, Bool) async -> Bool,
     onEditTask: @escaping (UUID) -> Void,
-    onReorderTasks: @escaping (UUID, [UUID]) -> Void,
+    onReorderTasks: @escaping (UUID, [UUID], Bool) -> Void,
     onCreateTask: @escaping (UUID, String) async -> TimelineProjectListWindowSnapshot.Task?,
     onRenameTask: @escaping (UUID, UUID, String) async -> TimelineProjectListWindowSnapshot.Task?,
     onDeleteTask: @escaping (UUID, UUID) async -> Bool,
@@ -593,7 +593,7 @@ private struct TimelineProjectListWindowContent: View {
 
     let tasksByID = Dictionary(uniqueKeysWithValues: tasks.map { ($0.id, $0) })
     tasks = reorderedIDs.compactMap { tasksByID[$0] }
-    onReorderTasks(snapshot.projectID, openTaskIDs)
+    onReorderTasks(snapshot.projectID, openTaskIDs, true)
     draggingTaskID = nil
     dropIndicator = nil
   }
@@ -611,7 +611,7 @@ private struct TimelineProjectListWindowContent: View {
           currentIsCompleted: isCompleted
         )
       )
-      onReorderTasks(snapshot.projectID, openTaskIDs)
+      onReorderTasks(snapshot.projectID, openTaskIDs, false)
     }
   }
 
@@ -624,7 +624,7 @@ private struct TimelineProjectListWindowContent: View {
       deletingTaskIDs.remove(taskID)
       guard didDelete else { return }
       removeTaskFromWindow(taskID)
-      onReorderTasks(snapshot.projectID, openTaskIDs)
+      onReorderTasks(snapshot.projectID, openTaskIDs, false)
     }
   }
 
@@ -731,7 +731,7 @@ private struct TimelineProjectListWindowContent: View {
       if !tasks.contains(where: { $0.id == createdTask.id }) {
         insertCreatedTask(createdTask, after: anchor.taskID)
       }
-      onReorderTasks(snapshot.projectID, openTaskIDs)
+      onReorderTasks(snapshot.projectID, openTaskIDs, false)
       let nextAnchor = TimelineProjectListDraftAnchor.after(createdTask.id)
       draftAnchor = nextAnchor
       draftTitle = ""
