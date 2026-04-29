@@ -96,7 +96,7 @@ extension MainWorkspaceView {
       roundWorkspaceToolbarIcon(
         systemName: "arrow.right.to.line",
         isLoading: isRollingOverdueTasksToToday,
-        tintColor: .orange,
+        tintColor: .accentColor,
         symbolOffsetX: -3
       )
     }

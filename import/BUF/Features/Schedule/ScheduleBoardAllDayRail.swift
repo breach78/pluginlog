@@ -106,7 +106,7 @@ extension ScheduleBoardView {
             targetCompletedWorkUnits: entry.targetCompletedWorkUnits
           )
         )
-        .simultaneousGesture(
+        .gesture(
           taskDragGesture(
             for: taskDescriptor,
             entryID: entry.id,
@@ -128,12 +128,12 @@ extension ScheduleBoardView {
             eventChip(
               event,
               title: entry.title,
-              subtitle: entry.subtitle,
+              subtitle: nil,
               color: entry.color,
               isBackgroundCalendar: true
             )
           } else if event.canEditTiming {
-            eventChip(event, title: entry.title, subtitle: entry.subtitle, color: entry.color)
+            eventChip(event, title: entry.title, subtitle: nil, color: entry.color)
               .gesture(
                 eventDragGesture(
                   for: event,
@@ -142,7 +142,7 @@ extension ScheduleBoardView {
                 )
               )
           } else {
-            eventChip(event, title: entry.title, subtitle: entry.subtitle, color: entry.color)
+            eventChip(event, title: entry.title, subtitle: nil, color: entry.color)
           }
         }
         .opacity(isEventDragging ? dragSourcePlaceholderOpacity : 1)

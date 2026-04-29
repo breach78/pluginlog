@@ -106,6 +106,15 @@ enum TimelineBoardReadPath {
     }?.badgeID
   }
 
+  static func didScrollOriginChange(
+    from previous: CGPoint?,
+    to next: CGPoint,
+    tolerance: CGFloat = 0.5
+  ) -> Bool {
+    guard let previous else { return false }
+    return abs(previous.x - next.x) > tolerance || abs(previous.y - next.y) > tolerance
+  }
+
   static func projectColorHex(
     forProjectReference reference: WorkspaceProjectReference,
     in bars: [TimelineProjectBar]

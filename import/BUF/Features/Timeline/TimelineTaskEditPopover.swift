@@ -43,6 +43,7 @@ struct TimelineTaskEditPopoverContent: View {
   let saveFields: (RetainedTaskEditFields) async throws -> Void
   let onSyncEditingChanged: (Bool) -> Void
   let onSyncEditingActivity: () -> Void
+  let onOpenProjectWindow: (() -> Void)?
   let onCancel: () -> Void
 
   @State private var title: String
@@ -78,6 +79,7 @@ struct TimelineTaskEditPopoverContent: View {
     saveFields: @escaping (RetainedTaskEditFields) async throws -> Void,
     onSyncEditingChanged: @escaping (Bool) -> Void = { _ in },
     onSyncEditingActivity: @escaping () -> Void = {},
+    onOpenProjectWindow: (() -> Void)? = nil,
     onCancel: @escaping () -> Void
   ) {
     let initialNoteText = TaskEditAttachmentService.noteTextByRemovingAttachmentLinks(
@@ -95,6 +97,7 @@ struct TimelineTaskEditPopoverContent: View {
     self.saveFields = saveFields
     self.onSyncEditingChanged = onSyncEditingChanged
     self.onSyncEditingActivity = onSyncEditingActivity
+    self.onOpenProjectWindow = onOpenProjectWindow
     self.onCancel = onCancel
     _title = State(initialValue: initialFields.title)
     _noteText = State(initialValue: initialNoteText)
@@ -196,6 +199,18 @@ struct TimelineTaskEditPopoverContent: View {
         Text("할일 편집")
           .font(TaskEditTypography.headerFont)
           .foregroundStyle(.secondary)
+        if let onOpenProjectWindow {
+          Button {
+            onOpenProjectWindow()
+          } label: {
+            Image(systemName: "arrow.up.right.square")
+              .font(.system(size: 14, weight: .semibold))
+              .frame(width: 28, height: 28)
+          }
+          .buttonStyle(.plain)
+          .foregroundStyle(.secondary)
+          .help("프로젝트 창 열기")
+        }
         Spacer(minLength: 0)
         if isLoading || isSaving {
           ProgressView()

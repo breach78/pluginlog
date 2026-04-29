@@ -563,43 +563,11 @@ extension TimelineBoardView {
   }
 
   func timelineProjectListDateText(for entry: ScheduleSliceEntry) -> String? {
-    guard
-      let date = ReminderTaskDateCanonicalizer.unifiedDate(
-        dueDate: entry.dueDate,
-        startDate: entry.startDate,
-        displayedDate: entry.displayedDate
-      )
-    else {
-      return nil
-    }
-
-    let locale = Locale(identifier: "ko_KR")
-    if entry.scheduleHasExplicitTime {
-      return date.formatted(
-        .dateTime
-          .locale(locale)
-          .month(.abbreviated)
-          .day()
-          .hour(.twoDigits(amPM: .omitted))
-          .minute(.twoDigits)
-      )
-    }
-
-    return date.formatted(.dateTime.locale(locale).month(.abbreviated).day())
+    TimelineProjectListWindowSnapshotFactory.dateText(for: entry)
   }
 
   func timelineProjectListEntryIsOverdue(_ entry: ScheduleSliceEntry) -> Bool {
-    guard !entry.isCompleted else { return false }
-    guard
-      let date = ReminderTaskDateCanonicalizer.unifiedDate(
-        dueDate: entry.dueDate,
-        startDate: entry.startDate,
-        displayedDate: entry.displayedDate
-      )
-    else {
-      return false
-    }
-    return calendar.startOfDay(for: date) < calendar.startOfDay(for: .now)
+    TimelineProjectListWindowSnapshotFactory.isOverdue(entry, calendar: calendar)
   }
 
   @ViewBuilder
@@ -700,6 +668,7 @@ extension TimelineBoardView {
       !appState.isEditorMotionSuppressed
         && !isInteractionObscured
         && activeTimelineDayHeaderOffset == nil
+        && !appState.isHoveringTimelineTaskBadgeOverlay
         && !appState.isHoveringTimelineDayHeaderOverlay
     )
   }

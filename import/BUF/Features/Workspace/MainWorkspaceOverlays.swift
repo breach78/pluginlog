@@ -134,6 +134,9 @@ extension MainWorkspaceView {
       onSyncEditingActivity: {
         appState.notifyEditorActivity()
       },
+      onOpenProjectWindow: {
+        openWorkspaceTaskProjectListWindow(for: target)
+      },
       onCancel: {
         dismissTimelineTaskEditor()
       }
@@ -602,7 +605,7 @@ private struct TimelineOverlayHoverTrackingSurface: NSViewRepresentable {
     private var scheduledHoverChange: Bool?
 
     override func hitTest(_ point: NSPoint) -> NSView? {
-      nil
+      bounds.contains(point) ? self : nil
     }
 
     override func updateTrackingAreas() {

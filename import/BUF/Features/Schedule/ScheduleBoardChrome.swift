@@ -211,8 +211,8 @@ extension ScheduleBoardView {
 
       HStack {
         Text("All-day")
-          .font(.system(size: 10, weight: .semibold))
-          .foregroundStyle(.secondary)
+          .font(.system(size: 9, weight: .medium))
+          .foregroundStyle(.tertiary)
           .textCase(.uppercase)
           .padding(.trailing, 6)
       }
@@ -329,11 +329,11 @@ extension ScheduleBoardView {
     let dayNumberColor: Color =
       isToday
       ? .white
-      : (isWeekend ? Color(red: 0.76, green: 0.24, blue: 0.22) : .primary)
+      : .primary
     let weekdayColor: Color =
       isToday
       ? .accentColor
-      : (isWeekend ? Color(red: 0.76, green: 0.24, blue: 0.22) : .secondary)
+      : .secondary
 
     return HStack(spacing: 7) {
       Text(dayHeaderDayNumber(day))

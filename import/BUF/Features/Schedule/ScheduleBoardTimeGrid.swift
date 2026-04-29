@@ -29,6 +29,18 @@ struct ScheduleCurrentTimeIndicator: View {
             .fill(Color.red.opacity(0.78))
             .frame(width: dayColumnWidth, height: 2)
             .offset(x: startX, y: y - 1)
+
+          Text(currentTimeChipLabel(from: currentDate))
+            .font(.system(size: 9, weight: .semibold, design: .monospaced))
+            .foregroundStyle(Color.red.opacity(0.9))
+            .padding(.horizontal, 4)
+            .padding(.vertical, 1.5)
+            .background(
+              Capsule()
+                .fill(Color(nsColor: .windowBackgroundColor))
+            )
+            .fixedSize()
+            .offset(x: startX + 2, y: y - 14)
         }
       }
       .frame(width: totalWidth, height: totalHeight, alignment: .topLeading)
@@ -39,6 +51,13 @@ struct ScheduleCurrentTimeIndicator: View {
     Array(dayRange).compactMap { offset in
       calendar.date(byAdding: .day, value: offset, to: today)
     }
+  }
+
+  func currentTimeChipLabel(from date: Date) -> String {
+    let components = calendar.dateComponents([.hour, .minute], from: date)
+    let hour = components.hour ?? 0
+    let minute = components.minute ?? 0
+    return String(format: "%02d:%02d", hour, minute)
   }
 }
 
@@ -211,8 +230,8 @@ extension ScheduleBoardView {
 
         HStack {
           Text("All-day")
-            .font(.system(size: 10, weight: .semibold))
-            .foregroundStyle(.secondary)
+            .font(.system(size: 9, weight: .medium))
+            .foregroundStyle(.tertiary)
             .textCase(.uppercase)
             .padding(.trailing, 6)
         }
@@ -305,7 +324,7 @@ extension ScheduleBoardView {
 
         ForEach(0..<hourCount, id: \.self) { hour in
           Rectangle()
-            .fill(Color.primary.opacity(0.035))
+            .fill(Color.primary.opacity(0.02))
             .frame(width: dayColumnsWidth, height: 1)
             .offset(y: CGFloat(hour) * hourHeight + hourHeight / 2)
         }
@@ -497,7 +516,7 @@ extension ScheduleBoardView {
       )
     }
     .clipped()
-    .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+    .contentShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
     .onTapGesture(count: 2) {
       guard shouldHandleTaskTap() else { return }
       revealScheduleTask(taskID: taskRow.id, projectID: taskDescriptor.projectID)
@@ -566,7 +585,7 @@ extension ScheduleBoardView {
       )
     }
     .clipped()
-    .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+    .contentShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
     .overlay(alignment: .topTrailing) {
       if event.isRecurring {
         recurrenceIndicator(fontSize: 9.5)
@@ -574,7 +593,7 @@ extension ScheduleBoardView {
           .padding(.trailing, 8)
       }
     }
-    .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+    .contentShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
     .allowsHitTesting(!isBackgroundCalendar)
     .onTapGesture {
       guard !isBackgroundCalendar else { return }
@@ -643,7 +662,6 @@ extension ScheduleBoardView {
         Text(title)
           .font(scheduleItemFont(11, weight: .semibold))
           .foregroundStyle(primaryTextColor)
-          .strikethrough(taskRow.isCompleted, color: secondaryTextColor)
           .lineLimit(1)
 
         Spacer(minLength: 0)
@@ -676,7 +694,6 @@ extension ScheduleBoardView {
           Text(title)
             .font(scheduleItemFont(11, weight: .semibold))
             .foregroundStyle(primaryTextColor)
-            .strikethrough(taskRow.isCompleted, color: secondaryTextColor)
             .lineLimit(titleLineLimit)
 
           if let timeLabel {
@@ -718,7 +735,6 @@ extension ScheduleBoardView {
           Text(title)
             .font(scheduleItemFont(12, weight: .semibold))
             .foregroundStyle(primaryTextColor)
-            .strikethrough(taskRow.isCompleted, color: secondaryTextColor)
             .lineLimit(titleLineLimit)
 
           if let subtitle, !subtitle.isEmpty {
@@ -852,7 +868,7 @@ extension ScheduleBoardView {
       isPreparationSlot: isPreparationSlot,
       selectionHighlightColor: selectionHighlightColor
     ) {
-      HStack(spacing: 6) {
+      HStack(spacing: 2) {
         completionToggle(
           taskDescriptor: taskDescriptor,
           color: color,
@@ -862,18 +878,15 @@ extension ScheduleBoardView {
           isPreparationSlot: isPreparationSlot,
           targetCompletedWorkUnits: targetCompletedWorkUnits
         )
+        .offset(x: -3)
 
         Text(title)
-          .font(scheduleItemFont(compact ? 11.5 : 12, weight: .semibold))
+          .font(scheduleItemFont(11.5, weight: .semibold))
           .foregroundStyle(
             scheduleTaskPrimaryTextColor(
               isSelected: isSelected,
               isCompleted: taskRow.isCompleted
             )
-          )
-          .strikethrough(
-            taskRow.isCompleted,
-            color: scheduleTaskSecondaryTextColor(isSelected: isSelected)
           )
           .lineLimit(1)
 
@@ -893,7 +906,8 @@ extension ScheduleBoardView {
             .lineLimit(1)
         }
       }
-      .padding(.horizontal, 9)
+      .padding(.leading, 5)
+      .padding(.trailing, 9)
       .frame(maxWidth: .infinity, alignment: .leading)
     }
     .overlay(alignment: .trailing) {
@@ -903,7 +917,7 @@ extension ScheduleBoardView {
         postponeAction: postponeAction
       )
     }
-    .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+    .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
     .onTapGesture(count: 2) {
       guard shouldHandleTaskTap() else { return }
       revealScheduleTask(taskID: taskRow.id, projectID: taskDescriptor.projectID)
@@ -930,13 +944,14 @@ extension ScheduleBoardView {
     ScheduleEventChipSurface(color: color, isBackgroundCalendar: isBackgroundCalendar) {
       let titleColor: Color = isBackgroundCalendar ? .secondary.opacity(0.78) : .primary
       let subtitleColor: Color = isBackgroundCalendar ? .secondary.opacity(0.68) : .secondary
-      HStack(spacing: 6) {
+      HStack(spacing: 2) {
         Circle()
           .fill(color)
           .frame(width: 8, height: 8)
           .frame(width: 18, height: 18, alignment: .center)
+          .offset(x: -3)
         Text(title)
-          .font(scheduleItemFont(11, weight: .semibold))
+          .font(scheduleItemFont(11.5, weight: .semibold))
           .foregroundStyle(titleColor)
           .lineLimit(1)
         if let subtitle, !subtitle.isEmpty {
@@ -950,7 +965,8 @@ extension ScheduleBoardView {
           recurrenceIndicator(fontSize: 9)
         }
       }
-      .padding(.horizontal, 9)
+      .padding(.leading, 5)
+      .padding(.trailing, 9)
       .frame(maxWidth: .infinity, alignment: .leading)
     }
     .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
@@ -1089,14 +1105,16 @@ extension ScheduleBoardView {
     label: String?
   ) -> some View {
     ZStack(alignment: .topLeading) {
-      RoundedRectangle(cornerRadius: isAllDay ? 8 : 10, style: .continuous)
+      RoundedRectangle(cornerRadius: isAllDay ? 8 : 6, style: .continuous)
         .fill(color.opacity(isAllDay ? 0.08 : 0.1))
 
-      RoundedRectangle(cornerRadius: isAllDay ? 8 : 10, style: .continuous)
-        .stroke(
-          color.opacity(0.72),
-          style: StrokeStyle(lineWidth: 1.2, lineCap: .round, dash: [5, 4])
-        )
+      ScheduleRoundedRectangleStrokeOverlay(
+        cornerRadius: isAllDay ? 8 : 6,
+        color: color.opacity(0.72),
+        lineWidth: 1.2,
+        lineCap: .round,
+        dash: [5, 4]
+      )
 
       if let label {
         Text(label)
@@ -1114,11 +1132,14 @@ extension ScheduleBoardView {
   }
 
   func dragSourcePlaceholder(frame: CGRect, isAllDay: Bool) -> some View {
-    RoundedRectangle(cornerRadius: isAllDay ? 8 : 10, style: .continuous)
+    RoundedRectangle(cornerRadius: isAllDay ? 8 : 6, style: .continuous)
       .fill(Color(nsColor: .windowBackgroundColor).opacity(0.58))
       .overlay {
-        RoundedRectangle(cornerRadius: isAllDay ? 8 : 10, style: .continuous)
-          .stroke(Color.primary.opacity(0.08), lineWidth: 1)
+        ScheduleRoundedRectangleStrokeOverlay(
+          cornerRadius: isAllDay ? 8 : 6,
+          color: Color.primary.opacity(0.08),
+          lineWidth: 1
+        )
       }
       .frame(width: frame.width, height: frame.height, alignment: .topLeading)
       .offset(x: frame.minX, y: frame.minY)
@@ -1140,7 +1161,11 @@ extension ScheduleBoardView {
       shape
         .fill(color.opacity(0.12))
         .overlay {
-          shape.stroke(color.opacity(0.26), lineWidth: 1)
+          ScheduleRoundedRectangleStrokeOverlay(
+            cornerRadius: cornerRadius,
+            color: color.opacity(0.26),
+            lineWidth: 1
+          )
         }
         .frame(width: originalFrame.width, height: originalFrame.height, alignment: .topLeading)
         .offset(x: originalFrame.minX, y: originalFrame.minY)
@@ -1153,11 +1178,13 @@ extension ScheduleBoardView {
           .offset(x: frame.minX, y: frame.minY)
       }
 
-      shape
-        .stroke(
-          color.opacity(0.86),
-          style: StrokeStyle(lineWidth: 1.35, lineCap: .round, dash: [5, 4])
-        )
+      ScheduleRoundedRectangleStrokeOverlay(
+        cornerRadius: cornerRadius,
+        color: color.opacity(0.86),
+        lineWidth: 1.35,
+        lineCap: .round,
+        dash: [5, 4]
+      )
         .frame(width: targetFrame.width, height: targetFrame.height, alignment: .topLeading)
         .offset(x: targetFrame.minX, y: targetFrame.minY)
 
@@ -1656,7 +1683,7 @@ extension ScheduleBoardView {
             targetFrame: frame,
             color: color,
             timeLabel: scheduleDragPreviewLabel(for: preview),
-            cornerRadius: 10
+            cornerRadius: 6
           )
           .zIndex(2001)
         }
@@ -1673,7 +1700,7 @@ extension ScheduleBoardView {
             targetFrame: frame,
             color: color,
             timeLabel: scheduleDragPreviewLabel(for: preview),
-            cornerRadius: 10
+            cornerRadius: 6
           )
           .zIndex(2002)
         }
@@ -1709,11 +1736,12 @@ extension ScheduleBoardView {
         .fill(Color.accentColor.opacity(0.14))
     )
     .overlay {
-      RoundedRectangle(cornerRadius: 12, style: .continuous)
-        .stroke(
-          Color.accentColor.opacity(0.6),
-          style: StrokeStyle(lineWidth: 1.1, dash: [5, 4])
-        )
+      ScheduleRoundedRectangleStrokeOverlay(
+        cornerRadius: 12,
+        color: Color.accentColor.opacity(0.6),
+        lineWidth: 1.1,
+        dash: [5, 4]
+      )
     }
   }
 
@@ -1804,18 +1832,17 @@ extension ScheduleBoardView {
   ) -> some View {
     Group {
       if showsPreparationIndicator {
-        Circle()
-          .stroke(
-            color.opacity(0.95),
-            style: StrokeStyle(
-              lineWidth: strokeWidth,
-              lineCap: .round,
-              dash: [0.1, 3.15]
-            )
-          )
+        ScheduleCircleStrokeOverlay(
+          color: color.opacity(0.95),
+          lineWidth: strokeWidth,
+          lineCap: .round,
+          dash: [0.1, 3.15]
+        )
       } else {
-        Circle()
-          .stroke(color.opacity(0.9), lineWidth: strokeWidth)
+        ScheduleCircleStrokeOverlay(
+          color: color.opacity(0.9),
+          lineWidth: strokeWidth
+        )
       }
     }
   }
@@ -1905,7 +1932,7 @@ extension ScheduleBoardView {
 
   func timeRangeLabel(startMinute: Int, durationMinutes: Int) -> String {
     let endMinute = min(24 * 60, startMinute + durationMinutes)
-    return "\(timeLabel(minute: startMinute))-\(timeLabel(minute: endMinute))"
+    return "\(timeLabel(minute: startMinute))–\(timeLabel(minute: endMinute))"
   }
 
   func scheduleDragPreviewLabel(for preview: ScheduleInteractionPreview) -> String {

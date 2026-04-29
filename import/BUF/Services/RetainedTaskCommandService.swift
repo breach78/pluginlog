@@ -113,6 +113,14 @@ enum RetainedTaskCommandError: LocalizedError, Equatable {
   }
 }
 
+enum RetainedTaskCommandErrorPolicy {
+  static func isTaskNotFound(_ error: Error, taskID: UUID) -> Bool {
+    guard let error = error as? RetainedTaskCommandError else { return false }
+    guard case .taskNotFound(let missingTaskID) = error else { return false }
+    return missingTaskID == taskID
+  }
+}
+
 enum RetainedSurfaceMutationSurface: Equatable, Sendable {
   case timeline
   case schedule

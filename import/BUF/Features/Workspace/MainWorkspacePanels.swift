@@ -79,6 +79,9 @@ extension MainWorkspaceView {
         },
         onEditTask: { target in
           showTimelineTaskEditor(target)
+        },
+        onTaskDeleted: { projectID, taskID in
+          handleTimelineTaskDeleted(projectID: projectID, taskID: taskID)
         }
       )
     case .schedule:

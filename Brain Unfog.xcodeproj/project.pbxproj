@@ -9,6 +9,7 @@
 /* Begin PBXBuildFile section */
 		008C751A2FE4F53CCE4A754F /* AppCommand.swift in Sources */ = {isa = PBXBuildFile; fileRef = 574B3E6ABB66853539EE9014 /* AppCommand.swift */; };
 		03C3E7396753DCD4DA867BBC /* TimelineBoardActions.swift in Sources */ = {isa = PBXBuildFile; fileRef = C5663DE261C721DC5E127FB1 /* TimelineBoardActions.swift */; };
+		B4D2A6C8E0F3B5D7A9C1E3F5 /* TimelineProjectListWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C9F4A2E1B8D5F3C6A0E2B4D /* TimelineProjectListWindow.swift */; };
 		06C9C72C72ABA87051155EF8 /* ObsidianChangedProjectProjectionRefresh.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6505481B83E40324311D478E /* ObsidianChangedProjectProjectionRefresh.swift */; };
 		06E0A88DB4AAF7AC168DD55E /* ScheduleEventStores.swift in Sources */ = {isa = PBXBuildFile; fileRef = 274E953D806A773B94AECC7F /* ScheduleEventStores.swift */; };
 		0799FA5AE1418503BAB99408 /* ScheduleDayTimelineLayoutEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1072CF5D6C4D5DCABACCB1A /* ScheduleDayTimelineLayoutEngine.swift */; };
@@ -248,6 +249,7 @@
 		C4F7C83E6995ACF488DC5F67 /* ObsidianRetainedProjectCommandService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ObsidianRetainedProjectCommandService.swift; sourceTree = "<group>"; };
 		C53B72857302D4F0FC5B1E6F /* ScheduleCollisionDetector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScheduleCollisionDetector.swift; sourceTree = "<group>"; };
 		C5663DE261C721DC5E127FB1 /* TimelineBoardActions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimelineBoardActions.swift; sourceTree = "<group>"; };
+		7C9F4A2E1B8D5F3C6A0E2B4D /* TimelineProjectListWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimelineProjectListWindow.swift; sourceTree = "<group>"; };
 		C6831C9F59899B48478AF9B0 /* TimelineBoardSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimelineBoardSupport.swift; sourceTree = "<group>"; };
 		C7868DF2E8FB1C8052ABEB87 /* ObsidianProjectNoteParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ObsidianProjectNoteParser.swift; sourceTree = "<group>"; };
 		D204F6E9D71A29AFE06D93E0 /* ReminderConflictPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReminderConflictPolicy.swift; sourceTree = "<group>"; };
@@ -517,6 +519,7 @@
 				8B721AD98A258C527A77D282 /* TimelineBoardView.swift */,
 				679A55D0A210BC487FE136C2 /* TimelineProjectDropSupport.swift */,
 				21B3F453411E704B032D846B /* TimelineTaskEditPopover.swift */,
+				7C9F4A2E1B8D5F3C6A0E2B4D /* TimelineProjectListWindow.swift */,
 			);
 			path = Timeline;
 			sourceTree = "<group>";
@@ -747,6 +750,7 @@
 				D7E5DD01F876A85563529DEF /* TimelineBoardView.swift in Sources */,
 				ABD6CD9F9A35FF12D207682F /* TimelineProjectDropSupport.swift in Sources */,
 				49A2BE6603135C9BD9969F04 /* TimelineTaskEditPopover.swift in Sources */,
+				B4D2A6C8E0F3B5D7A9C1E3F5 /* TimelineProjectListWindow.swift in Sources */,
 				66EC2BD953375C73557E4AD8 /* WorkspaceChromeState.swift in Sources */,
 				CA1560A7A8C8C83D72F7F12D /* WorkspaceNavigation.swift in Sources */,
 				42E285DF09680AF855DD96A3 /* WorkspaceOverlaySupport.swift in Sources */,

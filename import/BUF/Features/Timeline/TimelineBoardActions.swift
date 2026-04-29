@@ -247,6 +247,10 @@ extension TimelineBoardView {
       await refreshTimelineProjectState(including: [projectID])
       retainedTimelineCalendarBridgeDecisionsByTaskID.removeValue(forKey: taskID)
       retainedTimelineCalendarBridgeWriteMarkersByTaskID.removeValue(forKey: taskID)
+      if activeTimelineTaskEditTarget == TimelineTaskEditTarget(projectID: projectID, taskID: taskID) {
+        activeTimelineTaskEditTarget = nil
+      }
+      onTaskDeleted(projectID, taskID)
       appState.bumpWorkspaceTreeRevision()
       if registerUndo, let undoSnapshot {
         appState.registerUndo(with: undoManager, actionName: "할일 삭제") {
@@ -366,20 +370,12 @@ extension TimelineBoardView {
   func timelineProjectListWindowSnapshot(
     for bar: TimelineProjectBar
   ) -> TimelineProjectListWindowSnapshot {
-    let entries = timelineProjectListWindowEntries(for: bar.projectID)
-    return TimelineProjectListWindowSnapshot(
+    TimelineProjectListWindowSnapshotFactory.snapshot(
       projectID: bar.projectID,
       title: bar.title,
       colorHex: bar.colorHex,
-      tasks: entries.map { entry in
-        TimelineProjectListWindowSnapshot.Task(
-          id: entry.taskID,
-          title: timelinePreviewTitle(for: entry.title),
-          dateText: timelineProjectListDateText(for: entry),
-          isCompleted: entry.isCompleted,
-          isOverdue: timelineProjectListEntryIsOverdue(entry)
-        )
-      }
+      entries: workspaceTimelineScheduleEntriesByProjectID[bar.projectID] ?? [],
+      calendar: calendar
     )
   }
 
@@ -395,15 +391,10 @@ extension TimelineBoardView {
   }
 
   func timelineProjectListWindowEntries(for projectID: UUID) -> [ScheduleSliceEntry] {
-    let entries = TimelineBoardReadPath.projectListWindowEntries(
-      from: workspaceTimelineScheduleEntriesByProjectID[projectID] ?? []
+    TimelineProjectListWindowSnapshotFactory.orderedEntries(
+      projectID: projectID,
+      entries: workspaceTimelineScheduleEntriesByProjectID[projectID] ?? []
     )
-    let orderedTaskIDs = TimelineProjectTaskManualOrderStore.orderedTaskIDs(
-      entries.map(\.taskID),
-      using: TimelineProjectTaskManualOrderStore.projectOrder(for: projectID)
-    )
-    let entriesByTaskID = Dictionary(uniqueKeysWithValues: entries.map { ($0.taskID, $0) })
-    return orderedTaskIDs.compactMap { entriesByTaskID[$0] }
   }
 
   func revealTimelineTaskDetail(taskID: UUID, projectID: UUID) {
@@ -508,6 +499,10 @@ extension TimelineBoardView {
         calendar: calendar
       )
     } catch {
+      if RetainedTaskCommandErrorPolicy.isTaskNotFound(error, taskID: taskID) {
+        activeTimelineTaskEditTarget = nil
+        return fallback
+      }
       appState.errorMessage = error.localizedDescription
       return fallback
     }
@@ -585,6 +580,10 @@ extension TimelineBoardView {
         }
       }
     } catch {
+      if RetainedTaskCommandErrorPolicy.isTaskNotFound(error, taskID: taskID) {
+        activeTimelineTaskEditTarget = nil
+        return
+      }
       appState.errorMessage = error.localizedDescription
       throw error
     }

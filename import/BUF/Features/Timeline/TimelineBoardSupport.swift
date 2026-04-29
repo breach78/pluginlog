@@ -791,6 +791,7 @@ struct UnifiedTimelineBoardScrollView<
     var lastScrollRequestGeneration: Int
     var hasAppliedRequestedOffset = false
     var didPrimeInitialVerticalOrigin = false
+    var lastObservedScrollOrigin: CGPoint?
     var scrollHoverSuppressionDeadline: TimeInterval = 0
     var hoveredDayHeaderOffset: Int?
     var hoveredTaskBadgeID: String?
@@ -871,6 +872,13 @@ struct UnifiedTimelineBoardScrollView<
       guard let scrollView else { return }
       let x = max(0, scrollView.contentView.bounds.origin.x)
       let y = max(0, scrollView.contentView.bounds.origin.y)
+      let origin = CGPoint(x: x, y: y)
+      let didScroll = TimelineBoardReadPath.didScrollOriginChange(
+        from: lastObservedScrollOrigin,
+        to: origin
+      )
+      lastObservedScrollOrigin = origin
+      guard didScroll else { return }
       let usedPreciseHoverOffsets = publishPreciseHoverOffsets && !shouldSuppressHoverPrecision()
       let activityHandler = onScrollActivity
       DispatchQueue.main.async {
@@ -1120,6 +1128,7 @@ struct UnifiedTimelineBoardScrollView<
 
     scrollView.documentView = context.coordinator.documentView
     context.coordinator.scrollView = scrollView
+    context.coordinator.lastObservedScrollOrigin = scrollView.contentView.bounds.origin
     scrollView.noteUserScrollActivity = { [weak coordinator = context.coordinator] in
       coordinator?.noteUserScrollActivity()
     }

@@ -77,6 +77,7 @@ struct TimelineBoardView: View {
   let onSelectProject: (UUID) -> Void
   let onToggleProjectSelection: (UUID) -> Void
   let onEditTask: (WorkspaceTaskEditPanelTarget) -> Void
+  let onTaskDeleted: (UUID, UUID) -> Void
 
   @State var anchorDate = Calendar.autoupdatingCurrent.startOfDay(for: .now)
   @State var dayRange: ClosedRange<Int> = TimelineBoardReadPath.visibleDayRange
@@ -216,7 +217,8 @@ struct TimelineBoardView: View {
     selectedProjectID: UUID? = nil,
     onSelectProject: @escaping (UUID) -> Void,
     onToggleProjectSelection: @escaping (UUID) -> Void,
-    onEditTask: @escaping (WorkspaceTaskEditPanelTarget) -> Void = { _ in }
+    onEditTask: @escaping (WorkspaceTaskEditPanelTarget) -> Void = { _ in },
+    onTaskDeleted: @escaping (UUID, UUID) -> Void = { _, _ in }
   ) {
     _projectListSortMode = projectListSortMode
     _hiddenTimelineProjectIDs = hiddenProjectIDs
@@ -230,6 +232,7 @@ struct TimelineBoardView: View {
     self.onSelectProject = onSelectProject
     self.onToggleProjectSelection = onToggleProjectSelection
     self.onEditTask = onEditTask
+    self.onTaskDeleted = onTaskDeleted
   }
 
   var body: some View {
@@ -599,12 +602,16 @@ struct TimelineBoardView: View {
           isActive
           && !isInteractionObscured
           && !isTimelineScrolling
-          && !appState.isEditorMotionSuppressed,
+          && !appState.isEditorMotionSuppressed
+          && !appState.isHoveringTimelineTaskBadgeOverlay
+          && !appState.isHoveringTimelineDayHeaderOverlay,
         isTaskBadgeHoverEnabled:
           isActive
           && !isInteractionObscured
           && !isTimelineScrolling
-          && !appState.isEditorMotionSuppressed,
+          && !appState.isEditorMotionSuppressed
+          && !appState.isHoveringTimelineDayHeaderOverlay
+          && !appState.isHoveringTimelineTaskBadgeOverlay,
         taskBadgeHitTargets: timelineTaskBadgeHitTargets(
           bars: snapshot.bars,
           rowLayouts: snapshot.rowLayouts

@@ -1,7 +1,35 @@
+import CoreGraphics
 import XCTest
 @testable import BrainUnfog
 
 final class TimelineBoardReadPathTests: XCTestCase {
+  func testScrollOriginChangeIgnoresInitialAndSameOriginNotifications() {
+    XCTAssertFalse(
+      TimelineBoardReadPath.didScrollOriginChange(from: nil, to: CGPoint(x: 10, y: 20))
+    )
+    XCTAssertFalse(
+      TimelineBoardReadPath.didScrollOriginChange(
+        from: CGPoint(x: 10, y: 20),
+        to: CGPoint(x: 10.2, y: 20.2)
+      )
+    )
+  }
+
+  func testScrollOriginChangeDetectsRealMovement() {
+    XCTAssertTrue(
+      TimelineBoardReadPath.didScrollOriginChange(
+        from: CGPoint(x: 10, y: 20),
+        to: CGPoint(x: 11, y: 20)
+      )
+    )
+    XCTAssertTrue(
+      TimelineBoardReadPath.didScrollOriginChange(
+        from: CGPoint(x: 10, y: 20),
+        to: CGPoint(x: 10, y: 21)
+      )
+    )
+  }
+
   func testTimelineVisibleDayRangeIsFourDaysBeforeThroughTwoMonthsAfterToday() {
     XCTAssertEqual(TimelineBoardReadPath.visibleDayRange, -4...61)
     XCTAssertEqual(Array(TimelineBoardReadPath.visibleDayRange).count, 66)

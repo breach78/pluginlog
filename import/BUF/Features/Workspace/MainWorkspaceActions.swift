@@ -171,6 +171,63 @@ extension MainWorkspaceView {
     selectProjectContext(target.projectID)
   }
 
+  func openWorkspaceTaskProjectListWindow(for target: WorkspaceTaskEditPanelTarget) {
+    openWorkspaceProjectListWindow(projectID: target.projectID)
+  }
+
+  func openWorkspaceProjectListWindow(projectID: UUID) {
+    selectProjectContext(projectID)
+    guard !TimelineProjectListWindowPresenter.shared.presentedProjectIDs.contains(projectID) else {
+      return
+    }
+
+    Task { @MainActor in
+      guard !TimelineProjectListWindowPresenter.shared.presentedProjectIDs.contains(projectID) else {
+        return
+      }
+      guard let snapshot = await workspaceProjectListWindowSnapshot(projectID: projectID) else {
+        return
+      }
+
+      TimelineProjectListWindowPresenter.shared.present(
+        snapshot: snapshot,
+        onToggleTaskCompletion: { taskID, isCompleted in
+          await self.toggleWorkspaceProjectListWindowTaskCompletion(
+            taskID,
+            projectID: projectID,
+            isCompleted: isCompleted
+          )
+        },
+        onEditTask: { taskID in
+          self.showTimelineTaskEditor(taskID: taskID, projectID: projectID)
+        },
+        onReorderTasks: { projectID, orderedTaskIDs, registerUndo in
+          self.saveWorkspaceProjectListWindowTaskOrder(
+            projectID: projectID,
+            orderedTaskIDs: orderedTaskIDs,
+            registerUndo: registerUndo
+          )
+        },
+        onCreateTask: { projectID, title in
+          await self.createWorkspaceProjectListWindowTask(title, projectID: projectID)
+        },
+        onRenameTask: { projectID, taskID, title in
+          await self.renameWorkspaceProjectListWindowTask(
+            title,
+            taskID: taskID,
+            projectID: projectID
+          )
+        },
+        onDeleteTask: { projectID, taskID in
+          await self.deleteWorkspaceProjectListWindowTask(taskID, projectID: projectID)
+        },
+        onRenameProject: { projectID, title in
+          self.pendingRenameProject = .init(id: projectID, title: title)
+        }
+      )
+    }
+  }
+
   func showTimelineTaskEditor(
     taskID: UUID,
     projectID: UUID,
@@ -208,6 +265,299 @@ extension MainWorkspaceView {
     activeWorkspaceTaskEditPanelTarget = nil
     appState.isHoveringTimelineTaskBadgeOverlay = false
     appState.isHoveringTimelineDayHeaderOverlay = false
+  }
+
+  func createWorkspaceProjectListWindowTask(
+    _ rawTitle: String,
+    projectID: UUID,
+    registerUndo: Bool = true
+  ) async -> TimelineProjectListWindowSnapshot.Task? {
+    let title = rawTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !title.isEmpty else { return nil }
+
+    do {
+      let result = try await ObsidianRetainedTaskCommandService.createTask(
+        vaultRootURL: appState.obsidianVaultRootURL,
+        projectID: projectID,
+        title: title,
+        day: nil,
+        timeMinutes: nil,
+        durationMinutes: nil,
+        calendar: .autoupdatingCurrent,
+        reminderProjectProvider: appState.reminderProjectProvider
+      )
+      appState.bumpWorkspaceTreeRevision()
+      await refreshWorkspaceProjectListWindow(projectID: projectID)
+      if registerUndo {
+        appState.registerUndo(with: undoManager, actionName: "할일 추가") {
+          Task { @MainActor in
+            _ = await self.deleteWorkspaceProjectListWindowTask(
+              result.taskID,
+              projectID: projectID,
+              registerUndo: false
+            )
+          }
+        }
+      }
+      return await workspaceProjectListWindowTaskSnapshot(
+        projectID: projectID,
+        taskID: result.taskID
+      )
+    } catch {
+      appState.reportError(error, logMessage: "workspace project list createTask failed")
+      return nil
+    }
+  }
+
+  func renameWorkspaceProjectListWindowTask(
+    _ rawTitle: String,
+    taskID: UUID,
+    projectID: UUID,
+    registerUndo: Bool = true,
+    undoTitle: String? = nil
+  ) async -> TimelineProjectListWindowSnapshot.Task? {
+    let title = rawTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !title.isEmpty else { return nil }
+    guard let entry = await workspaceProjectListWindowEntry(projectID: projectID, taskID: taskID)
+    else {
+      return nil
+    }
+    var fields = workspaceTaskEditFields(for: entry)
+    fields.title = title
+
+    do {
+      _ = try await ObsidianRetainedTaskCommandService.updateTaskEditFields(
+        vaultRootURL: appState.obsidianVaultRootURL,
+        projectID: projectID,
+        taskID: taskID,
+        fields: fields,
+        calendar: .autoupdatingCurrent,
+        reminderProjectProvider: appState.reminderProjectProvider
+      )
+      appState.bumpWorkspaceTreeRevision()
+      await refreshWorkspaceProjectListWindow(projectID: projectID)
+      let previousTitle = undoTitle ?? entry.title
+      if registerUndo, previousTitle != title {
+        appState.registerUndo(with: undoManager, actionName: "할일 이름 변경") {
+          Task { @MainActor in
+            _ = await self.renameWorkspaceProjectListWindowTask(
+              previousTitle,
+              taskID: taskID,
+              projectID: projectID,
+              registerUndo: true,
+              undoTitle: title
+            )
+          }
+        }
+      }
+      return await workspaceProjectListWindowTaskSnapshot(projectID: projectID, taskID: taskID)
+    } catch {
+      appState.reportError(error, logMessage: "workspace project list renameTask failed")
+      return nil
+    }
+  }
+
+  func toggleWorkspaceProjectListWindowTaskCompletion(
+    _ taskID: UUID,
+    projectID: UUID,
+    isCompleted: Bool
+  ) async -> Bool {
+    let nextIsCompleted = TimelineTaskCompletionTogglePolicy.nextIsCompleted(
+      currentIsCompleted: isCompleted
+    )
+    return await setWorkspaceProjectListWindowTaskCompletion(
+      taskID,
+      projectID: projectID,
+      isCompleted: nextIsCompleted,
+      registerUndo: true
+    )
+  }
+
+  func setWorkspaceProjectListWindowTaskCompletion(
+    _ taskID: UUID,
+    projectID: UUID,
+    isCompleted: Bool,
+    completionDate: Date? = nil,
+    registerUndo: Bool = true
+  ) async -> Bool {
+    guard let entry = await workspaceProjectListWindowEntry(projectID: projectID, taskID: taskID)
+    else {
+      return false
+    }
+    guard entry.isCompleted != isCompleted else { return true }
+    let occurrenceDate = ReminderTaskDateCanonicalizer.unifiedDate(
+      dueDate: entry.dueDate,
+      startDate: entry.startDate,
+      displayedDate: entry.displayedDate
+    )
+    let isRecurring = !(entry.recurrenceRuleRaw?.trimmingCharacters(
+      in: .whitespacesAndNewlines
+    ).isEmpty ?? true)
+    let nextCompletionDate =
+      isCompleted
+      ? (completionDate ?? (isRecurring ? occurrenceDate : nil) ?? .now)
+      : nil
+
+    do {
+      _ = try await ObsidianRetainedTaskCommandService.setTaskCompletion(
+        vaultRootURL: appState.obsidianVaultRootURL,
+        projectID: projectID,
+        taskID: taskID,
+        isCompleted: isCompleted,
+        completionDate: nextCompletionDate,
+        reminderProjectProvider: appState.reminderProjectProvider
+      )
+      appState.bumpWorkspaceTreeRevision()
+      await refreshWorkspaceProjectListWindow(projectID: projectID)
+      if registerUndo {
+        appState.registerUndo(
+          with: undoManager,
+          actionName: isCompleted ? "할일 완료" : "할일 완료 취소"
+        ) {
+          Task { @MainActor in
+            _ = await self.setWorkspaceProjectListWindowTaskCompletion(
+              taskID,
+              projectID: projectID,
+              isCompleted: entry.isCompleted,
+              completionDate: entry.completionDate,
+              registerUndo: true
+            )
+          }
+        }
+      }
+      return true
+    } catch {
+      appState.reportError(error, logMessage: "workspace project list completion failed")
+      return false
+    }
+  }
+
+  func deleteWorkspaceProjectListWindowTask(
+    _ taskID: UUID,
+    projectID: UUID,
+    registerUndo: Bool = true
+  ) async -> Bool {
+    let undoSnapshot = await workspaceProjectListWindowEntry(
+      projectID: projectID,
+      taskID: taskID
+    ).map(workspaceTaskUndoSnapshot)
+    do {
+      _ = try await ObsidianRetainedTaskCommandService.deleteTask(
+        vaultRootURL: appState.obsidianVaultRootURL,
+        projectID: projectID,
+        taskID: taskID,
+        reminderProjectProvider: appState.reminderProjectProvider
+      )
+      handleTimelineTaskDeleted(projectID: projectID, taskID: taskID)
+      appState.bumpWorkspaceTreeRevision()
+      await refreshWorkspaceProjectListWindow(projectID: projectID)
+      if registerUndo, let undoSnapshot {
+        appState.registerUndo(with: undoManager, actionName: "할일 삭제") {
+          Task { @MainActor in
+            _ = await self.recreateWorkspaceProjectListWindowTask(
+              undoSnapshot,
+              projectID: projectID,
+              registerUndo: false
+            )
+          }
+        }
+      }
+      return true
+    } catch {
+      appState.reportError(error, logMessage: "workspace project list deleteTask failed")
+      return false
+    }
+  }
+
+  func recreateWorkspaceProjectListWindowTask(
+    _ snapshot: RetainedTaskUndoSnapshot,
+    projectID: UUID,
+    registerUndo: Bool = true
+  ) async -> TimelineProjectListWindowSnapshot.Task? {
+    guard let created = await createWorkspaceProjectListWindowTask(
+      snapshot.fields.title,
+      projectID: projectID,
+      registerUndo: false
+    ) else {
+      return nil
+    }
+
+    do {
+      _ = try await ObsidianRetainedTaskCommandService.updateTaskEditFields(
+        vaultRootURL: appState.obsidianVaultRootURL,
+        projectID: projectID,
+        taskID: created.id,
+        fields: snapshot.fields,
+        calendar: .autoupdatingCurrent,
+        reminderProjectProvider: appState.reminderProjectProvider
+      )
+      if snapshot.isCompleted {
+        _ = await setWorkspaceProjectListWindowTaskCompletion(
+          created.id,
+          projectID: projectID,
+          isCompleted: true,
+          completionDate: snapshot.completionDate,
+          registerUndo: false
+        )
+      }
+      appState.bumpWorkspaceTreeRevision()
+      await refreshWorkspaceProjectListWindow(projectID: projectID)
+      if registerUndo {
+        appState.registerUndo(with: undoManager, actionName: "할일 삭제 취소") {
+          Task { @MainActor in
+            _ = await self.deleteWorkspaceProjectListWindowTask(
+              created.id,
+              projectID: projectID,
+              registerUndo: false
+            )
+          }
+        }
+      }
+      return await workspaceProjectListWindowTaskSnapshot(
+        projectID: projectID,
+        taskID: created.id
+      )
+    } catch {
+      appState.reportError(error, logMessage: "workspace project list recreateTask failed")
+      return nil
+    }
+  }
+
+  func saveWorkspaceProjectListWindowTaskOrder(
+    projectID: UUID,
+    orderedTaskIDs: [UUID],
+    registerUndo: Bool = true
+  ) {
+    let previousOrder = TimelineProjectTaskManualOrderStore.orderedTaskIDs(
+      orderedTaskIDs,
+      using: TimelineProjectTaskManualOrderStore.projectOrder(for: projectID)
+    )
+    guard previousOrder != orderedTaskIDs else { return }
+    TimelineProjectTaskManualOrderStore.saveProjectOrder(orderedTaskIDs, for: projectID)
+    guard registerUndo else { return }
+    appState.registerUndo(with: undoManager, actionName: "목록 순서 변경") {
+      self.saveWorkspaceProjectListWindowTaskOrder(
+        projectID: projectID,
+        orderedTaskIDs: previousOrder,
+        registerUndo: true
+      )
+    }
+  }
+
+  func refreshWorkspaceProjectListWindow(projectID: UUID) async {
+    guard let snapshot = await workspaceProjectListWindowSnapshot(projectID: projectID) else {
+      return
+    }
+    TimelineProjectListWindowPresenter.shared.refresh(snapshot: snapshot)
+  }
+
+  func handleTimelineTaskDeleted(projectID: UUID, taskID: UUID) {
+    guard activeWorkspaceTaskEditPanelTarget?.projectID == projectID,
+      activeWorkspaceTaskEditPanelTarget?.taskID == taskID
+    else {
+      return
+    }
+    dismissTimelineTaskEditor()
   }
 
   func showCalendarEventEditor(_ event: ScheduleCalendarEvent) {
@@ -296,6 +646,10 @@ extension MainWorkspaceView {
         calendar: .autoupdatingCurrent
       )
     } catch {
+      if RetainedTaskCommandErrorPolicy.isTaskNotFound(error, taskID: taskID) {
+        handleTimelineTaskDeleted(projectID: projectID, taskID: taskID)
+        return fallback
+      }
       appState.errorMessage = error.localizedDescription
       return fallback
     }
@@ -343,9 +697,88 @@ extension MainWorkspaceView {
         }
       }
     } catch {
+      if RetainedTaskCommandErrorPolicy.isTaskNotFound(error, taskID: taskID) {
+        handleTimelineTaskDeleted(projectID: projectID, taskID: taskID)
+        return
+      }
       appState.errorMessage = error.localizedDescription
       throw error
     }
+  }
+
+  private func workspaceProjectListWindowSnapshot(
+    projectID: UUID
+  ) async -> TimelineProjectListWindowSnapshot? {
+    guard let resolvedRead = await workspaceProjectListWindowResolvedRead(projectID: projectID) else {
+      return nil
+    }
+    let descriptor = workspaceProjectDescriptorsByID[projectID]
+    let project = resolvedRead.projectSnapshots[projectID]
+    let title = project?.title ?? descriptor?.title ?? "프로젝트"
+    let colorHex = project?.colorHex ?? descriptor?.colorHex
+    return TimelineProjectListWindowSnapshotFactory.snapshot(
+      projectID: projectID,
+      title: title,
+      colorHex: colorHex,
+      entries: resolvedRead.scheduleEntriesByProjectID[projectID] ?? []
+    )
+  }
+
+  private func workspaceProjectListWindowTaskSnapshot(
+    projectID: UUID,
+    taskID: UUID
+  ) async -> TimelineProjectListWindowSnapshot.Task? {
+    let snapshot = await workspaceProjectListWindowSnapshot(projectID: projectID)
+    return snapshot?.tasks.first { $0.id == taskID }
+  }
+
+  private func workspaceProjectListWindowEntry(
+    projectID: UUID,
+    taskID: UUID
+  ) async -> ScheduleSliceEntry? {
+    let resolvedRead = await workspaceProjectListWindowResolvedRead(projectID: projectID)
+    return resolvedRead?.scheduleEntriesByProjectID[projectID]?.first { $0.taskID == taskID }
+  }
+
+  private func workspaceProjectListWindowResolvedRead(
+    projectID: UUID
+  ) async -> RetainedWorkspaceSurfaceProjectionResolvedRead? {
+    let retainedResult = await RetainedWorkspaceSurfaceProjectionBuilder.load(
+      obsidianVaultRootURL: appState.obsidianVaultRootURL,
+      projectIDs: [projectID]
+    )
+    let resolvedRead = RetainedWorkspaceSurfaceProjectionBuilder.resolveRetainedOnly(retainedResult)
+    if case .blocked(let blocker) = resolvedRead.source {
+      appState.errorMessage = blocker.userMessage
+      return nil
+    }
+    return resolvedRead
+  }
+
+  private func workspaceTaskEditFields(for entry: ScheduleSliceEntry) -> RetainedTaskEditFields {
+    let date = ReminderTaskDateCanonicalizer.unifiedDate(
+      dueDate: entry.dueDate,
+      startDate: entry.startDate,
+      displayedDate: entry.displayedDate
+    )
+    let calendar = Calendar.autoupdatingCurrent
+    return RetainedTaskEditFields(
+      title: TimelineBoardReadPath.timelinePreviewTitle(for: entry.title),
+      noteText: entry.reminderNoteText,
+      day: date.map { calendar.startOfDay(for: $0) },
+      timeMinutes: entry.scheduleHasExplicitTime ? date.map(timelineTaskEditTimeMinutes) : nil,
+      durationMinutes: entry.scheduledDurationMinutes
+    )
+  }
+
+  private func workspaceTaskUndoSnapshot(for entry: ScheduleSliceEntry)
+    -> RetainedTaskUndoSnapshot
+  {
+    RetainedTaskUndoSnapshot(
+      fields: workspaceTaskEditFields(for: entry),
+      isCompleted: entry.isCompleted,
+      completionDate: entry.completionDate
+    )
   }
 
   private func timelineTaskEditTimeMinutes(for date: Date) -> Int {

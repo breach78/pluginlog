@@ -4,12 +4,14 @@ import XCTest
 
 @MainActor
 final class TimelineProjectListWindowPresenterTests: XCTestCase {
-  func testProjectListWindowUsesNormalLevel() {
-    let window = NSWindow()
+  func testProjectListWindowUsesFloatingPanelBehavior() {
+    let window = NSPanel()
 
     TimelineProjectListWindowPresenter.configureWindowLevel(window)
 
-    XCTAssertEqual(window.level, .normal)
+    XCTAssertEqual(window.level, .floating)
+    XCTAssertTrue(window.isFloatingPanel)
+    XCTAssertTrue(window.hidesOnDeactivate)
   }
 
   func testPresentCreatesSeparateWindowsForDifferentProjects() {

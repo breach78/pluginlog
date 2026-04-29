@@ -21,6 +21,26 @@ final class ObsidianRetainedTaskCommandServiceTests: XCTestCase {
     try await super.tearDown()
   }
 
+  func testRetainedTaskCommandErrorPolicyMatchesTaskNotFoundForSameTask() {
+    let taskID = UUID()
+
+    XCTAssertTrue(
+      RetainedTaskCommandErrorPolicy.isTaskNotFound(
+        RetainedTaskCommandError.taskNotFound(taskID),
+        taskID: taskID
+      )
+    )
+  }
+
+  func testRetainedTaskCommandErrorPolicyIgnoresDifferentTaskNotFound() {
+    XCTAssertFalse(
+      RetainedTaskCommandErrorPolicy.isTaskNotFound(
+        RetainedTaskCommandError.taskNotFound(UUID()),
+        taskID: UUID()
+      )
+    )
+  }
+
   func testProjectTitleCommandWritesReminderAndRenamesProjectFile() async throws {
     let vault = try makeTemporaryVault()
     _ = try writeProjectNote(vault: vault, body: projectNote(body: ""))

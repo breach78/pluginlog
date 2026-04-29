@@ -39,49 +39,10 @@ final class TimelineProjectListWindowPresenter {
   }
 
   static func configureWindowLevel(_ window: NSWindow) {
-    window.level = .normal
-  }
-
-  static func attachAboveApplicationWindow(
-    _ window: NSWindow,
-    in application: NSApplication = .shared
-  ) {
-    guard let parentWindow = preferredParentWindow(for: window, in: application) else {
-      window.parent?.removeChildWindow(window)
-      return
-    }
-
-    guard window.parent !== parentWindow else { return }
-    window.parent?.removeChildWindow(window)
-    parentWindow.addChildWindow(window, ordered: .above)
-  }
-
-  static func preferredParentWindow(
-    for window: NSWindow,
-    in application: NSApplication = .shared
-  ) -> NSWindow? {
-    if let keyWindow = application.keyWindow,
-      keyWindow !== window,
-      keyWindow.isVisible,
-      keyWindow.identifier != .timelineProjectListWindow
-    {
-      return keyWindow
-    }
-
-    if let mainWindow = application.mainWindow,
-      mainWindow !== window,
-      mainWindow.isVisible,
-      mainWindow.identifier != .timelineProjectListWindow
-    {
-      return mainWindow
-    }
-
-    return application.orderedWindows.first { candidate in
-      candidate !== window
-        && candidate.isVisible
-        && candidate.level == .normal
-        && candidate.parent !== window
-        && candidate.identifier != .timelineProjectListWindow
+    window.level = .floating
+    if let panel = window as? NSPanel {
+      panel.isFloatingPanel = true
+      panel.hidesOnDeactivate = true
     }
   }
 
@@ -108,7 +69,7 @@ final class TimelineProjectListWindowPresenter {
 
     pruneClosedWindows()
     let hostingController = NSHostingController(rootView: content)
-    let window = NSWindow(
+    let window = NSPanel(
       contentRect: NSRect(x: 0, y: 0, width: 420, height: 560),
       styleMask: [.titled, .closable, .miniaturizable, .resizable],
       backing: .buffered,
@@ -129,9 +90,8 @@ final class TimelineProjectListWindowPresenter {
     window.delegate = delegate
     windowRecords.append(WindowRecord(id: recordID, window: window, delegate: delegate))
 
-    Self.attachAboveApplicationWindow(window)
-    window.makeKeyAndOrderFront(nil)
     NSApp.activate(ignoringOtherApps: true)
+    window.makeKeyAndOrderFront(nil)
   }
 
   @discardableResult
