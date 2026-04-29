@@ -96,6 +96,12 @@ extension TimelineBoardView {
           taskID: taskID,
           projectID: projectID
         )
+      },
+      onDeleteTask: { projectID, taskID in
+        await self.deleteTimelineProjectListWindowTask(taskID, projectID: projectID)
+      },
+      onRenameProject: { projectID, title in
+        self.requestRename(projectID: projectID, title: title)
       }
     )
   }
@@ -186,6 +192,28 @@ extension TimelineBoardView {
     )
   }
 
+  func deleteTimelineProjectListWindowTask(
+    _ taskID: UUID,
+    projectID: UUID
+  ) async -> Bool {
+    do {
+      _ = try await ObsidianRetainedTaskCommandService.deleteTask(
+        vaultRootURL: appState.obsidianVaultRootURL,
+        projectID: projectID,
+        taskID: taskID,
+        reminderProjectProvider: appState.reminderProjectProvider
+      )
+      await refreshTimelineProjectState(including: [projectID])
+      retainedTimelineCalendarBridgeDecisionsByTaskID.removeValue(forKey: taskID)
+      retainedTimelineCalendarBridgeWriteMarkersByTaskID.removeValue(forKey: taskID)
+      appState.bumpWorkspaceTreeRevision()
+      return true
+    } catch {
+      appState.reportError(error, logMessage: "timeline project list deleteTask failed")
+      return false
+    }
+  }
+
   func saveTimelineProjectListWindowTaskOrder(
     projectID: UUID,
     orderedTaskIDs: [UUID]
@@ -228,8 +256,21 @@ extension TimelineBoardView {
     )
   }
 
+  func refreshOpenTimelineProjectListWindow(using bars: [TimelineProjectBar]) {
+    let presentedProjectIDs = Set(TimelineProjectListWindowPresenter.shared.presentedProjectIDs)
+    guard !presentedProjectIDs.isEmpty else { return }
+
+    for bar in bars where presentedProjectIDs.contains(bar.projectID) {
+      TimelineProjectListWindowPresenter.shared.refresh(
+        snapshot: timelineProjectListWindowSnapshot(for: bar)
+      )
+    }
+  }
+
   func timelineProjectListWindowEntries(for projectID: UUID) -> [ScheduleSliceEntry] {
-    let entries = timelineProjectListPopoverEntries(for: projectID)
+    let entries = TimelineBoardReadPath.projectListWindowEntries(
+      from: workspaceTimelineScheduleEntriesByProjectID[projectID] ?? []
+    )
     let orderedTaskIDs = TimelineProjectTaskManualOrderStore.orderedTaskIDs(
       entries.map(\.taskID),
       using: TimelineProjectTaskManualOrderStore.projectOrder(for: projectID)
@@ -647,8 +688,12 @@ extension TimelineBoardView {
   }
 
   func requestRename(for bar: TimelineProjectBar) {
+    requestRename(projectID: bar.projectID, title: bar.title)
+  }
+
+  func requestRename(projectID: UUID, title: String) {
     guard allowTimelineRetainedWrite("rename-project") else { return }
-    pendingRenameProject = TimelineProjectRenameRequest(id: bar.projectID, title: bar.title)
+    pendingRenameProject = TimelineProjectRenameRequest(id: projectID, title: title)
   }
 
   func submitTimelineProjectRename(projectID: UUID, title: String) {

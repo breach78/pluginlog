@@ -450,6 +450,7 @@ extension MainWorkspaceView {
       activeWorkspaceTaskEditPanelTarget != nil || activeWorkspaceCalendarEventEditPanelTarget != nil
     let window = event?.window ?? NSApp.keyWindow ?? NSApp.mainWindow
     guard let window else { return false }
+    guard window.identifier != .timelineProjectListWindow else { return false }
     let hitView = event.flatMap { mouseHitView(for: $0, in: window) }
     guard
       WorkspaceTextResponderReleasePolicy.shouldReleaseTextResponder(

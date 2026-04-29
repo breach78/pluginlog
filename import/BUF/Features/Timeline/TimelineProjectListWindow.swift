@@ -2,6 +2,11 @@ import AppKit
 import SwiftUI
 import UniformTypeIdentifiers
 
+extension NSUserInterfaceItemIdentifier {
+  static let timelineProjectListWindow = NSUserInterfaceItemIdentifier(
+    "timelineProjectListWindow")
+}
+
 struct TimelineProjectListWindowSnapshot: Equatable {
   struct Task: Identifiable, Equatable {
     let id: UUID
@@ -21,9 +26,17 @@ struct TimelineProjectListWindowSnapshot: Equatable {
 final class TimelineProjectListWindowPresenter {
   static let shared = TimelineProjectListWindowPresenter()
 
-  private var window: NSWindow?
+  private var windowRecords: [WindowRecord] = []
 
   private init() {}
+
+  var presentedProjectIDs: [UUID] {
+    pruneClosedWindows()
+    return windowRecords.compactMap { record in
+      guard Self.isLiveWindow(record.window) else { return nil }
+      return Self.projectID(for: record.window)
+    }
+  }
 
   static func configureWindowLevel(_ window: NSWindow) {
     window.level = .normal
@@ -49,14 +62,16 @@ final class TimelineProjectListWindowPresenter {
   ) -> NSWindow? {
     if let keyWindow = application.keyWindow,
       keyWindow !== window,
-      keyWindow.isVisible
+      keyWindow.isVisible,
+      keyWindow.identifier != .timelineProjectListWindow
     {
       return keyWindow
     }
 
     if let mainWindow = application.mainWindow,
       mainWindow !== window,
-      mainWindow.isVisible
+      mainWindow.isVisible,
+      mainWindow.identifier != .timelineProjectListWindow
     {
       return mainWindow
     }
@@ -66,6 +81,7 @@ final class TimelineProjectListWindowPresenter {
         && candidate.isVisible
         && candidate.level == .normal
         && candidate.parent !== window
+        && candidate.identifier != .timelineProjectListWindow
     }
   }
 
@@ -75,7 +91,9 @@ final class TimelineProjectListWindowPresenter {
     onEditTask: @escaping (UUID) -> Void,
     onReorderTasks: @escaping (UUID, [UUID]) -> Void,
     onCreateTask: @escaping (UUID, String) async -> TimelineProjectListWindowSnapshot.Task?,
-    onRenameTask: @escaping (UUID, UUID, String) async -> TimelineProjectListWindowSnapshot.Task?
+    onRenameTask: @escaping (UUID, UUID, String) async -> TimelineProjectListWindowSnapshot.Task?,
+    onDeleteTask: @escaping (UUID, UUID) async -> Bool,
+    onRenameProject: @escaping (UUID, String) -> Void
   ) {
     let content = TimelineProjectListWindowContent(
       snapshot: snapshot,
@@ -83,22 +101,12 @@ final class TimelineProjectListWindowPresenter {
       onEditTask: onEditTask,
       onReorderTasks: onReorderTasks,
       onCreateTask: onCreateTask,
-      onRenameTask: onRenameTask
+      onRenameTask: onRenameTask,
+      onDeleteTask: onDeleteTask,
+      onRenameProject: onRenameProject
     )
 
-    if let window,
-      let hostingController = window.contentViewController
-        as? NSHostingController<TimelineProjectListWindowContent>
-    {
-      window.title = snapshot.title
-      hostingController.rootView = content
-      Self.configureWindowLevel(window)
-      Self.attachAboveApplicationWindow(window)
-      window.makeKeyAndOrderFront(nil)
-      NSApp.activate(ignoringOtherApps: true)
-      return
-    }
-
+    pruneClosedWindows()
     let hostingController = NSHostingController(rootView: content)
     let window = NSWindow(
       contentRect: NSRect(x: 0, y: 0, width: 420, height: 560),
@@ -106,17 +114,104 @@ final class TimelineProjectListWindowPresenter {
       backing: .buffered,
       defer: false
     )
+    window.identifier = .timelineProjectListWindow
     window.title = snapshot.title
     window.contentViewController = hostingController
     window.isReleasedWhenClosed = false
     Self.configureWindowLevel(window)
     window.setFrameAutosaveName("TimelineProjectListWindow")
-    window.center()
-    self.window = window
+    positionNewWindow(window)
+
+    let recordID = UUID()
+    let delegate = ProjectListWindowDelegate { [weak self] in
+      self?.removeWindowRecord(id: recordID)
+    }
+    window.delegate = delegate
+    windowRecords.append(WindowRecord(id: recordID, window: window, delegate: delegate))
 
     Self.attachAboveApplicationWindow(window)
     window.makeKeyAndOrderFront(nil)
     NSApp.activate(ignoringOtherApps: true)
+  }
+
+  @discardableResult
+  func refresh(snapshot: TimelineProjectListWindowSnapshot) -> Int {
+    pruneClosedWindows()
+    var refreshedCount = 0
+    for record in windowRecords where Self.isLiveWindow(record.window) {
+      guard
+        let hostingController = record.window.contentViewController
+          as? NSHostingController<TimelineProjectListWindowContent>,
+        hostingController.rootView.snapshot.projectID == snapshot.projectID,
+        hostingController.rootView.snapshot != snapshot
+      else {
+        continue
+      }
+
+      record.window.title = snapshot.title
+      hostingController.rootView = hostingController.rootView.replacing(snapshot: snapshot)
+      refreshedCount += 1
+    }
+    return refreshedCount
+  }
+
+  func closeAllWindows() {
+    let records = windowRecords
+    windowRecords.removeAll()
+    for record in records {
+      record.window.close()
+    }
+  }
+
+  private func positionNewWindow(_ window: NSWindow) {
+    guard let anchorWindow = windowRecords.last(where: { Self.isLiveWindow($0.window) })?.window else {
+      window.center()
+      return
+    }
+
+    let anchorOrigin = anchorWindow.frame.origin
+    let nextOrigin = NSPoint(x: anchorOrigin.x + 28, y: max(anchorOrigin.y - 28, 80))
+    window.setFrameOrigin(nextOrigin)
+  }
+
+  private func pruneClosedWindows() {
+    windowRecords.removeAll { !Self.isLiveWindow($0.window) }
+  }
+
+  private func removeWindowRecord(id: UUID) {
+    windowRecords.removeAll { $0.id == id }
+  }
+
+  private static func isLiveWindow(_ window: NSWindow) -> Bool {
+    window.isVisible || window.isMiniaturized
+  }
+
+  private static func projectID(for window: NSWindow) -> UUID? {
+    guard
+      let hostingController = window.contentViewController
+        as? NSHostingController<TimelineProjectListWindowContent>
+    else {
+      return nil
+    }
+    return hostingController.rootView.snapshot.projectID
+  }
+
+  private struct WindowRecord {
+    let id: UUID
+    let window: NSWindow
+    let delegate: ProjectListWindowDelegate
+  }
+
+  private final class ProjectListWindowDelegate: NSObject, NSWindowDelegate {
+    let onClose: () -> Void
+
+    init(onClose: @escaping () -> Void) {
+      self.onClose = onClose
+    }
+
+    func windowWillClose(_ notification: Notification) {
+      onClose()
+    }
   }
 }
 
@@ -127,6 +222,8 @@ private struct TimelineProjectListWindowContent: View {
   let onReorderTasks: (UUID, [UUID]) -> Void
   let onCreateTask: (UUID, String) async -> TimelineProjectListWindowSnapshot.Task?
   let onRenameTask: (UUID, UUID, String) async -> TimelineProjectListWindowSnapshot.Task?
+  let onDeleteTask: (UUID, UUID) async -> Bool
+  let onRenameProject: (UUID, String) -> Void
 
   @State private var tasks: [TimelineProjectListWindowSnapshot.Task]
   @State private var draggingTaskID: UUID?
@@ -138,8 +235,10 @@ private struct TimelineProjectListWindowContent: View {
   @State private var isCreatingTask = false
   @State private var isRenamingTask = false
   @State private var completingTaskIDs: Set<UUID> = []
+  @State private var deletingTaskIDs: Set<UUID> = []
   @State private var focusedEditingTaskID: UUID?
   @State private var focusedDraftAnchor: TimelineProjectListDraftAnchor?
+  @State private var showsCompletedTasks = false
 
   init(
     snapshot: TimelineProjectListWindowSnapshot,
@@ -147,7 +246,9 @@ private struct TimelineProjectListWindowContent: View {
     onEditTask: @escaping (UUID) -> Void,
     onReorderTasks: @escaping (UUID, [UUID]) -> Void,
     onCreateTask: @escaping (UUID, String) async -> TimelineProjectListWindowSnapshot.Task?,
-    onRenameTask: @escaping (UUID, UUID, String) async -> TimelineProjectListWindowSnapshot.Task?
+    onRenameTask: @escaping (UUID, UUID, String) async -> TimelineProjectListWindowSnapshot.Task?,
+    onDeleteTask: @escaping (UUID, UUID) async -> Bool,
+    onRenameProject: @escaping (UUID, String) -> Void
   ) {
     self.snapshot = snapshot
     self.onCompleteTask = onCompleteTask
@@ -155,7 +256,22 @@ private struct TimelineProjectListWindowContent: View {
     self.onReorderTasks = onReorderTasks
     self.onCreateTask = onCreateTask
     self.onRenameTask = onRenameTask
+    self.onDeleteTask = onDeleteTask
+    self.onRenameProject = onRenameProject
     _tasks = State(initialValue: snapshot.tasks)
+  }
+
+  func replacing(snapshot: TimelineProjectListWindowSnapshot) -> TimelineProjectListWindowContent {
+    TimelineProjectListWindowContent(
+      snapshot: snapshot,
+      onCompleteTask: onCompleteTask,
+      onEditTask: onEditTask,
+      onReorderTasks: onReorderTasks,
+      onCreateTask: onCreateTask,
+      onRenameTask: onRenameTask,
+      onDeleteTask: onDeleteTask,
+      onRenameProject: onRenameProject
+    )
   }
 
   var body: some View {
@@ -164,7 +280,7 @@ private struct TimelineProjectListWindowContent: View {
 
       Divider()
 
-      if tasks.isEmpty && draftAnchor == nil {
+      if visibleTasks.isEmpty && draftAnchor == nil {
         Text("할일 없음")
           .font(.system(size: 14))
           .foregroundStyle(.secondary)
@@ -176,7 +292,7 @@ private struct TimelineProjectListWindowContent: View {
               draftRow(anchor: .beginning)
             }
 
-            ForEach(tasks) { task in
+            ForEach(visibleTasks) { task in
               dropLine(for: task, placement: .before)
               taskRow(task)
                 .opacity(draggingTaskID == task.id ? 0.42 : 1)
@@ -197,7 +313,7 @@ private struct TimelineProjectListWindowContent: View {
               if draftAnchor == .after(task.id) {
                 draftRow(anchor: .after(task.id))
               }
-              if task.id != tasks.last?.id {
+              if task.id != visibleTasks.last?.id {
                 Divider()
                   .padding(.leading, 32)
               }
@@ -223,6 +339,7 @@ private struct TimelineProjectListWindowContent: View {
       isCreatingTask = false
       isRenamingTask = false
       completingTaskIDs = []
+      deletingTaskIDs = []
       focusedEditingTaskID = nil
       focusedDraftAnchor = nil
     }
@@ -237,15 +354,34 @@ private struct TimelineProjectListWindowContent: View {
       Text(snapshot.title)
         .font(.system(size: 18, weight: .semibold))
         .lineLimit(1)
+        .contextMenu {
+          Button {
+            requestProjectRename()
+          } label: {
+            Label("이름 변경", systemImage: "pencil")
+          }
+        }
 
       Spacer(minLength: 0)
 
-      Text("\(tasks.count)")
+      Button {
+        toggleCompletedTasks()
+      } label: {
+        Image(systemName: showsCompletedTasks ? "checkmark.circle.fill" : "checkmark.circle")
+          .font(.system(size: 13, weight: .semibold))
+          .foregroundStyle(showsCompletedTasks ? projectColor : Color.secondary)
+          .frame(width: 24, height: 24)
+      }
+      .buttonStyle(.borderless)
+      .help(showsCompletedTasks ? "완료항목 숨기기" : "완료항목 보기")
+      .accessibilityLabel("완료항목 보기")
+
+      Text("\(visibleTasks.count)")
         .font(.system(size: 13, weight: .medium).monospacedDigit())
         .foregroundStyle(.secondary)
 
       Button {
-        startDraft(after: tasks.last?.id)
+        startDraft(after: visibleTasks.last?.id)
       } label: {
         Image(systemName: "plus")
           .font(.system(size: 13, weight: .semibold))
@@ -313,6 +449,11 @@ private struct TimelineProjectListWindowContent: View {
         cancelInlineEditing()
         onEditTask(task.id)
       }
+      Divider()
+      Button("삭제", role: .destructive) {
+        deleteTask(task.id)
+      }
+      .disabled(deletingTaskIDs.contains(task.id))
     }
   }
 
@@ -445,7 +586,7 @@ private struct TimelineProjectListWindowContent: View {
 
     let tasksByID = Dictionary(uniqueKeysWithValues: tasks.map { ($0.id, $0) })
     tasks = reorderedIDs.compactMap { tasksByID[$0] }
-    onReorderTasks(snapshot.projectID, reorderedIDs)
+    onReorderTasks(snapshot.projectID, openTaskIDs)
     draggingTaskID = nil
     dropIndicator = nil
   }
@@ -457,9 +598,34 @@ private struct TimelineProjectListWindowContent: View {
       let didComplete = await onCompleteTask(taskID)
       completingTaskIDs.remove(taskID)
       guard didComplete else { return }
-      removeCompletedTask(taskID)
-      onReorderTasks(snapshot.projectID, tasks.map(\.id))
+      markTaskCompleted(taskID)
+      onReorderTasks(snapshot.projectID, openTaskIDs)
     }
+  }
+
+  private func deleteTask(_ taskID: UUID) {
+    guard !deletingTaskIDs.contains(taskID) else { return }
+    cancelInlineEditing()
+    deletingTaskIDs.insert(taskID)
+    Task { @MainActor in
+      let didDelete = await onDeleteTask(snapshot.projectID, taskID)
+      deletingTaskIDs.remove(taskID)
+      guard didDelete else { return }
+      removeTaskFromWindow(taskID)
+      onReorderTasks(snapshot.projectID, openTaskIDs)
+    }
+  }
+
+  private func toggleCompletedTasks() {
+    cancelInlineEditing()
+    cancelDraftIfEmpty()
+    showsCompletedTasks.toggle()
+  }
+
+  private func requestProjectRename() {
+    cancelInlineEditing()
+    cancelDraftIfEmpty()
+    onRenameProject(snapshot.projectID, snapshot.title)
   }
 
   private func startEditing(_ task: TimelineProjectListWindowSnapshot.Task) {
@@ -553,7 +719,7 @@ private struct TimelineProjectListWindowContent: View {
       if !tasks.contains(where: { $0.id == createdTask.id }) {
         insertCreatedTask(createdTask, after: anchor.taskID)
       }
-      onReorderTasks(snapshot.projectID, tasks.map(\.id))
+      onReorderTasks(snapshot.projectID, openTaskIDs)
       let nextAnchor = TimelineProjectListDraftAnchor.after(createdTask.id)
       draftAnchor = nextAnchor
       draftTitle = ""
@@ -577,18 +743,40 @@ private struct TimelineProjectListWindowContent: View {
     tasks[index] = task
   }
 
-  private func removeCompletedTask(_ taskID: UUID) {
+  private func markTaskCompleted(_ taskID: UUID) {
+    guard let index = tasks.firstIndex(where: { $0.id == taskID }) else { return }
+    let task = tasks[index]
+    tasks[index] = TimelineProjectListWindowSnapshot.Task(
+      id: task.id,
+      title: task.title,
+      dateText: task.dateText,
+      isCompleted: true,
+      isOverdue: false
+    )
+    cancelInlineEditingIfNeeded(for: taskID)
+    cancelDraftIfNeeded(after: taskID)
+  }
+
+  private func removeTaskFromWindow(_ taskID: UUID) {
     let orderedIDs = TimelineProjectTaskManualOrderStore.removedTaskIDs(
       tasks.map(\.id),
       removedID: taskID
     )
     let tasksByID = Dictionary(uniqueKeysWithValues: tasks.map { ($0.id, $0) })
     tasks = orderedIDs.compactMap { tasksByID[$0] }
+    cancelInlineEditingIfNeeded(for: taskID)
+    cancelDraftIfNeeded(after: taskID)
+  }
+
+  private func cancelInlineEditingIfNeeded(for taskID: UUID) {
     if editingTaskID == taskID {
       editingTaskID = nil
       editingTitle = ""
       focusedEditingTaskID = nil
     }
+  }
+
+  private func cancelDraftIfNeeded(after taskID: UUID) {
     if draftAnchor == .after(taskID) {
       draftAnchor = nil
       draftTitle = ""
@@ -612,6 +800,14 @@ private struct TimelineProjectListWindowContent: View {
 
   private var projectColor: Color {
     ColorHexCodec.color(from: snapshot.colorHex) ?? .accentColor
+  }
+
+  private var visibleTasks: [TimelineProjectListWindowSnapshot.Task] {
+    showsCompletedTasks ? tasks : tasks.filter { !$0.isCompleted }
+  }
+
+  private var openTaskIDs: [UUID] {
+    tasks.filter { !$0.isCompleted }.map(\.id)
   }
 }
 

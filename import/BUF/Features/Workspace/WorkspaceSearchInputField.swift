@@ -218,6 +218,7 @@ struct EscapeAwareTextField: NSViewRepresentable {
   final class Coordinator: NSObject, NSTextFieldDelegate {
     var parent: EscapeAwareTextField
     var pendingFocusWorkItem: DispatchWorkItem?
+    var handledEscapeDuringEditing = false
 
     init(parent: EscapeAwareTextField) {
       self.parent = parent
@@ -225,6 +226,7 @@ struct EscapeAwareTextField: NSViewRepresentable {
 
     func controlTextDidBeginEditing(_ obj: Notification) {
       pendingFocusWorkItem?.cancel()
+      handledEscapeDuringEditing = false
       if !parent.isFocused {
         parent.isFocused = true
       }
@@ -232,9 +234,16 @@ struct EscapeAwareTextField: NSViewRepresentable {
 
     func controlTextDidEndEditing(_ obj: Notification) {
       pendingFocusWorkItem?.cancel()
+      if let field = obj.object as? NSTextField, parent.text != field.stringValue {
+        parent.text = field.stringValue
+      }
       if parent.isFocused {
         parent.isFocused = false
       }
+      if didEndByCancelMovement(obj), !handledEscapeDuringEditing {
+        handleEscapeCommand()
+      }
+      handledEscapeDuringEditing = false
     }
 
     func controlTextDidChange(_ obj: Notification) {
@@ -254,11 +263,30 @@ struct EscapeAwareTextField: NSViewRepresentable {
         parent.onSubmit()
         return true
       case #selector(NSResponder.cancelOperation(_:)):
-        parent.onEscape()
+        handleEscapeCommand()
         return true
       default:
         return false
       }
+    }
+
+    func handleEscapeCommand() {
+      handledEscapeDuringEditing = true
+      parent.onEscape()
+    }
+
+    private func didEndByCancelMovement(_ notification: Notification) -> Bool {
+      let movementValue = notification.userInfo?["NSTextMovement"]
+      if let movement = movementValue as? NSTextMovement {
+        return movement == .cancel
+      }
+      if let movementNumber = movementValue as? NSNumber {
+        return movementNumber.intValue == NSTextMovement.cancel.rawValue
+      }
+      if let movementInt = movementValue as? Int {
+        return movementInt == NSTextMovement.cancel.rawValue
+      }
+      return false
     }
 
     func isFirstResponder(for field: NSTextField, in window: NSWindow) -> Bool {
@@ -339,7 +367,7 @@ struct EscapeAwareTextField: NSViewRepresentable {
       coordinator?.parent.onSubmit()
     }
     field.onEscapeCommand = { [weak coordinator = context.coordinator] in
-      coordinator?.parent.onEscape()
+      coordinator?.handleEscapeCommand()
     }
     return field
   }
@@ -350,7 +378,7 @@ struct EscapeAwareTextField: NSViewRepresentable {
       coordinator?.parent.onSubmit()
     }
     field.onEscapeCommand = { [weak coordinator = context.coordinator] in
-      coordinator?.parent.onEscape()
+      coordinator?.handleEscapeCommand()
     }
     let targetFont = AppInputTypography.nsFont(size: AppInputTypography.defaultPointSize)
     if field.font?.fontName != targetFont.fontName

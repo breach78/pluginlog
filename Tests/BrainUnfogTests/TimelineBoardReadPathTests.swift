@@ -598,6 +598,24 @@ final class TimelineBoardReadPathTests: XCTestCase {
     XCTAssertEqual(ordered.map(\.taskID), [openFirstID, openSecondID])
   }
 
+  func testProjectListWindowEntriesIncludeCompletedTasksAfterOpenTasks() {
+    let openFirstID = UUID()
+    let openSecondID = UUID()
+    let completedID = UUID()
+    let archivedID = UUID()
+
+    let ordered = TimelineBoardReadPath.projectListWindowEntries(
+      from: [
+        makeScheduleEntry(taskID: completedID, title: "Completed", isCompleted: true, rowOrder: 0),
+        makeScheduleEntry(taskID: openSecondID, title: "Second", rowOrder: 20),
+        makeScheduleEntry(taskID: archivedID, title: "Archived", isArchived: true, rowOrder: -1),
+        makeScheduleEntry(taskID: openFirstID, title: "First", rowOrder: 10),
+      ]
+    )
+
+    XCTAssertEqual(ordered.map(\.taskID), [openFirstID, openSecondID, completedID])
+  }
+
   private func makeProject(
     projectID: UUID,
     title: String = "Project",

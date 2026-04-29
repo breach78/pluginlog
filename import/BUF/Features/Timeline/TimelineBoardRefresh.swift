@@ -123,23 +123,36 @@ enum TimelineBoardReadPath {
   {
     entries
       .filter { !$0.isArchived && !$0.isCompleted }
-      .sorted { lhs, rhs in
-        if lhs.isCompleted != rhs.isCompleted {
-          return !lhs.isCompleted
-        }
+      .sorted(by: projectListEntrySort)
+  }
 
-        if lhs.rowOrder != rhs.rowOrder {
-          return lhs.rowOrder < rhs.rowOrder
-        }
+  static func projectListWindowEntries(from entries: [ScheduleSliceEntry])
+    -> [ScheduleSliceEntry]
+  {
+    entries
+      .filter { !$0.isArchived }
+      .sorted(by: projectListEntrySort)
+  }
 
-        let titleComparison = timelinePreviewTitle(for: lhs.title)
-          .localizedStandardCompare(timelinePreviewTitle(for: rhs.title))
-        if titleComparison != .orderedSame {
-          return titleComparison == .orderedAscending
-        }
+  private static func projectListEntrySort(
+    _ lhs: ScheduleSliceEntry,
+    _ rhs: ScheduleSliceEntry
+  ) -> Bool {
+    if lhs.isCompleted != rhs.isCompleted {
+      return !lhs.isCompleted
+    }
 
-        return lhs.taskID.uuidString < rhs.taskID.uuidString
-      }
+    if lhs.rowOrder != rhs.rowOrder {
+      return lhs.rowOrder < rhs.rowOrder
+    }
+
+    let titleComparison = timelinePreviewTitle(for: lhs.title)
+      .localizedStandardCompare(timelinePreviewTitle(for: rhs.title))
+    if titleComparison != .orderedSame {
+      return titleComparison == .orderedAscending
+    }
+
+    return lhs.taskID.uuidString < rhs.taskID.uuidString
   }
 
   static func dayHeaderSectionsByDay(
@@ -771,6 +784,7 @@ extension TimelineBoardView {
     cachedTimelineRowLayouts = buildRowLayouts(for: refreshed)
     cachedTimelineBarsSourceSignature = sourceSignature
     cachedTimelineBarsPresentationSignature = timelineSignature(for: refreshed)
+    refreshOpenTimelineProjectListWindow(using: refreshed)
     return refreshed
   }
 
