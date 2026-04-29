@@ -87,7 +87,7 @@ final class TimelineProjectListWindowPresenter {
 
   func present(
     snapshot: TimelineProjectListWindowSnapshot,
-    onCompleteTask: @escaping (UUID) async -> Bool,
+    onToggleTaskCompletion: @escaping (UUID, Bool) async -> Bool,
     onEditTask: @escaping (UUID) -> Void,
     onReorderTasks: @escaping (UUID, [UUID]) -> Void,
     onCreateTask: @escaping (UUID, String) async -> TimelineProjectListWindowSnapshot.Task?,
@@ -97,7 +97,7 @@ final class TimelineProjectListWindowPresenter {
   ) {
     let content = TimelineProjectListWindowContent(
       snapshot: snapshot,
-      onCompleteTask: onCompleteTask,
+      onToggleTaskCompletion: onToggleTaskCompletion,
       onEditTask: onEditTask,
       onReorderTasks: onReorderTasks,
       onCreateTask: onCreateTask,
@@ -217,7 +217,7 @@ final class TimelineProjectListWindowPresenter {
 
 private struct TimelineProjectListWindowContent: View {
   let snapshot: TimelineProjectListWindowSnapshot
-  let onCompleteTask: (UUID) async -> Bool
+  let onToggleTaskCompletion: (UUID, Bool) async -> Bool
   let onEditTask: (UUID) -> Void
   let onReorderTasks: (UUID, [UUID]) -> Void
   let onCreateTask: (UUID, String) async -> TimelineProjectListWindowSnapshot.Task?
@@ -242,7 +242,7 @@ private struct TimelineProjectListWindowContent: View {
 
   init(
     snapshot: TimelineProjectListWindowSnapshot,
-    onCompleteTask: @escaping (UUID) async -> Bool,
+    onToggleTaskCompletion: @escaping (UUID, Bool) async -> Bool,
     onEditTask: @escaping (UUID) -> Void,
     onReorderTasks: @escaping (UUID, [UUID]) -> Void,
     onCreateTask: @escaping (UUID, String) async -> TimelineProjectListWindowSnapshot.Task?,
@@ -251,7 +251,7 @@ private struct TimelineProjectListWindowContent: View {
     onRenameProject: @escaping (UUID, String) -> Void
   ) {
     self.snapshot = snapshot
-    self.onCompleteTask = onCompleteTask
+    self.onToggleTaskCompletion = onToggleTaskCompletion
     self.onEditTask = onEditTask
     self.onReorderTasks = onReorderTasks
     self.onCreateTask = onCreateTask
@@ -264,7 +264,7 @@ private struct TimelineProjectListWindowContent: View {
   func replacing(snapshot: TimelineProjectListWindowSnapshot) -> TimelineProjectListWindowContent {
     TimelineProjectListWindowContent(
       snapshot: snapshot,
-      onCompleteTask: onCompleteTask,
+      onToggleTaskCompletion: onToggleTaskCompletion,
       onEditTask: onEditTask,
       onReorderTasks: onReorderTasks,
       onCreateTask: onCreateTask,
@@ -412,24 +412,17 @@ private struct TimelineProjectListWindowContent: View {
 
   private func taskRow(_ task: TimelineProjectListWindowSnapshot.Task) -> some View {
     HStack(alignment: .top, spacing: 10) {
-      if task.isCompleted {
-        Image(systemName: "checkmark.circle.fill")
+      Button {
+        cancelInlineEditing()
+        toggleTaskCompletion(task.id, isCompleted: task.isCompleted)
+      } label: {
+        Image(systemName: completionMarkerName(for: task))
           .font(.system(size: 14))
-          .foregroundStyle(projectColor.opacity(0.9))
-        .frame(width: 18, height: 22, alignment: .top)
-      } else {
-        Button {
-          cancelInlineEditing()
-          completeTask(task.id)
-        } label: {
-          Image(systemName: completingTaskIDs.contains(task.id) ? "checkmark.circle" : taskMarkerName(task))
-            .font(.system(size: 14))
-            .foregroundStyle(task.isOverdue ? .red : .secondary)
-            .frame(width: 18, height: 22, alignment: .top)
-        }
-        .buttonStyle(.plain)
-        .disabled(completingTaskIDs.contains(task.id))
+          .foregroundStyle(completionMarkerColor(for: task))
+          .frame(width: 18, height: 22, alignment: .top)
       }
+      .buttonStyle(.plain)
+      .disabled(completingTaskIDs.contains(task.id))
 
       if editingTaskID == task.id {
         inlineTitleEditor(for: task)
@@ -459,6 +452,20 @@ private struct TimelineProjectListWindowContent: View {
 
   private func taskMarkerName(_ task: TimelineProjectListWindowSnapshot.Task) -> String {
     task.isOverdue ? "exclamationmark.circle" : "circle"
+  }
+
+  private func completionMarkerName(for task: TimelineProjectListWindowSnapshot.Task) -> String {
+    if completingTaskIDs.contains(task.id) {
+      return task.isCompleted ? "circle" : "checkmark.circle"
+    }
+    return task.isCompleted ? "checkmark.circle.fill" : taskMarkerName(task)
+  }
+
+  private func completionMarkerColor(for task: TimelineProjectListWindowSnapshot.Task) -> Color {
+    if task.isCompleted {
+      return projectColor.opacity(0.9)
+    }
+    return task.isOverdue ? .red : .secondary
   }
 
   private func taskTitleContent(_ task: TimelineProjectListWindowSnapshot.Task) -> some View {
@@ -591,14 +598,19 @@ private struct TimelineProjectListWindowContent: View {
     dropIndicator = nil
   }
 
-  private func completeTask(_ taskID: UUID) {
+  private func toggleTaskCompletion(_ taskID: UUID, isCompleted: Bool) {
     guard !completingTaskIDs.contains(taskID) else { return }
     completingTaskIDs.insert(taskID)
     Task { @MainActor in
-      let didComplete = await onCompleteTask(taskID)
+      let didToggle = await onToggleTaskCompletion(taskID, isCompleted)
       completingTaskIDs.remove(taskID)
-      guard didComplete else { return }
-      markTaskCompleted(taskID)
+      guard didToggle else { return }
+      setTaskCompletion(
+        taskID,
+        isCompleted: TimelineTaskCompletionTogglePolicy.nextIsCompleted(
+          currentIsCompleted: isCompleted
+        )
+      )
       onReorderTasks(snapshot.projectID, openTaskIDs)
     }
   }
@@ -743,15 +755,15 @@ private struct TimelineProjectListWindowContent: View {
     tasks[index] = task
   }
 
-  private func markTaskCompleted(_ taskID: UUID) {
+  private func setTaskCompletion(_ taskID: UUID, isCompleted: Bool) {
     guard let index = tasks.firstIndex(where: { $0.id == taskID }) else { return }
     let task = tasks[index]
     tasks[index] = TimelineProjectListWindowSnapshot.Task(
       id: task.id,
       title: task.title,
       dateText: task.dateText,
-      isCompleted: true,
-      isOverdue: false
+      isCompleted: isCompleted,
+      isOverdue: isCompleted ? false : task.isOverdue
     )
     cancelInlineEditingIfNeeded(for: taskID)
     cancelDraftIfNeeded(after: taskID)

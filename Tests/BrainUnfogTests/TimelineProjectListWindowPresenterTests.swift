@@ -22,7 +22,7 @@ final class TimelineProjectListWindowPresenterTests: XCTestCase {
 
     presenter.present(
       snapshot: makeSnapshot(projectID: firstProjectID, title: "First"),
-      onCompleteTask: { _ in true },
+      onToggleTaskCompletion: { _, _ in true },
       onEditTask: { _ in },
       onReorderTasks: { _, _ in },
       onCreateTask: { _, _ in nil },
@@ -32,7 +32,7 @@ final class TimelineProjectListWindowPresenterTests: XCTestCase {
     )
     presenter.present(
       snapshot: makeSnapshot(projectID: secondProjectID, title: "Second"),
-      onCompleteTask: { _ in true },
+      onToggleTaskCompletion: { _, _ in true },
       onEditTask: { _ in },
       onReorderTasks: { _, _ in },
       onCreateTask: { _, _ in nil },
@@ -54,7 +54,7 @@ final class TimelineProjectListWindowPresenterTests: XCTestCase {
 
     presenter.present(
       snapshot: makeSnapshot(projectID: projectID, title: "Before"),
-      onCompleteTask: { _ in true },
+      onToggleTaskCompletion: { _, _ in true },
       onEditTask: { _ in },
       onReorderTasks: { _, _ in },
       onCreateTask: { _, _ in nil },
@@ -64,7 +64,7 @@ final class TimelineProjectListWindowPresenterTests: XCTestCase {
     )
     presenter.present(
       snapshot: makeSnapshot(projectID: projectID, title: "Before"),
-      onCompleteTask: { _ in true },
+      onToggleTaskCompletion: { _, _ in true },
       onEditTask: { _ in },
       onReorderTasks: { _, _ in },
       onCreateTask: { _, _ in nil },

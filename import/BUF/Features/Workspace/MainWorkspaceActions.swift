@@ -311,11 +311,20 @@ extension MainWorkspaceView {
   }
 
   func completeTimelineTask(_ taskID: UUID, projectID: UUID) {
+    toggleTimelineTaskCompletion(taskID, projectID: projectID, isCompleted: false)
+  }
+
+  func toggleTimelineTaskCompletion(_ taskID: UUID, projectID: UUID, isCompleted: Bool) {
+    let nextIsCompleted = TimelineTaskCompletionTogglePolicy.nextIsCompleted(
+      currentIsCompleted: isCompleted
+    )
     Task { @MainActor in
       _ = await appState.saveProjectDetailTaskCompletion(
         taskID: taskID,
-        isCompleted: true,
-        completionDate: .now,
+        isCompleted: nextIsCompleted,
+        completionDate: TimelineTaskCompletionTogglePolicy.completionDate(
+          nextIsCompleted: nextIsCompleted
+        ),
         context: modelContext
       )
       selectProjectContext(projectID)

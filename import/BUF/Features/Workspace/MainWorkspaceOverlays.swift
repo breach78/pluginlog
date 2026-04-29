@@ -214,7 +214,11 @@ extension MainWorkspaceView {
             ForEach(presentation.strongTasks) { task in
               HStack(spacing: 8) {
                 Button {
-                  completeTimelineTask(task.taskID, projectID: presentation.projectReference.id)
+                  toggleTimelineTaskCompletion(
+                    task.taskID,
+                    projectID: presentation.projectReference.id,
+                    isCompleted: false
+                  )
                 } label: {
                   timelineDayHeaderTaskMarker(
                     isOverdue: task.isOverdue,
@@ -315,27 +319,38 @@ extension MainWorkspaceView {
 
           VStack(alignment: .leading, spacing: 6) {
             ForEach(presentation.completedTasks) { task in
-              Button {
-                showTimelineTaskEditor(
-                  taskID: task.taskID,
-                  projectID: presentation.projectReference.id,
-                  title: task.title,
-                  date: presentation.date
-                )
-              } label: {
-                HStack(spacing: 8) {
+              HStack(spacing: 8) {
+                Button {
+                  toggleTimelineTaskCompletion(
+                    task.taskID,
+                    projectID: presentation.projectReference.id,
+                    isCompleted: true
+                  )
+                } label: {
                   timelineDayHeaderCompletedMarker(color: projectColor)
-
-                  Text(task.title)
-                    .font(.system(size: 12))
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-
-                  Spacer(minLength: 0)
                 }
-                .contentShape(Rectangle())
+                .buttonStyle(.plain)
+
+                Button {
+                  showTimelineTaskEditor(
+                    taskID: task.taskID,
+                    projectID: presentation.projectReference.id,
+                    title: task.title,
+                    date: presentation.date
+                  )
+                } label: {
+                  HStack(spacing: 0) {
+                    Text(task.title)
+                      .font(.system(size: 12))
+                      .foregroundStyle(.secondary)
+                      .lineLimit(1)
+
+                    Spacer(minLength: 0)
+                  }
+                  .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
               }
-              .buttonStyle(.plain)
             }
 
             if presentation.hiddenCompletedCount > 0 {
@@ -389,35 +404,50 @@ extension MainWorkspaceView {
 
           ForEach(section.tasks) { task in
             if task.isCompleted {
-              Button {
-                showTimelineTaskEditor(
-                  taskID: task.taskID,
-                  projectID: task.projectReference.id,
-                  title: task.title,
-                  date: presentation.date
-                )
-              } label: {
-                HStack(spacing: 8) {
+              HStack(spacing: 8) {
+                Button {
+                  toggleTimelineTaskCompletion(
+                    task.taskID,
+                    projectID: task.projectReference.id,
+                    isCompleted: true
+                  )
+                } label: {
                   timelineDayHeaderCompletedMarker(color: sectionColor)
-
-                  Text(task.title)
-                    .font(.system(size: 12))
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-
-                  Spacer(minLength: 0)
-
-                  Text("완료")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary.opacity(0.9))
                 }
-                .contentShape(Rectangle())
+                .buttonStyle(.plain)
+
+                Button {
+                  showTimelineTaskEditor(
+                    taskID: task.taskID,
+                    projectID: task.projectReference.id,
+                    title: task.title,
+                    date: presentation.date
+                  )
+                } label: {
+                  HStack(spacing: 0) {
+                    Text(task.title)
+                      .font(.system(size: 12))
+                      .foregroundStyle(.secondary)
+                      .lineLimit(1)
+
+                    Spacer(minLength: 0)
+
+                    Text("완료")
+                      .font(.caption2)
+                      .foregroundStyle(.secondary.opacity(0.9))
+                  }
+                  .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
               }
-              .buttonStyle(.plain)
             } else {
               HStack(spacing: 8) {
                 Button {
-                  completeTimelineTask(task.taskID, projectID: task.projectReference.id)
+                  toggleTimelineTaskCompletion(
+                    task.taskID,
+                    projectID: task.projectReference.id,
+                    isCompleted: false
+                  )
                 } label: {
                   timelineDayHeaderTaskMarker(
                     isOverdue: task.isOverdue,

@@ -382,6 +382,16 @@ enum TimelineProjectListDraftPolicy {
   }
 }
 
+enum TimelineTaskCompletionTogglePolicy {
+  static func nextIsCompleted(currentIsCompleted: Bool) -> Bool {
+    !currentIsCompleted
+  }
+
+  static func completionDate(nextIsCompleted: Bool, now: Date = .now) -> Date? {
+    nextIsCompleted ? now : nil
+  }
+}
+
 enum TimelineHiddenProjectStore {
   private static let storageKey = "workspace.timelineHiddenProjects.v1"
 

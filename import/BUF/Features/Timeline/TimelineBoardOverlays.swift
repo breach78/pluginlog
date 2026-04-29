@@ -76,7 +76,11 @@ extension TimelineBoardView {
             ForEach(strongPreview.tasks, id: \.id) { task in
               HStack(spacing: 8) {
                 Button {
-                  completeTimelineTask(task.taskID, projectID: projectID)
+                  toggleTimelineTaskCompletion(
+                    task.taskID,
+                    projectID: projectID,
+                    isCompleted: false
+                  )
                 } label: {
                   timelineTaskToggleMarker(isOverdue: task.isOverdue)
                 }
@@ -184,31 +188,43 @@ extension TimelineBoardView {
 
           VStack(alignment: .leading, spacing: 6) {
             ForEach(completedPreview.tasks, id: \.id) { task in
-              Button {
-                onEditTask(
-                  timelineTaskEditPanelTarget(
-                    taskID: task.taskID,
+              HStack(spacing: 8) {
+                Button {
+                  toggleTimelineTaskCompletion(
+                    task.taskID,
                     projectID: projectID,
-                    title: timelinePreviewTitle(for: task.title),
-                    date: context.date
+                    isCompleted: true
                   )
-                )
-              } label: {
-                HStack(spacing: 8) {
+                } label: {
                   Image(systemName: "checkmark.circle.fill")
                     .font(.system(size: 13, weight: .regular))
                     .foregroundStyle(completedMarkerColor.opacity(0.9))
-
-                  Text(timelinePreviewTitle(for: task.title))
-                    .font(.system(size: 12))
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-
-                  Spacer(minLength: 0)
                 }
-                .contentShape(Rectangle())
+                .buttonStyle(.plain)
+                .disabled(!canInteractWithProject)
+
+                Button {
+                  onEditTask(
+                    timelineTaskEditPanelTarget(
+                      taskID: task.taskID,
+                      projectID: projectID,
+                      title: timelinePreviewTitle(for: task.title),
+                      date: context.date
+                    )
+                  )
+                } label: {
+                  HStack(spacing: 0) {
+                    Text(timelinePreviewTitle(for: task.title))
+                      .font(.system(size: 12))
+                      .foregroundStyle(.secondary)
+                      .lineLimit(1)
+
+                    Spacer(minLength: 0)
+                  }
+                  .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
               }
-              .buttonStyle(.plain)
             }
 
             if context.hiddenCompletedCount > 0 {

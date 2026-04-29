@@ -75,8 +75,12 @@ extension TimelineBoardView {
     let projectID = bar.projectID
     TimelineProjectListWindowPresenter.shared.present(
       snapshot: timelineProjectListWindowSnapshot(for: bar),
-      onCompleteTask: { taskID in
-        await self.completeTimelineProjectListWindowTask(taskID, projectID: projectID)
+      onToggleTaskCompletion: { taskID, isCompleted in
+        await self.toggleTimelineProjectListWindowTaskCompletion(
+          taskID,
+          projectID: projectID,
+          isCompleted: isCompleted
+        )
       },
       onEditTask: { taskID in
         self.editTimelineTaskFromProjectListWindow(taskID: taskID, projectID: projectID)
@@ -178,15 +182,21 @@ extension TimelineBoardView {
     }
   }
 
-  func completeTimelineProjectListWindowTask(
+  func toggleTimelineProjectListWindowTaskCompletion(
     _ taskID: UUID,
-    projectID: UUID
+    projectID: UUID,
+    isCompleted: Bool
   ) async -> Bool {
-    await updateTimelineTaskCompletionAndWait(
+    let nextIsCompleted = TimelineTaskCompletionTogglePolicy.nextIsCompleted(
+      currentIsCompleted: isCompleted
+    )
+    return await updateTimelineTaskCompletionAndWait(
       taskID: taskID,
       projectID: projectID,
-      isCompleted: true,
-      completionDate: .now,
+      isCompleted: nextIsCompleted,
+      completionDate: TimelineTaskCompletionTogglePolicy.completionDate(
+        nextIsCompleted: nextIsCompleted
+      ),
       targetState: nil,
       registerUndo: true
     )
@@ -435,11 +445,20 @@ extension TimelineBoardView {
   }
 
   func completeTimelineTask(_ taskID: UUID, projectID: UUID) {
+    toggleTimelineTaskCompletion(taskID, projectID: projectID, isCompleted: false)
+  }
+
+  func toggleTimelineTaskCompletion(_ taskID: UUID, projectID: UUID, isCompleted: Bool) {
+    let nextIsCompleted = TimelineTaskCompletionTogglePolicy.nextIsCompleted(
+      currentIsCompleted: isCompleted
+    )
     updateTimelineTaskCompletion(
       taskID: taskID,
       projectID: projectID,
-      isCompleted: true,
-      completionDate: .now,
+      isCompleted: nextIsCompleted,
+      completionDate: TimelineTaskCompletionTogglePolicy.completionDate(
+        nextIsCompleted: nextIsCompleted
+      ),
       targetState: nil,
       registerUndo: true
     )

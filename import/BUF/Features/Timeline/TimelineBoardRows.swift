@@ -507,20 +507,24 @@ extension TimelineBoardView {
     let isOverdue = timelineProjectListEntryIsOverdue(entry)
 
     return HStack(alignment: .top, spacing: 8) {
-      if entry.isCompleted {
-        Image(systemName: "checkmark.circle.fill")
-          .font(.system(size: 13, weight: .regular))
-          .foregroundStyle(projectColor.opacity(0.9))
-          .frame(width: 14, height: 18, alignment: .top)
-      } else {
-        Button {
-          completeTimelineTask(entry.taskID, projectID: projectID)
-        } label: {
+      Button {
+        toggleTimelineTaskCompletion(
+          entry.taskID,
+          projectID: projectID,
+          isCompleted: entry.isCompleted
+        )
+      } label: {
+        if entry.isCompleted {
+          Image(systemName: "checkmark.circle.fill")
+            .font(.system(size: 13, weight: .regular))
+            .foregroundStyle(projectColor.opacity(0.9))
+            .frame(width: 14, height: 18, alignment: .top)
+        } else {
           timelineTaskToggleMarker(isOverdue: isOverdue)
             .frame(width: 14, height: 18, alignment: .top)
         }
-        .buttonStyle(.plain)
       }
+      .buttonStyle(.plain)
 
       Button {
         onEditTask(

@@ -282,6 +282,18 @@ final class TimelineBoardReadPathTests: XCTestCase {
     XCTAssertFalse(TimelineProjectListDraftPolicy.shouldCancelDraft(title: "새 할일"))
   }
 
+  func testTimelineTaskCompletionTogglePolicyFlipsCompletionState() {
+    let now = Date(timeIntervalSince1970: 1_776_880_000)
+
+    XCTAssertTrue(TimelineTaskCompletionTogglePolicy.nextIsCompleted(currentIsCompleted: false))
+    XCTAssertFalse(TimelineTaskCompletionTogglePolicy.nextIsCompleted(currentIsCompleted: true))
+    XCTAssertEqual(
+      TimelineTaskCompletionTogglePolicy.completionDate(nextIsCompleted: true, now: now),
+      now
+    )
+    XCTAssertNil(TimelineTaskCompletionTogglePolicy.completionDate(nextIsCompleted: false, now: now))
+  }
+
   func testTimelineProjectTaskManualOrderRemovesCompletedTask() {
     let firstTaskID = UUID()
     let completedTaskID = UUID()
