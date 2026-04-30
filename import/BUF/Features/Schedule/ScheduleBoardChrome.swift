@@ -324,7 +324,6 @@ extension ScheduleBoardView {
 
   func dayHeaderCell(day: Date, index: Int) -> some View {
     let isToday = calendar.isDate(day, inSameDayAs: today)
-    let isWeekend = calendar.isDateInWeekend(day)
     let showsMonth = calendar.component(.day, from: day) == 1
     let dayNumberColor: Color =
       isToday

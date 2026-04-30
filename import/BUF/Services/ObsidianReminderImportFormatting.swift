@@ -355,53 +355,71 @@ enum ObsidianReminderImportFormatting {
     let checkbox = input.isCompleted ? "x" : " "
     var block = ["\(parentIndentation)- [\(checkbox)] \(input.title)"]
     block.append(renderMetadataLine(input.metadata, indentation: parentIndentation + "  "))
-    if let outlineChildren = outline?.taskChildrenByReminderID[identifier] {
-      let remoteNote = ReminderNoteSourceCodec.normalize(input.noteText)
-      let outlineNote = outline?.humanNoteText(forTaskID: identifier) ?? ""
-      if remoteNote.isEmpty || remoteNote == outlineNote {
-        block.append(
-          contentsOf: try renderOutlineChildren(
-            outlineChildren,
-            parentIndentation: parentIndentation + "  ",
-            tasksByID: tasksByID,
-            outline: outline,
-            consumedIDs: &consumedIDs,
-            stack: stack + [identifier]
-          )
-        )
-      } else {
-        block.append(
-          contentsOf: try renderFlatReminderNoteLines(
-            input.noteText,
-            parentIndentation: parentIndentation,
-            tasksByID: tasksByID,
-            consumedIDs: &consumedIDs,
-            stack: stack + [identifier]
-          )
-        )
-        block.append(
-          contentsOf: try renderOutlineTaskChildren(
-            outlineChildren,
-            parentIndentation: parentIndentation + "  ",
-            tasksByID: tasksByID,
-            outline: outline,
-            consumedIDs: &consumedIDs,
-            stack: stack + [identifier]
-          )
-        )
-      }
-    } else {
-      block.append(
-        contentsOf: try renderFlatReminderNoteLines(
-          input.noteText,
-          parentIndentation: parentIndentation,
-          tasksByID: tasksByID,
-          consumedIDs: &consumedIDs,
-          stack: stack + [identifier]
-        )
+    block.append(
+      contentsOf: try renderDescendantLines(
+        for: input,
+        identifier: identifier,
+        parentIndentation: parentIndentation,
+        tasksByID: tasksByID,
+        outline: outline,
+        consumedIDs: &consumedIDs,
+        stack: stack + [identifier]
+      )
+    )
+    return block
+  }
+
+  private static func renderDescendantLines(
+    for input: FlatReminderTaskBlockInput,
+    identifier: String,
+    parentIndentation: String,
+    tasksByID: [String: FlatReminderTaskBlockInput],
+    outline: ObsidianReminderOutlineState?,
+    consumedIDs: inout Set<String>,
+    stack: [String]
+  ) throws -> [String] {
+    guard let outlineChildren = outline?.taskChildrenByReminderID[identifier] else {
+      return try renderFlatReminderNoteLines(
+        input.noteText,
+        parentIndentation: parentIndentation,
+        tasksByID: tasksByID,
+        consumedIDs: &consumedIDs,
+        stack: stack
       )
     }
-    return block
+
+    let remoteNote = ReminderNoteSourceCodec.normalize(input.noteText)
+    let outlineNote = outline?.humanNoteText(forTaskID: identifier) ?? ""
+    if remoteNote.isEmpty || remoteNote == outlineNote {
+      return try renderOutlineChildren(
+        outlineChildren,
+        parentIndentation: parentIndentation + "  ",
+        tasksByID: tasksByID,
+        outline: outline,
+        consumedIDs: &consumedIDs,
+        stack: stack
+      )
+    }
+
+    // Remote note text is authoritative, but saved outline children can still carry nested tasks.
+    var result = try renderFlatReminderNoteLines(
+      input.noteText,
+      parentIndentation: parentIndentation,
+      tasksByID: tasksByID,
+      consumedIDs: &consumedIDs,
+      stack: stack
+    )
+    result.append(
+      contentsOf: try renderOutlineTaskChildren(
+        outlineChildren,
+        parentIndentation: parentIndentation + "  ",
+        tasksByID: tasksByID,
+        outline: outline,
+        consumedIDs: &consumedIDs,
+        stack: stack
+      )
+    )
+    return result
   }
 
   private static func renderOutlineChildren(

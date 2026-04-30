@@ -66,6 +66,30 @@ final class ObsidianReminderImportSyncTests: XCTestCase {
     XCTAssertEqual(ReminderSyncBaselineStore.baseline(for: "task-1")?.state.title, "Remote task")
   }
 
+  func testDuplicateReminderListTitlesProduceDistinctFiles() async throws {
+    let dataRoot = try makeTemporaryDirectory(prefix: "ObsidianImportData")
+    ReminderSyncBaselineStore.install(dataDirectory: dataRoot)
+    let store = ObsidianProjectMarkdownStore(vaultRootURL: try makeTemporaryVault())
+    let batch = ReminderImportSnapshotBatch(
+      lists: [
+        makeList(identifier: "list-alpha-123", title: "Inbox"),
+        makeList(identifier: "list-beta-456", title: "Inbox"),
+      ],
+      itemsByListIdentifier: [:]
+    )
+
+    _ = try await ObsidianReminderImportSync.sync(batch: batch, store: store, now: fixedNow)
+    let paths = try await store.loadProjectNotesInScope().map(\.vaultRelativePath).sorted()
+
+    XCTAssertEqual(
+      paths,
+      [
+        "raw/projects/Inbox - list-alp.md",
+        "raw/projects/Inbox - list-bet.md",
+      ]
+    )
+  }
+
   func testNewReminderListExpandsReminderNoteTaskMarkersIntoNestedTaskBlocks() async throws {
     let dataRoot = try makeTemporaryDirectory(prefix: "ObsidianImportData")
     ReminderSyncBaselineStore.install(dataDirectory: dataRoot)

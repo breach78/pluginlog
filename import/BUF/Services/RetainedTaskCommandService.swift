@@ -21,7 +21,50 @@ struct RetainedTaskEditFields: Equatable, Sendable {
   var durationMinutes: Int?
 }
 
+struct RetainedTaskCompletionMutationPlan: Equatable, Sendable {
+  let writesCompletion: Bool
+  let restoresSchedule: Bool
+
+  var hasWork: Bool {
+    writesCompletion || restoresSchedule
+  }
+}
+
 enum RecurringCompletionUndoScheduleRestorePolicy {
+  // Repeating Reminders are safer to undo by moving the advanced next
+  // occurrence back to its prior schedule than by marking the completed
+  // occurrence incomplete, which can strip the repeat rule in Reminders.
+  static func mutationPlan(
+    previousIsCompleted: Bool,
+    nextIsCompleted: Bool,
+    isRecurring: Bool,
+    previousFields: RetainedTaskEditFields? = nil,
+    fields: RetainedTaskEditFields?,
+    allowsScheduleRestore: Bool = true
+  ) -> RetainedTaskCompletionMutationPlan {
+    guard let fields else {
+      return RetainedTaskCompletionMutationPlan(
+        writesCompletion: previousIsCompleted != nextIsCompleted,
+        restoresSchedule: false
+      )
+    }
+    let restoresSchedule = allowsScheduleRestore && shouldRestore(
+      previousIsCompleted: previousIsCompleted,
+      nextIsCompleted: nextIsCompleted,
+      isRecurring: isRecurring,
+      previousFields: previousFields,
+      fields: fields
+    )
+    let writesCompletion =
+      !previousIsCompleted && !nextIsCompleted && restoresSchedule
+      ? false
+      : previousIsCompleted != nextIsCompleted
+    return RetainedTaskCompletionMutationPlan(
+      writesCompletion: writesCompletion,
+      restoresSchedule: restoresSchedule
+    )
+  }
+
   static func hasTimedSchedule(_ fields: RetainedTaskEditFields?) -> Bool {
     guard let fields else { return false }
     return fields.day != nil && fields.timeMinutes != nil
@@ -56,19 +99,13 @@ enum RecurringCompletionUndoScheduleRestorePolicy {
     previousFields: RetainedTaskEditFields? = nil,
     fields: RetainedTaskEditFields
   ) -> Bool {
-    if !previousIsCompleted,
-      !nextIsCompleted,
-      shouldRestore(
-        previousIsCompleted: previousIsCompleted,
-        nextIsCompleted: nextIsCompleted,
-        isRecurring: isRecurring,
-        previousFields: previousFields,
-        fields: fields
-      )
-    {
-      return false
-    }
-    return previousIsCompleted != nextIsCompleted
+    mutationPlan(
+      previousIsCompleted: previousIsCompleted,
+      nextIsCompleted: nextIsCompleted,
+      isRecurring: isRecurring,
+      previousFields: previousFields,
+      fields: fields
+    ).writesCompletion
   }
 }
 

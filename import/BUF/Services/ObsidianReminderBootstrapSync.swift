@@ -53,7 +53,9 @@ enum ObsidianReminderBootstrapSync {
     let snapshotsByListID = try snapshotsByReminderListExternalIdentifier(existingSnapshots)
 
     let normalizedLists = try normalizedReminderLists(from: batch.lists)
-    let duplicateTitleCounts = duplicateTitleCounts(in: normalizedLists)
+    let fileNaming = ObsidianReminderListFileNaming(
+      titles: normalizedLists.map(\.title)
+    )
     try validateReminderTaskIdentities(in: batch)
     let outlineStore = ObsidianReminderOutlineStateStore(vaultRootURL: await store.vaultRoot())
 
@@ -77,7 +79,10 @@ enum ObsidianReminderBootstrapSync {
         )
       }
       let preferredFileName = snapshotsByListID[list.externalIdentifier]?.fileURL.lastPathComponent
-        ?? preferredFileName(for: list, duplicateTitleCounts: duplicateTitleCounts)
+        ?? fileNaming.preferredFileName(
+          title: list.title,
+          externalIdentifier: list.externalIdentifier
+        )
       let baseline = snapshotsByListID[list.externalIdentifier].map {
         ObsidianProjectMarkdownStore.WriteBaseline(snapshot: $0)
       }
@@ -283,26 +288,6 @@ enum ObsidianReminderBootstrapSync {
     return (dateOnlyFormatter.string(from: dueDate), nil)
   }
 
-  private static func duplicateTitleCounts(
-    in lists: [NormalizedList]
-  ) -> [String: Int] {
-    var counts: [String: Int] = [:]
-    for list in lists {
-      counts[normalizedTitleKey(list.title), default: 0] += 1
-    }
-    return counts
-  }
-
-  private static func preferredFileName(
-    for list: NormalizedList,
-    duplicateTitleCounts: [String: Int]
-  ) -> String {
-    guard (duplicateTitleCounts[normalizedTitleKey(list.title)] ?? 0) > 1 else {
-      return list.title
-    }
-    return "\(list.title) - \(shortIdentifier(list.externalIdentifier))"
-  }
-
   private static func taskRecordsForItems(
     _ items: [ReminderItemImportSnapshot],
     projectID: UUID,
@@ -323,14 +308,6 @@ enum ObsidianReminderBootstrapSync {
         updatedAt: item.modifiedAt > item.createdAt ? item.modifiedAt : now
       )
     }
-  }
-
-  private static func shortIdentifier(_ identifier: String) -> String {
-    String(identifier.prefix(8))
-  }
-
-  private static func normalizedTitleKey(_ title: String) -> String {
-    title.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
   }
 
   private static func normalized(_ value: String?) -> String? {

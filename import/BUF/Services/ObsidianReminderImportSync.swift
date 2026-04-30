@@ -84,7 +84,9 @@ enum ObsidianReminderImportSync {
       }
       lists.append(list)
     }
-    let duplicateTitleCounts = duplicateTitleCounts(in: lists)
+    let fileNaming = ObsidianReminderListFileNaming(
+      titles: lists.map(\.title)
+    )
     try validateReminderTaskIdentities(in: batch)
     let outlineStore = ObsidianReminderOutlineStateStore(vaultRootURL: vaultRootURL)
 
@@ -123,7 +125,7 @@ enum ObsidianReminderImportSync {
         syncedSnapshot = try await renameProjectNoteIfNeeded(
           snapshot: syncedSnapshot,
           list: list,
-          duplicateTitleCounts: duplicateTitleCounts,
+          fileNaming: fileNaming,
           store: store
         )
         ReminderSyncBaselineStore.upsertMany(merge.baselineUpdates)
@@ -152,9 +154,9 @@ enum ObsidianReminderImportSync {
         )
         _ = try await store.writeProjectNote(
           note,
-          preferredFileName: preferredFileName(
-            for: list,
-            duplicateTitleCounts: duplicateTitleCounts
+          preferredFileName: fileNaming.preferredFileName(
+            title: list.title,
+            externalIdentifier: list.externalIdentifier
           )
         )
         let baselineUpdates = items.map {
@@ -393,14 +395,14 @@ enum ObsidianReminderImportSync {
   private static func renameProjectNoteIfNeeded(
     snapshot: ObsidianProjectMarkdownStore.Snapshot,
     list: NormalizedList,
-    duplicateTitleCounts: [String: Int],
+    fileNaming: ObsidianReminderListFileNaming,
     store: ObsidianProjectMarkdownStore
   ) async throws -> ObsidianProjectMarkdownStore.Snapshot {
     try await store.renameProjectNote(
       snapshot,
-      preferredFileName: preferredFileName(
-        for: list,
-        duplicateTitleCounts: duplicateTitleCounts
+      preferredFileName: fileNaming.preferredFileName(
+        title: list.title,
+        externalIdentifier: list.externalIdentifier
       ),
       expectedBaseline: ObsidianProjectMarkdownStore.WriteBaseline(snapshot: snapshot)
     )
@@ -841,30 +843,6 @@ enum ObsidianReminderImportSync {
   ) -> Bool {
     guard let remoteModifiedAt, let baselineRemoteModifiedAt else { return false }
     return baselineRemoteModifiedAt.timeIntervalSince(remoteModifiedAt) > 0.5
-  }
-
-  private static func duplicateTitleCounts(
-    in lists: [NormalizedList]
-  ) -> [String: Int] {
-    var counts: [String: Int] = [:]
-    for list in lists {
-      counts[normalizedTitleKey(list.title), default: 0] += 1
-    }
-    return counts
-  }
-
-  private static func preferredFileName(
-    for list: NormalizedList,
-    duplicateTitleCounts: [String: Int]
-  ) -> String {
-    guard (duplicateTitleCounts[normalizedTitleKey(list.title)] ?? 0) > 1 else {
-      return list.title
-    }
-    return "\(list.title) - \(String(list.externalIdentifier.prefix(8)))"
-  }
-
-  private static func normalizedTitleKey(_ title: String) -> String {
-    title.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
   }
 
   private static func normalized(_ value: String?) -> String? {
