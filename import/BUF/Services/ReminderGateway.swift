@@ -4,6 +4,7 @@ import Foundation
 enum ReminderFetchScope {
   case incompleteOnly
   case all
+  case completedByCompletionDate(start: Date?, end: Date?)
 }
 
 @MainActor
@@ -390,6 +391,12 @@ final class EventKitReminderGateway: ReminderGateway {
       )
     case .all:
       return eventStore.predicateForReminders(in: calendars)
+    case .completedByCompletionDate(let start, let end):
+      return eventStore.predicateForCompletedReminders(
+        withCompletionDateStarting: start,
+        ending: end,
+        calendars: calendars
+      )
     }
   }
 
@@ -919,7 +926,8 @@ final class EventKitReminderProjectProvider: ReminderProjectProvider {
     reminder.startDateComponents = nil
     let assignmentSteps = ReminderDueDateComponentsPolicy.assignmentSteps(
       existing: existingDueDateComponents,
-      next: nextDueDateComponents
+      next: nextDueDateComponents,
+      allowsIntermediateNil: reminder.recurrenceRules?.isEmpty ?? true
     )
     for dueDateComponents in assignmentSteps {
       reminder.dueDateComponents = dueDateComponents
@@ -1190,8 +1198,12 @@ enum ReminderDueDateComponentsPolicy {
 
   static func assignmentSteps(
     existing: DateComponents?,
-    next: DateComponents?
+    next: DateComponents?,
+    allowsIntermediateNil: Bool = true
   ) -> [DateComponents?] {
+    guard allowsIntermediateNil else {
+      return [next]
+    }
     guard shouldClearExistingDueDateBeforeAssigning(existing: existing, next: next) else {
       return [next]
     }

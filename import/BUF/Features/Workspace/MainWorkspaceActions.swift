@@ -378,13 +378,14 @@ extension MainWorkspaceView {
     projectID: UUID,
     isCompleted: Bool,
     completionDate: Date? = nil,
-    registerUndo: Bool = true
+    registerUndo: Bool = true,
+    restoreScheduleFields: RetainedTaskEditFields? = nil,
+    undoTargetSnapshot: RetainedTaskUndoSnapshot? = nil
   ) async -> Bool {
     guard let entry = await workspaceProjectListWindowEntry(projectID: projectID, taskID: taskID)
     else {
       return false
     }
-    guard entry.isCompleted != isCompleted else { return true }
     let occurrenceDate = ReminderTaskDateCanonicalizer.unifiedDate(
       dueDate: entry.dueDate,
       startDate: entry.startDate,
@@ -397,19 +398,56 @@ extension MainWorkspaceView {
       isCompleted
       ? (completionDate ?? (isRecurring ? occurrenceDate : nil) ?? .now)
       : nil
+    let currentSnapshot = workspaceTaskUndoSnapshot(for: entry)
+    let targetFields = restoreScheduleFields ?? currentSnapshot.fields
+    let targetSnapshot = RetainedTaskUndoSnapshot(
+      fields: targetFields,
+      isCompleted: isCompleted,
+      completionDate: nextCompletionDate
+    )
+    let shouldRestoreSchedule = RecurringCompletionUndoScheduleRestorePolicy.shouldRestore(
+      previousIsCompleted: currentSnapshot.isCompleted,
+      nextIsCompleted: targetSnapshot.isCompleted,
+      isRecurring: isRecurring,
+      previousFields: currentSnapshot.fields,
+      fields: targetSnapshot.fields
+    )
+    let shouldWriteCompletion = RecurringCompletionUndoScheduleRestorePolicy.shouldWriteCompletion(
+      previousIsCompleted: currentSnapshot.isCompleted,
+      nextIsCompleted: targetSnapshot.isCompleted,
+      isRecurring: isRecurring,
+      previousFields: currentSnapshot.fields,
+      fields: targetSnapshot.fields
+    )
+    guard shouldWriteCompletion || shouldRestoreSchedule else { return true }
 
     do {
-      _ = try await ObsidianRetainedTaskCommandService.setTaskCompletion(
-        vaultRootURL: appState.obsidianVaultRootURL,
-        projectID: projectID,
-        taskID: taskID,
-        isCompleted: isCompleted,
-        completionDate: nextCompletionDate,
-        reminderProjectProvider: appState.reminderProjectProvider
-      )
+      if shouldWriteCompletion {
+        _ = try await ObsidianRetainedTaskCommandService.setTaskCompletion(
+          vaultRootURL: appState.obsidianVaultRootURL,
+          projectID: projectID,
+          taskID: taskID,
+          isCompleted: targetSnapshot.isCompleted,
+          completionDate: targetSnapshot.completionDate,
+          reminderProjectProvider: appState.reminderProjectProvider
+        )
+      }
+      if shouldRestoreSchedule {
+        _ = try await ObsidianRetainedTaskCommandService.setTaskSchedule(
+          vaultRootURL: appState.obsidianVaultRootURL,
+          projectID: projectID,
+          taskID: taskID,
+          day: targetSnapshot.fields.day,
+          timeMinutes: targetSnapshot.fields.timeMinutes,
+          durationMinutes: targetSnapshot.fields.durationMinutes,
+          calendar: .autoupdatingCurrent,
+          reminderProjectProvider: appState.reminderProjectProvider
+        )
+      }
       appState.bumpWorkspaceTreeRevision()
       await refreshWorkspaceProjectListWindow(projectID: projectID)
       if registerUndo {
+        let registeredUndoSnapshot = undoTargetSnapshot ?? currentSnapshot
         appState.registerUndo(
           with: undoManager,
           actionName: isCompleted ? "할일 완료" : "할일 완료 취소"
@@ -418,9 +456,11 @@ extension MainWorkspaceView {
             _ = await self.setWorkspaceProjectListWindowTaskCompletion(
               taskID,
               projectID: projectID,
-              isCompleted: entry.isCompleted,
-              completionDate: entry.completionDate,
-              registerUndo: true
+              isCompleted: registeredUndoSnapshot.isCompleted,
+              completionDate: registeredUndoSnapshot.completionDate,
+              registerUndo: true,
+              restoreScheduleFields: registeredUndoSnapshot.fields,
+              undoTargetSnapshot: targetSnapshot
             )
           }
         }
@@ -790,25 +830,68 @@ extension MainWorkspaceView {
     toggleTimelineTaskCompletion(taskID, projectID: projectID, isCompleted: false)
   }
 
-  func toggleTimelineTaskCompletion(_ taskID: UUID, projectID: UUID, isCompleted: Bool) {
-    let nextIsCompleted = TimelineTaskCompletionTogglePolicy.nextIsCompleted(
-      currentIsCompleted: isCompleted
-    )
+  func toggleTimelineTaskCompletion(
+    _ taskID: UUID,
+    projectID: UUID,
+    isCompleted: Bool,
+    targetSnapshot: RetainedTaskUndoSnapshot? = nil,
+    undoTargetSnapshot: RetainedTaskUndoSnapshot? = nil
+  ) {
+    let nextIsCompleted =
+      targetSnapshot?.isCompleted
+      ?? TimelineTaskCompletionTogglePolicy.nextIsCompleted(currentIsCompleted: isCompleted)
     Task { @MainActor in
+      guard let entry = await workspaceProjectListWindowEntry(projectID: projectID, taskID: taskID)
+      else { return }
+      let currentSnapshot = workspaceTaskUndoSnapshot(for: entry)
+      let targetState =
+        targetSnapshot
+        ?? RetainedTaskUndoSnapshot(
+          fields: currentSnapshot.fields,
+          isCompleted: nextIsCompleted,
+          completionDate: nil
+        )
+      let isRecurring = !(entry.recurrenceRuleRaw?.trimmingCharacters(
+        in: .whitespacesAndNewlines
+      ).isEmpty ?? true)
+      let occurrenceDate =
+        ReminderTaskDateCanonicalizer.unifiedDate(
+          dueDate: entry.dueDate,
+          startDate: entry.startDate,
+          displayedDate: entry.displayedDate
+        )
+      let completionDate = TimelineTaskCompletionTogglePolicy.completionDate(
+        nextIsCompleted: nextIsCompleted
+      )
+      let targetCompletionDate =
+        targetState.isCompleted
+        ? (targetState.completionDate
+          ?? (isRecurring ? occurrenceDate : nil)
+          ?? completionDate)
+        : nil
       let didSave = await appState.saveProjectDetailTaskCompletion(
         taskID: taskID,
-        isCompleted: nextIsCompleted,
-        completionDate: TimelineTaskCompletionTogglePolicy.completionDate(
-          nextIsCompleted: nextIsCompleted
-        ),
-        context: modelContext
+        isCompleted: targetState.isCompleted,
+        completionDate: targetCompletionDate,
+        context: modelContext,
+        restoreScheduleFields: isRecurring ? targetState.fields : nil,
+        currentIsCompleted: currentSnapshot.isCompleted,
+        currentScheduleFields: currentSnapshot.fields,
+        isRecurring: isRecurring
       )
       if didSave {
+        let registeredUndoSnapshot = undoTargetSnapshot ?? currentSnapshot
         appState.registerUndo(
           with: undoManager,
-          actionName: nextIsCompleted ? "할일 완료" : "할일 완료 취소"
+          actionName: targetState.isCompleted ? "할일 완료" : "할일 완료 취소"
         ) {
-          self.toggleTimelineTaskCompletion(taskID, projectID: projectID, isCompleted: nextIsCompleted)
+          self.toggleTimelineTaskCompletion(
+            taskID,
+            projectID: projectID,
+            isCompleted: targetState.isCompleted,
+            targetSnapshot: registeredUndoSnapshot,
+            undoTargetSnapshot: targetState
+          )
         }
       }
       selectProjectContext(projectID)

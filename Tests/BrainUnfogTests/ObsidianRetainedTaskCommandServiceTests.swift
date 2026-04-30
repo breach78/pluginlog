@@ -101,31 +101,38 @@ final class ObsidianRetainedTaskCommandServiceTests: XCTestCase {
     XCTAssertEqual(ReminderSyncBaselineStore.baseline(for: "task-1")?.state.isCompleted, true)
   }
 
-  func testCompletingTimedRecurringTaskClearsNextReminderTime() async throws {
+  func testCompletingTimedRecurringTaskClearsNextOccurrenceTimeAfterCompleting() async throws {
     let dataRoot = try makeTemporaryDirectory(prefix: "ObsidianCommandData")
     ReminderSyncBaselineStore.install(dataDirectory: dataRoot)
     let vault = try makeTemporaryVault()
-    _ = try writeProjectNote(
+    let noteURL = try writeProjectNote(
       vault: vault,
       body: projectNote(
         body: """
         - [ ] Task one
-          %% brain-unfog: {"reminder_external_id":"task-1","date":"2026-04-25","time":"09:30","duration":45,"repeat":"daily"} %%
+          %% brain-unfog: {"reminder_external_id":"task-1","date":"2026-04-30","time":"12:00","duration":45,"repeat":"daily|8"} %%
         """
       )
     )
     let provider = FakeObsidianCommandReminderProjectProvider()
+    provider.recurringCompletionAdvanceDays = 8
     provider.snapshots["task-1"] = remoteSnapshot(
       title: "Task one",
-      date: "2026-04-25 09:30",
-      recurrenceRuleRaw: "daily"
+      date: "2026-04-30 12:00",
+      recurrenceRuleRaw: "daily|8"
     )
     upsertBaseline(
       title: "Task one",
       isCompleted: false,
-      date: "2026-04-25 09:30",
+      date: "2026-04-30 12:00",
       repeatRule: "reminder"
     )
+    provider.onSetTaskCompletion = {
+      let raw = try String(contentsOf: noteURL, encoding: .utf8)
+      XCTAssertTrue(raw.contains("- [ ] Task one"))
+      XCTAssertTrue(raw.contains(#""time":"12:00""#))
+      XCTAssertFalse(raw.contains("- [x] Task one"))
+    }
 
     _ = try await ObsidianRetainedTaskCommandService.setTaskCompletion(
       vaultRootURL: vault,
@@ -137,16 +144,17 @@ final class ObsidianRetainedTaskCommandServiceTests: XCTestCase {
     )
 
     let raw = try await firstRawMarkdown(in: vault)
-    XCTAssertTrue(raw.contains("- [x] Task one"))
-    XCTAssertTrue(raw.contains(#""date":"2026-04-25""#))
+    XCTAssertTrue(raw.contains("- [ ] Task one"))
+    XCTAssertTrue(raw.contains(#""date":"2026-05-08""#))
     XCTAssertTrue(raw.contains(#""repeat":"reminder""#))
-    XCTAssertFalse(raw.contains(#""time":"09:30""#))
+    XCTAssertFalse(raw.contains(#""time":"12:00""#))
     XCTAssertFalse(raw.contains(#""duration":45"#))
+    XCTAssertEqual(provider.operationLog, [.completion, .schedule])
     XCTAssertEqual(provider.scheduleWrites.map(\.hasExplicitTime), [false])
-    XCTAssertEqual(provider.scheduleWrites.first?.dueDate.map(dateString), "2026-04-25")
+    XCTAssertEqual(provider.scheduleWrites.first?.dueDate.map(dateTimeString), "2026-05-08 12:00")
     let baseline = try XCTUnwrap(ReminderSyncBaselineStore.baseline(for: "task-1"))
-    XCTAssertEqual(baseline.state.isCompleted, true)
-    XCTAssertEqual(baseline.state.date, "2026-04-25")
+    XCTAssertEqual(baseline.state.isCompleted, false)
+    XCTAssertEqual(baseline.state.date, "2026-05-08")
   }
 
   func testScheduleWritesObsidianMetadataAndReminderDueDate() async throws {
@@ -336,6 +344,60 @@ final class ObsidianRetainedTaskCommandServiceTests: XCTestCase {
     XCTAssertEqual(baseline.state.title, "Edited task")
     XCTAssertEqual(baseline.state.noteText, "Edited note")
     XCTAssertEqual(baseline.state.date, "2026-04-26 08:15")
+  }
+
+  func testTaskEditFieldsPreservesBlankLinesInNoteText() async throws {
+    let dataRoot = try makeTemporaryDirectory(prefix: "ObsidianCommandData")
+    ReminderSyncBaselineStore.install(dataDirectory: dataRoot)
+    let vault = try makeTemporaryVault()
+    _ = try writeProjectNote(
+      vault: vault,
+      body: projectNote(
+        body: """
+        - [ ] Task one
+          %% brain-unfog: {"reminder_external_id":"task-1"} %%
+          - Existing note
+        """
+      )
+    )
+    let provider = FakeObsidianCommandReminderProjectProvider()
+    provider.snapshots["task-1"] = remoteSnapshot(title: "Task one", noteText: "Existing note")
+    upsertBaseline(
+      title: "Task one",
+      isCompleted: false,
+      date: nil,
+      noteText: "Existing note"
+    )
+    let editedNote = "First paragraph\n\nSecond paragraph\n\n\nThird paragraph"
+
+    _ = try await ObsidianRetainedTaskCommandService.updateTaskEditFields(
+      vaultRootURL: vault,
+      projectID: projectID,
+      taskID: taskID,
+      fields: RetainedTaskEditFields(
+        title: "Task one",
+        noteText: editedNote,
+        day: nil,
+        timeMinutes: nil,
+        durationMinutes: nil
+      ),
+      calendar: calendar,
+      reminderProjectProvider: provider
+    )
+
+    let raw = try await firstRawMarkdown(in: vault)
+    XCTAssertTrue(
+      raw.contains("  - First paragraph\n\n  - Second paragraph\n\n\n  - Third paragraph")
+    )
+    let reloaded = try await ObsidianRetainedTaskCommandService.taskEditFields(
+      vaultRootURL: vault,
+      projectID: projectID,
+      taskID: taskID,
+      calendar: calendar
+    )
+    XCTAssertEqual(reloaded.noteText, editedNote)
+    XCTAssertEqual(provider.noteWrites.map(\.noteText), [editedNote])
+    XCTAssertEqual(ReminderSyncBaselineStore.baseline(for: "task-1")?.state.noteText, editedNote)
   }
 
   func testTaskEditFieldsRoundTripsAttachmentLinksInNoteText() async throws {
@@ -818,6 +880,11 @@ private enum FakeObsidianCommandReminderError: Error {
 
 @MainActor
 private final class FakeObsidianCommandReminderProjectProvider: ReminderProjectProvider {
+  enum Operation: Equatable {
+    case completion
+    case schedule
+  }
+
   struct CompletionWrite: Equatable {
     var isCompleted: Bool
     var completionDate: Date?
@@ -856,6 +923,9 @@ private final class FakeObsidianCommandReminderProjectProvider: ReminderProjectP
   var noteWrites: [NoteWrite] = []
   var createdTasks: [CreatedTask] = []
   var removedTaskExternalIdentifiers: [String] = []
+  var operationLog: [Operation] = []
+  var recurringCompletionAdvanceDays: Int?
+  var onSetTaskCompletion: (() throws -> Void)?
   var snapshots: [String: ReminderTaskRemoteSnapshot] = [:]
   var completionError: Error?
   var scheduleError: Error?
@@ -873,23 +943,38 @@ private final class FakeObsidianCommandReminderProjectProvider: ReminderProjectP
     isCompleted: Bool,
     completionDate: Date?
   ) throws -> ReminderTaskRemoteMetadata? {
+    operationLog.append(.completion)
     completionWrites.append(
       CompletionWrite(isCompleted: isCompleted, completionDate: completionDate)
     )
+    try onSetTaskCompletion?()
     if let completionError { throw completionError }
     if let identifier = task.reminderExternalIdentifier,
       let snapshot = snapshots[identifier]
     {
+      let advancesRecurring = isCompleted
+        && snapshot.recurrenceRuleRaw?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
+        && recurringCompletionAdvanceDays != nil
+        && snapshot.dueDate != nil
+      let advancedDueDate = advancesRecurring
+        ? snapshot.dueDate.flatMap {
+          Calendar.autoupdatingCurrent.date(
+            byAdding: .day,
+            value: recurringCompletionAdvanceDays ?? 0,
+            to: $0
+          )
+        }
+        : snapshot.dueDate
       snapshots[identifier] = ReminderTaskRemoteSnapshot(
         identifier: snapshot.identifier,
         externalIdentifier: snapshot.externalIdentifier,
         calendarIdentifier: snapshot.calendarIdentifier,
         title: snapshot.title,
         noteText: snapshot.noteText,
-        isCompleted: isCompleted,
-        completionDate: isCompleted ? completionDate : nil,
+        isCompleted: advancesRecurring ? false : isCompleted,
+        completionDate: advancesRecurring ? nil : (isCompleted ? completionDate : nil),
         startDate: snapshot.startDate,
-        dueDate: snapshot.dueDate,
+        dueDate: advancedDueDate,
         hasExplicitTime: snapshot.hasExplicitTime,
         priority: snapshot.priority,
         recurrenceRuleRaw: snapshot.recurrenceRuleRaw,
@@ -904,6 +989,7 @@ private final class FakeObsidianCommandReminderProjectProvider: ReminderProjectP
     dueDate: Date?,
     hasExplicitTime: Bool
   ) throws -> ReminderTaskRemoteMetadata? {
+    operationLog.append(.schedule)
     scheduleWrites.append(ScheduleWrite(dueDate: dueDate, hasExplicitTime: hasExplicitTime))
     if let scheduleError { throw scheduleError }
     if let identifier = task.reminderExternalIdentifier,

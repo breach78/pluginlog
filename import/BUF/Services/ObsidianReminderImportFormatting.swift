@@ -249,7 +249,10 @@ enum ObsidianReminderImportFormatting {
         let leadingSpaces = rawLine.prefix { $0 == " " }.count
         let content = String(rawLine.dropFirst(leadingSpaces))
           .trimmingCharacters(in: .whitespaces)
-        guard !content.isEmpty else { continue }
+        guard !content.isEmpty else {
+          replacement.append("")
+          continue
+        }
         if let taskIdentifier = reminderNoteTaskMarkerIdentifier(from: content) {
           if let taskBlock = preservedTaskBlocks.blocksByIdentifier[taskIdentifier] {
             replacement.append(contentsOf: taskBlock)
@@ -495,7 +498,10 @@ enum ObsidianReminderImportFormatting {
       let leadingSpaces = rawLine.prefix { $0 == " " }.count
       let content = String(rawLine.dropFirst(leadingSpaces))
         .trimmingCharacters(in: .whitespaces)
-      guard !content.isEmpty else { continue }
+      guard !content.isEmpty else {
+        result.append("")
+        continue
+      }
       let indentation = parentIndentation + "  " + String(repeating: "  ", count: leadingSpaces)
       if let taskIdentifier = reminderNoteTaskMarkerIdentifier(from: content) {
         result.append(
@@ -557,7 +563,12 @@ enum ObsidianReminderImportFormatting {
     while index < lines.count {
       let line = lines[index]
       let trimmed = line.trimmingCharacters(in: .whitespaces)
-      guard !trimmed.isEmpty, !trimmed.hasPrefix("%% brain-unfog:") else {
+      guard !trimmed.isEmpty else {
+        noteLines.append("")
+        index += 1
+        continue
+      }
+      guard !trimmed.hasPrefix("%% brain-unfog:") else {
         index += 1
         continue
       }

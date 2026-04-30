@@ -144,7 +144,7 @@ struct ReminderGatewayImportSnapshotProvider {
       }
     }
 
-    let reminders = try await gateway.fetchReminders(in: calendars, scope: .all)
+    let reminders = try await fetchImportReminders(in: calendars)
     for reminder in reminders {
       let listIdentifier = reminder.calendar.calendarIdentifier
       guard let list = listsByIdentifier[listIdentifier] else { continue }
@@ -157,6 +157,25 @@ struct ReminderGatewayImportSnapshotProvider {
     }
 
     return itemsByListIdentifier
+  }
+
+  private func fetchImportReminders(in calendars: [EKCalendar]) async throws -> [EKReminder] {
+    let primaryReminders = try await gateway.fetchReminders(in: calendars, scope: .all)
+    let completedRecurringReminders = try await gateway.fetchReminders(
+      in: calendars,
+      scope: .completedByCompletionDate(start: nil, end: nil)
+    )
+    .filter(isCompletedRecurringReminder)
+
+    let completedRecurringIdentifiers = Set(
+      completedRecurringReminders.map(\.calendarItemIdentifier)
+    )
+    let primaryWithoutCompletedRecurringDuplicates = primaryReminders.filter { reminder in
+      !(isCompletedRecurringReminder(reminder)
+        && completedRecurringIdentifiers.contains(reminder.calendarItemIdentifier))
+    }
+
+    return primaryWithoutCompletedRecurringDuplicates + completedRecurringReminders
   }
 
   func fetchBatch(
@@ -226,9 +245,15 @@ struct ReminderGatewayImportSnapshotProvider {
     let completionDate = reminder.completionDate
     let recurrenceRuleRaw = encodedRecurrence(reminder.recurrenceRules?.first)
 
+    let hasExplicitTime = reminder.dueDateComponents.map(hasExplicitTime(in:)) ?? false
     return ReminderItemImportSnapshot(
       identifier: reminder.calendarItemIdentifier,
-      externalIdentifier: reminder.calendarItemExternalIdentifier,
+      externalIdentifier: importedExternalIdentifier(
+        for: reminder,
+        dueDate: dueDate,
+        hasExplicitTime: hasExplicitTime,
+        completionDate: completionDate
+      ),
       parentExternalIdentifier: nil,
       sourceListIdentifier: list.identifier,
       sourceListTitle: list.title,
@@ -239,7 +264,7 @@ struct ReminderGatewayImportSnapshotProvider {
       completionDate: completionDate,
       startDate: nil,
       dueDate: dueDate,
-      scheduleHasExplicitTime: reminder.dueDateComponents.map(hasExplicitTime(in:)) ?? false,
+      scheduleHasExplicitTime: hasExplicitTime,
       scheduledDurationMinutes: nil,
       priority: reminder.priority,
       recurrenceRuleRaw: recurrenceRuleRaw,
@@ -265,6 +290,43 @@ struct ReminderGatewayImportSnapshotProvider {
 
   private func hasExplicitTime(in components: DateComponents) -> Bool {
     components.hour != nil || components.minute != nil || components.second != nil
+  }
+
+  private func importedExternalIdentifier(
+    for reminder: EKReminder,
+    dueDate: Date?,
+    hasExplicitTime: Bool,
+    completionDate: Date?
+  ) -> String? {
+    let originalIdentifier = normalized(reminder.calendarItemExternalIdentifier)
+    guard isCompletedRecurringReminder(reminder) else {
+      return originalIdentifier
+    }
+
+    guard let baseIdentifier = originalIdentifier ?? normalized(reminder.calendarItemIdentifier) else {
+      return nil
+    }
+    let occurrenceKey = ReminderScheduleMetadataCodec.encodeDate(
+      dueDate,
+      hasExplicitTime: hasExplicitTime
+    )
+      ?? completionDate.map { ISO8601DateFormatter().string(from: $0) }
+      ?? normalized(reminder.calendarItemIdentifier)
+      ?? "unknown"
+    return "\(baseIdentifier)::completed::\(occurrenceKey)"
+  }
+
+  private func isCompletedRecurringReminder(_ reminder: EKReminder) -> Bool {
+    reminder.isCompleted && !(reminder.recurrenceRules?.isEmpty ?? true)
+  }
+
+  private func normalized(_ value: String?) -> String? {
+    guard let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines),
+      !trimmed.isEmpty
+    else {
+      return nil
+    }
+    return trimmed
   }
 
   private func encodedRecurrence(_ rule: EKRecurrenceRule?) -> String? {

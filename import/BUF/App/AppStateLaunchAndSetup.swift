@@ -7,6 +7,11 @@ extension AppState {
     isLaunching = true
     defer { isLaunching = false }
 
+    if let uiTestConfiguration = AppUITestRuntime.Configuration() {
+      await launchUITestRuntime(configuration: uiTestConfiguration)
+      return
+    }
+
     applySetupPendingState()
     restoreObsidianVaultIfPossible()
     if let obsidianVaultRootURL {
@@ -152,7 +157,7 @@ extension AppState {
     await prepareWorkspaceIfSetupComplete(shouldRefreshHealth: true)
   }
 
-  private func refreshContainerRootURL() {
+  func refreshContainerRootURL() {
     containerRootURL = storageCoordinator.paths?.root
     TaskIdentityBridgeStore.install(dataDirectory: storageCoordinator.paths?.dataDirectory)
     ReminderPendingBindingStore.install(dataDirectory: storageCoordinator.paths?.dataDirectory)
@@ -211,7 +216,7 @@ extension AppState {
     obsidianVaultRootURL = rootURL
   }
 
-  private func prepareWorkspaceIfSetupComplete(
+  func prepareWorkspaceIfSetupComplete(
     shouldRefreshHealth: Bool,
     startStartupSync: Bool = true
   ) async {

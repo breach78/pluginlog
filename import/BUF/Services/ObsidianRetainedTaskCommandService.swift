@@ -79,8 +79,8 @@ enum ObsidianRetainedTaskCommandService {
       context.task,
       calendar: .autoupdatingCurrent
     )
-    let shouldClearNextRecurringTime = isCompleted
-      && normalized(previousState.repeatRule) != nil
+    let isRecurringCompletion = isCompleted && normalized(previousState.repeatRule) != nil
+    let shouldClearNextRecurringTime = isRecurringCompletion
       && context.retainedTask.schedule.hasExplicitTime
     let originalBaseline = try assertReminderWriteAllowed(
       reference: reminderReference,
@@ -94,6 +94,81 @@ enum ObsidianRetainedTaskCommandService {
         reminderProjectProvider: reminderProjectProvider
       )
     }
+    if isRecurringCompletion {
+      guard let metadata = try reminderProjectProvider.setTaskCompletion(
+        for: reminderReference,
+        isCompleted: true,
+        completionDate: completionDate ?? .now
+      ) else {
+        throw RetainedTaskCommandError.reminderOwnerUnresolved(taskID)
+      }
+      if var remoteSnapshot = try recurringCompletionSnapshot(
+        reference: reminderReference,
+        reminderProjectProvider: reminderProjectProvider
+      ) {
+        if shouldClearNextRecurringTime,
+          remoteSnapshot.hasExplicitTime,
+          let nextDueDate = remoteSnapshot.dueDate
+        {
+          guard let scheduleMetadata = try reminderProjectProvider.setTaskSchedule(
+            for: reminderReference,
+            dueDate: nextDueDate,
+            hasExplicitTime: false
+          ) else {
+            throw RetainedTaskCommandError.reminderOwnerUnresolved(taskID)
+          }
+          remoteSnapshot = try recurringCompletionSnapshot(
+            reference: reminderReference,
+            reminderProjectProvider: reminderProjectProvider
+          )
+            ?? remoteSnapshotClearingExplicitTime(
+              remoteSnapshot,
+              modifiedAt: scheduleMetadata.modifiedAt
+            )
+        }
+        let resultSnapshot = try await writeTask(
+          using: context,
+          mutate: { task, bodyLines in
+            applyRecurringCompletionSnapshot(
+              remoteSnapshot,
+              to: task,
+              in: &bodyLines,
+              calendar: .autoupdatingCurrent
+            )
+          }
+        )
+        try updateBaseline(
+          from: resultSnapshot,
+          taskID: taskID,
+          reminderExternalIdentifier: reminderReference.reminderExternalIdentifier,
+          remoteModifiedAt: remoteSnapshot.modifiedAt,
+          pushedFields: [.isCompleted, .date],
+          previousBaseline: originalBaseline
+        )
+        return try result(projectID: projectID, taskID: taskID, snapshot: resultSnapshot)
+      }
+
+      let writtenSnapshot = try await writeTask(
+        using: context,
+        mutate: { task, bodyLines in
+          var nextState = ObsidianReminderImportFormatting.taskState(
+            task,
+            calendar: .autoupdatingCurrent
+          )
+          nextState.isCompleted = true
+          applyTaskState(nextState, to: task, in: &bodyLines, calendar: .autoupdatingCurrent)
+        }
+      )
+      try updateBaseline(
+        from: writtenSnapshot,
+        taskID: taskID,
+        reminderExternalIdentifier: reminderReference.reminderExternalIdentifier,
+        remoteModifiedAt: metadata.modifiedAt,
+        pushedFields: [.isCompleted],
+        previousBaseline: originalBaseline
+      )
+      return try result(projectID: projectID, taskID: taskID, snapshot: writtenSnapshot)
+    }
     let writtenSnapshot = try await writeTask(
       using: context,
       mutate: { task, bodyLines in
@@ -103,7 +178,6 @@ enum ObsidianRetainedTaskCommandService {
       }
     )
 
-    var resultSnapshot = writtenSnapshot
     do {
       guard let metadata = try reminderProjectProvider.setTaskCompletion(
         for: reminderReference,
@@ -128,41 +202,7 @@ enum ObsidianRetainedTaskCommandService {
       )
     }
 
-    if shouldClearNextRecurringTime,
-      let remoteSnapshot = try clearExplicitTimeForNextRecurringCompletion(
-        reference: reminderReference,
-        reminderProjectProvider: reminderProjectProvider
-      )
-    {
-      let refreshedContext = try await commandContext(
-        vaultRootURL: vaultRootURL,
-        projectID: projectID,
-        taskID: taskID
-      )
-      resultSnapshot = try await writeTask(
-        using: refreshedContext,
-        mutate: { task, bodyLines in
-          applyRecurringCompletionSnapshot(
-            remoteSnapshot,
-            to: task,
-            in: &bodyLines,
-            calendar: .autoupdatingCurrent
-          )
-        }
-      )
-      try updateBaseline(
-        from: resultSnapshot,
-        taskID: taskID,
-        reminderExternalIdentifier: reminderReference.reminderExternalIdentifier,
-        remoteModifiedAt: remoteSnapshot.modifiedAt,
-        pushedFields: [.isCompleted, .date],
-        previousBaseline: ReminderSyncBaselineStore.baseline(
-          for: reminderReference.reminderExternalIdentifier
-        )
-      )
-    }
-
-    return try result(projectID: projectID, taskID: taskID, snapshot: resultSnapshot)
+    return try result(projectID: projectID, taskID: taskID, snapshot: writtenSnapshot)
   }
 
   static func setTaskSchedule(
@@ -641,31 +681,23 @@ enum ObsidianRetainedTaskCommandService {
     applyMetadata(metadata, to: task, in: &bodyLines)
   }
 
-  private static func clearExplicitTimeForNextRecurringCompletion(
+  private static func recurringCompletionSnapshot(
     reference: ReminderTaskReference,
     reminderProjectProvider: ReminderProjectProvider
   ) throws -> ReminderTaskRemoteSnapshot? {
     guard let snapshot = try reminderProjectProvider.taskSnapshot(for: reference),
-      normalized(snapshot.recurrenceRuleRaw) != nil,
-      let dueDate = snapshot.dueDate
+      normalized(snapshot.recurrenceRuleRaw) != nil
     else {
       return nil
     }
-    guard snapshot.hasExplicitTime else { return snapshot }
+    return snapshot
+  }
 
-    guard let metadata = try reminderProjectProvider.setTaskSchedule(
-      for: reference,
-      dueDate: dueDate,
-      hasExplicitTime: false
-    ) else {
-      throw RetainedTaskCommandError.reminderOwnerUnresolved(reference.taskID)
-    }
-
-    if let refreshedSnapshot = try reminderProjectProvider.taskSnapshot(for: reference) {
-      return refreshedSnapshot
-    }
-
-    return ReminderTaskRemoteSnapshot(
+  private static func remoteSnapshotClearingExplicitTime(
+    _ snapshot: ReminderTaskRemoteSnapshot,
+    modifiedAt: Date
+  ) -> ReminderTaskRemoteSnapshot {
+    ReminderTaskRemoteSnapshot(
       identifier: snapshot.identifier,
       externalIdentifier: snapshot.externalIdentifier,
       calendarIdentifier: snapshot.calendarIdentifier,
@@ -674,11 +706,11 @@ enum ObsidianRetainedTaskCommandService {
       isCompleted: snapshot.isCompleted,
       completionDate: snapshot.completionDate,
       startDate: snapshot.startDate,
-      dueDate: dueDate,
+      dueDate: snapshot.dueDate,
       hasExplicitTime: false,
       priority: snapshot.priority,
       recurrenceRuleRaw: snapshot.recurrenceRuleRaw,
-      modifiedAt: metadata.modifiedAt
+      modifiedAt: modifiedAt
     )
   }
 

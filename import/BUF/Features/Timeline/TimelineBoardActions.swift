@@ -61,6 +61,24 @@ extension TimelineBoardView {
     cachedTimelineBarsPresentationSignature = nil
   }
 
+  func restoreTimelineProjectManualOrder(
+    _ nextOrder: [UUID: Int64],
+    actionName: String = "프로젝트 순서 변경",
+    registerUndo: Bool = true
+  ) {
+    let previousOrder = timelineProjectManualOrder
+    guard previousOrder != nextOrder else { return }
+    applyTimelineProjectManualOrder(nextOrder)
+    guard registerUndo else { return }
+    appState.registerUndo(with: undoManager, actionName: actionName) {
+      self.restoreTimelineProjectManualOrder(
+        previousOrder,
+        actionName: actionName,
+        registerUndo: true
+      )
+    }
+  }
+
   func openScheduleDay(for offset: Int) {
     cancelTimelineDayHeaderOverlay()
     appState.jumpSchedule(to: date(for: offset))
@@ -620,6 +638,7 @@ extension TimelineBoardView {
     isCompleted: Bool,
     completionDate: Date?,
     targetState: TimelineTaskCompletionUndoSnapshot?,
+    undoTargetState: TimelineTaskCompletionUndoSnapshot? = nil,
     registerUndo: Bool
   ) {
     guard allowTimelineRetainedWrite("task-completion") else { return }
@@ -635,7 +654,8 @@ extension TimelineBoardView {
         isCompleted: isCompleted,
         completionDate: isCompleted ? (completionDate ?? .now) : nil,
         isRecurring: previousState.isRecurring,
-        occurrenceDate: previousState.occurrenceDate
+        occurrenceDate: previousState.occurrenceDate,
+        editFields: previousState.editFields
       )
     guard previousState != nextState else { return }
     Task { @MainActor in
@@ -644,6 +664,7 @@ extension TimelineBoardView {
         projectID: projectID,
         previousState: previousState,
         nextState: nextState,
+        undoTargetState: undoTargetState,
         registerUndo: registerUndo
       )
     }
@@ -656,6 +677,7 @@ extension TimelineBoardView {
     isCompleted: Bool,
     completionDate: Date?,
     targetState: TimelineTaskCompletionUndoSnapshot?,
+    undoTargetState: TimelineTaskCompletionUndoSnapshot? = nil,
     registerUndo: Bool
   ) async -> Bool {
     guard allowTimelineRetainedWrite("task-completion") else { return false }
@@ -670,7 +692,8 @@ extension TimelineBoardView {
         isCompleted: isCompleted,
         completionDate: isCompleted ? (completionDate ?? .now) : nil,
         isRecurring: previousState.isRecurring,
-        occurrenceDate: previousState.occurrenceDate
+        occurrenceDate: previousState.occurrenceDate,
+        editFields: previousState.editFields
       )
     guard previousState != nextState else { return true }
     return await updateTimelineTaskCompletionAndWait(
@@ -678,6 +701,7 @@ extension TimelineBoardView {
       projectID: projectID,
       previousState: previousState,
       nextState: nextState,
+      undoTargetState: undoTargetState,
       registerUndo: registerUndo
     )
   }
@@ -688,24 +712,59 @@ extension TimelineBoardView {
     projectID: UUID,
     previousState: TimelineTaskCompletionUndoSnapshot,
     nextState: TimelineTaskCompletionUndoSnapshot,
+    undoTargetState: TimelineTaskCompletionUndoSnapshot? = nil,
     registerUndo: Bool
   ) async -> Bool {
     do {
-      let result = try await ObsidianRetainedTaskCommandService.setTaskCompletion(
-        vaultRootURL: appState.obsidianVaultRootURL,
-        projectID: projectID,
-        taskID: taskID,
-        isCompleted: nextState.isCompleted,
-        completionDate: nextState.isCompleted && nextState.isRecurring
-          ? (nextState.occurrenceDate ?? nextState.completionDate)
-          : nextState.completionDate,
-        reminderProjectProvider: appState.reminderProjectProvider
+      let shouldRestoreSchedule = RecurringCompletionUndoScheduleRestorePolicy.shouldRestore(
+        previousIsCompleted: previousState.isCompleted,
+        nextIsCompleted: nextState.isCompleted,
+        isRecurring: nextState.isRecurring,
+        previousFields: previousState.editFields,
+        fields: nextState.editFields
       )
+      let shouldWriteCompletion = RecurringCompletionUndoScheduleRestorePolicy.shouldWriteCompletion(
+        previousIsCompleted: previousState.isCompleted,
+        nextIsCompleted: nextState.isCompleted,
+        isRecurring: nextState.isRecurring,
+        previousFields: previousState.editFields,
+        fields: nextState.editFields
+      )
+      var result: RetainedTaskCommandResult?
+      if shouldWriteCompletion {
+        result = try await ObsidianRetainedTaskCommandService.setTaskCompletion(
+          vaultRootURL: appState.obsidianVaultRootURL,
+          projectID: projectID,
+          taskID: taskID,
+          isCompleted: nextState.isCompleted,
+          completionDate: nextState.isCompleted && nextState.isRecurring
+            ? (nextState.occurrenceDate ?? nextState.completionDate)
+            : nextState.completionDate,
+          reminderProjectProvider: appState.reminderProjectProvider
+        )
+      }
+      if shouldRestoreSchedule {
+        result = try await ObsidianRetainedTaskCommandService.setTaskSchedule(
+          vaultRootURL: appState.obsidianVaultRootURL,
+          projectID: projectID,
+          taskID: taskID,
+          day: nextState.editFields.day,
+          timeMinutes: nextState.editFields.timeMinutes,
+          durationMinutes: nextState.editFields.durationMinutes,
+          calendar: calendar,
+          reminderProjectProvider: appState.reminderProjectProvider
+        )
+      }
+      guard let result else {
+        await refreshTimelineProjectState(including: [projectID])
+        return true
+      }
       await refreshTimelineProjectState(including: [projectID])
       retainedTimelineCalendarBridgeDecisionsByTaskID[taskID] = result.calendarBridgeDecision
       retainedTimelineCalendarBridgeWriteMarkersByTaskID[taskID] = result.calendarWriteMarker
 
       guard registerUndo else { return true }
+      let registeredUndoState = undoTargetState ?? previousState
       appState.registerUndo(
         with: undoManager,
         actionName: nextState.isCompleted ? "할일 완료" : "할일 완료 취소"
@@ -713,9 +772,10 @@ extension TimelineBoardView {
         self.updateTimelineTaskCompletion(
           taskID: taskID,
           projectID: projectID,
-          isCompleted: previousState.isCompleted,
-          completionDate: previousState.completionDate,
-          targetState: previousState,
+          isCompleted: registeredUndoState.isCompleted,
+          completionDate: registeredUndoState.completionDate,
+          targetState: registeredUndoState,
+          undoTargetState: nextState,
           registerUndo: true
         )
       }
@@ -952,15 +1012,11 @@ extension TimelineBoardView {
       return
     }
 
-    let previousOrder = timelineProjectManualOrder
     var nextOrder = timelineProjectManualOrder
     for (index, projectID) in reordered.enumerated() {
       nextOrder[projectID] = Int64(index)
     }
-    applyTimelineProjectManualOrder(nextOrder)
-    appState.registerUndo(with: undoManager, actionName: "프로젝트 순서 변경") {
-      self.applyTimelineProjectManualOrder(previousOrder)
-    }
+    restoreTimelineProjectManualOrder(nextOrder)
 
     if draggedStage != targetStage {
       updateTimelineProjectStage(projectID: draggedID, stage: targetStage)
@@ -999,7 +1055,8 @@ extension TimelineBoardView {
         dueDate: entry.dueDate,
         startDate: entry.startDate,
         displayedDate: entry.displayedDate
-      )
+      ),
+      editFields: timelineTaskEditFields(for: entry)
     )
   }
 

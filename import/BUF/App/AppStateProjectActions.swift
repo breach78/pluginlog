@@ -251,19 +251,62 @@ extension AppState {
     taskID: UUID,
     isCompleted: Bool,
     completionDate: Date?,
-    context: ModelContext
+    context: ModelContext,
+    restoreScheduleFields: RetainedTaskEditFields? = nil,
+    currentIsCompleted: Bool? = nil,
+    currentScheduleFields: RetainedTaskEditFields? = nil,
+    isRecurring: Bool = false,
+    calendar: Calendar = .autoupdatingCurrent
   ) async -> Bool {
     _ = context
     guard let projectID = TaskIdentityBridgeStore.projectID(for: taskID) else { return false }
     do {
-      _ = try await ObsidianRetainedTaskCommandService.setTaskCompletion(
-        vaultRootURL: obsidianVaultRootURL,
-        projectID: projectID,
-        taskID: taskID,
-        isCompleted: isCompleted,
-        completionDate: completionDate,
-        reminderProjectProvider: reminderProjectProvider
-      )
+      let previousIsCompleted = currentIsCompleted ?? !isCompleted
+      let targetScheduleFields = restoreScheduleFields ?? currentScheduleFields
+      let shouldRestoreSchedule =
+        restoreScheduleFields.map { fields in
+          RecurringCompletionUndoScheduleRestorePolicy.shouldRestore(
+            previousIsCompleted: previousIsCompleted,
+            nextIsCompleted: isCompleted,
+            isRecurring: isRecurring,
+            previousFields: currentScheduleFields,
+            fields: fields
+          )
+        } ?? false
+      let shouldWriteCompletion =
+        targetScheduleFields.map {
+          RecurringCompletionUndoScheduleRestorePolicy.shouldWriteCompletion(
+            previousIsCompleted: previousIsCompleted,
+            nextIsCompleted: isCompleted,
+            isRecurring: isRecurring,
+            previousFields: currentScheduleFields,
+            fields: $0
+          )
+        } ?? (previousIsCompleted != isCompleted)
+      if shouldWriteCompletion {
+        _ = try await ObsidianRetainedTaskCommandService.setTaskCompletion(
+          vaultRootURL: obsidianVaultRootURL,
+          projectID: projectID,
+          taskID: taskID,
+          isCompleted: isCompleted,
+          completionDate: completionDate,
+          reminderProjectProvider: reminderProjectProvider
+        )
+      }
+      if let fields = restoreScheduleFields,
+        shouldRestoreSchedule
+      {
+        _ = try await ObsidianRetainedTaskCommandService.setTaskSchedule(
+          vaultRootURL: obsidianVaultRootURL,
+          projectID: projectID,
+          taskID: taskID,
+          day: fields.day,
+          timeMinutes: fields.timeMinutes,
+          durationMinutes: fields.durationMinutes,
+          calendar: calendar,
+          reminderProjectProvider: reminderProjectProvider
+        )
+      }
       bumpWorkspaceTreeRevision()
       return true
     } catch {

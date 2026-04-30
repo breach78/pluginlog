@@ -27,6 +27,7 @@ final class AppState: ObservableObject {
   static let calendarDayChangedNotification = Notification.Name("NSCalendarDayChanged")
   static let systemClockDidChangeNotification = Notification.Name("NSSystemClockDidChange")
   static let systemTimeZoneDidChangeNotification = Notification.Name("NSSystemTimeZoneDidChange")
+  static let domainUndoLimit = 20
 
   @Published var modelContainer: ModelContainer?
   @Published var viewMode: ViewMode = .timeline
@@ -161,21 +162,35 @@ final class AppState: ObservableObject {
     },
     isPreviewAppState: Bool = false
   ) {
+    let uiTestConfiguration = AppUITestRuntime.Configuration()
     let usesPreviewRuntimeSetup = isPreviewAppState || AppRuntimeEnvironment.isRunningPreview
-    self.storageCoordinator = storageCoordinator ?? LocalStorageCoordinator()
+    self.storageCoordinator =
+      storageCoordinator ?? LocalStorageCoordinator(
+        userDefaults: uiTestConfiguration?.userDefaults ?? .standard
+      )
     TaskIdentityBridgeStore.install(dataDirectory: self.storageCoordinator.paths?.dataDirectory)
     ReminderPendingBindingStore.install(dataDirectory: self.storageCoordinator.paths?.dataDirectory)
     ReminderDeletedTaskTombstoneStore.install(dataDirectory: self.storageCoordinator.paths?.dataDirectory)
     self.platformUIFoundation = .shared
     let resolvedReminderGateway = reminderGateway ?? (
-      usesPreviewRuntimeSetup ? PreviewReminderGateway() : EventKitReminderGateway()
+      (usesPreviewRuntimeSetup || uiTestConfiguration != nil)
+        ? PreviewReminderGateway()
+        : EventKitReminderGateway()
     )
     self.reminderGateway = resolvedReminderGateway
-    self.reminderProjectProvider = EventKitReminderProjectProvider(gateway: resolvedReminderGateway)
+    if let uiTestConfiguration, reminderGateway == nil {
+      self.reminderProjectProvider = UITestReminderProjectProvider(seed: uiTestConfiguration.seed)
+    } else {
+      self.reminderProjectProvider = EventKitReminderProjectProvider(gateway: resolvedReminderGateway)
+    }
     self.reminderAuthorizationStatusProvider = reminderAuthorizationStatusProvider
     self.timelineService = timelineService ?? DefaultTimelineService()
     self.calendarServiceRegistry =
-      calendarServiceRegistry ?? AppStateCalendarServiceRegistry.live()
+      calendarServiceRegistry ?? AppStateCalendarServiceRegistry.live(
+        scheduleCalendarService: uiTestConfiguration == nil
+          ? nil
+          : UITestScheduleCalendarService()
+      )
     self.scheduleCalendarOverlayProjection =
       self.calendarServiceRegistry.scheduleCalendarService.overlayProjection
     self.scheduleCalendarOverlayProjectionCancellable =
@@ -244,11 +259,21 @@ final class AppState: ObservableObject {
     handler: @escaping @MainActor () -> Void
   ) {
     guard let undoManager else { return }
+    undoManager.levelsOfUndo = Self.domainUndoLimit
     undoManager.registerUndo(withTarget: self) { target in
-      Task { @MainActor in
+      let runHandler = {
         target.undoRedoDepth += 1
         defer { target.undoRedoDepth -= 1 }
         handler()
+      }
+      if Thread.isMainThread {
+        MainActor.assumeIsolated {
+          runHandler()
+        }
+      } else {
+        Task { @MainActor in
+          runHandler()
+        }
       }
     }
     undoManager.setActionName(actionName)

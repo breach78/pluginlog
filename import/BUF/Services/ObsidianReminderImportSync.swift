@@ -618,9 +618,13 @@ enum ObsidianReminderImportSync {
         let leadingSpaces = rawLine.prefix { $0 == " " }.count
         let content = String(rawLine.dropFirst(leadingSpaces))
           .trimmingCharacters(in: .whitespaces)
-        guard !content.isEmpty else { continue }
-      if let taskIdentifier = ObsidianReminderImportFormatting
-        .reminderNoteTaskMarkerIdentifier(from: content) {
+        guard !content.isEmpty else {
+          replacement.append("")
+          continue
+        }
+        if let taskIdentifier = ObsidianReminderImportFormatting
+          .reminderNoteTaskMarkerIdentifier(from: content)
+        {
           if let taskBlock = preservedTaskBlocks.blocksByIdentifier[taskIdentifier] {
             replacement.append(contentsOf: taskBlock)
             referencedTaskIdentifiers.insert(taskIdentifier)

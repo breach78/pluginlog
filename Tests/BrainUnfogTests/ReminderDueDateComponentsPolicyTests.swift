@@ -36,6 +36,20 @@ final class ReminderDueDateComponentsPolicyTests: XCTestCase {
     XCTAssertNil(ReminderDueDateComponentsPolicy.assignmentSteps(existing: existing, next: next)[0])
   }
 
+  func testDoesNotTemporarilyClearDueDateWhenIntermediateNilIsDisallowed() {
+    let existing = DateComponents(year: 2026, month: 4, day: 25, hour: 9, minute: 30)
+    let next = DateComponents(year: 2026, month: 4, day: 25)
+
+    XCTAssertEqual(
+      ReminderDueDateComponentsPolicy.assignmentSteps(
+        existing: existing,
+        next: next,
+        allowsIntermediateNil: false
+      ),
+      [next]
+    )
+  }
+
   func testDoesNotClearExistingDueDateWhenDateChanges() {
     let existing = DateComponents(year: 2026, month: 4, day: 25)
     let next = DateComponents(year: 2026, month: 4, day: 26, hour: 9, minute: 30)

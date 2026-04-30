@@ -21,6 +21,57 @@ struct RetainedTaskEditFields: Equatable, Sendable {
   var durationMinutes: Int?
 }
 
+enum RecurringCompletionUndoScheduleRestorePolicy {
+  static func hasTimedSchedule(_ fields: RetainedTaskEditFields?) -> Bool {
+    guard let fields else { return false }
+    return fields.day != nil && fields.timeMinutes != nil
+  }
+
+  static func shouldRestore(
+    previousIsCompleted: Bool,
+    nextIsCompleted: Bool,
+    isRecurring: Bool,
+    previousFields: RetainedTaskEditFields? = nil,
+    fields: RetainedTaskEditFields
+  ) -> Bool {
+    guard !nextIsCompleted,
+      isRecurring,
+      hasTimedSchedule(fields)
+    else {
+      return false
+    }
+    if previousIsCompleted {
+      return true
+    }
+    guard let previousFields else { return false }
+    return previousFields.day != fields.day
+      || previousFields.timeMinutes != fields.timeMinutes
+      || previousFields.durationMinutes != fields.durationMinutes
+  }
+
+  static func shouldWriteCompletion(
+    previousIsCompleted: Bool,
+    nextIsCompleted: Bool,
+    isRecurring: Bool,
+    previousFields: RetainedTaskEditFields? = nil,
+    fields: RetainedTaskEditFields
+  ) -> Bool {
+    if !previousIsCompleted,
+      !nextIsCompleted,
+      shouldRestore(
+        previousIsCompleted: previousIsCompleted,
+        nextIsCompleted: nextIsCompleted,
+        isRecurring: isRecurring,
+        previousFields: previousFields,
+        fields: fields
+      )
+    {
+      return false
+    }
+    return previousIsCompleted != nextIsCompleted
+  }
+}
+
 struct RetainedTaskUndoSnapshot: Equatable, Sendable {
   let fields: RetainedTaskEditFields
   let isCompleted: Bool

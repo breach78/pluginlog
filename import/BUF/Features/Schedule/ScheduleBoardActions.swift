@@ -136,6 +136,7 @@ struct ScheduleTaskCompletionState: Equatable {
   let completionDate: Date?
   let isRecurring: Bool
   let occurrenceDate: Date?
+  let editFields: RetainedTaskEditFields
 }
 
 extension ScheduleBoardView {
@@ -1513,7 +1514,8 @@ extension ScheduleBoardView {
       isCompleted: taskRow.isCompleted,
       completionDate: taskRow.completionDate,
       isRecurring: WorkspaceTaskScheduleEventStore.isRecurring(taskRow),
-      occurrenceDate: taskRow.reminderDate
+      occurrenceDate: taskRow.reminderDate,
+      editFields: scheduleTaskEditFields(for: taskRow)
     )
   }
 
@@ -1522,37 +1524,76 @@ extension ScheduleBoardView {
     projectID: UUID,
     isCompleted: Bool,
     completionDate: Date?,
+    targetState: ScheduleTaskCompletionState? = nil,
+    undoTargetState: ScheduleTaskCompletionState? = nil,
     registerUndo: Bool
   ) {
     guard allowScheduleRetainedWrite("task-completion") else { return }
     guard let taskDescriptor = scheduleTaskDescriptor(for: taskID) else { return }
     let previousState = scheduleCompletionState(for: taskDescriptor.taskRow)
-    let nextState = ScheduleTaskCompletionState(
-      isCompleted: isCompleted,
-      completionDate: isCompleted ? (completionDate ?? .now) : nil,
-      isRecurring: previousState.isRecurring,
-      occurrenceDate: previousState.occurrenceDate
-    )
+    let nextState =
+      targetState
+      ?? ScheduleTaskCompletionState(
+        isCompleted: isCompleted,
+        completionDate: isCompleted ? (completionDate ?? .now) : nil,
+        isRecurring: previousState.isRecurring,
+        occurrenceDate: previousState.occurrenceDate,
+        editFields: previousState.editFields
+      )
     guard previousState != nextState else {
       return
     }
     Task { @MainActor in
       do {
-        let result = try await ObsidianRetainedTaskCommandService.setTaskCompletion(
-          vaultRootURL: appState.obsidianVaultRootURL,
-          projectID: projectID,
-          taskID: taskID,
-          isCompleted: nextState.isCompleted,
-          completionDate: nextState.isCompleted && nextState.isRecurring
-            ? (nextState.occurrenceDate ?? nextState.completionDate)
-            : nextState.completionDate,
-          reminderProjectProvider: appState.reminderProjectProvider
+        let shouldRestoreSchedule = RecurringCompletionUndoScheduleRestorePolicy.shouldRestore(
+          previousIsCompleted: previousState.isCompleted,
+          nextIsCompleted: nextState.isCompleted,
+          isRecurring: nextState.isRecurring,
+          previousFields: previousState.editFields,
+          fields: nextState.editFields
         )
+        let shouldWriteCompletion = RecurringCompletionUndoScheduleRestorePolicy.shouldWriteCompletion(
+          previousIsCompleted: previousState.isCompleted,
+          nextIsCompleted: nextState.isCompleted,
+          isRecurring: nextState.isRecurring,
+          previousFields: previousState.editFields,
+          fields: nextState.editFields
+        )
+        var result: RetainedTaskCommandResult?
+        if shouldWriteCompletion {
+          result = try await ObsidianRetainedTaskCommandService.setTaskCompletion(
+            vaultRootURL: appState.obsidianVaultRootURL,
+            projectID: projectID,
+            taskID: taskID,
+            isCompleted: nextState.isCompleted,
+            completionDate: nextState.isCompleted && nextState.isRecurring
+              ? (nextState.occurrenceDate ?? nextState.completionDate)
+              : nextState.completionDate,
+            reminderProjectProvider: appState.reminderProjectProvider
+          )
+        }
+        if shouldRestoreSchedule {
+          result = try await ObsidianRetainedTaskCommandService.setTaskSchedule(
+            vaultRootURL: appState.obsidianVaultRootURL,
+            projectID: projectID,
+            taskID: taskID,
+            day: nextState.editFields.day,
+            timeMinutes: nextState.editFields.timeMinutes,
+            durationMinutes: nextState.editFields.durationMinutes,
+            calendar: calendar,
+            reminderProjectProvider: appState.reminderProjectProvider
+          )
+        }
+        guard let result else {
+          await reloadWorkspaceScheduleProjectDetails(for: activeProjectIDs)
+          return
+        }
         await reloadWorkspaceScheduleProjectDetails(for: activeProjectIDs)
         retainedScheduleCalendarBridgeDecisionsByTaskID[taskID] = result.calendarBridgeDecision
         retainedScheduleCalendarBridgeWriteMarkersByTaskID[taskID] = result.calendarWriteMarker
 
         guard registerUndo else { return }
+        let registeredUndoState = undoTargetState ?? previousState
         appState.registerUndo(
           with: undoManager,
           actionName: nextState.isCompleted ? "할일 완료" : "할일 완료 취소"
@@ -1560,8 +1601,10 @@ extension ScheduleBoardView {
           self.updateScheduleTaskCompletion(
             taskID: taskID,
             projectID: projectID,
-            isCompleted: previousState.isCompleted,
-            completionDate: previousState.completionDate,
+            isCompleted: registeredUndoState.isCompleted,
+            completionDate: registeredUndoState.completionDate,
+            targetState: registeredUndoState,
+            undoTargetState: nextState,
             registerUndo: true
           )
         }

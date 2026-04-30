@@ -217,6 +217,7 @@ struct TimelineTaskCompletionUndoSnapshot: Equatable {
   let completionDate: Date?
   let isRecurring: Bool
   let occurrenceDate: Date?
+  let editFields: RetainedTaskEditFields
 }
 
 struct TimelinePlannedWorkUndoSnapshot: Equatable {
