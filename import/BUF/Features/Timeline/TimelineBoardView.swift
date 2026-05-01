@@ -110,14 +110,14 @@ struct TimelineBoardView: View {
   @State var hoveredTimelineTaskBadgeID: String?
   @State var activeTimelineTaskBadgeID: String?
   @State var timelineTaskBadgeShowWorkItem: DispatchWorkItem?
-  @State var timelineTaskBadgeHideWorkItem: DispatchWorkItem?
+  @State var timelineTaskBadgeDetachWorkItem: DispatchWorkItem?
   @State var cachedTimelineDayHeaderSections: [Date: [TimelineDayHeaderOverlayProjectSection]]
     = [:]
   @State var cachedTimelineDayHeaderSourceSignature: Int?
   @State var hoveredTimelineDayHeaderOffset: Int?
   @State var activeTimelineDayHeaderOffset: Int?
   @State var timelineDayHeaderShowWorkItem: DispatchWorkItem?
-  @State var timelineDayHeaderHideWorkItem: DispatchWorkItem?
+  @State var timelineDayHeaderDetachWorkItem: DispatchWorkItem?
   @State var activeTimelineProjectListPopoverProjectID: UUID?
   @State var activeTimelineTaskEditTarget: TimelineTaskEditTarget?
   @State var timelineProjectManualOrder = TimelineProjectManualOrderStore.load()
@@ -152,9 +152,8 @@ struct TimelineBoardView: View {
   let timelineTaskBadgeOverlayAboveOffset: CGFloat = 8
   let timelineTaskBadgeOverlayBelowOffset: CGFloat = -4
   let timelineTaskBadgeShowDelay: TimeInterval = 0.20
-  let timelineTaskBadgeHideDelay: TimeInterval = 0.26
   let timelineDayHeaderShowDelay: TimeInterval = 0.20
-  let timelineDayHeaderHideDelay: TimeInterval = 0.26
+  let timelineOverlayDetachGraceDelay: TimeInterval = 0.08
   let timelineScrollIdleDelay: TimeInterval = 0.18
   let deadlineMarkerWidth: CGFloat = 10
   let completedHistoryVisiblePastDays = 14
@@ -413,15 +412,19 @@ struct TimelineBoardView: View {
       }
     }
     .onChange(of: appState.isHoveringTimelineTaskBadgeOverlay) { _, isHovering in
-      if !isHovering {
-        timelineTaskBadgeShowWorkItem?.cancel()
-        scheduleTimelineTaskBadgeOverlayHideIfNeeded()
+      if isHovering {
+        timelineTaskBadgeDetachWorkItem?.cancel()
+        timelineTaskBadgeDetachWorkItem = nil
+      } else {
+        dismissTimelineTaskBadgeOverlayIfDetached()
       }
     }
     .onChange(of: appState.isHoveringTimelineDayHeaderOverlay) { _, isHovering in
-      if !isHovering {
-        timelineDayHeaderShowWorkItem?.cancel()
-        scheduleTimelineDayHeaderOverlayHideIfNeeded()
+      if isHovering {
+        timelineDayHeaderDetachWorkItem?.cancel()
+        timelineDayHeaderDetachWorkItem = nil
+      } else {
+        dismissTimelineDayHeaderOverlayIfDetached()
       }
     }
     .onChange(of: appState.timelineJumpToTodayToken) { _, _ in
@@ -602,16 +605,12 @@ struct TimelineBoardView: View {
           isActive
           && !isInteractionObscured
           && !isTimelineScrolling
-          && !appState.isEditorMotionSuppressed
-          && !appState.isHoveringTimelineTaskBadgeOverlay
-          && !appState.isHoveringTimelineDayHeaderOverlay,
+          && !appState.isEditorMotionSuppressed,
         isTaskBadgeHoverEnabled:
           isActive
           && !isInteractionObscured
           && !isTimelineScrolling
-          && !appState.isEditorMotionSuppressed
-          && !appState.isHoveringTimelineDayHeaderOverlay
-          && !appState.isHoveringTimelineTaskBadgeOverlay,
+          && !appState.isEditorMotionSuppressed,
         taskBadgeHitTargets: timelineTaskBadgeHitTargets(
           bars: snapshot.bars,
           rowLayouts: snapshot.rowLayouts
@@ -630,8 +629,14 @@ struct TimelineBoardView: View {
         onDayHeaderHover: { offset, isHovering in
           updateTimelineDayHeaderHover(offset, isHovering: isHovering)
         },
+        onDayHeaderHoverCleared: {
+          clearTimelineDayHeaderTriggerHover(deferClose: true)
+        },
         onTaskBadgeHover: { badgeID, isHovering in
           updateTimelineTaskBadgeHover(badgeID, isHovering: isHovering)
+        },
+        onTaskBadgeHoverCleared: {
+          clearTimelineTaskBadgeTriggerHover(deferClose: true)
         }
       ) {
         boardContent(

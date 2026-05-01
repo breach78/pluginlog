@@ -252,10 +252,9 @@ extension TimelineBoardView {
     .onHover { isHovering in
       if isHovering {
         appState.isHoveringTimelineTaskBadgeOverlay = true
-        timelineTaskBadgeHideWorkItem?.cancel()
       } else {
         appState.isHoveringTimelineTaskBadgeOverlay = false
-        scheduleTimelineTaskBadgeOverlayHideIfNeeded()
+        dismissTimelineTaskBadgeOverlayIfDetached()
       }
     }
   }
@@ -504,6 +503,12 @@ extension TimelineBoardView {
       return
     }
 
+    if isHovering, shouldDeferTimelineTaskBadgeHover(badgeID) {
+      clearTimelineTaskBadgeTriggerHover(deferClose: true)
+      clearTimelineDayHeaderTriggerHover(deferClose: true)
+      return
+    }
+
     if isHoveringPinnedLeftColumn {
       if isHovering {
         isHoveringPinnedLeftColumn = false
@@ -514,8 +519,9 @@ extension TimelineBoardView {
 
     if isHovering {
       cancelTimelineDayHeaderOverlay()
+      timelineTaskBadgeDetachWorkItem?.cancel()
+      timelineTaskBadgeDetachWorkItem = nil
       hoveredTimelineTaskBadgeID = badgeID
-      timelineTaskBadgeHideWorkItem?.cancel()
 
       if activeTimelineTaskBadgeID == badgeID {
         return
@@ -535,34 +541,82 @@ extension TimelineBoardView {
       return
     }
 
-    if hoveredTimelineTaskBadgeID == badgeID {
-      hoveredTimelineTaskBadgeID = nil
-    }
-    timelineTaskBadgeShowWorkItem?.cancel()
-    scheduleTimelineTaskBadgeOverlayHideIfNeeded()
+    clearTimelineTaskBadgeTriggerHover(badgeID: badgeID, deferClose: true)
   }
 
-  func scheduleTimelineTaskBadgeOverlayHideIfNeeded() {
-    guard hoveredTimelineTaskBadgeID == nil, !appState.isHoveringTimelineTaskBadgeOverlay else {
+  func shouldDeferTimelineTaskBadgeHover(_ badgeID: String) -> Bool {
+    if appState.isHoveringTimelineTaskBadgeOverlay
+      || appState.isHoveringTimelineDayHeaderOverlay
+    {
+      return activeTimelineTaskBadgeID != nil || activeTimelineDayHeaderOffset != nil
+    }
+
+    if activeTimelineDayHeaderOffset != nil {
+      return true
+    }
+
+    if let activeTimelineTaskBadgeID, activeTimelineTaskBadgeID != badgeID {
+      return true
+    }
+
+    return false
+  }
+
+  func clearTimelineTaskBadgeTriggerHover(
+    badgeID: String? = nil,
+    deferClose: Bool = false
+  ) {
+    guard badgeID == nil
+      || hoveredTimelineTaskBadgeID == badgeID
+      || (hoveredTimelineTaskBadgeID == nil && activeTimelineTaskBadgeID == badgeID)
+    else {
       return
     }
 
-    timelineTaskBadgeHideWorkItem?.cancel()
-    let workItem = DispatchWorkItem {
-      guard hoveredTimelineTaskBadgeID == nil, !appState.isHoveringTimelineTaskBadgeOverlay else {
+    if badgeID == nil || hoveredTimelineTaskBadgeID == badgeID {
+      timelineTaskBadgeShowWorkItem?.cancel()
+      timelineTaskBadgeShowWorkItem = nil
+      hoveredTimelineTaskBadgeID = nil
+    }
+    dismissTimelineTaskBadgeOverlayIfDetached(deferClose: deferClose)
+  }
+
+  func dismissTimelineTaskBadgeOverlayIfDetached(deferClose: Bool = false) {
+    timelineTaskBadgeDetachWorkItem?.cancel()
+    timelineTaskBadgeDetachWorkItem = nil
+
+    let closeIfDetached = {
+      guard hoveredTimelineTaskBadgeID == nil,
+        !appState.isHoveringTimelineTaskBadgeOverlay
+      else {
         return
       }
+      timelineTaskBadgeShowWorkItem?.cancel()
+      timelineTaskBadgeShowWorkItem = nil
+      timelineTaskBadgeDetachWorkItem?.cancel()
+      timelineTaskBadgeDetachWorkItem = nil
       activeTimelineTaskBadgeID = nil
     }
-    timelineTaskBadgeHideWorkItem = workItem
-    DispatchQueue.main.asyncAfter(deadline: .now() + timelineTaskBadgeHideDelay, execute: workItem)
+
+    if deferClose {
+      let workItem = DispatchWorkItem {
+        closeIfDetached()
+      }
+      timelineTaskBadgeDetachWorkItem = workItem
+      DispatchQueue.main.asyncAfter(
+        deadline: .now() + timelineOverlayDetachGraceDelay,
+        execute: workItem
+      )
+    } else {
+      closeIfDetached()
+    }
   }
 
   func cancelTimelineTaskBadgeOverlay() {
     timelineTaskBadgeShowWorkItem?.cancel()
-    timelineTaskBadgeHideWorkItem?.cancel()
     timelineTaskBadgeShowWorkItem = nil
-    timelineTaskBadgeHideWorkItem = nil
+    timelineTaskBadgeDetachWorkItem?.cancel()
+    timelineTaskBadgeDetachWorkItem = nil
     hoveredTimelineTaskBadgeID = nil
     activeTimelineTaskBadgeID = nil
     appState.isHoveringTimelineTaskBadgeOverlay = false
@@ -674,6 +728,12 @@ extension TimelineBoardView {
       return
     }
 
+    if isHovering, shouldDeferTimelineDayHeaderHover(offset) {
+      clearTimelineDayHeaderTriggerHover(deferClose: true)
+      clearTimelineTaskBadgeTriggerHover(deferClose: true)
+      return
+    }
+
     if isHoveringPinnedLeftColumn || !isTimelineDayHeaderInteractable(offset) {
       if isHovering {
         cancelTimelineDayHeaderOverlay()
@@ -683,8 +743,9 @@ extension TimelineBoardView {
 
     if isHovering {
       cancelTimelineTaskBadgeOverlay()
+      timelineDayHeaderDetachWorkItem?.cancel()
+      timelineDayHeaderDetachWorkItem = nil
       hoveredTimelineDayHeaderOffset = offset
-      timelineDayHeaderHideWorkItem?.cancel()
 
       if activeTimelineDayHeaderOffset == offset {
         return
@@ -706,30 +767,25 @@ extension TimelineBoardView {
       return
     }
 
-    if hoveredTimelineDayHeaderOffset == offset {
-      hoveredTimelineDayHeaderOffset = nil
-    }
-    timelineDayHeaderShowWorkItem?.cancel()
-    scheduleTimelineDayHeaderOverlayHideIfNeeded()
+    clearTimelineDayHeaderTriggerHover(offset: offset, deferClose: true)
   }
 
-  func scheduleTimelineDayHeaderOverlayHideIfNeeded() {
-    guard hoveredTimelineDayHeaderOffset == nil, !appState.isHoveringTimelineDayHeaderOverlay else {
-      return
+  func shouldDeferTimelineDayHeaderHover(_ offset: Int) -> Bool {
+    if appState.isHoveringTimelineTaskBadgeOverlay
+      || appState.isHoveringTimelineDayHeaderOverlay
+    {
+      return activeTimelineTaskBadgeID != nil || activeTimelineDayHeaderOffset != nil
     }
 
-    timelineDayHeaderHideWorkItem?.cancel()
-    let workItem = DispatchWorkItem {
-      guard
-        hoveredTimelineDayHeaderOffset == nil,
-        !appState.isHoveringTimelineDayHeaderOverlay
-      else {
-        return
-      }
-      activeTimelineDayHeaderOffset = nil
+    if activeTimelineTaskBadgeID != nil {
+      return true
     }
-    timelineDayHeaderHideWorkItem = workItem
-    DispatchQueue.main.asyncAfter(deadline: .now() + timelineDayHeaderHideDelay, execute: workItem)
+
+    if let activeTimelineDayHeaderOffset, activeTimelineDayHeaderOffset != offset {
+      return true
+    }
+
+    return false
   }
 
   func dismissTimelineDayHeaderHoverIfObscured() {
@@ -757,11 +813,61 @@ extension TimelineBoardView {
     return min(max(rawVisibleLowerOffset, dayRange.lowerBound), dayRange.upperBound)
   }
 
+  func clearTimelineDayHeaderTriggerHover(
+    offset: Int? = nil,
+    deferClose: Bool = false
+  ) {
+    guard offset == nil
+      || hoveredTimelineDayHeaderOffset == offset
+      || (hoveredTimelineDayHeaderOffset == nil && activeTimelineDayHeaderOffset == offset)
+    else {
+      return
+    }
+
+    if offset == nil || hoveredTimelineDayHeaderOffset == offset {
+      timelineDayHeaderShowWorkItem?.cancel()
+      timelineDayHeaderShowWorkItem = nil
+      hoveredTimelineDayHeaderOffset = nil
+    }
+    dismissTimelineDayHeaderOverlayIfDetached(deferClose: deferClose)
+  }
+
+  func dismissTimelineDayHeaderOverlayIfDetached(deferClose: Bool = false) {
+    timelineDayHeaderDetachWorkItem?.cancel()
+    timelineDayHeaderDetachWorkItem = nil
+
+    let closeIfDetached = {
+      guard hoveredTimelineDayHeaderOffset == nil,
+        !appState.isHoveringTimelineDayHeaderOverlay
+      else {
+        return
+      }
+      timelineDayHeaderShowWorkItem?.cancel()
+      timelineDayHeaderShowWorkItem = nil
+      timelineDayHeaderDetachWorkItem?.cancel()
+      timelineDayHeaderDetachWorkItem = nil
+      activeTimelineDayHeaderOffset = nil
+    }
+
+    if deferClose {
+      let workItem = DispatchWorkItem {
+        closeIfDetached()
+      }
+      timelineDayHeaderDetachWorkItem = workItem
+      DispatchQueue.main.asyncAfter(
+        deadline: .now() + timelineOverlayDetachGraceDelay,
+        execute: workItem
+      )
+    } else {
+      closeIfDetached()
+    }
+  }
+
   func cancelTimelineDayHeaderOverlay() {
     timelineDayHeaderShowWorkItem?.cancel()
-    timelineDayHeaderHideWorkItem?.cancel()
     timelineDayHeaderShowWorkItem = nil
-    timelineDayHeaderHideWorkItem = nil
+    timelineDayHeaderDetachWorkItem?.cancel()
+    timelineDayHeaderDetachWorkItem = nil
     hoveredTimelineDayHeaderOffset = nil
     activeTimelineDayHeaderOffset = nil
     appState.isHoveringTimelineDayHeaderOverlay = false

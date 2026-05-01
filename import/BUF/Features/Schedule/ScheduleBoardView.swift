@@ -663,7 +663,7 @@ struct ScheduleBoardView: View {
   @State var hoveredScheduleDayHeaderDate: Date?
   @State var activeScheduleDayHeaderDate: Date?
   @State var scheduleDayHeaderShowWorkItem: DispatchWorkItem?
-  @State var scheduleDayHeaderHideWorkItem: DispatchWorkItem?
+  @State var scheduleDayHeaderDetachWorkItem: DispatchWorkItem?
   @State var isCalendarPickerShown = false
   @State var committedTaskDrop: CommittedTaskDropState?
 
@@ -696,7 +696,7 @@ struct ScheduleBoardView: View {
   let layoutEngine = ScheduleDayTimelineLayoutEngine()
   let scheduleDayHeaderOverlayWidth: CGFloat = 260
   let scheduleDayHeaderShowDelay: TimeInterval = 0.18
-  let scheduleDayHeaderHideDelay: TimeInterval = 0.42
+  let scheduleOverlayDetachGraceDelay: TimeInterval = 0.08
   let scheduleItemFontScale: CGFloat = 1.265
 
   var calendar: Calendar { .autoupdatingCurrent }
@@ -1156,8 +1156,11 @@ struct ScheduleBoardView: View {
       requestScroll(to: appState.scheduleJumpTargetDate ?? .now)
     }
     .onChange(of: appState.isHoveringTimelineDayHeaderOverlay) { _, isHovering in
-      if !isHovering {
-        scheduleScheduleDayHeaderOverlayHideIfNeeded()
+      if isHovering {
+        scheduleDayHeaderDetachWorkItem?.cancel()
+        scheduleDayHeaderDetachWorkItem = nil
+      } else {
+        dismissScheduleDayHeaderOverlayIfDetached()
       }
     }
     .onChange(of: appState.currentDayChangeToken) { _, _ in

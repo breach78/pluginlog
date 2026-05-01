@@ -581,9 +581,15 @@ extension ScheduleBoardView {
       return
     }
 
+    if isHovering, shouldDeferScheduleDayHeaderHover(normalizedDay) {
+      clearScheduleDayHeaderTriggerHover(deferClose: true)
+      return
+    }
+
     if isHovering {
+      scheduleDayHeaderDetachWorkItem?.cancel()
+      scheduleDayHeaderDetachWorkItem = nil
       hoveredScheduleDayHeaderDate = normalizedDay
-      scheduleDayHeaderHideWorkItem?.cancel()
 
       if activeScheduleDayHeaderDate == normalizedDay {
         return
@@ -599,27 +605,19 @@ extension ScheduleBoardView {
       return
     }
 
-    if hoveredScheduleDayHeaderDate == normalizedDay {
-      hoveredScheduleDayHeaderDate = nil
-    }
-    scheduleDayHeaderShowWorkItem?.cancel()
-    scheduleScheduleDayHeaderOverlayHideIfNeeded()
+    clearScheduleDayHeaderTriggerHover(day: normalizedDay, deferClose: true)
   }
 
-  func scheduleScheduleDayHeaderOverlayHideIfNeeded() {
-    guard hoveredScheduleDayHeaderDate == nil, !appState.isHoveringTimelineDayHeaderOverlay else {
-      return
+  func shouldDeferScheduleDayHeaderHover(_ day: Date) -> Bool {
+    if appState.isHoveringTimelineDayHeaderOverlay, activeScheduleDayHeaderDate != nil {
+      return true
     }
 
-    scheduleDayHeaderHideWorkItem?.cancel()
-    let workItem = DispatchWorkItem {
-      guard hoveredScheduleDayHeaderDate == nil, !appState.isHoveringTimelineDayHeaderOverlay else {
-        return
-      }
-      activeScheduleDayHeaderDate = nil
+    if let activeScheduleDayHeaderDate, activeScheduleDayHeaderDate != day {
+      return true
     }
-    scheduleDayHeaderHideWorkItem = workItem
-    DispatchQueue.main.asyncAfter(deadline: .now() + scheduleDayHeaderHideDelay, execute: workItem)
+
+    return false
   }
 
   func dismissScheduleDayHeaderHoverIfObscured() {
@@ -649,11 +647,61 @@ extension ScheduleBoardView {
     return min(max(raw, 0), max(0, days.count - 1))
   }
 
+  func clearScheduleDayHeaderTriggerHover(
+    day: Date? = nil,
+    deferClose: Bool = false
+  ) {
+    guard day == nil
+      || hoveredScheduleDayHeaderDate == day
+      || (hoveredScheduleDayHeaderDate == nil && activeScheduleDayHeaderDate == day)
+    else {
+      return
+    }
+
+    if day == nil || hoveredScheduleDayHeaderDate == day {
+      scheduleDayHeaderShowWorkItem?.cancel()
+      scheduleDayHeaderShowWorkItem = nil
+      hoveredScheduleDayHeaderDate = nil
+    }
+    dismissScheduleDayHeaderOverlayIfDetached(deferClose: deferClose)
+  }
+
+  func dismissScheduleDayHeaderOverlayIfDetached(deferClose: Bool = false) {
+    scheduleDayHeaderDetachWorkItem?.cancel()
+    scheduleDayHeaderDetachWorkItem = nil
+
+    let closeIfDetached = {
+      guard hoveredScheduleDayHeaderDate == nil,
+        !appState.isHoveringTimelineDayHeaderOverlay
+      else {
+        return
+      }
+      scheduleDayHeaderShowWorkItem?.cancel()
+      scheduleDayHeaderShowWorkItem = nil
+      scheduleDayHeaderDetachWorkItem?.cancel()
+      scheduleDayHeaderDetachWorkItem = nil
+      activeScheduleDayHeaderDate = nil
+    }
+
+    if deferClose {
+      let workItem = DispatchWorkItem {
+        closeIfDetached()
+      }
+      scheduleDayHeaderDetachWorkItem = workItem
+      DispatchQueue.main.asyncAfter(
+        deadline: .now() + scheduleOverlayDetachGraceDelay,
+        execute: workItem
+      )
+    } else {
+      closeIfDetached()
+    }
+  }
+
   func cancelScheduleDayHeaderOverlay() {
     scheduleDayHeaderShowWorkItem?.cancel()
-    scheduleDayHeaderHideWorkItem?.cancel()
     scheduleDayHeaderShowWorkItem = nil
-    scheduleDayHeaderHideWorkItem = nil
+    scheduleDayHeaderDetachWorkItem?.cancel()
+    scheduleDayHeaderDetachWorkItem = nil
     hoveredScheduleDayHeaderDate = nil
     activeScheduleDayHeaderDate = nil
     appState.isHoveringTimelineDayHeaderOverlay = false

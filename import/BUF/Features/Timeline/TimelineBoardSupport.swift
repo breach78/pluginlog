@@ -426,10 +426,36 @@ final class FlippedTimelineDocumentView: NSView {
   override var isFlipped: Bool { true }
 }
 
+@MainActor
+final class TimelineOverlayHoverExclusionRegistry {
+  static let shared = TimelineOverlayHoverExclusionRegistry()
+
+  private let views = NSHashTable<NSView>.weakObjects()
+
+  private init() {}
+
+  func register(_ view: NSView) {
+    views.add(view)
+  }
+
+  func unregister(_ view: NSView) {
+    views.remove(view)
+  }
+
+  func contains(windowLocation: NSPoint, in window: NSWindow) -> Bool {
+    views.allObjects.contains { view in
+      guard view.window === window, !view.isHidden else { return false }
+      let localPoint = view.convert(windowLocation, from: nil)
+      return view.bounds.contains(localPoint)
+    }
+  }
+}
+
 final class FlippedTimelineClipView: NSClipView {
   var onMouseMovedInVisibleRect: ((NSEvent, FlippedTimelineClipView) -> Void)?
   var onMouseExitedVisibleRect: (() -> Void)?
   private var timelineTrackingArea: NSTrackingArea?
+  private var eventMonitor: Any?
 
   override var isFlipped: Bool { true }
 
@@ -454,19 +480,69 @@ final class FlippedTimelineClipView: NSClipView {
     timelineTrackingArea = nextTrackingArea
   }
 
+  override func viewWillMove(toWindow newWindow: NSWindow?) {
+    if newWindow == nil {
+      removeEventMonitor()
+      onMouseExitedVisibleRect?()
+    }
+    super.viewWillMove(toWindow: newWindow)
+  }
+
+  override func viewDidMoveToWindow() {
+    super.viewDidMoveToWindow()
+    installEventMonitorIfNeeded()
+  }
+
   override func mouseMoved(with event: NSEvent) {
-    onMouseMovedInVisibleRect?(event, self)
+    refreshHoverFromWindowEvent(event)
     super.mouseMoved(with: event)
   }
 
   override func mouseDragged(with event: NSEvent) {
-    onMouseMovedInVisibleRect?(event, self)
+    refreshHoverFromWindowEvent(event)
     super.mouseDragged(with: event)
   }
 
   override func mouseExited(with event: NSEvent) {
     onMouseExitedVisibleRect?()
     super.mouseExited(with: event)
+  }
+
+  private func installEventMonitorIfNeeded() {
+    guard eventMonitor == nil, window != nil else { return }
+    eventMonitor = NSEvent.addLocalMonitorForEvents(
+      matching: [.mouseMoved, .leftMouseDragged, .rightMouseDragged, .otherMouseDragged]
+    ) { [weak self] event in
+      self?.refreshHoverFromWindowEvent(event)
+      return event
+    }
+  }
+
+  private func removeEventMonitor() {
+    if let eventMonitor {
+      NSEvent.removeMonitor(eventMonitor)
+    }
+    eventMonitor = nil
+  }
+
+  private func refreshHoverFromWindowEvent(_ event: NSEvent) {
+    guard let window, event.window === window else {
+      onMouseExitedVisibleRect?()
+      return
+    }
+
+    let localPoint = convert(event.locationInWindow, from: nil)
+    guard bounds.contains(localPoint),
+      !TimelineOverlayHoverExclusionRegistry.shared.contains(
+        windowLocation: event.locationInWindow,
+        in: window
+      )
+    else {
+      onMouseExitedVisibleRect?()
+      return
+    }
+
+    onMouseMovedInVisibleRect?(event, self)
   }
 
   override func constrainBoundsRect(_ proposedBounds: NSRect) -> NSRect {
@@ -708,7 +784,9 @@ struct UnifiedTimelineBoardScrollView<
   @Binding var requestedOffsetX: CGFloat?
   let onScrollActivity: (CGFloat, CGFloat, Bool) -> Void
   let onDayHeaderHover: (Int, Bool) -> Void
+  let onDayHeaderHoverCleared: () -> Void
   let onTaskBadgeHover: (String, Bool) -> Void
+  let onTaskBadgeHoverCleared: () -> Void
 
   let boardContent: BoardContent
   let pinnedLeft: PinnedLeft
@@ -735,7 +813,9 @@ struct UnifiedTimelineBoardScrollView<
     requestedOffsetX: Binding<CGFloat?>,
     onScrollActivity: @escaping (CGFloat, CGFloat, Bool) -> Void,
     onDayHeaderHover: @escaping (Int, Bool) -> Void,
+    onDayHeaderHoverCleared: @escaping () -> Void,
     onTaskBadgeHover: @escaping (String, Bool) -> Void,
+    onTaskBadgeHoverCleared: @escaping () -> Void,
     @ViewBuilder boardContent: () -> BoardContent,
     @ViewBuilder pinnedLeft: () -> PinnedLeft,
     @ViewBuilder pinnedTop: () -> PinnedTop
@@ -760,7 +840,9 @@ struct UnifiedTimelineBoardScrollView<
     self._requestedOffsetX = requestedOffsetX
     self.onScrollActivity = onScrollActivity
     self.onDayHeaderHover = onDayHeaderHover
+    self.onDayHeaderHoverCleared = onDayHeaderHoverCleared
     self.onTaskBadgeHover = onTaskBadgeHover
+    self.onTaskBadgeHoverCleared = onTaskBadgeHoverCleared
     self.boardContent = boardContent()
     self.pinnedLeft = pinnedLeft()
     self.pinnedTop = pinnedTop()
@@ -798,7 +880,9 @@ struct UnifiedTimelineBoardScrollView<
     var hoveredTaskBadgeID: String?
     var onScrollActivity: (CGFloat, CGFloat, Bool) -> Void
     var onDayHeaderHover: (Int, Bool) -> Void
+    var onDayHeaderHoverCleared: () -> Void
     var onTaskBadgeHover: (String, Bool) -> Void
+    var onTaskBadgeHoverCleared: () -> Void
     weak var scrollView: NSScrollView?
 
     init(
@@ -823,7 +907,9 @@ struct UnifiedTimelineBoardScrollView<
       scrollRequestGeneration: Int,
       onScrollActivity: @escaping (CGFloat, CGFloat, Bool) -> Void,
       onDayHeaderHover: @escaping (Int, Bool) -> Void,
-      onTaskBadgeHover: @escaping (String, Bool) -> Void
+      onDayHeaderHoverCleared: @escaping () -> Void,
+      onTaskBadgeHover: @escaping (String, Bool) -> Void,
+      onTaskBadgeHoverCleared: @escaping () -> Void
     ) {
       self.boardHosting = ScrollPassthroughHostingView(rootView: boardContent)
       self.leftHosting = ScrollPassthroughHostingView(rootView: pinnedLeft)
@@ -846,7 +932,9 @@ struct UnifiedTimelineBoardScrollView<
       self.lastScrollRequestGeneration = scrollRequestGeneration
       self.onScrollActivity = onScrollActivity
       self.onDayHeaderHover = onDayHeaderHover
+      self.onDayHeaderHoverCleared = onDayHeaderHoverCleared
       self.onTaskBadgeHover = onTaskBadgeHover
+      self.onTaskBadgeHoverCleared = onTaskBadgeHoverCleared
       super.init()
       documentView.addSubview(boardHosting)
     }
@@ -988,39 +1076,60 @@ struct UnifiedTimelineBoardScrollView<
       if !topHosting.frame.equalTo(topFrame) {
         topHosting.frame = topFrame
       }
-      topHosting.layoutSubtreeIfNeeded()
     }
 
     func updateDayHeaderHover(with event: NSEvent, in clipView: FlippedTimelineClipView) {
-      updateDayHeaderHover(windowLocation: event.locationInWindow, in: clipView)
+      updateDayHeaderHover(
+        windowLocation: event.locationInWindow,
+        in: clipView,
+        renotifySameTarget: true,
+        notifyCleared: true
+      )
     }
 
     func updateTaskBadgeHover(with event: NSEvent, in clipView: FlippedTimelineClipView) {
-      updateTaskBadgeHover(windowLocation: event.locationInWindow, in: clipView)
+      updateTaskBadgeHover(
+        windowLocation: event.locationInWindow,
+        in: clipView,
+        renotifySameTarget: true,
+        notifyCleared: true
+      )
     }
 
     func refreshDayHeaderHoverIfNeeded(in clipView: FlippedTimelineClipView) {
       guard let window = clipView.window else {
-        clearDayHeaderHover()
+        clearDayHeaderHover(notifyCleared: false)
         return
       }
-      updateDayHeaderHover(windowLocation: window.mouseLocationOutsideOfEventStream, in: clipView)
+      updateDayHeaderHover(
+        windowLocation: window.mouseLocationOutsideOfEventStream,
+        in: clipView,
+        renotifySameTarget: false,
+        notifyCleared: false
+      )
     }
 
     func refreshTaskBadgeHoverIfNeeded(in clipView: FlippedTimelineClipView) {
       guard let window = clipView.window else {
-        clearTaskBadgeHover()
+        clearTaskBadgeHover(notifyCleared: false)
         return
       }
-      updateTaskBadgeHover(windowLocation: window.mouseLocationOutsideOfEventStream, in: clipView)
+      updateTaskBadgeHover(
+        windowLocation: window.mouseLocationOutsideOfEventStream,
+        in: clipView,
+        renotifySameTarget: false,
+        notifyCleared: false
+      )
     }
 
     func updateDayHeaderHover(
       windowLocation: NSPoint,
-      in clipView: FlippedTimelineClipView
+      in clipView: FlippedTimelineClipView,
+      renotifySameTarget: Bool,
+      notifyCleared: Bool
     ) {
       guard isDayHeaderHoverEnabled else {
-        clearDayHeaderHover()
+        clearDayHeaderHover(notifyCleared: notifyCleared)
         return
       }
       let contentLocation = clipView.convert(windowLocation, from: nil)
@@ -1034,11 +1143,16 @@ struct UnifiedTimelineBoardScrollView<
           dayColumnWidth: dayColumnWidth
         )
       else {
-        clearDayHeaderHover()
+        clearDayHeaderHover(notifyCleared: notifyCleared)
         return
       }
 
-      guard hoveredDayHeaderOffset != nextOffset else { return }
+      if hoveredDayHeaderOffset == nextOffset {
+        if renotifySameTarget {
+          onDayHeaderHover(nextOffset, true)
+        }
+        return
+      }
       if let hoveredDayHeaderOffset {
         onDayHeaderHover(hoveredDayHeaderOffset, false)
       }
@@ -1048,10 +1162,12 @@ struct UnifiedTimelineBoardScrollView<
 
     func updateTaskBadgeHover(
       windowLocation: NSPoint,
-      in clipView: FlippedTimelineClipView
+      in clipView: FlippedTimelineClipView,
+      renotifySameTarget: Bool,
+      notifyCleared: Bool
     ) {
       guard isTaskBadgeHoverEnabled else {
-        clearTaskBadgeHover()
+        clearTaskBadgeHover(notifyCleared: notifyCleared)
         return
       }
       let contentLocation = clipView.convert(windowLocation, from: nil)
@@ -1063,26 +1179,42 @@ struct UnifiedTimelineBoardScrollView<
         targets: taskBadgeHitTargets
       )
 
-      guard hoveredTaskBadgeID != nextBadgeID else { return }
+      guard let nextBadgeID else {
+        clearTaskBadgeHover(notifyCleared: notifyCleared)
+        return
+      }
+
+      if hoveredTaskBadgeID == nextBadgeID {
+        if renotifySameTarget {
+          onTaskBadgeHover(nextBadgeID, true)
+        }
+        return
+      }
       if let hoveredTaskBadgeID {
         onTaskBadgeHover(hoveredTaskBadgeID, false)
       }
       hoveredTaskBadgeID = nextBadgeID
-      if let nextBadgeID {
-        onTaskBadgeHover(nextBadgeID, true)
+      onTaskBadgeHover(nextBadgeID, true)
+    }
+
+    func clearDayHeaderHover(notifyCleared: Bool = true) {
+      if let hoveredDayHeaderOffset {
+        self.hoveredDayHeaderOffset = nil
+        onDayHeaderHover(hoveredDayHeaderOffset, false)
+      }
+      if notifyCleared {
+        onDayHeaderHoverCleared()
       }
     }
 
-    func clearDayHeaderHover() {
-      guard let hoveredDayHeaderOffset else { return }
-      self.hoveredDayHeaderOffset = nil
-      onDayHeaderHover(hoveredDayHeaderOffset, false)
-    }
-
-    func clearTaskBadgeHover() {
-      guard let hoveredTaskBadgeID else { return }
-      self.hoveredTaskBadgeID = nil
-      onTaskBadgeHover(hoveredTaskBadgeID, false)
+    func clearTaskBadgeHover(notifyCleared: Bool = true) {
+      if let hoveredTaskBadgeID {
+        self.hoveredTaskBadgeID = nil
+        onTaskBadgeHover(hoveredTaskBadgeID, false)
+      }
+      if notifyCleared {
+        onTaskBadgeHoverCleared()
+      }
     }
   }
 
@@ -1109,7 +1241,9 @@ struct UnifiedTimelineBoardScrollView<
       scrollRequestGeneration: scrollRequestGeneration,
       onScrollActivity: onScrollActivity,
       onDayHeaderHover: onDayHeaderHover,
-      onTaskBadgeHover: onTaskBadgeHover
+      onDayHeaderHoverCleared: onDayHeaderHoverCleared,
+      onTaskBadgeHover: onTaskBadgeHover,
+      onTaskBadgeHoverCleared: onTaskBadgeHoverCleared
     )
   }
 
@@ -1200,7 +1334,9 @@ struct UnifiedTimelineBoardScrollView<
     coordinator.scrollHoverSuppressionInterval = scrollHoverSuppressionInterval
     coordinator.onScrollActivity = onScrollActivity
     coordinator.onDayHeaderHover = onDayHeaderHover
+    coordinator.onDayHeaderHoverCleared = onDayHeaderHoverCleared
     coordinator.onTaskBadgeHover = onTaskBadgeHover
+    coordinator.onTaskBadgeHoverCleared = onTaskBadgeHoverCleared
     if let interactiveScrollView = scrollView as? TimelineInteractionScrollView {
       interactiveScrollView.noteUserScrollActivity = { [weak coordinator] in
         coordinator?.noteUserScrollActivity()
@@ -1285,16 +1421,12 @@ struct UnifiedTimelineBoardScrollView<
       titleColumnWidth: titleColumnWidth,
       headerHeight: headerHeight
     )
-    if let clipView = scrollView.contentView as? FlippedTimelineClipView {
-      if isDayHeaderHoverEnabled {
-        coordinator.refreshDayHeaderHoverIfNeeded(in: clipView)
-      } else {
-        coordinator.clearDayHeaderHover()
+    if scrollView.contentView is FlippedTimelineClipView {
+      if !isDayHeaderHoverEnabled {
+        coordinator.clearDayHeaderHover(notifyCleared: false)
       }
-      if isTaskBadgeHoverEnabled {
-        coordinator.refreshTaskBadgeHoverIfNeeded(in: clipView)
-      } else {
-        coordinator.clearTaskBadgeHover()
+      if !isTaskBadgeHoverEnabled {
+        coordinator.clearTaskBadgeHover(notifyCleared: false)
       }
     }
 

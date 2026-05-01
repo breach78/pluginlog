@@ -376,7 +376,9 @@ extension MainWorkspaceView {
       style: timelineOverlayStyle(isHovering: appState.isHoveringTimelineTaskBadgeOverlay)
     )
     .background {
-      TimelineOverlayHoverTrackingSurface { isHovering in
+      TimelineOverlayHoverTrackingSurface(
+        reportedIsHovering: appState.isHoveringTimelineTaskBadgeOverlay
+      ) { isHovering in
         guard appState.isHoveringTimelineTaskBadgeOverlay != isHovering else { return }
         appState.isHoveringTimelineTaskBadgeOverlay = isHovering
       }
@@ -498,7 +500,9 @@ extension MainWorkspaceView {
       style: timelineOverlayStyle(isHovering: appState.isHoveringTimelineDayHeaderOverlay)
     )
     .background {
-      TimelineOverlayHoverTrackingSurface { isHovering in
+      TimelineOverlayHoverTrackingSurface(
+        reportedIsHovering: appState.isHoveringTimelineDayHeaderOverlay
+      ) { isHovering in
         guard appState.isHoveringTimelineDayHeaderOverlay != isHovering else { return }
         appState.isHoveringTimelineDayHeaderOverlay = isHovering
       }
@@ -585,16 +589,19 @@ extension MainWorkspaceView {
 }
 
 private struct TimelineOverlayHoverTrackingSurface: NSViewRepresentable {
+  let reportedIsHovering: Bool
   let onHoverChange: (Bool) -> Void
 
   func makeNSView(context: Context) -> TrackingView {
     let view = TrackingView()
     view.onHoverChange = onHoverChange
+    view.syncReportedHoverState(reportedIsHovering)
     return view
   }
 
   func updateNSView(_ nsView: TrackingView, context: Context) {
     nsView.onHoverChange = onHoverChange
+    nsView.syncReportedHoverState(reportedIsHovering)
   }
 
   final class TrackingView: NSView {
@@ -602,6 +609,7 @@ private struct TimelineOverlayHoverTrackingSurface: NSViewRepresentable {
     private var trackingArea: NSTrackingArea?
     private var eventMonitor: Any?
     private var isHovering = false
+    private var reportedHovering = false
     private var scheduledHoverChange: Bool?
 
     override func hitTest(_ point: NSPoint) -> NSView? {
@@ -640,6 +648,7 @@ private struct TimelineOverlayHoverTrackingSurface: NSViewRepresentable {
     }
 
     override func viewWillMove(toWindow newWindow: NSWindow?) {
+      TimelineOverlayHoverExclusionRegistry.shared.unregister(self)
       if newWindow == nil {
         removeEventMonitor()
         setHovering(false)
@@ -649,6 +658,9 @@ private struct TimelineOverlayHoverTrackingSurface: NSViewRepresentable {
 
     override func viewDidMoveToWindow() {
       super.viewDidMoveToWindow()
+      if window != nil {
+        TimelineOverlayHoverExclusionRegistry.shared.register(self)
+      }
       installEventMonitorIfNeeded()
       DispatchQueue.main.async { [weak self] in
         self?.refreshHoverFromWindowLocation()
@@ -660,8 +672,13 @@ private struct TimelineOverlayHoverTrackingSurface: NSViewRepresentable {
       refreshHoverFromWindowLocation()
     }
 
+    func syncReportedHoverState(_ isHovering: Bool) {
+      reportedHovering = isHovering
+      refreshHoverFromWindowLocation()
+    }
+
     private func installEventMonitorIfNeeded() {
-      guard eventMonitor == nil else { return }
+      guard eventMonitor == nil, window != nil else { return }
       eventMonitor = NSEvent.addLocalMonitorForEvents(
         matching: [.mouseMoved, .leftMouseDragged, .rightMouseDragged, .otherMouseDragged]
       ) { [weak self] event in
@@ -695,8 +712,10 @@ private struct TimelineOverlayHoverTrackingSurface: NSViewRepresentable {
     }
 
     private func setHovering(_ nextValue: Bool) {
-      guard isHovering != nextValue else { return }
+      let shouldNotify = isHovering != nextValue || reportedHovering != nextValue
       isHovering = nextValue
+      guard shouldNotify else { return }
+      reportedHovering = nextValue
       scheduledHoverChange = nextValue
       DispatchQueue.main.async { [weak self] in
         guard let self, let nextValue = self.scheduledHoverChange else { return }
