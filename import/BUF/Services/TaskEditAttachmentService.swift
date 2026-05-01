@@ -98,6 +98,52 @@ enum TaskEditAttachmentService {
       .trimmingCharacters(in: .newlines)
   }
 
+  static func exportFilename(for attachment: TaskEditAttachment) -> String {
+    let displayName = sanitized(attachment.displayName)
+    guard let extensionLockedName = nameByApplyingSourceExtension(
+      to: displayName,
+      sourceExtension: attachment.fileURL.pathExtension
+    ) else {
+      return displayName
+    }
+    return extensionLockedName
+  }
+
+  static func exportSuggestedName(for attachment: TaskEditAttachment) -> String {
+    let filename = exportFilename(for: attachment)
+    let sourceExtension = attachment.fileURL.pathExtension
+    guard !sourceExtension.isEmpty,
+      (filename as NSString).pathExtension.caseInsensitiveCompare(sourceExtension) == .orderedSame
+    else {
+      return filename
+    }
+    return (filename as NSString).deletingPathExtension
+  }
+
+  static func editableFilenameStem(for attachment: TaskEditAttachment) -> String {
+    let displayName = sanitized(attachment.displayName)
+    let sourceExtension = attachment.fileURL.pathExtension
+    guard !sourceExtension.isEmpty,
+      (displayName as NSString).pathExtension.caseInsensitiveCompare(sourceExtension) == .orderedSame
+    else {
+      return displayName
+    }
+    return (displayName as NSString).deletingPathExtension
+  }
+
+  static func renamedDisplayName(
+    for attachment: TaskEditAttachment,
+    rawStem: String
+  ) -> String? {
+    let trimmedStem = rawStem.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !trimmedStem.isEmpty else { return nil }
+    let sanitizedStem = sanitized(trimmedStem)
+    return nameByApplyingSourceExtension(
+      to: sanitizedStem,
+      sourceExtension: attachment.fileURL.pathExtension
+    ) ?? sanitizedStem
+  }
+
   @discardableResult
   static func deleteAttachment(
     _ attachment: TaskEditAttachment,
@@ -171,6 +217,19 @@ enum TaskEditAttachmentService {
     return fallback
       .components(separatedBy: invalid)
       .joined(separator: "-")
+  }
+
+  private static func nameByApplyingSourceExtension(
+    to filename: String,
+    sourceExtension: String
+  ) -> String? {
+    guard !sourceExtension.isEmpty else { return nil }
+    let name = filename as NSString
+    let stem =
+      name.pathExtension.isEmpty
+      ? filename
+      : name.deletingPathExtension
+    return "\(stem).\(sourceExtension)"
   }
 
   private static func encodedPathComponent(_ value: String) -> String {

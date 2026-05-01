@@ -87,6 +87,8 @@ struct ScheduleSliceEntry: Identifiable, Equatable, Sendable {
     hasher.combine(displayedDate)
     hasher.combine(isCompleted)
     hasher.combine(scheduledDurationMinutes)
+    hasher.combine(attachmentCount)
+    hasher.combine(reminderNoteText)
     hasher.combine(rowOrder)
     return hasher.finalize()
   }
@@ -113,6 +115,8 @@ struct TaskRowSnapshot: Identifiable, Hashable, Sendable {
   let isCompleted: Bool
   let completionDate: Date?
   let recurrenceRuleRaw: String?
+  let attachmentCount: Int
+  let reminderNoteText: String
   let requiredWorkDays: Int
   let completedWorkUnits: Int
   let completedWorkUnitDates: [Date]
@@ -274,6 +278,8 @@ enum ScheduleProjectionService {
             isCompleted: entry.isCompleted,
             completionDate: entry.completionDate,
             recurrenceRuleRaw: entry.recurrenceRuleRaw,
+            attachmentCount: entry.attachmentCount,
+            reminderNoteText: entry.reminderNoteText,
             requiredWorkDays: entry.requiredWorkDays,
             completedWorkUnits: entry.completedWorkUnits,
             completedWorkUnitDates: entry.completedWorkUnitDates,

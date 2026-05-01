@@ -34,7 +34,7 @@ struct LinkedTextEditor: NSViewRepresentable {
     textView.isVerticallyResizable = true
     textView.autoresizingMask = [.width]
     textView.allowsUndo = true
-    textView.isAutomaticLinkDetectionEnabled = true
+    textView.isAutomaticLinkDetectionEnabled = false
     textView.font = font
     textView.string = text
     context.coordinator.applyAttributes(to: textView)
@@ -50,15 +50,21 @@ struct LinkedTextEditor: NSViewRepresentable {
   func updateNSView(_ scrollView: NSScrollView, context: Context) {
     context.coordinator.parent = self
     guard let textView = scrollView.documentView as? NSTextView else { return }
-    textView.font = font
+    let styleChanged = context.coordinator.updateFontIfNeeded(on: textView)
     if textView.string != text {
       context.coordinator.isApplyingText = true
       textView.string = text
       context.coordinator.isApplyingText = false
+      context.coordinator.cancelDeferredUpdates()
+      context.coordinator.applyAttributes(to: textView)
+      context.coordinator.scheduleMeasuredHeightUpdate()
+      return
     }
-    context.coordinator.applyAttributes(to: textView)
-    DispatchQueue.main.async {
-      context.coordinator.updateMeasuredHeight()
+    if styleChanged {
+      context.coordinator.applyAttributes(to: textView)
+      context.coordinator.scheduleMeasuredHeightUpdate()
+    } else {
+      context.coordinator.updateMeasuredHeightIfWidthChanged()
     }
   }
 
@@ -67,16 +73,34 @@ struct LinkedTextEditor: NSViewRepresentable {
     var parent: LinkedTextEditor
     weak var textView: NSTextView?
     var isApplyingText = false
+    private var attributeRefreshTask: Task<Void, Never>?
+    private var heightMeasurementTask: Task<Void, Never>?
+    private var lastMeasuredWidth: CGFloat = 0
+    private let linkDetector = try? NSDataDetector(
+      types: NSTextCheckingResult.CheckingType.link.rawValue
+    )
+    private let markdownLinkRegex = try? NSRegularExpression(
+      pattern: #"!?\[([^\]]+)\]\(([^)]+)\)"#
+    )
+
+    private static let attributeRefreshDelayNanoseconds: UInt64 = 180_000_000
+    private static let heightMeasurementDelayNanoseconds: UInt64 = 120_000_000
 
     init(_ parent: LinkedTextEditor) {
       self.parent = parent
     }
 
+    deinit {
+      attributeRefreshTask?.cancel()
+      heightMeasurementTask?.cancel()
+    }
+
     func textDidChange(_ notification: Notification) {
       guard !isApplyingText, let textView = notification.object as? NSTextView else { return }
       parent.text = textView.string
-      applyAttributes(to: textView)
-      updateMeasuredHeight()
+      textView.typingAttributes = baseAttributes()
+      scheduleAttributeRefresh(for: textView)
+      scheduleMeasuredHeightUpdate()
     }
 
     func textView(
@@ -102,8 +126,21 @@ struct LinkedTextEditor: NSViewRepresentable {
       return false
     }
 
+    func updateFontIfNeeded(on textView: NSTextView) -> Bool {
+      guard
+        textView.font?.fontName == parent.font.fontName,
+        textView.font?.pointSize == parent.font.pointSize
+      else {
+        textView.font = parent.font
+        return true
+      }
+      return false
+    }
+
     func applyAttributes(to textView: NSTextView) {
       guard let storage = textView.textStorage else { return }
+      attributeRefreshTask?.cancel()
+      attributeRefreshTask = nil
       let selectedRanges = textView.selectedRanges
       let fullRange = NSRange(location: 0, length: storage.length)
       let attributes = baseAttributes()
@@ -119,13 +156,47 @@ struct LinkedTextEditor: NSViewRepresentable {
     }
 
     func updateMeasuredHeight() {
-      guard let textView else { return }
-      textView.layoutManager?.ensureLayout(for: textView.textContainer!)
-      let usedRect = textView.layoutManager?.usedRect(for: textView.textContainer!) ?? .zero
+      guard let textView, let textContainer = textView.textContainer else { return }
+      heightMeasurementTask?.cancel()
+      heightMeasurementTask = nil
+      lastMeasuredWidth = currentMeasuredWidth()
+      textView.layoutManager?.ensureLayout(for: textContainer)
+      let usedRect = textView.layoutManager?.usedRect(for: textContainer) ?? .zero
       let height = ceil(usedRect.height + textView.textContainerInset.height * 2 + 6)
       if abs(parent.measuredHeight - height) > 1 {
         parent.measuredHeight = height
       }
+    }
+
+    func updateMeasuredHeightIfWidthChanged() {
+      let width = currentMeasuredWidth()
+      guard abs(lastMeasuredWidth - width) > 1 else { return }
+      scheduleMeasuredHeightUpdate()
+    }
+
+    func scheduleAttributeRefresh(for textView: NSTextView) {
+      attributeRefreshTask?.cancel()
+      attributeRefreshTask = Task { @MainActor [weak self, weak textView] in
+        try? await Task.sleep(nanoseconds: Self.attributeRefreshDelayNanoseconds)
+        guard !Task.isCancelled, let self, let textView else { return }
+        self.applyAttributes(to: textView)
+      }
+    }
+
+    func scheduleMeasuredHeightUpdate() {
+      heightMeasurementTask?.cancel()
+      heightMeasurementTask = Task { @MainActor [weak self] in
+        try? await Task.sleep(nanoseconds: Self.heightMeasurementDelayNanoseconds)
+        guard !Task.isCancelled, let self else { return }
+        self.updateMeasuredHeight()
+      }
+    }
+
+    func cancelDeferredUpdates() {
+      attributeRefreshTask?.cancel()
+      attributeRefreshTask = nil
+      heightMeasurementTask?.cancel()
+      heightMeasurementTask = nil
     }
 
     private func baseAttributes() -> [NSAttributedString.Key: Any] {
@@ -139,12 +210,10 @@ struct LinkedTextEditor: NSViewRepresentable {
     }
 
     private func applyDetectedLinks(in storage: NSTextStorage) {
-      guard let detector = try? NSDataDetector(types: NSTextCheckingResult.CheckingType.link.rawValue) else {
-        return
-      }
+      guard let linkDetector else { return }
       let string = storage.string
       let range = NSRange(location: 0, length: storage.length)
-      detector.enumerateMatches(in: string, range: range) { match, _, _ in
+      linkDetector.enumerateMatches(in: string, range: range) { match, _, _ in
         guard let match, let url = match.url else { return }
         storage.addAttributes(
           linkAttributes(url.absoluteString),
@@ -154,11 +223,10 @@ struct LinkedTextEditor: NSViewRepresentable {
     }
 
     private func applyMarkdownLinks(in storage: NSTextStorage) {
-      let pattern = #"!?\[([^\]]+)\]\(([^)]+)\)"#
-      guard let regex = try? NSRegularExpression(pattern: pattern) else { return }
+      guard let markdownLinkRegex else { return }
       let string = storage.string
       let range = NSRange(location: 0, length: storage.length)
-      for match in regex.matches(in: string, range: range) {
+      for match in markdownLinkRegex.matches(in: string, range: range) {
         guard
           match.numberOfRanges >= 3,
           let destinationRange = Range(match.range(at: 2), in: string)
@@ -192,6 +260,11 @@ struct LinkedTextEditor: NSViewRepresentable {
         return url
       }
       return nil
+    }
+
+    private func currentMeasuredWidth() -> CGFloat {
+      let width = textView?.enclosingScrollView?.contentSize.width ?? textView?.bounds.width ?? 0
+      return width.rounded()
     }
   }
 }

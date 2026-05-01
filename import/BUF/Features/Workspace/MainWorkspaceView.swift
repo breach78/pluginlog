@@ -246,6 +246,29 @@ struct WorkspaceRenameProjectSheetContent: View {
   }
 }
 
+struct WorkspaceRenameAttachmentSheetContent: View {
+  let originalNameStem: String
+  let fixedExtension: String?
+  let isRenaming: Bool
+  let onSubmit: (String) -> Void
+  let onCancel: () -> Void
+
+  var body: some View {
+    WorkspaceProjectTitleSheetContent(
+      heading: "첨부파일 이름 변경",
+      fieldPrompt: "첨부파일 이름",
+      initialTitle: originalNameStem,
+      fixedSuffix: fixedExtension.map { ".\($0)" },
+      submitTitle: "변경",
+      inFlightSubmitTitle: "변경 중...",
+      isSubmitting: isRenaming,
+      requiresChangedTitle: true,
+      onSubmit: onSubmit,
+      onCancel: onCancel
+    )
+  }
+}
+
 struct WorkspaceNewProjectSheetContent: View {
   let isCreating: Bool
   let onSubmit: (String) -> Void
@@ -267,7 +290,9 @@ struct WorkspaceNewProjectSheetContent: View {
 
 private struct WorkspaceProjectTitleSheetContent: View {
   let heading: String
+  let fieldPrompt: String
   let initialTitle: String
+  let fixedSuffix: String?
   let submitTitle: String
   let inFlightSubmitTitle: String
   let isSubmitting: Bool
@@ -280,7 +305,9 @@ private struct WorkspaceProjectTitleSheetContent: View {
 
   init(
     heading: String,
+    fieldPrompt: String = "프로젝트 이름",
     initialTitle: String,
+    fixedSuffix: String? = nil,
     submitTitle: String,
     inFlightSubmitTitle: String,
     isSubmitting: Bool,
@@ -289,7 +316,9 @@ private struct WorkspaceProjectTitleSheetContent: View {
     onCancel: @escaping () -> Void
   ) {
     self.heading = heading
+    self.fieldPrompt = fieldPrompt
     self.initialTitle = initialTitle
+    self.fixedSuffix = fixedSuffix
     self.submitTitle = submitTitle
     self.inFlightSubmitTitle = inFlightSubmitTitle
     self.isSubmitting = isSubmitting
@@ -304,13 +333,7 @@ private struct WorkspaceProjectTitleSheetContent: View {
       Text(heading)
         .font(.system(size: 14, weight: .semibold))
 
-      TextField("프로젝트 이름", text: $title)
-        .textFieldStyle(.roundedBorder)
-        .font(AppInputTypography.font(size: AppInputTypography.defaultPointSize))
-        .focused($isFieldFocused)
-        .onSubmit {
-          submit()
-        }
+      titleInput
 
       HStack(spacing: 8) {
         Spacer(minLength: 0)
@@ -349,7 +372,32 @@ private struct WorkspaceProjectTitleSheetContent: View {
 
   private func submit() {
     guard canSubmit else { return }
-    onSubmit(title.trimmingCharacters(in: .whitespacesAndNewlines))
+      onSubmit(title.trimmingCharacters(in: .whitespacesAndNewlines))
+  }
+
+  @ViewBuilder
+  private var titleInput: some View {
+    if let fixedSuffix {
+      HStack(spacing: 6) {
+        titleField
+        Text(fixedSuffix)
+          .font(AppInputTypography.font(size: AppInputTypography.defaultPointSize))
+          .foregroundStyle(.secondary)
+          .lineLimit(1)
+      }
+    } else {
+      titleField
+    }
+  }
+
+  private var titleField: some View {
+    TextField(fieldPrompt, text: $title)
+      .textFieldStyle(.roundedBorder)
+      .font(AppInputTypography.font(size: AppInputTypography.defaultPointSize))
+      .focused($isFieldFocused)
+      .onSubmit {
+        submit()
+      }
   }
 }
 
@@ -786,13 +834,6 @@ struct MainWorkspaceView: View {
     Binding(
       get: { appState.searchText },
       set: { appState.updateSearchText($0) }
-    )
-  }
-
-  var viewModeBinding: Binding<ViewMode> {
-    Binding(
-      get: { appState.viewMode },
-      set: { appState.selectViewMode($0) }
     )
   }
 

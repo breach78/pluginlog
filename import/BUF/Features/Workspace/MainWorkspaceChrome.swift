@@ -24,26 +24,8 @@ extension MainWorkspaceView {
 
   @ViewBuilder
   var headerLeadingControls: some View {
-    let availableViewModes = appState.availableViewModes
     HStack(spacing: 6) {
-      Picker("", selection: viewModeBinding) {
-        ForEach(availableViewModes) { mode in
-          Image(systemName: mode.iconName)
-            .accessibilityLabel(mode.accessibilityTitle)
-            .tag(mode)
-        }
-      }
-      .labelsHidden()
-      .pickerStyle(.segmented)
-      .frame(width: CGFloat(availableViewModes.count) * 36)
-      .background {
-        GeometryReader { proxy in
-          Color.clear.preference(
-            key: WorkspaceViewModePickerFramePreferenceKey.self,
-            value: proxy.frame(in: .named(Self.mainPaneCoordinateSpaceName))
-          )
-        }
-      }
+      viewModeToggleButton
 
       workspaceQuickAddSection
       overdueRolloverButton
@@ -82,6 +64,43 @@ extension MainWorkspaceView {
       TapGesture().onEnded {
         dismissWorkspaceSearchPanel()
       })
+  }
+
+  @ViewBuilder
+  var viewModeToggleButton: some View {
+    if let targetMode = nextViewMode {
+      Button {
+        appState.selectViewMode(targetMode)
+      } label: {
+        Image(systemName: targetMode.iconName)
+          .font(.system(size: 13, weight: .semibold))
+          .foregroundStyle(.primary)
+          .frame(width: 28, height: 24)
+          .contentShape(Rectangle())
+      }
+      .buttonStyle(.plain)
+      .help("\(targetMode.accessibilityTitle) 보기로 전환")
+      .accessibilityLabel("\(targetMode.accessibilityTitle) 보기로 전환")
+      .background {
+        GeometryReader { proxy in
+          Color.clear.preference(
+            key: WorkspaceViewModePickerFramePreferenceKey.self,
+            value: proxy.frame(in: .named(Self.mainPaneCoordinateSpaceName))
+          )
+        }
+      }
+    }
+  }
+
+  var nextViewMode: ViewMode? {
+    let availableViewModes = appState.availableViewModes
+    guard
+      availableViewModes.count > 1,
+      let currentIndex = availableViewModes.firstIndex(of: appState.viewMode)
+    else {
+      return availableViewModes.first { $0 != appState.viewMode }
+    }
+    return availableViewModes[(currentIndex + 1) % availableViewModes.count]
   }
 
   @ViewBuilder

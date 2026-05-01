@@ -87,4 +87,77 @@ final class TaskEditAttachmentServiceTests: XCTestCase {
     XCTAssertEqual(copied.first?.relativePath, "raw/assets/Report%20File-2.pdf")
     XCTAssertTrue(FileManager.default.fileExists(atPath: assets.appendingPathComponent("Report File-2.pdf").path))
   }
+
+  func testExportFilenameUsesDisplayNameAndPreservesSourceExtensionWhenMissing() {
+    let attachment = TaskEditAttachment(
+      displayName: "Readable Korean Name",
+      relativePath: "raw/assets/source.pdf",
+      fileURL: URL(fileURLWithPath: "/tmp/source.pdf")
+    )
+
+    XCTAssertEqual(
+      TaskEditAttachmentService.exportFilename(for: attachment),
+      "Readable Korean Name.pdf"
+    )
+  }
+
+  func testExportFilenameSanitizesPathSeparators() {
+    let attachment = TaskEditAttachment(
+      displayName: "Folder:Name/Report.pdf",
+      relativePath: "raw/assets/Report.pdf",
+      fileURL: URL(fileURLWithPath: "/tmp/Report.pdf")
+    )
+
+    XCTAssertEqual(
+      TaskEditAttachmentService.exportFilename(for: attachment),
+      "Folder-Name-Report.pdf"
+    )
+  }
+
+  func testExportFilenameKeepsStoredFileExtensionWhenDisplayNameHasDifferentExtension() {
+    let attachment = TaskEditAttachment(
+      displayName: "Readable Name.txt",
+      relativePath: "raw/assets/source.pdf",
+      fileURL: URL(fileURLWithPath: "/tmp/source.pdf")
+    )
+
+    XCTAssertEqual(
+      TaskEditAttachmentService.exportFilename(for: attachment),
+      "Readable Name.pdf"
+    )
+  }
+
+  func testExportSuggestedNameOmitsExtensionToAvoidFinderAddingItTwice() {
+    let attachment = TaskEditAttachment(
+      displayName: "라인업.pdf",
+      relativePath: "raw/assets/source.pdf",
+      fileURL: URL(fileURLWithPath: "/tmp/source.pdf")
+    )
+
+    XCTAssertEqual(
+      TaskEditAttachmentService.exportFilename(for: attachment),
+      "라인업.pdf"
+    )
+    XCTAssertEqual(
+      TaskEditAttachmentService.exportSuggestedName(for: attachment),
+      "라인업"
+    )
+  }
+
+  func testRenamedDisplayNameChangesStemOnlyAndKeepsSourceExtension() {
+    let attachment = TaskEditAttachment(
+      displayName: "Old Name.pdf",
+      relativePath: "raw/assets/source.pdf",
+      fileURL: URL(fileURLWithPath: "/tmp/source.pdf")
+    )
+
+    XCTAssertEqual(
+      TaskEditAttachmentService.editableFilenameStem(for: attachment),
+      "Old Name"
+    )
+    XCTAssertEqual(
+      TaskEditAttachmentService.renamedDisplayName(for: attachment, rawStem: "New:Name/Final"),
+      "New-Name-Final.pdf"
+    )
+  }
 }

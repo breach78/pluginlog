@@ -1,6 +1,15 @@
 import AppKit
 import SwiftUI
 
+private enum ScheduleItemVisualStyle {
+  static let titleFontSize: CGFloat = 11.5
+  static let supplementalFontSize = titleFontSize * 0.8
+  static let secondaryTextOpacityMultiplier: Double = 0.6
+  static let attachmentLinkRegex = try? NSRegularExpression(
+    pattern: #"!?\[[^\]]+\]\(raw/assets/[^)]+\)"#
+  )
+}
+
 struct ScheduleCurrentTimeIndicator: View {
   let dayRange: ClosedRange<Int>
   let dayColumnWidth: CGFloat
@@ -575,6 +584,7 @@ extension ScheduleBoardView {
 
     return ScheduleEventBlockSurface(color: color, isBackgroundCalendar: isBackgroundCalendar) {
       scheduleEventBlockContent(
+        event: event,
         title: title,
         subtitle: subtitle,
         timeLabel: timeLabel,
@@ -659,10 +669,13 @@ extension ScheduleBoardView {
           targetCompletedWorkUnits: targetCompletedWorkUnits
         )
 
-        Text(title)
-          .font(scheduleItemFont(11, weight: .semibold))
-          .foregroundStyle(primaryTextColor)
-          .lineLimit(1)
+        scheduleTaskTitleRow(
+          title,
+          taskDescriptor: taskDescriptor,
+          titleColor: primaryTextColor,
+          metadataColor: secondaryTextColor,
+          lineLimit: 1
+        )
 
         Spacer(minLength: 0)
       }
@@ -691,17 +704,18 @@ extension ScheduleBoardView {
         .padding(.top, 1)
 
         VStack(alignment: .leading, spacing: 2) {
-          Text(title)
-            .font(scheduleItemFont(11, weight: .semibold))
-            .foregroundStyle(primaryTextColor)
-            .lineLimit(titleLineLimit)
+          scheduleTaskTitleRow(
+            title,
+            taskDescriptor: taskDescriptor,
+            titleColor: primaryTextColor,
+            metadataColor: secondaryTextColor,
+            lineLimit: titleLineLimit
+          )
 
-          if let timeLabel {
-            Text(timeLabel)
-              .font(scheduleItemFont(9, weight: .semibold, design: .monospaced))
-              .foregroundStyle(secondaryTextColor)
-              .lineLimit(1)
-          }
+          scheduleTaskSupplementalRow(
+            timeLabel: timeLabel,
+            textColor: secondaryTextColor
+          )
 
           Spacer(minLength: 0)
         }
@@ -732,24 +746,25 @@ extension ScheduleBoardView {
         )
 
         VStack(alignment: .leading, spacing: 3) {
-          Text(title)
-            .font(scheduleItemFont(12, weight: .semibold))
-            .foregroundStyle(primaryTextColor)
-            .lineLimit(titleLineLimit)
+          scheduleTaskTitleRow(
+            title,
+            taskDescriptor: taskDescriptor,
+            titleColor: primaryTextColor,
+            metadataColor: secondaryTextColor,
+            lineLimit: titleLineLimit
+          )
 
           if let subtitle, !subtitle.isEmpty {
             Text(subtitle)
-              .font(scheduleItemFont(11, weight: .medium))
+              .font(scheduleItemSupplementalFont(weight: .medium))
               .foregroundStyle(secondaryTextColor)
               .lineLimit(scheduleTimedSupplementalLineLimit(for: blockHeight))
           }
 
-          if let timeLabel {
-            Text(timeLabel)
-              .font(scheduleItemFont(10, weight: .semibold, design: .monospaced))
-              .foregroundStyle(secondaryTextColor)
-              .lineLimit(1)
-          }
+          scheduleTaskSupplementalRow(
+            timeLabel: timeLabel,
+            textColor: secondaryTextColor
+          )
 
           Spacer(minLength: 0)
         }
@@ -771,6 +786,7 @@ extension ScheduleBoardView {
 
   @ViewBuilder
   func scheduleEventBlockContent(
+    event: ScheduleCalendarEvent,
     title: String,
     subtitle: String?,
     timeLabel: String?,
@@ -780,15 +796,18 @@ extension ScheduleBoardView {
     isBackgroundCalendar: Bool
   ) -> some View {
     let titleColor: Color = isBackgroundCalendar ? .secondary.opacity(0.78) : .primary
-    let subtitleColor: Color = isBackgroundCalendar ? .secondary.opacity(0.68) : .secondary
+    let subtitleColor = scheduleEventSecondaryTextColor(isBackgroundCalendar: isBackgroundCalendar)
     let titleLineLimit = scheduleTimedTitleLineLimit(for: blockHeight, density: density)
     switch density {
     case .compact:
       HStack(alignment: .center, spacing: 6) {
-        Text(title)
-          .font(scheduleItemFont(10.5, weight: .semibold))
-          .foregroundStyle(titleColor)
-          .lineLimit(1)
+        scheduleEventTitleRow(
+          title,
+          event: event,
+          titleColor: titleColor,
+          metadataColor: subtitleColor,
+          lineLimit: 1
+        )
 
         Spacer(minLength: 0)
       }
@@ -799,17 +818,18 @@ extension ScheduleBoardView {
 
     case .standard:
       VStack(alignment: .leading, spacing: 2) {
-        Text(title)
-          .font(scheduleItemFont(11, weight: .semibold))
-          .foregroundStyle(titleColor)
-          .lineLimit(max(durationMinutes >= 75 ? 2 : 1, titleLineLimit))
+        scheduleEventTitleRow(
+          title,
+          event: event,
+          titleColor: titleColor,
+          metadataColor: subtitleColor,
+          lineLimit: max(durationMinutes >= 75 ? 2 : 1, titleLineLimit)
+        )
 
-        if let timeLabel, !isBackgroundCalendar {
-          Text(timeLabel)
-            .font(scheduleItemFont(9, weight: .semibold, design: .monospaced))
-            .foregroundStyle(.secondary)
-            .lineLimit(1)
-        }
+        scheduleEventSupplementalRow(
+          timeLabel: isBackgroundCalendar ? nil : timeLabel,
+          textColor: subtitleColor
+        )
 
         Spacer(minLength: 0)
       }
@@ -820,24 +840,25 @@ extension ScheduleBoardView {
 
     case .expanded:
       VStack(alignment: .leading, spacing: 3) {
-        Text(title)
-          .font(scheduleItemFont(11, weight: .semibold))
-          .foregroundStyle(titleColor)
-          .lineLimit(max(durationMinutes >= 90 ? 3 : 2, titleLineLimit))
+        scheduleEventTitleRow(
+          title,
+          event: event,
+          titleColor: titleColor,
+          metadataColor: subtitleColor,
+          lineLimit: max(durationMinutes >= 90 ? 3 : 2, titleLineLimit)
+        )
 
         if let subtitle, !subtitle.isEmpty, durationMinutes >= 60 {
           Text(subtitle)
-            .font(scheduleItemFont(11, weight: .medium))
+            .font(scheduleItemSupplementalFont(weight: .medium))
             .foregroundStyle(subtitleColor)
             .lineLimit(scheduleTimedSupplementalLineLimit(for: blockHeight))
         }
 
-        if let timeLabel, !isBackgroundCalendar {
-          Text(timeLabel)
-            .font(scheduleItemFont(9, weight: .semibold, design: .monospaced))
-            .foregroundStyle(.secondary)
-            .lineLimit(1)
-        }
+        scheduleEventSupplementalRow(
+          timeLabel: isBackgroundCalendar ? nil : timeLabel,
+          textColor: subtitleColor
+        )
 
         Spacer(minLength: 0)
       }
@@ -880,19 +901,20 @@ extension ScheduleBoardView {
         )
         .offset(x: -3)
 
-        Text(title)
-          .font(scheduleItemFont(11.5, weight: .semibold))
-          .foregroundStyle(
-            scheduleTaskPrimaryTextColor(
-              isSelected: isSelected,
-              isCompleted: taskRow.isCompleted
-            )
-          )
-          .lineLimit(1)
+        scheduleTaskTitleRow(
+          title,
+          taskDescriptor: taskDescriptor,
+          titleColor: scheduleTaskPrimaryTextColor(
+            isSelected: isSelected,
+            isCompleted: taskRow.isCompleted
+          ),
+          metadataColor: scheduleTaskSecondaryTextColor(isSelected: isSelected),
+          lineLimit: 1
+        )
 
         if !compact, let subtitle, !subtitle.isEmpty {
           Text(subtitle)
-            .font(scheduleItemFont(11, weight: .medium))
+            .font(scheduleItemSupplementalFont(weight: .medium))
             .foregroundStyle(scheduleTaskSecondaryTextColor(isSelected: isSelected))
             .lineLimit(1)
         }
@@ -901,7 +923,7 @@ extension ScheduleBoardView {
 
         if let trailingLabel, !trailingLabel.isEmpty {
           Text(trailingLabel)
-            .font(scheduleItemFont(10, weight: .medium, design: .monospaced))
+            .font(scheduleItemSupplementalFont(weight: .medium, design: .monospaced))
             .foregroundStyle(scheduleTaskSecondaryTextColor(isSelected: isSelected))
             .lineLimit(1)
         }
@@ -943,20 +965,23 @@ extension ScheduleBoardView {
   ) -> some View {
     ScheduleEventChipSurface(color: color, isBackgroundCalendar: isBackgroundCalendar) {
       let titleColor: Color = isBackgroundCalendar ? .secondary.opacity(0.78) : .primary
-      let subtitleColor: Color = isBackgroundCalendar ? .secondary.opacity(0.68) : .secondary
+      let subtitleColor = scheduleEventSecondaryTextColor(isBackgroundCalendar: isBackgroundCalendar)
       HStack(spacing: 2) {
         Circle()
           .fill(color)
           .frame(width: 8, height: 8)
           .frame(width: 18, height: 18, alignment: .center)
           .offset(x: -3)
-        Text(title)
-          .font(scheduleItemFont(11.5, weight: .semibold))
-          .foregroundStyle(titleColor)
-          .lineLimit(1)
+        scheduleEventTitleRow(
+          title,
+          event: event,
+          titleColor: titleColor,
+          metadataColor: subtitleColor,
+          lineLimit: 1
+        )
         if let subtitle, !subtitle.isEmpty {
           Text(subtitle)
-            .font(scheduleItemFont(11, weight: .medium))
+            .font(scheduleItemSupplementalFont(weight: .medium))
             .foregroundStyle(subtitleColor)
             .lineLimit(1)
         }
@@ -1062,6 +1087,7 @@ extension ScheduleBoardView {
 
     return ScheduleEventBlockSurface(color: color) {
       scheduleEventBlockContent(
+        event: event,
         title: title,
         subtitle: subtitle,
         timeLabel: timeLabel,
@@ -1941,6 +1967,21 @@ extension ScheduleBoardView {
     return timeRangeLabel(startMinute: timeMinutes, durationMinutes: durationMinutes)
   }
 
+  func scheduleItemTitleFont(weight: Font.Weight = .semibold) -> Font {
+    scheduleItemFont(ScheduleItemVisualStyle.titleFontSize, weight: weight)
+  }
+
+  func scheduleItemSupplementalFont(weight: Font.Weight = .medium) -> Font {
+    scheduleItemFont(ScheduleItemVisualStyle.supplementalFontSize, weight: weight)
+  }
+
+  func scheduleItemSupplementalFont(
+    weight: Font.Weight,
+    design: Font.Design
+  ) -> Font {
+    scheduleItemFont(ScheduleItemVisualStyle.supplementalFontSize, weight: weight, design: design)
+  }
+
   func scheduleTaskPrimaryTextColor(isSelected: Bool, isCompleted: Bool) -> Color {
     if isSelected {
       return isCompleted ? Color.white.opacity(0.84) : .white
@@ -1949,7 +1990,140 @@ extension ScheduleBoardView {
   }
 
   func scheduleTaskSecondaryTextColor(isSelected: Bool) -> Color {
-    isSelected ? Color.white.opacity(0.78) : .secondary
+    isSelected
+      ? Color.white.opacity(0.78 * ScheduleItemVisualStyle.secondaryTextOpacityMultiplier)
+      : Color.secondary.opacity(ScheduleItemVisualStyle.secondaryTextOpacityMultiplier)
+  }
+
+  func scheduleEventSecondaryTextColor(isBackgroundCalendar: Bool) -> Color {
+    let baseOpacity = isBackgroundCalendar ? 0.68 : 1.0
+    return Color.secondary.opacity(
+      baseOpacity * ScheduleItemVisualStyle.secondaryTextOpacityMultiplier
+    )
+  }
+
+  @ViewBuilder
+  func scheduleTaskTitleRow(
+    _ title: String,
+    taskDescriptor: WorkspaceScheduleTaskDescriptor,
+    titleColor: Color,
+    metadataColor: Color,
+    lineLimit: Int
+  ) -> some View {
+    HStack(alignment: .firstTextBaseline, spacing: 4) {
+      Text(title)
+        .font(scheduleItemTitleFont())
+        .foregroundStyle(titleColor)
+        .lineLimit(lineLimit)
+
+      scheduleTaskMetadataIndicators(for: taskDescriptor, color: metadataColor)
+    }
+  }
+
+  @ViewBuilder
+  func scheduleEventTitleRow(
+    _ title: String,
+    event: ScheduleCalendarEvent,
+    titleColor: Color,
+    metadataColor: Color,
+    lineLimit: Int
+  ) -> some View {
+    HStack(alignment: .firstTextBaseline, spacing: 4) {
+      Text(title)
+        .font(scheduleItemTitleFont())
+        .foregroundStyle(titleColor)
+        .lineLimit(lineLimit)
+
+      scheduleEventMetadataIndicators(for: event, color: metadataColor)
+    }
+  }
+
+  @ViewBuilder
+  func scheduleTaskMetadataIndicators(
+    for taskDescriptor: WorkspaceScheduleTaskDescriptor,
+    color: Color
+  ) -> some View {
+    scheduleMetadataIndicators(
+      hasNote: hasScheduleNote(taskDescriptor.taskRow.reminderNoteText),
+      attachmentCount: max(0, taskDescriptor.taskRow.attachmentCount),
+      color: color
+    )
+  }
+
+  @ViewBuilder
+  func scheduleEventMetadataIndicators(
+    for event: ScheduleCalendarEvent,
+    color: Color
+  ) -> some View {
+    scheduleMetadataIndicators(
+      hasNote: hasScheduleNote(event.notes),
+      attachmentCount: scheduleAttachmentLinkCount(in: event.notes),
+      color: color
+    )
+  }
+
+  @ViewBuilder
+  private func scheduleMetadataIndicators(
+    hasNote: Bool,
+    attachmentCount: Int,
+    color: Color
+  ) -> some View {
+    if hasNote || attachmentCount > 0 {
+      HStack(spacing: 3) {
+        if hasNote {
+          Image(systemName: "note.text")
+            .help("노트 있음")
+        }
+        if attachmentCount > 0 {
+          Image(systemName: "paperclip")
+            .help(attachmentCount > 1 ? "첨부파일 \(attachmentCount)개" : "첨부파일 있음")
+        }
+      }
+      .font(scheduleItemSupplementalFont(weight: .semibold))
+      .foregroundStyle(color)
+      .imageScale(.small)
+      .lineLimit(1)
+    }
+  }
+
+  @ViewBuilder
+  func scheduleTaskSupplementalRow(
+    timeLabel: String?,
+    textColor: Color
+  ) -> some View {
+    if let timeLabel {
+      Text(timeLabel)
+        .font(scheduleItemSupplementalFont(weight: .semibold, design: .monospaced))
+        .foregroundStyle(textColor)
+        .lineLimit(1)
+    }
+  }
+
+  @ViewBuilder
+  func scheduleEventSupplementalRow(
+    timeLabel: String?,
+    textColor: Color
+  ) -> some View {
+    if let timeLabel {
+      Text(timeLabel)
+        .font(scheduleItemSupplementalFont(weight: .semibold, design: .monospaced))
+        .foregroundStyle(textColor)
+        .lineLimit(1)
+    }
+  }
+
+  private func hasScheduleNote(_ noteText: String) -> Bool {
+    !TaskEditAttachmentService.noteTextByRemovingAttachmentLinks(from: noteText)
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+      .isEmpty
+  }
+
+  private func scheduleAttachmentLinkCount(in noteText: String) -> Int {
+    guard let regex = ScheduleItemVisualStyle.attachmentLinkRegex else { return 0 }
+    return regex.numberOfMatches(
+      in: noteText,
+      range: NSRange(noteText.startIndex..<noteText.endIndex, in: noteText)
+    )
   }
 
   func scheduleTimedTitleLineLimit(

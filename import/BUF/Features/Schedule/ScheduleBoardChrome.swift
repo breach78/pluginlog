@@ -159,11 +159,6 @@ extension ScheduleBoardView {
     HStack(spacing: 6) {
       ZStack(alignment: .bottomTrailing) {
         Image(systemName: "calendar")
-          .font(.system(size: 13, weight: .semibold))
-          .foregroundStyle(.secondary.opacity(0.72))
-          .offset(x: -4, y: 2)
-
-        Image(systemName: "calendar")
           .font(.system(size: 15, weight: .semibold))
           .foregroundStyle(.primary)
 

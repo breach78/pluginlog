@@ -34,6 +34,19 @@ enum TimelineTaskEditPresentationStyle {
   case panel
 }
 
+private struct PendingAttachmentRename: Identifiable, Equatable {
+  let attachment: TaskEditAttachment
+
+  var id: String { attachment.id }
+  var originalNameStem: String {
+    TaskEditAttachmentService.editableFilenameStem(for: attachment)
+  }
+  var fixedExtension: String? {
+    let value = attachment.fileURL.pathExtension
+    return value.isEmpty ? nil : value
+  }
+}
+
 struct TimelineTaskEditPopoverContent: View {
   let initialFields: RetainedTaskEditFields
   let presentationStyle: TimelineTaskEditPresentationStyle
@@ -64,6 +77,7 @@ struct TimelineTaskEditPopoverContent: View {
   @State private var isAttachmentDropTargeted = false
   @State private var isImportingAttachments = false
   @State private var pendingAttachmentDelete: TaskEditAttachment?
+  @State private var pendingAttachmentRename: PendingAttachmentRename?
   @State private var errorText: String?
   @State private var isSyncEditingActive = false
 
@@ -132,6 +146,19 @@ struct TimelineTaskEditPopoverContent: View {
           },
           secondaryButton: .cancel(Text("취소")) {
             pendingAttachmentDelete = nil
+          }
+        )
+      }
+      .sheet(item: $pendingAttachmentRename) { request in
+        WorkspaceRenameAttachmentSheetContent(
+          originalNameStem: request.originalNameStem,
+          fixedExtension: request.fixedExtension,
+          isRenaming: false,
+          onSubmit: { name in
+            renameAttachment(request.attachment, rawStem: name)
+          },
+          onCancel: {
+            pendingAttachmentRename = nil
           }
         )
       }
@@ -346,6 +373,13 @@ struct TimelineTaskEditPopoverContent: View {
           .onDrag {
             attachmentItemProvider(for: attachment)
           }
+          .contextMenu {
+            Button {
+              pendingAttachmentRename = PendingAttachmentRename(attachment: attachment)
+            } label: {
+              Label("이름 변경", systemImage: "pencil")
+            }
+          }
           .padding(.vertical, 2)
           .frame(maxWidth: .infinity, alignment: .leading)
         }
@@ -389,8 +423,18 @@ struct TimelineTaskEditPopoverContent: View {
   }
 
   private func attachmentItemProvider(for attachment: TaskEditAttachment) -> NSItemProvider {
-    NSItemProvider(contentsOf: attachment.fileURL)
-      ?? NSItemProvider(object: attachment.fileURL as NSURL)
+    let exportFilename = TaskEditAttachmentService.exportFilename(for: attachment)
+    let exportURL =
+      try? ApplePlatformDragBridge.shared.materializeFileExport(
+        sourceURL: attachment.fileURL,
+        displayFilename: exportFilename,
+        exportID: UUID()
+      )
+    let provider =
+      NSItemProvider(contentsOf: exportURL ?? attachment.fileURL)
+      ?? NSItemProvider(object: (exportURL ?? attachment.fileURL) as NSURL)
+    provider.suggestedName = TaskEditAttachmentService.exportSuggestedName(for: attachment)
+    return provider
   }
 
   @MainActor
@@ -438,6 +482,38 @@ struct TimelineTaskEditPopoverContent: View {
     } catch {
       pendingAttachmentDelete = nil
       errorText = error.localizedDescription
+      }
+  }
+
+  private func renameAttachment(_ attachment: TaskEditAttachment, rawStem: String) {
+    guard let index = attachments.firstIndex(where: { $0.id == attachment.id }),
+      let displayName = TaskEditAttachmentService.renamedDisplayName(
+        for: attachments[index],
+        rawStem: rawStem
+      )
+    else {
+      pendingAttachmentRename = nil
+      return
+    }
+
+    guard displayName != attachments[index].displayName else {
+      pendingAttachmentRename = nil
+      return
+    }
+
+    let current = attachments[index]
+    attachments[index] = TaskEditAttachment(
+      displayName: displayName,
+      relativePath: current.relativePath,
+      fileURL: current.fileURL
+    )
+    pendingAttachmentRename = nil
+    errorText = nil
+    markSyncEditingActivity()
+    autoSaveTask?.cancel()
+    autoSaveTask = nil
+    Task { @MainActor in
+      _ = await savePendingChanges(afterCurrent: true)
     }
   }
 
