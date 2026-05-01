@@ -56,7 +56,7 @@ struct TimelineTaskEditPopoverContent: View {
   let saveFields: (RetainedTaskEditFields) async throws -> Void
   let onSyncEditingChanged: (Bool) -> Void
   let onSyncEditingActivity: () -> Void
-  let onOpenProjectWindow: (() -> Void)?
+  let bottomContent: AnyView?
   let onCancel: () -> Void
 
   @State private var title: String
@@ -69,6 +69,8 @@ struct TimelineTaskEditPopoverContent: View {
   @State private var hasTime: Bool
   @State private var selectedTime: Date
   @State private var durationMinutes: Int?
+  @State private var isDatePickerPresented = false
+  @State private var isTimePickerPresented = false
   @State private var lastCommittedFields: RetainedTaskEditFields
   @State private var autoSaveTask: Task<Void, Never>?
   @State private var saveAgainAfterCurrent = false
@@ -93,7 +95,7 @@ struct TimelineTaskEditPopoverContent: View {
     saveFields: @escaping (RetainedTaskEditFields) async throws -> Void,
     onSyncEditingChanged: @escaping (Bool) -> Void = { _ in },
     onSyncEditingActivity: @escaping () -> Void = {},
-    onOpenProjectWindow: (() -> Void)? = nil,
+    bottomContent: AnyView? = nil,
     onCancel: @escaping () -> Void
   ) {
     let initialNoteText = TaskEditAttachmentService.noteTextByRemovingAttachmentLinks(
@@ -111,7 +113,7 @@ struct TimelineTaskEditPopoverContent: View {
     self.saveFields = saveFields
     self.onSyncEditingChanged = onSyncEditingChanged
     self.onSyncEditingActivity = onSyncEditingActivity
-    self.onOpenProjectWindow = onOpenProjectWindow
+    self.bottomContent = bottomContent
     self.onCancel = onCancel
     _title = State(initialValue: initialFields.title)
     _noteText = State(initialValue: initialNoteText)
@@ -165,10 +167,15 @@ struct TimelineTaskEditPopoverContent: View {
       .onChange(of: hasDate) { _, enabled in
         if !enabled {
           hasTime = false
+          isDatePickerPresented = false
+          isTimePickerPresented = false
         }
         scheduleAutoSave()
       }
       .onChange(of: hasTime) { _, _ in
+        if !hasTime {
+          isTimePickerPresented = false
+        }
         scheduleAutoSave()
       }
       .onChange(of: selectedDate) { _, _ in
@@ -223,21 +230,6 @@ struct TimelineTaskEditPopoverContent: View {
   private var formContent: some View {
     VStack(alignment: .leading, spacing: 13) {
       HStack(spacing: 8) {
-        Text("할일 편집")
-          .font(TaskEditTypography.headerFont)
-          .foregroundStyle(.secondary)
-        if let onOpenProjectWindow {
-          Button {
-            onOpenProjectWindow()
-          } label: {
-            Image(systemName: "arrow.up.right.square")
-              .font(.system(size: 14, weight: .semibold))
-              .frame(width: 28, height: 28)
-          }
-          .buttonStyle(.plain)
-          .foregroundStyle(.secondary)
-          .help("프로젝트 창 열기")
-        }
         Spacer(minLength: 0)
         if isLoading || isSaving {
           ProgressView()
@@ -268,7 +260,7 @@ struct TimelineTaskEditPopoverContent: View {
         )
         .frame(minHeight: TaskEditTypography.titleMinimumHeight)
         .frame(height: max(TaskEditTypography.titleMinimumHeight, titleHeight))
-        .taskEditFieldBackground(cornerRadius: 1)
+        .taskEditFieldBackground(cornerRadius: 4, topPadding: 8, bottomPadding: 4)
       }
 
       VStack(alignment: .leading, spacing: 6) {
@@ -286,12 +278,20 @@ struct TimelineTaskEditPopoverContent: View {
         )
         .frame(minHeight: TaskEditTypography.noteMinimumHeight)
         .frame(height: max(TaskEditTypography.noteMinimumHeight, noteHeight))
-        .taskEditFieldBackground(cornerRadius: 1)
+        .taskEditFieldBackground(cornerRadius: 4)
       }
 
       attachmentSection
 
       dateTimeSection
+
+      if let bottomContent {
+        VStack(alignment: .leading, spacing: 10) {
+          Divider()
+          bottomContent
+        }
+        .padding(.top, 4)
+      }
 
       if let errorText {
         Text(errorText)
@@ -304,33 +304,86 @@ struct TimelineTaskEditPopoverContent: View {
   }
 
   private var dateTimeSection: some View {
-    HStack(alignment: .top, spacing: 18) {
-      VStack(alignment: .leading, spacing: 8) {
+    VStack(alignment: .leading, spacing: 8) {
+      HStack(alignment: .center, spacing: 10) {
         Toggle("날짜", isOn: $hasDate)
           .toggleStyle(.checkbox)
           .font(TaskEditTypography.controlFont)
-        if hasDate {
+          .frame(width: 88, alignment: .leading)
+
+        Button {
+          if !hasDate {
+            hasDate = true
+          }
+          isDatePickerPresented = true
+        } label: {
+          HStack(spacing: 8) {
+            Image(systemName: "calendar")
+              .font(.system(size: 13, weight: .semibold))
+            Text(hasDate ? selectedDateText : "날짜 없음")
+              .font(TaskEditTypography.controlFont)
+              .lineLimit(1)
+            Spacer(minLength: 0)
+            Image(systemName: "chevron.down")
+              .font(.system(size: 10, weight: .semibold))
+              .foregroundStyle(.secondary)
+          }
+          .taskEditCompactControlBackground()
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(hasDate ? Color.primary : Color.secondary)
+        .popover(isPresented: $isDatePickerPresented, arrowEdge: .bottom) {
           DatePicker("", selection: $selectedDate, displayedComponents: .date)
             .datePickerStyle(.graphical)
             .labelsHidden()
-            .frame(width: 276, alignment: .leading)
+            .padding(12)
+            .frame(width: 284, alignment: .leading)
             .background(TaskEditFieldStyle.panelBackgroundColor)
         }
       }
-      .frame(maxWidth: .infinity, alignment: .topLeading)
 
-      VStack(alignment: .leading, spacing: 8) {
-        Toggle("시간 설정", isOn: $hasTime)
+      HStack(alignment: .center, spacing: 10) {
+        Toggle("시간", isOn: $hasTime)
           .toggleStyle(.checkbox)
           .font(TaskEditTypography.controlFont)
           .disabled(!hasDate)
-        DatePicker("", selection: $selectedTime, displayedComponents: .hourAndMinute)
-          .labelsHidden()
-          .disabled(!hasDate || !hasTime)
+          .frame(width: 88, alignment: .leading)
+
+        Button {
+          guard hasDate else { return }
+          if !hasTime {
+            hasTime = true
+          }
+          isTimePickerPresented = true
+        } label: {
+          HStack(spacing: 8) {
+            Image(systemName: "clock")
+              .font(.system(size: 13, weight: .semibold))
+            Text(hasDate && hasTime ? selectedTimeText : "시간 없음")
+              .font(TaskEditTypography.controlFont)
+              .lineLimit(1)
+            Spacer(minLength: 0)
+            Image(systemName: "chevron.down")
+              .font(.system(size: 10, weight: .semibold))
+              .foregroundStyle(.secondary)
+          }
+          .taskEditCompactControlBackground()
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(hasDate && hasTime ? Color.primary : Color.secondary)
+        .disabled(!hasDate)
+        .popover(isPresented: $isTimePickerPresented, arrowEdge: .bottom) {
+          DatePicker("", selection: $selectedTime, displayedComponents: .hourAndMinute)
+            .labelsHidden()
+            .datePickerStyle(.compact)
+            .padding(12)
+            .frame(width: 148, alignment: .leading)
+            .background(TaskEditFieldStyle.panelBackgroundColor)
+        }
       }
-      .frame(width: 132, alignment: .topLeading)
     }
     .frame(maxWidth: .infinity, alignment: .leading)
+    .tint(TaskEditFieldStyle.softAccentColor)
   }
 
   private var attachmentSection: some View {
@@ -421,6 +474,14 @@ struct TimelineTaskEditPopoverContent: View {
 
   private var attachmentItems: [TaskEditAttachment] {
     attachments
+  }
+
+  private var selectedDateText: String {
+    selectedDate.formatted(.dateTime.year().month(.wide).day())
+  }
+
+  private var selectedTimeText: String {
+    selectedTime.formatted(.dateTime.hour().minute())
   }
 
   private func attachmentItemProvider(for attachment: TaskEditAttachment) -> NSItemProvider {
@@ -542,6 +603,8 @@ struct TimelineTaskEditPopoverContent: View {
     hasTime = fields.timeMinutes != nil
     selectedTime = Self.timeDate(minutes: fields.timeMinutes)
     durationMinutes = fields.durationMinutes
+    isDatePickerPresented = false
+    isTimePickerPresented = false
     lastCommittedFields = Self.savingFields(
       title: fields.title,
       noteText: nextNoteText,
@@ -709,39 +772,54 @@ struct TimelineTaskEditPopoverContent: View {
 
 private enum TaskEditTypography {
   static let scale: CGFloat = 1.3
-  static let labelSize: CGFloat = 10 * scale
-  static let bodySize: CGFloat = 12 * scale
-  static let titleSize: CGFloat = 14 * scale
   static let headerSize: CGFloat = 12 * scale
-  static let titleMinimumHeight: CGFloat = 42
+  static let panelTextSize: CGFloat = headerSize * 0.9
+  static let labelSize: CGFloat = panelTextSize
+  static let bodySize: CGFloat = panelTextSize
+  static let titleSize: CGFloat = panelTextSize
+  static let titleMinimumHeight: CGFloat = 32
   static let noteMinimumHeight: CGFloat = 150
 
-  static let headerFont = Font.custom("SansMonoCJKFinalDraft", size: headerSize).weight(.semibold)
-  static let labelFont = Font.custom("SansMonoCJKFinalDraft", size: labelSize)
-  static let controlFont = Font.custom("SansMonoCJKFinalDraft", size: bodySize)
-  static let buttonFont = Font.custom("SansMonoCJKFinalDraft", size: bodySize)
+  static let headerFont = AppInputTypography.font(size: headerSize, weight: .semibold)
+  static let labelFont = AppInputTypography.font(size: labelSize)
+  static let controlFont = AppInputTypography.font(size: bodySize)
+  static let buttonFont = AppInputTypography.font(size: bodySize)
 
   static var titleNSFont: NSFont {
-    NSFont(name: "SansMonoCJKFinalDraft-Bold", size: titleSize)
-      ?? NSFont.monospacedSystemFont(ofSize: titleSize, weight: .bold)
+    AppInputTypography.nsFont(size: titleSize)
   }
 
   static var noteNSFont: NSFont {
-    NSFont(name: "SansMonoCJKFinalDraft", size: bodySize)
-      ?? NSFont.monospacedSystemFont(ofSize: bodySize, weight: .regular)
+    AppInputTypography.nsFont(size: bodySize)
   }
 }
 
 private struct TaskEditFieldBackground: ViewModifier {
   let cornerRadius: CGFloat
+  let topPadding: CGFloat
+  let bottomPadding: CGFloat
 
   func body(content: Content) -> some View {
     content
       .padding(.horizontal, 12)
-      .padding(.vertical, 10)
+      .padding(.top, topPadding)
+      .padding(.bottom, bottomPadding)
       .background(
         RoundedRectangle(cornerRadius: cornerRadius)
           .fill(TaskEditFieldStyle.backgroundColor)
+      )
+  }
+}
+
+private struct TaskEditCompactControlBackground: ViewModifier {
+  func body(content: Content) -> some View {
+    content
+      .padding(.horizontal, 10)
+      .frame(height: 32)
+      .frame(maxWidth: .infinity, alignment: .leading)
+      .background(
+        RoundedRectangle(cornerRadius: 4)
+          .fill(TaskEditFieldStyle.controlBackgroundColor)
       )
   }
 }
@@ -752,13 +830,36 @@ private enum TaskEditFieldStyle {
   )
 
   static let backgroundColor = Color(
-    nsColor: NSColor(calibratedWhite: 0.925, alpha: 1)
+    nsColor: NSColor(calibratedWhite: 0.975, alpha: 1)
   )
+
+  static let controlBackgroundColor = Color(
+    nsColor: NSColor(calibratedWhite: 0.985, alpha: 1)
+  )
+
+  static let softAccentColor = Color(
+    nsColor: NSColor.systemBlue.withAlphaComponent(0.28)
+  )
+
 }
 
 private extension View {
-  func taskEditFieldBackground(cornerRadius: CGFloat) -> some View {
-    modifier(TaskEditFieldBackground(cornerRadius: cornerRadius))
+  func taskEditFieldBackground(
+    cornerRadius: CGFloat,
+    topPadding: CGFloat = 8,
+    bottomPadding: CGFloat = 8
+  ) -> some View {
+    modifier(
+      TaskEditFieldBackground(
+        cornerRadius: cornerRadius,
+        topPadding: topPadding,
+        bottomPadding: bottomPadding
+      )
+    )
+  }
+
+  func taskEditCompactControlBackground() -> some View {
+    modifier(TaskEditCompactControlBackground())
   }
 }
 

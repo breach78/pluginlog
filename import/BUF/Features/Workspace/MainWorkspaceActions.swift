@@ -175,6 +175,44 @@ extension MainWorkspaceView {
     openWorkspaceProjectListWindow(projectID: target.projectID)
   }
 
+  func workspaceProjectListActions(projectID: UUID) -> TimelineProjectListActions {
+    TimelineProjectListActions(
+      onToggleTaskCompletion: { taskID, isCompleted in
+        await self.toggleWorkspaceProjectListWindowTaskCompletion(
+          taskID,
+          projectID: projectID,
+          isCompleted: isCompleted
+        )
+      },
+      onEditTask: { taskID in
+        self.showTimelineTaskEditor(taskID: taskID, projectID: projectID)
+      },
+      onReorderTasks: { projectID, orderedTaskIDs, registerUndo in
+        self.saveWorkspaceProjectListWindowTaskOrder(
+          projectID: projectID,
+          orderedTaskIDs: orderedTaskIDs,
+          registerUndo: registerUndo
+        )
+      },
+      onCreateTask: { projectID, title in
+        await self.createWorkspaceProjectListWindowTask(title, projectID: projectID)
+      },
+      onRenameTask: { projectID, taskID, title in
+        await self.renameWorkspaceProjectListWindowTask(
+          title,
+          taskID: taskID,
+          projectID: projectID
+        )
+      },
+      onDeleteTask: { projectID, taskID in
+        await self.deleteWorkspaceProjectListWindowTask(taskID, projectID: projectID)
+      },
+      onRenameProject: { projectID, title in
+        self.pendingRenameProject = .init(id: projectID, title: title)
+      }
+    )
+  }
+
   func openWorkspaceProjectListWindow(projectID: UUID) {
     selectProjectContext(projectID)
     guard !TimelineProjectListWindowPresenter.shared.presentedProjectIDs.contains(projectID) else {
@@ -191,39 +229,7 @@ extension MainWorkspaceView {
 
       TimelineProjectListWindowPresenter.shared.present(
         snapshot: snapshot,
-        onToggleTaskCompletion: { taskID, isCompleted in
-          await self.toggleWorkspaceProjectListWindowTaskCompletion(
-            taskID,
-            projectID: projectID,
-            isCompleted: isCompleted
-          )
-        },
-        onEditTask: { taskID in
-          self.showTimelineTaskEditor(taskID: taskID, projectID: projectID)
-        },
-        onReorderTasks: { projectID, orderedTaskIDs, registerUndo in
-          self.saveWorkspaceProjectListWindowTaskOrder(
-            projectID: projectID,
-            orderedTaskIDs: orderedTaskIDs,
-            registerUndo: registerUndo
-          )
-        },
-        onCreateTask: { projectID, title in
-          await self.createWorkspaceProjectListWindowTask(title, projectID: projectID)
-        },
-        onRenameTask: { projectID, taskID, title in
-          await self.renameWorkspaceProjectListWindowTask(
-            title,
-            taskID: taskID,
-            projectID: projectID
-          )
-        },
-        onDeleteTask: { projectID, taskID in
-          await self.deleteWorkspaceProjectListWindowTask(taskID, projectID: projectID)
-        },
-        onRenameProject: { projectID, title in
-          self.pendingRenameProject = .init(id: projectID, title: title)
-        }
+        actions: workspaceProjectListActions(projectID: projectID)
       )
     }
   }
@@ -746,7 +752,7 @@ extension MainWorkspaceView {
     }
   }
 
-  private func workspaceProjectListWindowSnapshot(
+  func workspaceProjectListWindowSnapshot(
     projectID: UUID
   ) async -> TimelineProjectListWindowSnapshot? {
     guard let resolvedRead = await workspaceProjectListWindowResolvedRead(projectID: projectID) else {

@@ -134,9 +134,19 @@ extension MainWorkspaceView {
       onSyncEditingActivity: {
         appState.notifyEditorActivity()
       },
-      onOpenProjectWindow: {
-        openWorkspaceTaskProjectListWindow(for: target)
-      },
+      bottomContent: AnyView(
+        WorkspaceTaskEditProjectListHost(
+          projectID: target.projectID,
+          workspaceTreeRevision: appState.workspaceTreeRevision,
+          loadSnapshot: { projectID in
+            await workspaceProjectListWindowSnapshot(projectID: projectID)
+          },
+          actions: workspaceProjectListActions(projectID: target.projectID),
+          onOpenProjectWindow: {
+            openWorkspaceTaskProjectListWindow(for: target)
+          }
+        )
+      ),
       onCancel: {
         dismissTimelineTaskEditor()
       }
@@ -585,6 +595,56 @@ extension MainWorkspaceView {
         }
       }
     }
+  }
+}
+
+private struct WorkspaceTaskEditProjectListHost: View {
+  let projectID: UUID
+  let workspaceTreeRevision: Int
+  let loadSnapshot: (UUID) async -> TimelineProjectListWindowSnapshot?
+  let actions: TimelineProjectListActions
+  let onOpenProjectWindow: () -> Void
+
+  @State private var snapshot: TimelineProjectListWindowSnapshot?
+  @State private var isLoading = false
+
+  var body: some View {
+    Group {
+      if let snapshot {
+        TimelineProjectListContent(
+          snapshot: snapshot,
+          presentation: .embedded,
+          actions: actions,
+          onOpenProjectWindow: onOpenProjectWindow
+        )
+        .frame(height: 360, alignment: .topLeading)
+        .clipped()
+      } else if isLoading {
+        ProgressView()
+          .controlSize(.small)
+          .frame(maxWidth: .infinity, minHeight: 160)
+      } else {
+        Text("프로젝트 목록을 불러올 수 없음")
+          .font(.system(size: 12))
+          .foregroundStyle(.secondary)
+          .frame(maxWidth: .infinity, minHeight: 160)
+      }
+    }
+    .frame(maxWidth: .infinity, alignment: .topLeading)
+    .task(id: reloadToken) {
+      await reloadSnapshot()
+    }
+  }
+
+  private var reloadToken: String {
+    "\(projectID.uuidString)-\(workspaceTreeRevision)"
+  }
+
+  @MainActor
+  private func reloadSnapshot() async {
+    isLoading = true
+    defer { isLoading = false }
+    snapshot = await loadSnapshot(projectID)
   }
 }
 

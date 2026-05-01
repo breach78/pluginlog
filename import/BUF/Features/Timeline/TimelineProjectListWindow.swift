@@ -22,6 +22,21 @@ struct TimelineProjectListWindowSnapshot: Equatable {
   let tasks: [Task]
 }
 
+enum TimelineProjectListPresentation {
+  case window
+  case embedded
+}
+
+struct TimelineProjectListActions {
+  let onToggleTaskCompletion: (UUID, Bool) async -> Bool
+  let onEditTask: (UUID) -> Void
+  let onReorderTasks: (UUID, [UUID], Bool) -> Void
+  let onCreateTask: (UUID, String) async -> TimelineProjectListWindowSnapshot.Task?
+  let onRenameTask: (UUID, UUID, String) async -> TimelineProjectListWindowSnapshot.Task?
+  let onDeleteTask: (UUID, UUID) async -> Bool
+  let onRenameProject: (UUID, String) -> Void
+}
+
 @MainActor
 final class TimelineProjectListWindowPresenter {
   static let shared = TimelineProjectListWindowPresenter()
@@ -56,15 +71,28 @@ final class TimelineProjectListWindowPresenter {
     onDeleteTask: @escaping (UUID, UUID) async -> Bool,
     onRenameProject: @escaping (UUID, String) -> Void
   ) {
-    let content = TimelineProjectListWindowContent(
+    present(
       snapshot: snapshot,
-      onToggleTaskCompletion: onToggleTaskCompletion,
-      onEditTask: onEditTask,
-      onReorderTasks: onReorderTasks,
-      onCreateTask: onCreateTask,
-      onRenameTask: onRenameTask,
-      onDeleteTask: onDeleteTask,
-      onRenameProject: onRenameProject
+      actions: TimelineProjectListActions(
+        onToggleTaskCompletion: onToggleTaskCompletion,
+        onEditTask: onEditTask,
+        onReorderTasks: onReorderTasks,
+        onCreateTask: onCreateTask,
+        onRenameTask: onRenameTask,
+        onDeleteTask: onDeleteTask,
+        onRenameProject: onRenameProject
+      )
+    )
+  }
+
+  func present(
+    snapshot: TimelineProjectListWindowSnapshot,
+    actions: TimelineProjectListActions
+  ) {
+    let content = TimelineProjectListContent(
+      snapshot: snapshot,
+      presentation: .window,
+      actions: actions
     )
 
     pruneClosedWindows()
@@ -101,7 +129,7 @@ final class TimelineProjectListWindowPresenter {
     for record in windowRecords where Self.isLiveWindow(record.window) {
       guard
         let hostingController = record.window.contentViewController
-          as? NSHostingController<TimelineProjectListWindowContent>,
+          as? NSHostingController<TimelineProjectListContent>,
         hostingController.rootView.snapshot.projectID == snapshot.projectID,
         hostingController.rootView.snapshot != snapshot
       else {
@@ -149,7 +177,7 @@ final class TimelineProjectListWindowPresenter {
   private static func projectID(for window: NSWindow) -> UUID? {
     guard
       let hostingController = window.contentViewController
-        as? NSHostingController<TimelineProjectListWindowContent>
+        as? NSHostingController<TimelineProjectListContent>
     else {
       return nil
     }
@@ -175,15 +203,11 @@ final class TimelineProjectListWindowPresenter {
   }
 }
 
-private struct TimelineProjectListWindowContent: View {
+struct TimelineProjectListContent: View {
   let snapshot: TimelineProjectListWindowSnapshot
-  let onToggleTaskCompletion: (UUID, Bool) async -> Bool
-  let onEditTask: (UUID) -> Void
-  let onReorderTasks: (UUID, [UUID], Bool) -> Void
-  let onCreateTask: (UUID, String) async -> TimelineProjectListWindowSnapshot.Task?
-  let onRenameTask: (UUID, UUID, String) async -> TimelineProjectListWindowSnapshot.Task?
-  let onDeleteTask: (UUID, UUID) async -> Bool
-  let onRenameProject: (UUID, String) -> Void
+  let presentation: TimelineProjectListPresentation
+  let actions: TimelineProjectListActions
+  let onOpenProjectWindow: (() -> Void)?
 
   @State private var tasks: [TimelineProjectListWindowSnapshot.Task]
   @State private var draggingTaskID: UUID?
@@ -202,35 +226,23 @@ private struct TimelineProjectListWindowContent: View {
 
   init(
     snapshot: TimelineProjectListWindowSnapshot,
-    onToggleTaskCompletion: @escaping (UUID, Bool) async -> Bool,
-    onEditTask: @escaping (UUID) -> Void,
-    onReorderTasks: @escaping (UUID, [UUID], Bool) -> Void,
-    onCreateTask: @escaping (UUID, String) async -> TimelineProjectListWindowSnapshot.Task?,
-    onRenameTask: @escaping (UUID, UUID, String) async -> TimelineProjectListWindowSnapshot.Task?,
-    onDeleteTask: @escaping (UUID, UUID) async -> Bool,
-    onRenameProject: @escaping (UUID, String) -> Void
+    presentation: TimelineProjectListPresentation = .window,
+    actions: TimelineProjectListActions,
+    onOpenProjectWindow: (() -> Void)? = nil
   ) {
     self.snapshot = snapshot
-    self.onToggleTaskCompletion = onToggleTaskCompletion
-    self.onEditTask = onEditTask
-    self.onReorderTasks = onReorderTasks
-    self.onCreateTask = onCreateTask
-    self.onRenameTask = onRenameTask
-    self.onDeleteTask = onDeleteTask
-    self.onRenameProject = onRenameProject
+    self.presentation = presentation
+    self.actions = actions
+    self.onOpenProjectWindow = onOpenProjectWindow
     _tasks = State(initialValue: snapshot.tasks)
   }
 
-  func replacing(snapshot: TimelineProjectListWindowSnapshot) -> TimelineProjectListWindowContent {
-    TimelineProjectListWindowContent(
+  func replacing(snapshot: TimelineProjectListWindowSnapshot) -> TimelineProjectListContent {
+    TimelineProjectListContent(
       snapshot: snapshot,
-      onToggleTaskCompletion: onToggleTaskCompletion,
-      onEditTask: onEditTask,
-      onReorderTasks: onReorderTasks,
-      onCreateTask: onCreateTask,
-      onRenameTask: onRenameTask,
-      onDeleteTask: onDeleteTask,
-      onRenameProject: onRenameProject
+      presentation: presentation,
+      actions: actions,
+      onOpenProjectWindow: onOpenProjectWindow
     )
   }
 
@@ -242,7 +254,7 @@ private struct TimelineProjectListWindowContent: View {
 
       if visibleTasks.isEmpty && draftAnchor == nil {
         Text("할일 없음")
-          .font(.system(size: 14))
+          .font(projectListEmptyStateFont)
           .foregroundStyle(.secondary)
           .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
       } else {
@@ -283,7 +295,13 @@ private struct TimelineProjectListWindowContent: View {
         }
       }
     }
-    .frame(minWidth: 360, minHeight: 420)
+    .frame(
+      minWidth: presentation == .window ? 360 : 0,
+      maxWidth: .infinity,
+      minHeight: presentation == .window ? 420 : 320,
+      maxHeight: .infinity,
+      alignment: .topLeading
+    )
     .background(Color(nsColor: .windowBackgroundColor))
     .onExitCommand {
       handleExitCommand()
@@ -312,7 +330,7 @@ private struct TimelineProjectListWindowContent: View {
         .frame(width: 10, height: 10)
 
       Text(snapshot.title)
-        .font(.system(size: 18, weight: .semibold))
+        .font(projectListTitleFont)
         .lineLimit(1)
         .contextMenu {
           Button {
@@ -321,6 +339,19 @@ private struct TimelineProjectListWindowContent: View {
             Label("이름 변경", systemImage: "pencil")
           }
         }
+
+      if let onOpenProjectWindow {
+        Button {
+          onOpenProjectWindow()
+        } label: {
+          Image(systemName: "arrow.up.right.square")
+            .font(.system(size: 13, weight: .semibold))
+            .frame(width: 22, height: 22)
+        }
+        .buttonStyle(.borderless)
+        .foregroundStyle(.secondary)
+        .help("프로젝트 창 열기")
+      }
 
       Spacer(minLength: 0)
 
@@ -337,7 +368,7 @@ private struct TimelineProjectListWindowContent: View {
       .accessibilityLabel("완료항목 보기")
 
       Text("\(visibleTasks.count)")
-        .font(.system(size: 13, weight: .medium).monospacedDigit())
+        .font(projectListCountFont)
         .foregroundStyle(.secondary)
 
       Button {
@@ -400,7 +431,7 @@ private struct TimelineProjectListWindowContent: View {
       }
       Button("패널 열기") {
         cancelInlineEditing()
-        onEditTask(task.id)
+        actions.onEditTask(task.id)
       }
       Divider()
       Button("삭제", role: .destructive) {
@@ -431,7 +462,7 @@ private struct TimelineProjectListWindowContent: View {
   private func taskTitleContent(_ task: TimelineProjectListWindowSnapshot.Task) -> some View {
     VStack(alignment: .leading, spacing: 3) {
       Text(task.title)
-        .font(.system(size: 13))
+        .font(projectListBodyFont)
         .foregroundStyle(task.isCompleted ? Color.secondary : Color.primary)
         .strikethrough(task.isCompleted, color: Color.secondary.opacity(0.55))
         .lineLimit(3)
@@ -439,7 +470,7 @@ private struct TimelineProjectListWindowContent: View {
 
       if let dateText = task.dateText {
         Text(dateText)
-          .font(.system(size: 11))
+          .font(projectListDateFont)
           .foregroundStyle(task.isOverdue ? Color.red : Color.secondary)
           .lineLimit(1)
       }
@@ -457,7 +488,7 @@ private struct TimelineProjectListWindowContent: View {
         before: TapGesture(count: 1)
           .onEnded {
             cancelInlineEditing()
-            onEditTask(task.id)
+            actions.onEditTask(task.id)
           }
       )
   }
@@ -553,7 +584,7 @@ private struct TimelineProjectListWindowContent: View {
 
     let tasksByID = Dictionary(uniqueKeysWithValues: tasks.map { ($0.id, $0) })
     tasks = reorderedIDs.compactMap { tasksByID[$0] }
-    onReorderTasks(snapshot.projectID, openTaskIDs, true)
+    actions.onReorderTasks(snapshot.projectID, openTaskIDs, true)
     draggingTaskID = nil
     dropIndicator = nil
   }
@@ -562,7 +593,7 @@ private struct TimelineProjectListWindowContent: View {
     guard !completingTaskIDs.contains(taskID) else { return }
     completingTaskIDs.insert(taskID)
     Task { @MainActor in
-      let didToggle = await onToggleTaskCompletion(taskID, isCompleted)
+      let didToggle = await actions.onToggleTaskCompletion(taskID, isCompleted)
       completingTaskIDs.remove(taskID)
       guard didToggle else { return }
       setTaskCompletion(
@@ -571,7 +602,7 @@ private struct TimelineProjectListWindowContent: View {
           currentIsCompleted: isCompleted
         )
       )
-      onReorderTasks(snapshot.projectID, openTaskIDs, false)
+      actions.onReorderTasks(snapshot.projectID, openTaskIDs, false)
     }
   }
 
@@ -580,11 +611,11 @@ private struct TimelineProjectListWindowContent: View {
     cancelInlineEditing()
     deletingTaskIDs.insert(taskID)
     Task { @MainActor in
-      let didDelete = await onDeleteTask(snapshot.projectID, taskID)
+      let didDelete = await actions.onDeleteTask(snapshot.projectID, taskID)
       deletingTaskIDs.remove(taskID)
       guard didDelete else { return }
       removeTaskFromWindow(taskID)
-      onReorderTasks(snapshot.projectID, openTaskIDs, false)
+      actions.onReorderTasks(snapshot.projectID, openTaskIDs, false)
     }
   }
 
@@ -597,7 +628,7 @@ private struct TimelineProjectListWindowContent: View {
   private func requestProjectRename() {
     cancelInlineEditing()
     cancelDraftIfEmpty()
-    onRenameProject(snapshot.projectID, snapshot.title)
+    actions.onRenameProject(snapshot.projectID, snapshot.title)
   }
 
   private func startEditing(_ task: TimelineProjectListWindowSnapshot.Task) {
@@ -631,7 +662,7 @@ private struct TimelineProjectListWindowContent: View {
 
     Task { @MainActor in
       defer { isRenamingTask = false }
-      guard let updatedTask = await onRenameTask(snapshot.projectID, task.id, title) else {
+      guard let updatedTask = await actions.onRenameTask(snapshot.projectID, task.id, title) else {
         return
       }
       replaceTask(updatedTask)
@@ -684,14 +715,14 @@ private struct TimelineProjectListWindowContent: View {
 
     Task { @MainActor in
       defer { isCreatingTask = false }
-      guard let createdTask = await onCreateTask(snapshot.projectID, title) else {
+      guard let createdTask = await actions.onCreateTask(snapshot.projectID, title) else {
         return
       }
 
       if !tasks.contains(where: { $0.id == createdTask.id }) {
         insertCreatedTask(createdTask, after: anchor.taskID)
       }
-      onReorderTasks(snapshot.projectID, openTaskIDs, false)
+      actions.onReorderTasks(snapshot.projectID, openTaskIDs, false)
       let nextAnchor = TimelineProjectListDraftAnchor.after(createdTask.id)
       draftAnchor = nextAnchor
       draftTitle = ""
@@ -774,6 +805,52 @@ private struct TimelineProjectListWindowContent: View {
     ColorHexCodec.color(from: snapshot.colorHex) ?? .accentColor
   }
 
+  private var projectListTitleFont: Font {
+    switch presentation {
+    case .window:
+      return .system(size: 18, weight: .semibold)
+    case .embedded:
+      return AppInputTypography.font(size: Self.embeddedTextSize, weight: .semibold)
+    }
+  }
+
+  private var projectListBodyFont: Font {
+    switch presentation {
+    case .window:
+      return .system(size: 13)
+    case .embedded:
+      return AppInputTypography.font(size: Self.embeddedTextSize)
+    }
+  }
+
+  private var projectListCountFont: Font {
+    switch presentation {
+    case .window:
+      return .system(size: 13, weight: .medium).monospacedDigit()
+    case .embedded:
+      return AppInputTypography.font(size: Self.embeddedTextSize, weight: .medium)
+        .monospacedDigit()
+    }
+  }
+
+  private var projectListDateFont: Font {
+    switch presentation {
+    case .window:
+      return .system(size: 11)
+    case .embedded:
+      return AppInputTypography.font(size: Self.embeddedTextSize)
+    }
+  }
+
+  private var projectListEmptyStateFont: Font {
+    switch presentation {
+    case .window:
+      return .system(size: 14)
+    case .embedded:
+      return AppInputTypography.font(size: Self.embeddedTextSize)
+    }
+  }
+
   private var visibleTasks: [TimelineProjectListWindowSnapshot.Task] {
     showsCompletedTasks ? tasks : tasks.filter { !$0.isCompleted }
   }
@@ -781,6 +858,8 @@ private struct TimelineProjectListWindowContent: View {
   private var openTaskIDs: [UUID] {
     tasks.filter { !$0.isCompleted }.map(\.id)
   }
+
+  private static let embeddedTextSize: CGFloat = 12 * 1.3 * 0.9
 }
 
 private enum TimelineProjectListDraftAnchor: Hashable {
