@@ -2,7 +2,27 @@ import Foundation
 import SwiftUI
 
 enum TimelineBoardReadPath {
-  static let visibleDayRange: ClosedRange<Int> = -4...61
+  static let pastIncompleteContextDays = 7
+  static let visibleDayRange: ClosedRange<Int> = -pastIncompleteContextDays...61
+
+  static func resolvedVisibleDayRange(
+    for bars: [TimelineProjectBar],
+    anchorDate: Date,
+    calendar: Calendar
+  ) -> ClosedRange<Int> {
+    let anchorDay = calendar.startOfDay(for: anchorDate)
+    let oldestPastIncompleteOffset = bars
+      .flatMap(\.dailyTaskCounts.keys)
+      .compactMap { day in
+        calendar.dateComponents([.day], from: anchorDay, to: calendar.startOfDay(for: day)).day
+      }
+      .filter { $0 < 0 }
+      .min()
+    let contextLowerBound = (oldestPastIncompleteOffset ?? 0) - pastIncompleteContextDays
+    let lowerBound = min(visibleDayRange.lowerBound, contextLowerBound)
+
+    return lowerBound...visibleDayRange.upperBound
+  }
 
   static func pinnedTopSignature(
     anchorDate: Date,
@@ -682,8 +702,24 @@ extension TimelineBoardView {
   }
 
   func seedRangeIfNeeded(with bars: [TimelineProjectBar]) {
-    _ = bars
-    dayRange = TimelineBoardReadPath.visibleDayRange
+    let nextRange = TimelineBoardReadPath.resolvedVisibleDayRange(
+      for: bars,
+      anchorDate: anchorDate,
+      calendar: calendar
+    )
+    guard nextRange != dayRange else { return }
+
+    let previousLeadingOffset = leadingVisibleDayOffset
+    dayRange = nextRange
+
+    let preservedLeadingOffset = min(
+      max(previousLeadingOffset, nextRange.lowerBound),
+      nextRange.upperBound
+    )
+    let preservedX = CGFloat(preservedLeadingOffset - nextRange.lowerBound) * dayColumnWidth
+    horizontalOffsetX = max(0, preservedX)
+    scrollRequestGeneration += 1
+    requestedOffsetX = max(0, preservedX)
   }
 
   func dayOffset(for date: Date) -> Int {

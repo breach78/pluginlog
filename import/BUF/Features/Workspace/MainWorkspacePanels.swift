@@ -108,11 +108,7 @@ extension MainWorkspaceView {
   }
 
   func workspaceNavigationShellSection(snapshot: WorkspaceShellSnapshot) -> some View {
-    NavigationSplitView(columnVisibility: .constant(.detailOnly)) {
-      workspaceSidebarSection
-    } detail: {
-      workspaceDetailSection(snapshot: snapshot)
-    }
+    workspaceDetailSection(snapshot: snapshot)
   }
 
   func workspaceDetailSection(snapshot: WorkspaceShellSnapshot) -> some View {

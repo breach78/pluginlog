@@ -617,7 +617,7 @@ struct ScheduleBoardView: View {
 
   @AppStorage("BrainUnfog.ScheduleBoard.allDayVisibleRowCount")
   var storedAllDayVisibleRowCount: Int = 4
-  @State var dayRange: ClosedRange<Int> = -2...30
+  @State var dayRange: ClosedRange<Int> = -7...30
   // Root retains the shared scroll and quick-create state consumed by both the all-day rail and timed grid.
   @State var horizontalOffsetX: CGFloat = 0
   @State var verticalOffsetY: CGFloat = 0
@@ -669,7 +669,7 @@ struct ScheduleBoardView: View {
 
   let titleColumnWidth: CGFloat = 76
   let calendarMenuLeadingInset: CGFloat = 18
-  let pastDayBuffer = 2
+  let pastDayBuffer = 7
   let defaultVisibleStartDayOffset = 0
   let defaultVisibleStartHour = 3
   let futureDayWindow = 30

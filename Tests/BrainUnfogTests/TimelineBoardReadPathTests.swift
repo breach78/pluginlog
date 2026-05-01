@@ -30,9 +30,53 @@ final class TimelineBoardReadPathTests: XCTestCase {
     )
   }
 
-  func testTimelineVisibleDayRangeIsFourDaysBeforeThroughTwoMonthsAfterToday() {
-    XCTAssertEqual(TimelineBoardReadPath.visibleDayRange, -4...61)
-    XCTAssertEqual(Array(TimelineBoardReadPath.visibleDayRange).count, 66)
+  func testTimelineVisibleDayRangeIsOneWeekBeforeThroughTwoMonthsAfterToday() {
+    XCTAssertEqual(TimelineBoardReadPath.visibleDayRange, -7...61)
+    XCTAssertEqual(Array(TimelineBoardReadPath.visibleDayRange).count, 69)
+  }
+
+  func testTimelineVisibleDayRangeExpandsOneWeekBeforeOldestPastIncompleteTask() {
+    let calendar = Calendar(identifier: .gregorian)
+    let anchorDate = calendar.date(from: DateComponents(year: 2026, month: 5, day: 1))!
+    let oldIncompleteDay = calendar.date(byAdding: .day, value: -12, to: anchorDate)!
+    let futureIncompleteDay = calendar.date(byAdding: .day, value: 4, to: anchorDate)!
+    let bar = makeBar(
+      projectID: UUID(),
+      title: "Project",
+      dailyTaskCounts: [
+        oldIncompleteDay: 1,
+        futureIncompleteDay: 1,
+      ]
+    )
+
+    XCTAssertEqual(
+      TimelineBoardReadPath.resolvedVisibleDayRange(
+        for: [bar],
+        anchorDate: anchorDate,
+        calendar: calendar
+      ),
+      -19...61
+    )
+  }
+
+  func testTimelineVisibleDayRangeIgnoresFutureIncompleteTasksWhenExpandingPast() {
+    let calendar = Calendar(identifier: .gregorian)
+    let anchorDate = calendar.date(from: DateComponents(year: 2026, month: 5, day: 1))!
+    let futureIncompleteDay = calendar.date(byAdding: .day, value: 4, to: anchorDate)!
+    let bar = makeBar(
+      projectID: UUID(),
+      title: "Project",
+      dailyTaskCounts: [futureIncompleteDay: 1]
+    )
+
+    XCTAssertEqual(
+      TimelineBoardReadPath.resolvedVisibleDayRange(
+        for: [bar],
+        anchorDate: anchorDate,
+        calendar: calendar
+      ),
+      TimelineBoardReadPath.visibleDayRange
+    )
   }
 
   func testLoadingStateStopsWhenRetainedReadIsBlocked() {
@@ -396,11 +440,11 @@ final class TimelineBoardReadPathTests: XCTestCase {
         dayRange: TimelineBoardReadPath.visibleDayRange,
         dayColumnWidth: 44
       ),
-      -4
+      -7
     )
     XCTAssertEqual(
       TimelineBoardReadPath.dayHeaderHoverOffset(
-        locationX: 44 * 4 + 1,
+        locationX: 44 * 7 + 1,
         dayRange: TimelineBoardReadPath.visibleDayRange,
         dayColumnWidth: 44
       ),
@@ -408,7 +452,7 @@ final class TimelineBoardReadPathTests: XCTestCase {
     )
     XCTAssertNil(
       TimelineBoardReadPath.dayHeaderHoverOffset(
-        locationX: 44 * 66,
+        locationX: 44 * 69,
         dayRange: TimelineBoardReadPath.visibleDayRange,
         dayColumnWidth: 44
       )
@@ -425,7 +469,7 @@ final class TimelineBoardReadPathTests: XCTestCase {
         dayRange: TimelineBoardReadPath.visibleDayRange,
         dayColumnWidth: 44
       ),
-      -2
+      -5
     )
     XCTAssertNil(
       TimelineBoardReadPath.dayHeaderHoverOffset(
@@ -683,6 +727,7 @@ final class TimelineBoardReadPathTests: XCTestCase {
     projectID: UUID,
     title: String,
     colorHex: String? = nil,
+    dailyTaskCounts: [Date: Int] = [:],
     dailyTaskPreviews: [Date: TimelineDayPreview] = [:],
     dailyCompletedTaskPreviews: [Date: TimelineDayPreview] = [:]
   ) -> TimelineProjectBar {
@@ -697,7 +742,7 @@ final class TimelineBoardReadPathTests: XCTestCase {
       progress: ProjectProgressStage.do.progressValue,
       remainingTaskCount: 0,
       undatedRemainingTaskCount: 0,
-      dailyTaskCounts: [:],
+      dailyTaskCounts: dailyTaskCounts,
       dailyCompletedTaskCounts: [:],
       dailyPlannedWorkCounts: [:],
       dailyTaskPreviews: dailyTaskPreviews,
