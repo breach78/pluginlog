@@ -617,7 +617,7 @@ private struct WorkspaceTaskEditProjectListHost: View {
           actions: actions,
           onOpenProjectWindow: onOpenProjectWindow
         )
-        .frame(height: 360, alignment: .topLeading)
+        .frame(height: 1080, alignment: .topLeading)
         .clipped()
       } else if isLoading {
         ProgressView()
