@@ -48,6 +48,45 @@ final class ScheduleDragDropInteractionLayerTests: XCTestCase {
     XCTAssertNil(preview.durationMinutes)
   }
 
+  func testDragPreviewCanDisableDateSnapping() {
+    let calendar = Calendar(identifier: .gregorian)
+    let originalDay = Date(timeIntervalSince1970: 0)
+
+    let preview = ScheduleDragDropInteractionLayer.preview(
+      originalDay: originalDay,
+      originalTimeMinutes: 10 * 60,
+      originalDurationMinutes: 60,
+      translation: CGSize(width: 260, height: 0),
+      originalPointerScheduleY: 10 * 60,
+      originalTopScheduleY: 10 * 60,
+      allowsDayChange: false,
+      metrics: metrics,
+      calendar: calendar
+    )
+
+    XCTAssertEqual(preview.day, originalDay)
+  }
+
+  func testDragPreviewSnapsDateWhenDateChangesAreAllowed() throws {
+    let calendar = Calendar(identifier: .gregorian)
+    let originalDay = Date(timeIntervalSince1970: 0)
+    let expectedDay = try XCTUnwrap(calendar.date(byAdding: .day, value: 2, to: originalDay))
+
+    let preview = ScheduleDragDropInteractionLayer.preview(
+      originalDay: originalDay,
+      originalTimeMinutes: 10 * 60,
+      originalDurationMinutes: 60,
+      translation: CGSize(width: 260, height: 0),
+      originalPointerScheduleY: 10 * 60,
+      originalTopScheduleY: 10 * 60,
+      allowsDayChange: true,
+      metrics: metrics,
+      calendar: calendar
+    )
+
+    XCTAssertEqual(preview.day, expectedDay)
+  }
+
   func testPointerViewportXMapsToVisibleDayColumn() {
     let calendar = Calendar(identifier: .gregorian)
     let firstDay = Date(timeIntervalSince1970: 0)

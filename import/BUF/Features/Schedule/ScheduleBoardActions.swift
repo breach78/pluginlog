@@ -140,6 +140,10 @@ struct ScheduleTaskCompletionState: Equatable {
 }
 
 extension ScheduleBoardView {
+  var allowsScheduleDragDateSnapping: Bool {
+    false
+  }
+
   func allowScheduleMutation(_ feature: String) -> Bool {
     appState.errorMessage = RetainedSurfaceMutationGate.block(.schedule, feature: feature)
     return false
@@ -373,6 +377,7 @@ extension ScheduleBoardView {
       ? dragState.originalTopScheduleY + dragState.translation.height + currentScrollOffsetY
       : nil
 
+    let allowsDateSnap = allowsScheduleDragDateSnapping && !dragState.isPreparationSlot
     let preview = ScheduleDragDropInteractionLayer.preview(
       originalDay: dragState.originalDay,
       originalTimeMinutes: dragState.originalTimeMinutes,
@@ -383,7 +388,7 @@ extension ScheduleBoardView {
       currentPointerScheduleY: currentPointerScheduleY,
       currentTopScheduleY: currentTopScheduleY,
       forceAllDay: dragState.isInAllDayZone,
-      allowsDayChange: !dragState.isPreparationSlot,
+      allowsDayChange: allowsDateSnap,
       allowsAllDay: true,
       metrics: interactionMetrics,
       calendar: calendar
@@ -391,7 +396,7 @@ extension ScheduleBoardView {
     return previewWithPointerDay(
       preview,
       pointerViewportLocation: dragState.currentPointerViewportLocation,
-      allowsDayChange: !dragState.isPreparationSlot
+      allowsDayChange: allowsDateSnap
     )
   }
 
@@ -414,13 +419,14 @@ extension ScheduleBoardView {
       currentPointerScheduleY: currentPointerScheduleY,
       currentTopScheduleY: currentTopScheduleY,
       forceAllDay: dragState.isInAllDayZone,
+      allowsDayChange: allowsScheduleDragDateSnapping,
       metrics: interactionMetrics,
       calendar: calendar
     )
     return previewWithPointerDay(
       preview,
       pointerViewportLocation: dragState.currentPointerViewportLocation,
-      allowsDayChange: true
+      allowsDayChange: allowsScheduleDragDateSnapping
     )
   }
 
