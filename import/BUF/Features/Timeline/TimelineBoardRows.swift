@@ -344,6 +344,7 @@ extension TimelineBoardView {
 
     return HStack(spacing: 8) {
       progressStageMenu(for: bar, rowHeight: inlineControlHeight)
+        .frame(width: 18, height: inlineControlHeight, alignment: .center)
 
       HStack(spacing: 8) {
         Text(bar.title)

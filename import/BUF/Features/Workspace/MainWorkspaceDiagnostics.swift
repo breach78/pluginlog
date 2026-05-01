@@ -339,6 +339,37 @@ struct WorkspaceLayoutProbe: NSViewRepresentable {
 
 @MainActor
 enum WorkspaceChromeRepair {
+  private static let trafficLightOffset = CGSize(width: 10, height: 10)
+  private static let standardWindowButtonTypes: [NSWindow.ButtonType] = [
+    .closeButton,
+    .miniaturizeButton,
+    .zoomButton,
+  ]
+  private static var standardWindowButtonBaseFrames: [ObjectIdentifier: CGRect] = [:]
+
+  static func adjustWindowChrome(from markerView: NSView?) {
+    guard let window = markerView?.window else { return }
+
+    for buttonType in standardWindowButtonTypes {
+      guard let button = window.standardWindowButton(buttonType) else { continue }
+      let baseFrame = standardWindowButtonBaseFrame(for: button)
+      let yOffset =
+        button.superview?.isFlipped == true
+        ? trafficLightOffset.height
+        : -trafficLightOffset.height
+      let targetOrigin = CGPoint(
+        x: baseFrame.minX + trafficLightOffset.width,
+        y: baseFrame.minY + yOffset
+      )
+
+      if abs(button.frame.minX - targetOrigin.x) > 0.5
+        || abs(button.frame.minY - targetOrigin.y) > 0.5
+      {
+        button.setFrameOrigin(targetOrigin)
+      }
+    }
+  }
+
   static func installZeroInsetInspectorClipView(from markerView: NSView?) {
     guard let scrollView = enclosingScrollView(for: markerView) else { return }
     let zeroInsets = NSEdgeInsets(top: 0, left: 0, bottom: 0, right: 0)
@@ -386,6 +417,15 @@ enum WorkspaceChromeRepair {
       current = node.superview
     }
     return nil
+  }
+
+  private static func standardWindowButtonBaseFrame(for button: NSButton) -> CGRect {
+    let buttonID = ObjectIdentifier(button)
+    if let baseFrame = standardWindowButtonBaseFrames[buttonID] {
+      return baseFrame
+    }
+    standardWindowButtonBaseFrames[buttonID] = button.frame
+    return button.frame
   }
 }
 
@@ -503,7 +543,7 @@ final class RepairView: NSView {
   private func applyRepair() {
     switch mode {
     case .windowChrome:
-      break
+      WorkspaceChromeRepair.adjustWindowChrome(from: self)
     case .inspectorScroll:
       WorkspaceChromeRepair.installZeroInsetInspectorClipView(from: self)
     }

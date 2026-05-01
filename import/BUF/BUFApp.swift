@@ -48,12 +48,12 @@ struct BUFApplication: App {
     WindowGroup("Brain Unfog", id: "main") {
       RootSceneView()
         .environmentObject(appState)
-        .navigationTitle("Brain Unfog")
         .task {
           guard !AppRuntimeEnvironment.isRunningPreview else { return }
           installSettingsMenuCommand()
         }
     }
+    .windowStyle(.hiddenTitleBar)
     .commands {
       CommandGroup(after: .appInfo) {
         Button("설정...") {

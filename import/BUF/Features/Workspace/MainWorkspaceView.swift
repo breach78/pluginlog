@@ -1094,6 +1094,11 @@ struct MainWorkspaceView: View {
   private func workspaceDecoratedRootSection(snapshot: WorkspaceShellSnapshot) -> some View {
     workspaceDebugProbeSection(snapshot: snapshot)
       .workspaceHiddenWindowToolbarBackground()
+      .background {
+        WorkspaceChromeRepairHook()
+          .frame(width: 0, height: 0)
+      }
+      .ignoresSafeArea(.container, edges: .top)
   }
 
   @ViewBuilder

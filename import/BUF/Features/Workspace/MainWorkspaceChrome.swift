@@ -18,13 +18,15 @@ extension MainWorkspaceView {
 
       Spacer()
     }
-    .padding(12)
+    .padding(.leading, workspaceTitlebarControlInset)
+    .padding(.trailing, 12)
+    .padding(.vertical, 12)
     .zIndex(4)
   }
 
   @ViewBuilder
   var headerLeadingControls: some View {
-    HStack(spacing: 6) {
+    HStack(spacing: workspaceTitlebarControlSpacing) {
       viewModeToggleButton
 
       workspaceQuickAddSection
@@ -36,29 +38,30 @@ extension MainWorkspaceView {
           appState.jumpTimelineToToday()
         }
         .buttonStyle(.bordered)
+        .frame(width: workspaceTitlebarTodayButtonWidth, height: workspaceTitlebarControlHeight)
 
-        HStack(spacing: 4) {
-          Button("-") {
-            appState.zoomOutTimelineDayColumn()
-          }
-          .buttonStyle(.bordered)
-          .disabled(!appState.canZoomOutTimelineDayColumn())
-
-          Button("+") {
-            appState.zoomInTimelineDayColumn()
-          }
-          .buttonStyle(.bordered)
-          .disabled(!appState.canZoomInTimelineDayColumn())
+        Button("-") {
+          appState.zoomOutTimelineDayColumn()
         }
+        .buttonStyle(.bordered)
+        .frame(width: workspaceTitlebarZoomButtonWidth, height: workspaceTitlebarControlHeight)
+        .disabled(!appState.canZoomOutTimelineDayColumn())
+
+        Button("+") {
+          appState.zoomInTimelineDayColumn()
+        }
+        .buttonStyle(.bordered)
+        .frame(width: workspaceTitlebarZoomButtonWidth, height: workspaceTitlebarControlHeight)
+        .disabled(!appState.canZoomInTimelineDayColumn())
       } else if appState.viewMode == .schedule {
         Button("오늘") {
           showArchive = false
           appState.jumpScheduleToToday()
         }
         .buttonStyle(.bordered)
+        .frame(width: workspaceTitlebarTodayButtonWidth, height: workspaceTitlebarControlHeight)
       }
     }
-    .padding(.leading, -6)
     .fixedSize(horizontal: true, vertical: false)
     .simultaneousGesture(
       TapGesture().onEnded {
@@ -75,7 +78,10 @@ extension MainWorkspaceView {
         Image(systemName: targetMode.iconName)
           .font(.system(size: 13, weight: .semibold))
           .foregroundStyle(.primary)
-          .frame(width: 28, height: 24)
+          .frame(
+            width: workspaceTitlebarIconButtonSize,
+            height: workspaceTitlebarControlHeight
+          )
           .contentShape(Rectangle())
       }
       .buttonStyle(.plain)
@@ -190,11 +196,10 @@ extension MainWorkspaceView {
         Circle()
           .stroke(iconColor, lineWidth: 1.5)
       }
-      .offset(x: -7)
     }
     .frame(
-      width: 24,
-      height: 28,
+      width: workspaceTitlebarIconButtonSize,
+      height: workspaceTitlebarControlHeight,
       alignment: .center
     )
     .contentShape(Rectangle())
@@ -209,5 +214,29 @@ extension MainWorkspaceView {
       return .green
     }
     return .red
+  }
+
+  var workspaceTitlebarControlInset: CGFloat {
+    134
+  }
+
+  var workspaceTitlebarControlSpacing: CGFloat {
+    10
+  }
+
+  var workspaceTitlebarIconButtonSize: CGFloat {
+    30
+  }
+
+  var workspaceTitlebarControlHeight: CGFloat {
+    30
+  }
+
+  var workspaceTitlebarTodayButtonWidth: CGFloat {
+    58
+  }
+
+  var workspaceTitlebarZoomButtonWidth: CGFloat {
+    42
   }
 }
