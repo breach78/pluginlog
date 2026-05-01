@@ -42,7 +42,9 @@ final class RetainedSetupFlowTests: XCTestCase {
     XCTAssertEqual(plist["com.apple.security.personal-information.reminders"], true)
   }
 
-  func testConfigureObsidianVaultCreatesBufRawProjectsAndRunsReminderFirstBootstrap() async throws {
+  func testConfigureObsidianVaultCreatesBufRawProjectsWithoutHelperPluginAndRunsReminderFirstBootstrap()
+    async throws
+  {
     let vaultRoot = try makeVaultRoot()
     let gateway = SetupReminderGateway()
     let calendarService = RecordingScheduleCalendarService()
@@ -62,14 +64,8 @@ final class RetainedSetupFlowTests: XCTestCase {
       .appendingPathComponent(".obsidian", isDirectory: true)
       .appendingPathComponent("plugins", isDirectory: true)
       .appendingPathComponent(ObsidianHelperPluginInstaller.pluginIdentifier, isDirectory: true)
-    XCTAssertTrue(FileManager.default.fileExists(atPath: helperPluginRoot.path))
-    XCTAssertTrue(
-      FileManager.default.fileExists(
-        atPath: helperPluginRoot
-          .appendingPathComponent("manifest.json", isDirectory: false)
-          .path
-      )
-    )
+    XCTAssertFalse(FileManager.default.fileExists(atPath: helperPluginRoot.path))
+    XCTAssertNil(appState.obsidianHelperPluginInstallStatus)
     XCTAssertFalse(
       FileManager.default.fileExists(
         atPath: vaultRoot

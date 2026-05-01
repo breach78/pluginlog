@@ -6,8 +6,16 @@ struct ObsidianHelperPluginInstallResult: Equatable {
   let version: String?
 }
 
+enum ObsidianHelperPluginAvailability {
+  /// Single runtime switch for the legacy Obsidian helper integration.
+  /// Keep installer, setup, settings, and deep-link callers aligned here.
+  static let isEnabled = false
+  static let disabledStatus = "Obsidian helper plugin은 비활성화되어 있습니다."
+}
+
 struct ObsidianHelperPluginInstaller {
   enum InstallError: LocalizedError, Equatable {
+    case disabled
     case bundledSourceMissing
     case obsidianConfigDirectoryMissing(URL)
     case manifestMissing(URL)
@@ -17,6 +25,8 @@ struct ObsidianHelperPluginInstaller {
 
     var errorDescription: String? {
       switch self {
+      case .disabled:
+        ObsidianHelperPluginAvailability.disabledStatus
       case .bundledSourceMissing:
         "번들에 Obsidian helper plugin 리소스가 없습니다."
       case .obsidianConfigDirectoryMissing(let url):
@@ -89,7 +99,10 @@ struct ObsidianHelperPluginInstaller {
     toVaultRootURL vaultRootURL: URL,
     fileManager: FileManager = .default
   ) throws -> ObsidianHelperPluginInstallResult {
-    try ObsidianHelperPluginInstaller(
+    guard ObsidianHelperPluginAvailability.isEnabled else {
+      throw InstallError.disabled
+    }
+    return try ObsidianHelperPluginInstaller(
       sourceURL: bundledSourceURL(),
       vaultRootURL: vaultRootURL,
       fileManager: fileManager
@@ -97,6 +110,9 @@ struct ObsidianHelperPluginInstaller {
   }
 
   func install() throws -> ObsidianHelperPluginInstallResult {
+    guard ObsidianHelperPluginAvailability.isEnabled else {
+      throw InstallError.disabled
+    }
     try validateSource()
 
     let layout = ObsidianVaultLayout(vaultRootURL: vaultRootURL, fileManager: fileManager)

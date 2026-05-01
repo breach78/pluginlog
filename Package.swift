@@ -21,10 +21,10 @@ let package = Package(
         ".DS_Store",
         "BrainUnfog.entitlements",
         "Info.plist",
+        "Resources/ObsidianHelperPlugin",
       ],
       resources: [
         .process("Assets.xcassets"),
-        .copy("Resources/ObsidianHelperPlugin"),
       ],
       linkerSettings: [
         .linkedLibrary("sqlite3"),

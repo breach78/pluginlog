@@ -25,23 +25,6 @@ targets:
           - Resources/ObsidianHelperPlugin
     resources:
       - path: import/BUF/Assets.xcassets
-    postBuildScripts:
-      - name: Copy Obsidian Helper Plugin
-        script: |
-          set -euo pipefail
-          SRC="${PROJECT_DIR}/import/BUF/Resources/ObsidianHelperPlugin"
-          DST="${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/ObsidianHelperPlugin"
-          rm -rf "$DST"
-          mkdir -p "$(dirname "$DST")"
-          cp -R "$SRC" "$DST"
-        inputFiles:
-          - $(PROJECT_DIR)/import/BUF/Resources/ObsidianHelperPlugin/main.js
-          - $(PROJECT_DIR)/import/BUF/Resources/ObsidianHelperPlugin/manifest.json
-          - $(PROJECT_DIR)/import/BUF/Resources/ObsidianHelperPlugin/styles.css
-        outputFiles:
-          - $(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/ObsidianHelperPlugin/main.js
-          - $(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/ObsidianHelperPlugin/manifest.json
-          - $(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/ObsidianHelperPlugin/styles.css
     dependencies:
       - sdk: libsqlite3.tbd
     settings:

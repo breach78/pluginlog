@@ -5,7 +5,6 @@ struct AppSettingsView: View {
   @AppStorage(WorkspaceUserDefaultsKey.timelineShowsHiddenProjectLists)
   private var timelineShowsHiddenProjectLists = false
   @State private var isChangingObsidianVault = false
-  @State private var isInstallingHelperPlugin = false
 
   var body: some View {
     VStack(alignment: .leading, spacing: 18) {
@@ -36,19 +35,10 @@ struct AppSettingsView: View {
           Divider()
 
           VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 10) {
-              Button("Helper plugin 설치/업데이트") {
-                installHelperPlugin()
-              }
-              .disabled(appState.obsidianVaultRootURL == nil || isInstallingHelperPlugin)
+            Label("Helper plugin 비활성화됨", systemImage: "pause.circle")
+              .foregroundStyle(.secondary)
 
-              if isInstallingHelperPlugin {
-                ProgressView()
-                  .controlSize(.small)
-              }
-            }
-
-            Text("설치 후 Obsidian의 Community plugins에서 `Brain Unfog Helper`를 한 번 활성화해야 합니다.")
+            Text("Obsidian helper plugin은 설치/업데이트하지 않고, 헬퍼 전용 포커스 링크도 호출하지 않습니다.")
               .font(.footnote)
               .foregroundStyle(.secondary)
 
@@ -106,14 +96,6 @@ struct AppSettingsView: View {
     Task { @MainActor in
       await appState.chooseObsidianVaultWithPicker(activateWhenReady: true)
       isChangingObsidianVault = false
-    }
-  }
-
-  private func installHelperPlugin() {
-    isInstallingHelperPlugin = true
-    Task { @MainActor in
-      appState.installObsidianHelperPluginForCurrentVault()
-      isInstallingHelperPlugin = false
     }
   }
 }

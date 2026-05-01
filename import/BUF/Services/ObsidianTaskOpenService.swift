@@ -30,8 +30,6 @@ enum ObsidianTaskOpenServiceError: LocalizedError, Equatable {
 }
 
 enum ObsidianDeepLinking {
-  static let taskFocusAction = "brain-unfog-focus-task"
-
   static func projectNoteURL(fileURL: URL) throws -> URL {
     var components = URLComponents()
     components.scheme = "obsidian"
@@ -62,53 +60,9 @@ enum ObsidianDeepLinking {
     return url
   }
 
-  static func taskFocusURL(
-    vaultRootURL: URL,
-    fileURL: URL,
-    blockIdentifier: String?,
-    reminderExternalIdentifier: String
-  ) throws -> URL {
-    var queryItems = [
-      ("path", fileURL.standardizedFileURL.path),
-      ("file", vaultRelativePath(fileURL: fileURL, vaultRootURL: vaultRootURL)),
-      ("reminder_external_id", reminderExternalIdentifier),
-    ]
-    if let blockIdentifier = normalized(blockIdentifier) {
-      queryItems.append(("block", normalizedBlockIdentifier(blockIdentifier)))
-    }
-
-    var components = URLComponents()
-    components.scheme = "obsidian"
-    components.host = taskFocusAction
-    components.percentEncodedQuery = encodedQuery(queryItems)
-    guard let url = components.url else {
-      throw ObsidianTaskOpenServiceError.invalidOpenURL
-    }
-    return url
-  }
-
-  private static func vaultRelativePath(fileURL: URL, vaultRootURL: URL) -> String {
-    let filePath = fileURL.standardizedFileURL.path
-    let vaultPath = vaultRootURL.standardizedFileURL.path
-    let vaultPrefix = vaultPath.hasSuffix("/") ? vaultPath : "\(vaultPath)/"
-    guard filePath.hasPrefix(vaultPrefix) else {
-      return fileURL.lastPathComponent
-    }
-    return String(filePath.dropFirst(vaultPrefix.count))
-  }
-
   private static func normalizedBlockIdentifier(_ value: String) -> String {
     let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
     return trimmed.hasPrefix("^") ? trimmed : "^\(trimmed)"
-  }
-
-  private static func normalized(_ value: String?) -> String? {
-    guard let value = value?.trimmingCharacters(in: .whitespacesAndNewlines),
-      !value.isEmpty
-    else {
-      return nil
-    }
-    return value
   }
 
   private static func encodedQuery(_ items: [(String, String)]) -> String {
@@ -165,12 +119,10 @@ enum ObsidianTaskOpenService {
     let snapshot = try await projectSnapshot(vaultRootURL: vaultRootURL, projectID: projectID)
     let task = try taskSnapshot(in: snapshot, taskID: taskID)
     let openURL: URL
-    if let reminderExternalIdentifier = normalized(task.reminderExternalIdentifier) {
-      openURL = try ObsidianDeepLinking.taskFocusURL(
-        vaultRootURL: vaultRootURL,
+    if let blockIdentifier = normalized(task.blockIdentifier) {
+      openURL = try ObsidianDeepLinking.taskBlockURL(
         fileURL: snapshot.fileURL,
-        blockIdentifier: task.blockIdentifier,
-        reminderExternalIdentifier: reminderExternalIdentifier
+        blockIdentifier: blockIdentifier
       )
     } else {
       openURL = try ObsidianDeepLinking.projectNoteURL(fileURL: snapshot.fileURL)

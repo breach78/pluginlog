@@ -37,8 +37,7 @@ final class AppSettingsWindowPresenterTests: XCTestCase {
       fileURLWithPath:
         "/Users/three/Library/Mobile Documents/iCloud~md~obsidian/Documents/Very Long Primary Obsidian Vault Name With Many Nested Words"
     )
-    appState.obsidianHelperPluginInstallStatus =
-      "Helper 설치됨: \(appState.obsidianVaultRootURL!.path)/.obsidian/plugins/brain-unfog-helper"
+    appState.obsidianHelperPluginInstallStatus = ObsidianHelperPluginAvailability.disabledStatus
     let hostingController = NSHostingController(
       rootView: AppSettingsView().environmentObject(appState)
     )

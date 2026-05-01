@@ -34,7 +34,7 @@ struct SetupContainerView: View {
           Text("첫 sync는 Reminders에서 Obsidian `raw/projects/`로 가져오는 방향으로만 실행됩니다.")
             .font(.footnote)
             .foregroundStyle(.secondary)
-          Text("`.obsidian`은 새로 만들지 않고, `.buf`, `raw/projects`, helper plugin만 준비합니다.")
+          Text("`.obsidian`은 새로 만들지 않고, `.buf`와 `raw/projects`만 준비합니다.")
             .font(.footnote)
             .foregroundStyle(.secondary)
         }

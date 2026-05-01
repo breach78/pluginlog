@@ -3,6 +3,11 @@ import Foundation
 extension AppState {
   @discardableResult
   func installObsidianHelperPluginForCurrentVault() -> ObsidianHelperPluginInstallResult? {
+    guard ObsidianHelperPluginAvailability.isEnabled else {
+      obsidianHelperPluginInstallStatus = ObsidianHelperPluginAvailability.disabledStatus
+      return nil
+    }
+
     guard let obsidianVaultRootURL else {
       obsidianHelperPluginInstallStatus = "Obsidian vault가 설정되지 않았습니다."
       return nil
