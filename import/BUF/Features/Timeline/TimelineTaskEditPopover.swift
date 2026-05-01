@@ -281,7 +281,8 @@ struct TimelineTaskEditPopoverContent: View {
           font: TaskEditTypography.noteNSFont,
           vaultRootURL: vaultRootURL,
           allowsNewlines: true,
-          lineHeightMultiple: 1.1
+          lineHeightMultiple: 1.1,
+          allowsMailMessageDrops: true
         )
         .frame(minHeight: TaskEditTypography.noteMinimumHeight)
         .frame(height: max(TaskEditTypography.noteMinimumHeight, noteHeight))
