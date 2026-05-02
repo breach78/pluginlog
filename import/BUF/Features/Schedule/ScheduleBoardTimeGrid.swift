@@ -528,12 +528,14 @@ extension ScheduleBoardView {
     .contentShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
     .onTapGesture(count: 2) {
       guard shouldHandleTaskTap() else { return }
+      guard !taskRow.isLocalCompletedRecurringOccurrence else { return }
       revealScheduleTask(taskID: taskRow.id, projectID: taskDescriptor.projectID)
     }
     .simultaneousGesture(
       TapGesture()
         .onEnded {
           guard shouldHandleTaskTap() else { return }
+          guard !taskRow.isLocalCompletedRecurringOccurrence else { return }
           showScheduleTaskEditor(taskDescriptor)
         }
     )
@@ -942,12 +944,14 @@ extension ScheduleBoardView {
     .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
     .onTapGesture(count: 2) {
       guard shouldHandleTaskTap() else { return }
+      guard !taskRow.isLocalCompletedRecurringOccurrence else { return }
       revealScheduleTask(taskID: taskRow.id, projectID: taskDescriptor.projectID)
     }
     .simultaneousGesture(
       TapGesture()
         .onEnded {
           guard shouldHandleTaskTap() else { return }
+          guard !taskRow.isLocalCompletedRecurringOccurrence else { return }
           showScheduleTaskEditor(taskDescriptor)
         }
     )
@@ -1875,10 +1879,12 @@ extension ScheduleBoardView {
 
   @ViewBuilder
   func scheduleTaskContextMenu(_ taskDescriptor: WorkspaceScheduleTaskDescriptor) -> some View {
-    Button(role: .destructive) {
-      deleteScheduleTask(taskDescriptor.taskRow.id)
-    } label: {
-      Label("삭제", systemImage: "trash")
+    if !taskDescriptor.taskRow.isLocalCompletedRecurringOccurrence {
+      Button(role: .destructive) {
+        deleteScheduleTask(taskDescriptor.taskRow.id)
+      } label: {
+        Label("삭제", systemImage: "trash")
+      }
     }
   }
 
@@ -1949,6 +1955,7 @@ extension ScheduleBoardView {
       .contentShape(Rectangle())
     }
     .buttonStyle(.plain)
+    .allowsHitTesting(!taskRow.isLocalCompletedRecurringOccurrence)
     .help(
       targetCompletedWorkUnits == nil
         ? (taskRow.isCompleted ? "완료 취소" : "완료")

@@ -524,6 +524,7 @@ extension ScheduleBoardView {
     let taskID = taskDescriptor.taskRow.id
     return DragGesture(minimumDistance: 6)
       .onChanged { value in
+        guard !taskDescriptor.taskRow.isLocalCompletedRecurringOccurrence else { return }
         guard activeTaskResize == nil, activeCalendarDrag == nil, activeCalendarResize == nil else { return }
         var dragState = activeTaskDrag
         if dragState?.entryID != entryID {
@@ -577,6 +578,7 @@ extension ScheduleBoardView {
         )
       }
       .onEnded { value in
+        guard !taskDescriptor.taskRow.isLocalCompletedRecurringOccurrence else { return }
         guard let dragState = activeTaskDrag, dragState.entryID == entryID else { return }
         suppressTaskTap()
         var resolvedDragState = dragState
@@ -773,6 +775,7 @@ extension ScheduleBoardView {
     let taskID = taskDescriptor.taskRow.id
     return DragGesture(minimumDistance: 0)
       .onChanged { value in
+        guard !taskDescriptor.taskRow.isLocalCompletedRecurringOccurrence else { return }
         guard activeTaskDrag == nil, activeCalendarDrag == nil, activeCalendarResize == nil else {
           return
         }
@@ -795,6 +798,7 @@ extension ScheduleBoardView {
         activeTaskResize?.translationHeight = value.translation.height
       }
       .onEnded { _ in
+        guard !taskDescriptor.taskRow.isLocalCompletedRecurringOccurrence else { return }
         guard let resizeState = activeTaskResize, resizeState.entryID == entryID else { return }
         suppressTaskTap()
         activeTaskResize = nil

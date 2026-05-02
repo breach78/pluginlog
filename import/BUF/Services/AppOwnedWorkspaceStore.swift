@@ -22,6 +22,8 @@ enum AppOwnedWorkspaceStoreError: LocalizedError {
 }
 
 actor AppOwnedWorkspaceStore {
+  private static let localCompletedRecurringMarker = "::app-completed::"
+
   struct ProjectReference: Equatable, Sendable {
     let projectID: UUID
     let reminderListIdentifier: String
@@ -126,6 +128,7 @@ actor AppOwnedWorkspaceStore {
     do {
       let preservedProjectSupplements = try loadProjectSupplements(db, preservesImportedColor: true)
       let preservedTaskSupplements = try loadTaskSupplements(db)
+      let preservedCompletedRecurringOccurrences = try loadLocalCompletedRecurringOccurrenceRows(db)
       let taskIdentityResolver = try loadTaskIdentityResolver(db)
       try exec(db, "DELETE FROM app_tasks;")
       try exec(db, "DELETE FROM app_projects;")
@@ -175,6 +178,7 @@ actor AppOwnedWorkspaceStore {
         durationAssignmentSQL: "scheduled_duration_minutes = COALESCE(scheduled_duration_minutes, ?)",
         rowOrderAssignmentSQL: "row_order = COALESCE(?, row_order)"
       )
+      try restoreLocalCompletedRecurringOccurrences(db, rows: preservedCompletedRecurringOccurrences)
       try exec(db, "COMMIT;")
     } catch {
       try? exec(db, "ROLLBACK;")
@@ -462,6 +466,66 @@ actor AppOwnedWorkspaceStore {
     )
   }
 
+  @discardableResult
+  func upsertLocalCompletedRecurringOccurrence(
+    projectID: UUID,
+    sourceTask: TaskReference,
+    completionDate: Date,
+    modifiedAt: Date
+  ) throws -> UUID? {
+    guard let externalIdentifier = Self.localCompletedRecurringExternalIdentifier(
+      baseExternalIdentifier: sourceTask.reminderExternalIdentifier,
+      dueDate: sourceTask.dueDate,
+      hasExplicitTime: sourceTask.hasExplicitTime
+    ) else {
+      return nil
+    }
+    let taskID = ReminderProjectionIdentity.taskID(for: externalIdentifier)
+    try upsertTask(
+      projectID: projectID,
+      taskID: taskID,
+      reminderIdentifier: "app-completed:\(externalIdentifier)",
+      reminderExternalIdentifier: externalIdentifier,
+      title: sourceTask.title,
+      noteText: sourceTask.noteText,
+      isCompleted: true,
+      completionDate: completionDate,
+      dueDate: sourceTask.dueDate,
+      hasExplicitTime: sourceTask.hasExplicitTime,
+      durationMinutes: sourceTask.durationMinutes,
+      recurrenceRuleRaw: nil,
+      modifiedAt: modifiedAt,
+      appendIfMissing: true
+    )
+    return taskID
+  }
+
+  func deleteLocalCompletedRecurringOccurrence(
+    projectID: UUID,
+    baseExternalIdentifier: String?,
+    dueDate: Date?,
+    hasExplicitTime: Bool
+  ) throws {
+    guard let externalIdentifier = Self.localCompletedRecurringExternalIdentifier(
+      baseExternalIdentifier: baseExternalIdentifier,
+      dueDate: dueDate,
+      hasExplicitTime: hasExplicitTime
+    ) else {
+      return
+    }
+    let db = try openDatabase()
+    defer { sqlite3_close(db) }
+    try migrate(db)
+    try execute(
+      db,
+      "DELETE FROM app_tasks WHERE project_id = ? AND reminder_external_identifier = ?;",
+      bindings: [
+        .text(projectID.uuidString),
+        .text(externalIdentifier),
+      ]
+    )
+  }
+
   func moveTask(taskID: UUID, toProjectID projectID: UUID) throws {
     let db = try openDatabase()
     defer { sqlite3_close(db) }
@@ -666,6 +730,27 @@ actor AppOwnedWorkspaceStore {
     let isCompleted: Bool
   }
 
+  private struct LocalCompletedRecurringOccurrenceRow {
+    let taskID: String
+    let projectID: String
+    let reminderIdentifier: String
+    let reminderExternalIdentifier: String
+    let title: String
+    let noteText: String
+    let completionDate: Date?
+    let startDate: Date?
+    let dueDate: Date?
+    let hasExplicitTime: Bool
+    let durationMinutes: Int?
+    let priority: Int
+    let isFlagged: Bool
+    let requiredWorkDays: Int
+    let attachmentCount: Int
+    let createdAt: Date
+    let modifiedAt: Date
+    let rowOrder: Int
+  }
+
   private struct TaskIdentityResolver {
     let idsByExternalIdentifier: [String: UUID]
     let recurringIDsBySignature: [RecurringTaskSignature: UUID]
@@ -795,6 +880,111 @@ actor AppOwnedWorkspaceStore {
     }
   }
 
+  private func loadLocalCompletedRecurringOccurrenceRows(
+    _ db: OpaquePointer
+  ) throws -> [LocalCompletedRecurringOccurrenceRow] {
+    try query(
+      db,
+      """
+      SELECT id, project_id, reminder_identifier, reminder_external_identifier, title, note_text,
+        completion_date, start_date, due_date, schedule_has_explicit_time,
+        scheduled_duration_minutes, priority, is_flagged, required_work_days, attachment_count,
+        created_at, modified_at, row_order
+      FROM app_tasks
+      WHERE is_completed = 1
+        AND reminder_external_identifier LIKE \(sqlStringLiteral("%\(Self.localCompletedRecurringMarker)%"));
+      """
+    ) { statement in
+      LocalCompletedRecurringOccurrenceRow(
+        taskID: columnText(statement, 0) ?? "",
+        projectID: columnText(statement, 1) ?? "",
+        reminderIdentifier: columnText(statement, 2) ?? "",
+        reminderExternalIdentifier: columnText(statement, 3) ?? "",
+        title: columnText(statement, 4) ?? "",
+        noteText: columnText(statement, 5) ?? "",
+        completionDate: columnDouble(statement, 6).map(Date.init(timeIntervalSinceReferenceDate:)),
+        startDate: columnDouble(statement, 7).map(Date.init(timeIntervalSinceReferenceDate:)),
+        dueDate: columnDouble(statement, 8).map(Date.init(timeIntervalSinceReferenceDate:)),
+        hasExplicitTime: columnInt(statement, 9) == 1,
+        durationMinutes: columnInt(statement, 10).flatMap { $0 > 0 ? $0 : nil },
+        priority: columnInt(statement, 11) ?? 0,
+        isFlagged: columnInt(statement, 12) == 1,
+        requiredWorkDays: columnInt(statement, 13) ?? 0,
+        attachmentCount: columnInt(statement, 14) ?? 0,
+        createdAt: Date(timeIntervalSinceReferenceDate: columnDouble(statement, 15) ?? 0),
+        modifiedAt: Date(timeIntervalSinceReferenceDate: columnDouble(statement, 16) ?? 0),
+        rowOrder: columnInt(statement, 17) ?? 0
+      )
+    }
+  }
+
+  private func restoreLocalCompletedRecurringOccurrences(
+    _ db: OpaquePointer,
+    rows: [LocalCompletedRecurringOccurrenceRow]
+  ) throws {
+    for row in rows {
+      guard let baseExternalIdentifier = Self.localCompletedRecurringBaseIdentifier(
+        from: row.reminderExternalIdentifier
+      ),
+        try hasActiveRecurringTask(
+          db,
+          projectID: row.projectID,
+          externalIdentifier: baseExternalIdentifier
+        )
+      else {
+        continue
+      }
+      try execute(
+        db,
+        """
+        INSERT OR REPLACE INTO app_tasks (
+          id, project_id, reminder_identifier, reminder_external_identifier, parent_task_id,
+          title, note_text, is_completed, completion_date, start_date, due_date,
+          schedule_has_explicit_time, scheduled_duration_minutes, priority, recurrence_rule_raw,
+          is_flagged, required_work_days, attachment_count, created_at, modified_at, row_order
+        ) VALUES (?, ?, ?, ?, NULL, ?, ?, 1, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?);
+        """,
+        bindings: [
+          .text(row.taskID),
+          .text(row.projectID),
+          .text(row.reminderIdentifier),
+          .text(row.reminderExternalIdentifier),
+          .text(row.title),
+          .text(row.noteText),
+          .optionalDouble(row.completionDate?.timeIntervalSinceReferenceDate),
+          .optionalDouble(row.startDate?.timeIntervalSinceReferenceDate),
+          .optionalDouble(row.dueDate?.timeIntervalSinceReferenceDate),
+          .int(row.hasExplicitTime ? 1 : 0),
+          .optionalInt(row.durationMinutes),
+          .int(row.priority),
+          .int(row.isFlagged ? 1 : 0),
+          .int(row.requiredWorkDays),
+          .int(row.attachmentCount),
+          .double(row.createdAt.timeIntervalSinceReferenceDate),
+          .double(row.modifiedAt.timeIntervalSinceReferenceDate),
+          .int(row.rowOrder),
+        ]
+      )
+    }
+  }
+
+  private func hasActiveRecurringTask(
+    _ db: OpaquePointer,
+    projectID: String,
+    externalIdentifier: String
+  ) throws -> Bool {
+    try scalarInt(
+      db,
+      sql: """
+      SELECT COUNT(*) FROM app_tasks
+      WHERE project_id = \(sqlStringLiteral(projectID))
+        AND reminder_external_identifier = \(sqlStringLiteral(externalIdentifier))
+        AND is_completed = 0
+        AND recurrence_rule_raw IS NOT NULL;
+      """
+    ) > 0
+  }
+
   private func loadProjects(_ db: OpaquePointer) throws -> [StoredProject] {
     try query(
       db,
@@ -878,6 +1068,10 @@ actor AppOwnedWorkspaceStore {
     return result.mapValues(tasksHidingShadowedCompletedRecurringOccurrences(_:))
   }
 
+  static func isLocalCompletedRecurringExternalIdentifier(_ externalIdentifier: String?) -> Bool {
+    normalizedValue(externalIdentifier)?.contains(localCompletedRecurringMarker) ?? false
+  }
+
   private func tasksHidingShadowedCompletedRecurringOccurrences(
     _ tasks: [RetainedTask]
   ) -> [RetainedTask] {
@@ -901,6 +1095,9 @@ actor AppOwnedWorkspaceStore {
     }
     return tasks.filter { task in
       guard task.isCompleted else { return true }
+      if Self.isLocalCompletedRecurringExternalIdentifier(task.identity.reminderExternalIdentifier) {
+        return true
+      }
       if let externalIdentifier = task.identity.reminderExternalIdentifier,
         let baseIdentifier = completedRecurringBaseIdentifier(from: externalIdentifier),
         activeRecurringExternalIdentifiers.contains(baseIdentifier)
@@ -951,6 +1148,40 @@ actor AppOwnedWorkspaceStore {
     guard let markerRange = externalIdentifier.range(of: marker) else { return nil }
     let baseIdentifier = String(externalIdentifier[..<markerRange.lowerBound])
     return baseIdentifier.isEmpty ? nil : baseIdentifier
+  }
+
+  private static func localCompletedRecurringExternalIdentifier(
+    baseExternalIdentifier: String?,
+    dueDate: Date?,
+    hasExplicitTime: Bool
+  ) -> String? {
+    guard let baseExternalIdentifier = normalizedValue(baseExternalIdentifier) else {
+      return nil
+    }
+    let occurrenceKey = ReminderScheduleMetadataCodec.encodeDate(
+      dueDate,
+      hasExplicitTime: hasExplicitTime
+    ) ?? "undated"
+    return "\(baseExternalIdentifier)\(localCompletedRecurringMarker)\(occurrenceKey)"
+  }
+
+  private static func localCompletedRecurringBaseIdentifier(
+    from externalIdentifier: String
+  ) -> String? {
+    guard let markerRange = externalIdentifier.range(of: localCompletedRecurringMarker) else {
+      return nil
+    }
+    let baseIdentifier = String(externalIdentifier[..<markerRange.lowerBound])
+    return baseIdentifier.isEmpty ? nil : baseIdentifier
+  }
+
+  private static func normalizedValue(_ value: String?) -> String? {
+    guard let value = value?.trimmingCharacters(in: .whitespacesAndNewlines),
+      !value.isEmpty
+    else {
+      return nil
+    }
+    return value
   }
 
   private func completedRecurringTaskCandidate(

@@ -105,6 +105,7 @@ final class WorkspaceOverdueTaskRolloverPlannerTests: XCTestCase {
       isCompleted: isCompleted,
       completionDate: nil,
       recurrenceRuleRaw: nil,
+      isLocalCompletedRecurringOccurrence: false,
       attachmentCount: 0,
       reminderNoteText: "",
       requiredWorkDays: 0,

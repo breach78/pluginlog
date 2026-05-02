@@ -188,10 +188,11 @@ enum AppOwnedRetainedTaskCommandService {
   ) async throws -> RetainedTaskCommandResult {
     let task = try await store.taskReference(projectID: projectID, taskID: taskID)
     let reference = reminderReference(task)
+    let resolvedCompletionDate = completionDate ?? .now
     guard let metadata = try reminderProjectProvider.setTaskCompletion(
       for: reference,
       isCompleted: isCompleted,
-      completionDate: isCompleted ? (completionDate ?? .now) : nil
+      completionDate: isCompleted ? resolvedCompletionDate : nil
     ) else {
       throw RetainedTaskCommandError.reminderOwnerUnresolved(taskID)
     }
@@ -216,11 +217,13 @@ enum AppOwnedRetainedTaskCommandService {
           reminderProjectProvider: reminderProjectProvider
         ) ?? remoteSnapshotClearingExplicitTime(remoteSnapshot, modifiedAt: scheduleMetadata.modifiedAt)
       }
+      let activeReminderExternalIdentifier =
+        remoteSnapshot.externalIdentifier ?? task.reminderExternalIdentifier
       try await store.upsertTask(
         projectID: projectID,
         taskID: taskID,
         reminderIdentifier: remoteSnapshot.identifier,
-        reminderExternalIdentifier: remoteSnapshot.externalIdentifier ?? task.reminderExternalIdentifier,
+        reminderExternalIdentifier: activeReminderExternalIdentifier,
         title: remoteSnapshot.title,
         noteText: remoteSnapshot.noteText,
         isCompleted: remoteSnapshot.isCompleted,
@@ -232,8 +235,27 @@ enum AppOwnedRetainedTaskCommandService {
         modifiedAt: remoteSnapshot.modifiedAt,
         appendIfMissing: false
       )
+      _ = try await store.upsertLocalCompletedRecurringOccurrence(
+        projectID: projectID,
+        sourceTask: AppOwnedWorkspaceStore.TaskReference(
+          projectID: task.projectID,
+          taskID: task.taskID,
+          reminderIdentifier: task.reminderIdentifier,
+          reminderExternalIdentifier: activeReminderExternalIdentifier,
+          title: task.title,
+          noteText: task.noteText,
+          isCompleted: true,
+          completionDate: resolvedCompletionDate,
+          dueDate: task.dueDate,
+          hasExplicitTime: task.hasExplicitTime,
+          durationMinutes: task.durationMinutes,
+          recurrenceRuleRaw: task.recurrenceRuleRaw
+        ),
+        completionDate: resolvedCompletionDate,
+        modifiedAt: remoteSnapshot.modifiedAt
+      )
       updateBaseline(
-        reminderExternalIdentifier: remoteSnapshot.externalIdentifier ?? task.reminderExternalIdentifier,
+        reminderExternalIdentifier: activeReminderExternalIdentifier,
         title: remoteSnapshot.title,
         isCompleted: remoteSnapshot.isCompleted,
         noteText: remoteSnapshot.noteText,
@@ -244,7 +266,7 @@ enum AppOwnedRetainedTaskCommandService {
       TaskIdentityBridgeStore.upsertTask(
         taskID: taskID,
         title: remoteSnapshot.title,
-        reminderExternalIdentifier: remoteSnapshot.externalIdentifier ?? task.reminderExternalIdentifier,
+        reminderExternalIdentifier: activeReminderExternalIdentifier,
         ownerProjectID: projectID
       )
       return commandResult(projectID: projectID, taskID: taskID)
@@ -257,7 +279,7 @@ enum AppOwnedRetainedTaskCommandService {
       title: task.title,
       noteText: task.noteText,
       isCompleted: isCompleted,
-      completionDate: isCompleted ? (completionDate ?? .now) : nil,
+      completionDate: isCompleted ? resolvedCompletionDate : nil,
       dueDate: task.dueDate,
       hasExplicitTime: task.hasExplicitTime,
       durationMinutes: task.durationMinutes,
@@ -403,6 +425,12 @@ enum AppOwnedRetainedTaskCommandService {
         recurrenceRuleRaw: recurrenceRuleRaw,
         modifiedAt: storedModifiedAt,
         appendIfMissing: false
+      )
+      try await store.deleteLocalCompletedRecurringOccurrence(
+        projectID: project.projectID,
+        baseExternalIdentifier: task.reminderExternalIdentifier,
+        dueDate: dueDate,
+        hasExplicitTime: hasExplicitTime
       )
       if let oldExternalIdentifier = normalized(task.reminderExternalIdentifier),
         oldExternalIdentifier != reminderExternalIdentifier

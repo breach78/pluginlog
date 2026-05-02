@@ -321,6 +321,8 @@ enum RetainedWorkspaceSurfaceProjectionBuilder {
       isCompleted: task.isCompleted,
       completionDate: nil,
       recurrenceRuleRaw: task.schedule.canonicalRepeatRule,
+      isLocalCompletedRecurringOccurrence: AppOwnedWorkspaceStore
+        .isLocalCompletedRecurringExternalIdentifier(task.identity.reminderExternalIdentifier),
       attachmentCount: 0,
       reminderNoteText: task.noteText,
       requiredWorkDays: 0,

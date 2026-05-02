@@ -180,16 +180,29 @@ final class AppOwnedRetainedTaskCommandServiceTests: XCTestCase {
       reminderProjectProvider: provider
     )
     let snapshot = try await fixture.store.loadRetainedWorkspaceSnapshot(projectIDs: [fixture.projectID])
-    let task = try XCTUnwrap(snapshot.projects.first?.tasks.first)
+    let tasks = try XCTUnwrap(snapshot.projects.first?.tasks)
+    let task = try XCTUnwrap(tasks.first { !$0.isCompleted })
+    let completedOccurrence = try XCTUnwrap(tasks.first { $0.isCompleted })
 
     XCTAssertEqual(provider.completionUpdate?.0, taskID)
     XCTAssertEqual(provider.scheduleUpdate?.0, nextDueDate)
     XCTAssertEqual(provider.scheduleUpdate?.1, false)
+    XCTAssertEqual(tasks.count, 2)
     XCTAssertFalse(task.isCompleted)
     XCTAssertEqual(task.schedule.parsedDate, nextDueDate)
     XCTAssertFalse(task.schedule.hasExplicitTime)
     XCTAssertNil(task.schedule.durationMinutes)
     XCTAssertEqual(task.schedule.rawRepeatRule, "daily")
+    XCTAssertEqual(completedOccurrence.title, "Recurring")
+    XCTAssertEqual(completedOccurrence.schedule.parsedDate, dueDate)
+    XCTAssertTrue(completedOccurrence.schedule.hasExplicitTime)
+    XCTAssertEqual(completedOccurrence.schedule.durationMinutes, 45)
+    XCTAssertNil(completedOccurrence.schedule.rawRepeatRule)
+    XCTAssertTrue(
+      AppOwnedWorkspaceStore.isLocalCompletedRecurringExternalIdentifier(
+        completedOccurrence.identity.reminderExternalIdentifier
+      )
+    )
   }
 
   @MainActor
@@ -211,6 +224,26 @@ final class AppOwnedRetainedTaskCommandServiceTests: XCTestCase {
       modifiedAt: Date(timeIntervalSinceReferenceDate: 900)
     )
     let taskID = ReminderProjectionIdentity.taskID(for: "task-1")
+    let sourceTask = try await fixture.store.taskReference(projectID: fixture.projectID, taskID: taskID)
+    _ = try await fixture.store.upsertLocalCompletedRecurringOccurrence(
+      projectID: fixture.projectID,
+      sourceTask: AppOwnedWorkspaceStore.TaskReference(
+        projectID: fixture.projectID,
+        taskID: taskID,
+        reminderIdentifier: sourceTask.reminderIdentifier,
+        reminderExternalIdentifier: sourceTask.reminderExternalIdentifier,
+        title: sourceTask.title,
+        noteText: sourceTask.noteText,
+        isCompleted: false,
+        completionDate: nil,
+        dueDate: originalDueDate,
+        hasExplicitTime: true,
+        durationMinutes: 45,
+        recurrenceRuleRaw: sourceTask.recurrenceRuleRaw
+      ),
+      completionDate: originalDueDate,
+      modifiedAt: Date(timeIntervalSinceReferenceDate: 850)
+    )
 
     _ = try await ObsidianRetainedTaskCommandService.setTaskSchedule(
       vaultRootURL: fixture.vaultRoot,
@@ -224,7 +257,8 @@ final class AppOwnedRetainedTaskCommandServiceTests: XCTestCase {
       resetRecurringAnchor: true
     )
     let snapshot = try await fixture.store.loadRetainedWorkspaceSnapshot(projectIDs: [fixture.projectID])
-    let task = try XCTUnwrap(snapshot.projects.first?.tasks.first)
+    let tasks = try XCTUnwrap(snapshot.projects.first?.tasks)
+    let task = try XCTUnwrap(tasks.first)
 
     XCTAssertEqual(provider.createdProjectIdentifier, "list-1")
     XCTAssertEqual(provider.createdTaskTitle, "Recurring")
@@ -233,6 +267,7 @@ final class AppOwnedRetainedTaskCommandServiceTests: XCTestCase {
     XCTAssertEqual(provider.recurrenceUpdate?.0, "task-recreated")
     XCTAssertEqual(provider.recurrenceUpdate?.1, "daily|3")
     XCTAssertEqual(provider.removedTaskExternalIdentifiers, ["task-1"])
+    XCTAssertEqual(tasks.count, 1)
     XCTAssertEqual(task.identity.reminderExternalIdentifier, "task-recreated")
     XCTAssertEqual(task.schedule.parsedDate, originalDueDate)
     XCTAssertTrue(task.schedule.hasExplicitTime)

@@ -844,6 +844,7 @@ final class TimelineBoardReadPathTests: XCTestCase {
       isCompleted: isCompleted,
       completionDate: isCompleted ? .distantPast : nil,
       recurrenceRuleRaw: nil,
+      isLocalCompletedRecurringOccurrence: false,
       attachmentCount: 0,
       reminderNoteText: "",
       requiredWorkDays: 0,
