@@ -1,4 +1,5 @@
 import Foundation
+import SwiftUI
 
 enum TimelineProjectListDraftAnchor: Hashable {
   case beginning
@@ -198,6 +199,26 @@ struct TimelineProjectListSession {
     tasks[index] = task
   }
 
+  mutating func setTaskCompletion(_ taskID: UUID, isCompleted: Bool) {
+    guard let index = tasks.firstIndex(where: { $0.id == taskID }) else { return }
+    let task = tasks[index]
+    tasks[index] = Task(
+      id: task.id,
+      title: task.title,
+      dateText: task.dateText,
+      isCompleted: isCompleted,
+      isOverdue: isCompleted ? false : task.isOverdue
+    )
+    if editingTaskID == taskID {
+      clearEditing()
+    }
+    if draftAnchor == .after(taskID) {
+      draftAnchor = nil
+      draftTitle = ""
+      focusedDraftAnchor = nil
+    }
+  }
+
   mutating func removeTask(_ taskID: UUID) {
     tasks.removeAll { $0.id == taskID }
     if editingTaskID == taskID {
@@ -298,5 +319,26 @@ actor TimelineProjectListWriteQueue {
 
   func drain() async {
     await tail?.value
+  }
+}
+
+@MainActor
+final class TimelineProjectListSessionStore: ObservableObject {
+  @Published private(set) var session: TimelineProjectListSession
+
+  init(snapshot: TimelineProjectListWindowSnapshot) {
+    self.session = TimelineProjectListSession(snapshot: snapshot)
+  }
+
+  func applySnapshot(_ snapshot: TimelineProjectListWindowSnapshot) {
+    update { session in
+      session.applySnapshot(snapshot)
+    }
+  }
+
+  func update(_ mutate: (inout TimelineProjectListSession) -> Void) {
+    var next = session
+    mutate(&next)
+    session = next
   }
 }

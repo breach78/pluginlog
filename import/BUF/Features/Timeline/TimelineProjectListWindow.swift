@@ -253,41 +253,38 @@ struct TimelineProjectListContent: View {
   let actions: TimelineProjectListActions
   let onOpenProjectWindow: (() -> Void)?
 
-  @State private var tasks: [TimelineProjectListWindowSnapshot.Task]
-  @State private var draggingTaskID: UUID?
-  @State private var dropIndicator: TimelineProjectListTaskDropIndicator?
-  @State private var editingTaskID: UUID?
-  @State private var editingTitle = ""
-  @State private var draftAnchor: TimelineProjectListDraftAnchor?
-  @State private var draftTitle = ""
+  @ObservedObject private var sessionStore: TimelineProjectListSessionStore
   @State private var isCreatingTask = false
   @State private var isRenamingTask = false
   @State private var completingTaskIDs: Set<UUID> = []
   @State private var deletingTaskIDs: Set<UUID> = []
   @State private var movingTaskIDs: Set<UUID> = []
-  @State private var focusedEditingTaskID: UUID?
-  @State private var focusedDraftAnchor: TimelineProjectListDraftAnchor?
   @State private var showsCompletedTasks = false
 
   init(
     snapshot: TimelineProjectListWindowSnapshot,
     presentation: TimelineProjectListPresentation = .window,
     actions: TimelineProjectListActions,
-    onOpenProjectWindow: (() -> Void)? = nil
+    onOpenProjectWindow: (() -> Void)? = nil,
+    sessionStore: TimelineProjectListSessionStore? = nil
   ) {
     self.snapshot = snapshot
     self.presentation = presentation
     self.actions = actions
     self.onOpenProjectWindow = onOpenProjectWindow
-    _tasks = State(initialValue: snapshot.tasks)
+    _sessionStore = ObservedObject(
+      wrappedValue: sessionStore ?? TimelineProjectListSessionStore(snapshot: snapshot)
+    )
   }
 
   func replacing(snapshot: TimelineProjectListWindowSnapshot) -> TimelineProjectListContent {
-    TimelineProjectListContent(
+    sessionStore.applySnapshot(snapshot)
+    return TimelineProjectListContent(
       snapshot: snapshot,
       presentation: presentation,
       actions: actions,
-      onOpenProjectWindow: onOpenProjectWindow
+      onOpenProjectWindow: onOpenProjectWindow,
+      sessionStore: sessionStore
     )
   }
 
@@ -297,7 +294,7 @@ struct TimelineProjectListContent: View {
 
       Divider()
 
-      if visibleTasks.isEmpty && draftAnchor == nil {
+      if visibleTasks.isEmpty && session.draftAnchor == nil {
         Text("할일 없음")
           .font(projectListEmptyStateFont)
           .foregroundStyle(.secondary)
@@ -305,29 +302,32 @@ struct TimelineProjectListContent: View {
       } else {
         ScrollView {
           LazyVStack(alignment: .leading, spacing: 0) {
-            if draftAnchor == .beginning {
+            if session.draftAnchor == .beginning {
               draftRow(anchor: .beginning)
             }
 
             ForEach(visibleTasks) { task in
               dropLine(for: task, placement: .before)
               taskRow(task)
-                .opacity(draggingTaskID == task.id || movingTaskIDs.contains(task.id) ? 0.42 : 1)
+                .opacity(session.draggingTaskID == task.id || movingTaskIDs.contains(task.id) ? 0.42 : 1)
                 .onDrag {
-                  draggingTaskID = task.id
+                  updateSession { session in
+                    session.beginDragging(taskID: task.id)
+                  }
                   return TaskDragPayload.itemProvider(for: task.id)
                 }
                 .onDrop(
                   of: [UTType.text.identifier],
                   delegate: TimelineProjectListTaskDropDelegate(
                     targetTaskID: task.id,
-                    draggingTaskID: $draggingTaskID,
-                    dropIndicator: $dropIndicator,
-                    onPerformDrop: moveTask
+                    draggingTaskID: draggingTaskIDBinding,
+                    dropIndicator: dropIndicatorBinding,
+                    onPreviewDrop: previewTaskDrop,
+                    onPerformDrop: commitTaskDrop
                   )
                 )
               dropLine(for: task, placement: .after)
-              if draftAnchor == .after(task.id) {
+              if session.draftAnchor == .after(task.id) {
                 draftRow(anchor: .after(task.id))
               }
               if task.id != visibleTasks.last?.id {
@@ -352,20 +352,7 @@ struct TimelineProjectListContent: View {
       handleExitCommand()
     }
     .onChange(of: snapshot) { _, nextSnapshot in
-      tasks = nextSnapshot.tasks
-      draggingTaskID = nil
-      dropIndicator = nil
-      editingTaskID = nil
-      editingTitle = ""
-      draftAnchor = nil
-      draftTitle = ""
-      isCreatingTask = false
-      isRenamingTask = false
-      completingTaskIDs = []
-      deletingTaskIDs = []
-      movingTaskIDs = []
-      focusedEditingTaskID = nil
-      focusedDraftAnchor = nil
+      sessionStore.applySnapshot(nextSnapshot)
     }
   }
 
@@ -437,7 +424,7 @@ struct TimelineProjectListContent: View {
     for task: TimelineProjectListWindowSnapshot.Task,
     placement: TimelineProjectDropPlacement
   ) -> some View {
-    if dropIndicator
+    if session.dropIndicator
       == TimelineProjectListTaskDropIndicator(targetTaskID: task.id, placement: placement)
     {
       Rectangle()
@@ -462,7 +449,7 @@ struct TimelineProjectListContent: View {
       .buttonStyle(.plain)
       .disabled(completingTaskIDs.contains(task.id))
 
-      if editingTaskID == task.id {
+      if session.editingTaskID == task.id {
         inlineTitleEditor(for: task)
       } else {
         taskTitleContent(task)
@@ -562,7 +549,7 @@ struct TimelineProjectListContent: View {
     for task: TimelineProjectListWindowSnapshot.Task
   ) -> some View {
     EscapeAwareTextField(
-      text: $editingTitle,
+      text: editingTitleBinding,
       isFocused: editingFocusBinding(for: task.id),
       placeholder: "제목",
       onSubmit: {
@@ -585,7 +572,7 @@ struct TimelineProjectListContent: View {
         .frame(width: 18, height: 22, alignment: .center)
 
       EscapeAwareTextField(
-        text: $draftTitle,
+        text: draftTitleBinding,
         isFocused: draftFocusBinding(for: anchor),
         placeholder: "새 할일",
         onSubmit: {
@@ -607,13 +594,15 @@ struct TimelineProjectListContent: View {
     for anchor: TimelineProjectListDraftAnchor
   ) -> Binding<Bool> {
     Binding(
-      get: { focusedDraftAnchor == anchor },
+      get: { session.focusedDraftAnchor == anchor },
       set: { isFocused in
-        if isFocused {
-          focusedEditingTaskID = nil
-          focusedDraftAnchor = anchor
-        } else if focusedDraftAnchor == anchor {
-          focusedDraftAnchor = nil
+        updateSession { session in
+          if isFocused {
+            session.focusedEditingTaskID = nil
+            session.focusedDraftAnchor = anchor
+          } else if session.focusedDraftAnchor == anchor {
+            session.focusedDraftAnchor = nil
+          }
         }
       }
     )
@@ -621,45 +610,44 @@ struct TimelineProjectListContent: View {
 
   private func editingFocusBinding(for taskID: UUID) -> Binding<Bool> {
     Binding(
-      get: { focusedEditingTaskID == taskID },
+      get: { session.focusedEditingTaskID == taskID },
       set: { isFocused in
-        if isFocused {
-          focusedDraftAnchor = nil
-          focusedEditingTaskID = taskID
-        } else if focusedEditingTaskID == taskID {
-          focusedEditingTaskID = nil
+        updateSession { session in
+          if isFocused {
+            session.focusedDraftAnchor = nil
+            session.focusedEditingTaskID = taskID
+          } else if session.focusedEditingTaskID == taskID {
+            session.focusedEditingTaskID = nil
+          }
         }
       }
     )
   }
 
-  private func moveTask(
+  private func previewTaskDrop(
     draggedID: UUID,
     targetID: UUID,
     placement: TimelineProjectDropPlacement
-  ) {
-    guard let reorderedIDs = TimelineBoardReadPath.reorderedTaskIDsAfterDrop(
-      tasks.map(\.id),
-      draggedID: draggedID,
-      targetID: targetID,
-      placement: placement
-    ) else {
-      return
+  ) -> Bool {
+    var didPreview = false
+    updateSession { session in
+      didPreview = session.previewDrop(
+        draggedID: draggedID,
+        targetID: targetID,
+        placement: placement
+      )
     }
+    return didPreview
+  }
 
-    let tasksByID = Dictionary(uniqueKeysWithValues: tasks.map { ($0.id, $0) })
-    let nextTasks = TimelineProjectListTaskOrderPolicy.reorderedTasks(
-      reorderedIDs,
-      tasksByID: tasksByID
-    )
-    tasks = nextTasks
+  private func commitTaskDrop() {
+    let orderedTaskIDs = commitSessionDrop()
+    guard !orderedTaskIDs.isEmpty else { return }
     actions.onReorderTasks(
       snapshot.projectID,
-      TimelineProjectListTaskOrderPolicy.openTaskIDs(from: nextTasks),
+      orderedTaskIDs,
       true
     )
-    draggingTaskID = nil
-    dropIndicator = nil
   }
 
   private func toggleTaskCompletion(_ taskID: UUID, isCompleted: Bool) {
@@ -721,13 +709,13 @@ struct TimelineProjectListContent: View {
 
   private func startEditing(_ task: TimelineProjectListWindowSnapshot.Task) {
     guard !isRenamingTask, !isCreatingTask else { return }
-    draftAnchor = nil
-    draftTitle = ""
-    focusedDraftAnchor = nil
-    editingTaskID = task.id
-    editingTitle = task.title
+    updateSession { session in
+      session.startEditing(task)
+    }
     DispatchQueue.main.async {
-      focusedEditingTaskID = task.id
+      updateSession { session in
+        session.focusedEditingTaskID = task.id
+      }
     }
   }
 
@@ -735,12 +723,14 @@ struct TimelineProjectListContent: View {
     for task: TimelineProjectListWindowSnapshot.Task,
     createDraftBelow: Bool
   ) {
-    let title = editingTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+    let title = session.editingTitle.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !title.isEmpty, !isRenamingTask else { return }
     guard title != task.title else {
-      editingTaskID = nil
-      editingTitle = ""
-      focusedEditingTaskID = nil
+      updateSession { session in
+        session.editingTaskID = nil
+        session.editingTitle = ""
+        session.focusedEditingTaskID = nil
+      }
       if createDraftBelow {
         startDraft(after: task.id)
       }
@@ -754,9 +744,11 @@ struct TimelineProjectListContent: View {
         return
       }
       replaceTask(updatedTask)
-      editingTaskID = nil
-      editingTitle = ""
-      focusedEditingTaskID = nil
+      updateSession { session in
+        session.editingTaskID = nil
+        session.editingTitle = ""
+        session.focusedEditingTaskID = nil
+      }
       if createDraftBelow {
         startDraft(after: updatedTask.id)
       }
@@ -765,31 +757,34 @@ struct TimelineProjectListContent: View {
 
   private func startDraft(after taskID: UUID?) {
     guard !isCreatingTask, !isRenamingTask else { return }
-    editingTaskID = nil
-    editingTitle = ""
-    focusedEditingTaskID = nil
-    let anchor: TimelineProjectListDraftAnchor = taskID.map(TimelineProjectListDraftAnchor.after) ?? .beginning
-    draftAnchor = anchor
-    draftTitle = ""
-    focusDraft(anchor)
+    updateSession { session in
+      session.startDraft(after: taskID)
+    }
+    focusDraft(taskID.map(TimelineProjectListDraftAnchor.after) ?? .beginning)
   }
 
   private func cancelInlineEditing() {
     guard !isRenamingTask else { return }
-    editingTaskID = nil
-    editingTitle = ""
-    focusedEditingTaskID = nil
+    updateSession { session in
+      session.editingTaskID = nil
+      session.editingTitle = ""
+      session.focusedEditingTaskID = nil
+    }
   }
 
   private func cancelDraftIfEmpty() {
-    guard TimelineProjectListDraftPolicy.shouldCancelDraft(title: draftTitle) else { return }
-    draftAnchor = nil
-    draftTitle = ""
-    focusedDraftAnchor = nil
+    guard TimelineProjectListDraftPolicy.shouldCancelDraft(title: session.draftTitle) else {
+      return
+    }
+    updateSession { session in
+      session.draftAnchor = nil
+      session.draftTitle = ""
+      session.focusedDraftAnchor = nil
+    }
   }
 
   private func handleExitCommand() {
-    if draftAnchor != nil {
+    if session.draftAnchor != nil {
       cancelDraftIfEmpty()
       return
     }
@@ -797,96 +792,130 @@ struct TimelineProjectListContent: View {
   }
 
   private func submitInlineDraft(anchor: TimelineProjectListDraftAnchor) {
-    let title = draftTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+    let title = session.draftTitle.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !title.isEmpty, !isCreatingTask else { return }
+    let temporaryID = UUID()
+    guard submitDraftOptimistically(temporaryID: temporaryID) != nil else { return }
     isCreatingTask = true
 
     Task { @MainActor in
       defer { isCreatingTask = false }
       guard let createdTask = await actions.onCreateTask(snapshot.projectID, title) else {
+        updateSession { session in
+          session.failOptimisticCreate(temporaryID: temporaryID)
+        }
         return
       }
 
-      if !tasks.contains(where: { $0.id == createdTask.id }) {
-        insertCreatedTask(createdTask, after: anchor.taskID)
+      updateSession { session in
+        session.resolveOptimisticCreate(temporaryID: temporaryID, createdTask: createdTask)
       }
       actions.onReorderTasks(snapshot.projectID, openTaskIDs, false)
-      let nextAnchor = TimelineProjectListDraftAnchor.after(createdTask.id)
-      draftAnchor = nextAnchor
-      draftTitle = ""
-      focusDraft(nextAnchor)
+      focusDraft(.after(createdTask.id))
     }
   }
 
   private func focusDraft(_ anchor: TimelineProjectListDraftAnchor) {
     DispatchQueue.main.async {
-      focusedDraftAnchor = anchor
+      updateSession { session in
+        session.focusedDraftAnchor = anchor
+      }
     }
     DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(16)) {
-      if draftAnchor == anchor {
-        focusedDraftAnchor = anchor
+      if session.draftAnchor == anchor {
+        updateSession { session in
+          session.focusedDraftAnchor = anchor
+        }
       }
     }
   }
 
   private func replaceTask(_ task: TimelineProjectListWindowSnapshot.Task) {
-    guard let index = tasks.firstIndex(where: { $0.id == task.id }) else { return }
-    tasks[index] = task
+    updateSession { session in
+      session.replaceTask(task)
+    }
   }
 
   private func setTaskCompletion(_ taskID: UUID, isCompleted: Bool) {
-    guard let index = tasks.firstIndex(where: { $0.id == taskID }) else { return }
-    let task = tasks[index]
-    tasks[index] = TimelineProjectListWindowSnapshot.Task(
-      id: task.id,
-      title: task.title,
-      dateText: task.dateText,
-      isCompleted: isCompleted,
-      isOverdue: isCompleted ? false : task.isOverdue
-    )
-    cancelInlineEditingIfNeeded(for: taskID)
-    cancelDraftIfNeeded(after: taskID)
+    updateSession { session in
+      session.setTaskCompletion(taskID, isCompleted: isCompleted)
+    }
   }
 
   private func removeTaskFromWindow(_ taskID: UUID) {
-    let orderedIDs = TimelineProjectTaskManualOrderStore.removedTaskIDs(
-      tasks.map(\.id),
-      removedID: taskID
-    )
-    let tasksByID = Dictionary(uniqueKeysWithValues: tasks.map { ($0.id, $0) })
-    tasks = orderedIDs.compactMap { tasksByID[$0] }
-    cancelInlineEditingIfNeeded(for: taskID)
-    cancelDraftIfNeeded(after: taskID)
-  }
-
-  private func cancelInlineEditingIfNeeded(for taskID: UUID) {
-    if editingTaskID == taskID {
-      editingTaskID = nil
-      editingTitle = ""
-      focusedEditingTaskID = nil
+    updateSession { session in
+      session.removeTask(taskID)
     }
   }
 
-  private func cancelDraftIfNeeded(after taskID: UUID) {
-    if draftAnchor == .after(taskID) {
-      draftAnchor = nil
-      draftTitle = ""
-      focusedDraftAnchor = nil
+  private func submitDraftOptimistically(temporaryID: UUID)
+    -> TimelineProjectListWindowSnapshot.Task?
+  {
+    var createdTask: TimelineProjectListWindowSnapshot.Task?
+    updateSession { session in
+      createdTask = session.submitDraftOptimistically(temporaryID: temporaryID)
     }
+    return createdTask
   }
 
-  private func insertCreatedTask(
-    _ task: TimelineProjectListWindowSnapshot.Task,
-    after anchorID: UUID?
-  ) {
-    let orderedIDs = TimelineProjectTaskManualOrderStore.insertedTaskIDs(
-      tasks.map(\.id),
-      insertedID: task.id,
-      after: anchorID
+  private func commitSessionDrop() -> [UUID] {
+    var orderedTaskIDs: [UUID] = []
+    updateSession { session in
+      orderedTaskIDs = session.commitDrop()
+    }
+    return orderedTaskIDs
+  }
+
+  private func updateSession(_ mutate: (inout TimelineProjectListSession) -> Void) {
+    sessionStore.update(mutate)
+  }
+
+  private var session: TimelineProjectListSession {
+    sessionStore.session
+  }
+
+  private var draftTitleBinding: Binding<String> {
+    Binding(
+      get: { session.draftTitle },
+      set: { title in
+        updateSession { session in
+          session.updateDraftTitle(title)
+        }
+      }
     )
-    var tasksByID = Dictionary(uniqueKeysWithValues: tasks.map { ($0.id, $0) })
-    tasksByID[task.id] = task
-    tasks = orderedIDs.compactMap { tasksByID[$0] }
+  }
+
+  private var editingTitleBinding: Binding<String> {
+    Binding(
+      get: { session.editingTitle },
+      set: { title in
+        updateSession { session in
+          session.updateEditingTitle(title)
+        }
+      }
+    )
+  }
+
+  private var draggingTaskIDBinding: Binding<UUID?> {
+    Binding(
+      get: { session.draggingTaskID },
+      set: { taskID in
+        updateSession { session in
+          session.draggingTaskID = taskID
+        }
+      }
+    )
+  }
+
+  private var dropIndicatorBinding: Binding<TimelineProjectListTaskDropIndicator?> {
+    Binding(
+      get: { session.dropIndicator },
+      set: { indicator in
+        updateSession { session in
+          session.dropIndicator = indicator
+        }
+      }
+    )
   }
 
   private var projectColor: Color {
@@ -940,11 +969,11 @@ struct TimelineProjectListContent: View {
   }
 
   private var visibleTasks: [TimelineProjectListWindowSnapshot.Task] {
-    showsCompletedTasks ? tasks : tasks.filter { !$0.isCompleted }
+    session.visibleTasks(showsCompletedTasks: showsCompletedTasks)
   }
 
   private var openTaskIDs: [UUID] {
-    TimelineProjectListTaskOrderPolicy.openTaskIDs(from: tasks)
+    session.openTaskIDs
   }
 
   private static let embeddedTextSize: CGFloat = 12 * 1.3 * 0.9
@@ -954,8 +983,10 @@ private struct TimelineProjectListTaskDropDelegate: DropDelegate {
   let targetTaskID: UUID
   @Binding var draggingTaskID: UUID?
   @Binding var dropIndicator: TimelineProjectListTaskDropIndicator?
+  let onPreviewDrop:
+    (_ draggedID: UUID, _ targetID: UUID, _ placement: TimelineProjectDropPlacement) -> Bool
   let onPerformDrop:
-    (_ draggedID: UUID, _ targetID: UUID, _ placement: TimelineProjectDropPlacement) -> Void
+    () -> Void
 
   func validateDrop(info: DropInfo) -> Bool {
     draggingTaskID != nil && !info.itemProviders(for: [UTType.text.identifier]).isEmpty
@@ -971,7 +1002,9 @@ private struct TimelineProjectListTaskDropDelegate: DropDelegate {
       targetTaskID: targetTaskID,
       placement: placement
     )
-    if dropIndicator != indicator {
+    if dropIndicator != indicator,
+      onPreviewDrop(draggingTaskID, targetTaskID, placement)
+    {
       dropIndicator = indicator
     }
     return DropProposal(operation: .move)
@@ -983,13 +1016,12 @@ private struct TimelineProjectListTaskDropDelegate: DropDelegate {
       dropIndicator = nil
     }
     guard
-      let draggingTaskID,
-      draggingTaskID != targetTaskID,
-      let placement = dropIndicator?.placement
+      draggingTaskID != nil,
+      draggingTaskID != targetTaskID
     else {
       return false
     }
-    onPerformDrop(draggingTaskID, targetTaskID, placement)
+    onPerformDrop()
     return true
   }
 
