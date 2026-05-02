@@ -167,12 +167,52 @@ final class TimelineProjectListSessionTests: XCTestCase {
     XCTAssertTrue(
       session.previewDrop(draggedID: firstID, targetID: thirdID, placement: .after)
     )
-    XCTAssertEqual(session.tasks.map(\.id), [completedID, thirdID, firstID])
+    XCTAssertEqual(session.tasks.map(\.id), [firstID, completedID, thirdID])
 
     let committedOpenTaskIDs = session.commitDrop()
     XCTAssertEqual(committedOpenTaskIDs, [thirdID, firstID])
+    XCTAssertEqual(session.tasks.map(\.id), [thirdID, firstID, completedID])
     XCTAssertNil(session.draggingTaskID)
     XCTAssertNil(session.dropIndicator)
+  }
+
+  func testApplySnapshotKeepsPendingLocalTaskReorderUntilSnapshotMatches() {
+    let projectID = UUID()
+    let firstID = UUID()
+    let secondID = UUID()
+    let thirdID = UUID()
+    var session = TimelineProjectListSession(
+      snapshot: snapshot(projectID: projectID, tasks: [
+        task(id: firstID, title: "First"),
+        task(id: secondID, title: "Second"),
+        task(id: thirdID, title: "Third"),
+      ])
+    )
+    session.beginDragging(taskID: firstID)
+    XCTAssertTrue(
+      session.previewDrop(draggedID: firstID, targetID: thirdID, placement: .after)
+    )
+    XCTAssertEqual(session.commitDrop(), [secondID, thirdID, firstID])
+
+    session.applySnapshot(
+      snapshot(projectID: projectID, tasks: [
+        task(id: firstID, title: "First"),
+        task(id: secondID, title: "Second"),
+        task(id: thirdID, title: "Third"),
+      ])
+    )
+
+    XCTAssertEqual(session.tasks.map(\.id), [secondID, thirdID, firstID])
+
+    session.applySnapshot(
+      snapshot(projectID: projectID, tasks: [
+        task(id: secondID, title: "Second"),
+        task(id: thirdID, title: "Third"),
+        task(id: firstID, title: "First"),
+      ])
+    )
+
+    XCTAssertEqual(session.tasks.map(\.id), [secondID, thirdID, firstID])
   }
 
   func testOptimisticRenameFailureRestoresPreviousTask() {

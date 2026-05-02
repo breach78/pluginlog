@@ -270,6 +270,26 @@ final class TimelineBoardReadPathTests: XCTestCase {
     XCTAssertEqual(order[secondID], 2)
   }
 
+  func testTimelineManualOrderMergesFromLatestStoredOrderSnapshot() throws {
+    let suiteName = "TimelineProjectManualOrderStoreLatestTests-\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+    let firstID = UUID()
+    let secondID = UUID()
+    let thirdID = UUID()
+
+    TimelineProjectManualOrderStore.save([thirdID: 0, firstID: 1], defaults: defaults)
+
+    let order = TimelineProjectManualOrderStore.mergedStoredOrder(
+      reminderOrderedProjectIDs: [firstID, secondID, thirdID],
+      availableProjectIDs: [firstID, secondID, thirdID],
+      defaults: defaults
+    )
+
+    XCTAssertEqual(order[thirdID], 0)
+    XCTAssertEqual(order[firstID], 1)
+    XCTAssertEqual(order[secondID], 2)
+  }
+
   func testTimelineProjectTaskManualOrderPersistsPerProject() throws {
     let suiteName = "TimelineProjectTaskManualOrderStoreTests-\(UUID().uuidString)"
     let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))

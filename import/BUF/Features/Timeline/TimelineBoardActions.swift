@@ -36,8 +36,7 @@ extension TimelineBoardView {
   ) async {
     guard !projectIDs.isEmpty else { return }
     let reminderOrderedProjectIDs = await appState.reminderProjectIDsInCurrentListOrder()
-    let nextOrder = TimelineProjectManualOrderStore.mergedOrder(
-      existing: timelineProjectManualOrder,
+    let nextOrder = TimelineProjectManualOrderStore.mergedStoredOrder(
       reminderOrderedProjectIDs: reminderOrderedProjectIDs,
       availableProjectIDs: projectIDs
     )

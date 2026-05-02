@@ -10,6 +10,7 @@
 		008C751A2FE4F53CCE4A754F /* AppCommand.swift in Sources */ = {isa = PBXBuildFile; fileRef = 574B3E6ABB66853539EE9014 /* AppCommand.swift */; };
 		03C3E7396753DCD4DA867BBC /* TimelineBoardActions.swift in Sources */ = {isa = PBXBuildFile; fileRef = C5663DE261C721DC5E127FB1 /* TimelineBoardActions.swift */; };
 		B4D2A6C8E0F3B5D7A9C1E3F5 /* TimelineProjectListWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C9F4A2E1B8D5F3C6A0E2B4D /* TimelineProjectListWindow.swift */; };
+		52B0E2B29CEB4E5E9C8847B1 /* TimelineProjectListSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = 52B0E2B19CEB4E5E9C8847B1 /* TimelineProjectListSession.swift */; };
 		D0A441F9F2F745C39D8A1001 /* TimelineProjectListWindowSnapshotFactory.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0A441F8F2F745C39D8A1001 /* TimelineProjectListWindowSnapshotFactory.swift */; };
 		06C9C72C72ABA87051155EF8 /* ObsidianChangedProjectProjectionRefresh.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6505481B83E40324311D478E /* ObsidianChangedProjectProjectionRefresh.swift */; };
 		06E0A88DB4AAF7AC168DD55E /* ScheduleEventStores.swift in Sources */ = {isa = PBXBuildFile; fileRef = 274E953D806A773B94AECC7F /* ScheduleEventStores.swift */; };
@@ -46,6 +47,7 @@
 		440DEB35A79822CA67F93947 /* ObsidianTaskOpenService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6FB055A180E4BFFEDF136BFB /* ObsidianTaskOpenService.swift */; };
 		4546402CDA16A8C3BF9AE13F /* MainWorkspaceActions.swift in Sources */ = {isa = PBXBuildFile; fileRef = B5AE36B32C0EDF7D34991776 /* MainWorkspaceActions.swift */; };
 		4561B83B77DA18535CFBE0DC /* RetainedTaskCommandService.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1322A7BC684850631EFD07C /* RetainedTaskCommandService.swift */; };
+		52B0E2B09CEB4E5E9C8847B1 /* RetainedTaskCommandMutationGate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 52B0E2AF9CEB4E5E9C8847B1 /* RetainedTaskCommandMutationGate.swift */; };
 		46D2A6785BFCA3288CB60494 /* ExternalOwnerChangeCommand.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2C28AC864FE42F458D154D24 /* ExternalOwnerChangeCommand.swift */; };
 		49A2BE6603135C9BD9969F04 /* TimelineTaskEditPopover.swift in Sources */ = {isa = PBXBuildFile; fileRef = 21B3F453411E704B032D846B /* TimelineTaskEditPopover.swift */; };
 		4B4E96C30514DCCE0CBC9049 /* OverlaySurfaceStyle.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1DDCAE950594A8FA2ED69146 /* OverlaySurfaceStyle.swift */; };
@@ -54,6 +56,12 @@
 		5246A73D9106689E69B02461 /* AppStateLaunchAndSetup.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7CA7B838EEC20DA2595C5EF4 /* AppStateLaunchAndSetup.swift */; };
 		52A9E7A7E320399EFDECE383 /* TaskEditAttachmentService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4CE3629EC27F6D670D342C38 /* TaskEditAttachmentService.swift */; };
 		52B0E2A29CEB4E5E9C8847B1 /* TaskEditMailMessageLinkService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 52B0E2A19CEB4E5E9C8847B1 /* TaskEditMailMessageLinkService.swift */; };
+		52B0E2A89CEB4E5E9C8847B1 /* AppOwnedReminderBackupStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 52B0E2A79CEB4E5E9C8847B1 /* AppOwnedReminderBackupStore.swift */; };
+		52B0E2AA9CEB4E5E9C8847B1 /* AppOwnedReminderBridgeRecordMapper.swift in Sources */ = {isa = PBXBuildFile; fileRef = 52B0E2A99CEB4E5E9C8847B1 /* AppOwnedReminderBridgeRecordMapper.swift */; };
+		52B0E2A49CEB4E5E9C8847B1 /* AppOwnedRetainedTaskCommandService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 52B0E2A39CEB4E5E9C8847B1 /* AppOwnedRetainedTaskCommandService.swift */; };
+		52B0E2A69CEB4E5E9C8847B1 /* AppOwnedRetainedProjectCommandService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 52B0E2A59CEB4E5E9C8847B1 /* AppOwnedRetainedProjectCommandService.swift */; };
+		52B0E2AC9CEB4E5E9C8847B1 /* AppOwnedWorkspaceStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 52B0E2AB9CEB4E5E9C8847B1 /* AppOwnedWorkspaceStore.swift */; };
+		52B0E2AE9CEB4E5E9C8847B1 /* AppOwnedWorkspaceStoreSQLite.swift in Sources */ = {isa = PBXBuildFile; fileRef = 52B0E2AD9CEB4E5E9C8847B1 /* AppOwnedWorkspaceStoreSQLite.swift */; };
 		536768A33F9FD85991F0D0B7 /* OwnedScheduleCalendarSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = B9F3B749E26A6113BF3A7DFF /* OwnedScheduleCalendarSupport.swift */; };
 		58190F552DC4EC92D8D5FC38 /* ObsidianRetainedProjectionAdapter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5F1FB1976D603BD1C6DA44D3 /* ObsidianRetainedProjectionAdapter.swift */; };
 		582BA253688A70E45046D5AF /* StorageCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5C813D49A9E2F2F4CF9C837D /* StorageCoordinator.swift */; };
@@ -186,6 +194,14 @@
 		4BB7FCFB1657C01818652C36 /* AppStateReminderOwnerCommands.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppStateReminderOwnerCommands.swift; sourceTree = "<group>"; };
 		4CE3629EC27F6D670D342C38 /* TaskEditAttachmentService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskEditAttachmentService.swift; sourceTree = "<group>"; };
 		52B0E2A19CEB4E5E9C8847B1 /* TaskEditMailMessageLinkService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskEditMailMessageLinkService.swift; sourceTree = "<group>"; };
+		52B0E2A79CEB4E5E9C8847B1 /* AppOwnedReminderBackupStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppOwnedReminderBackupStore.swift; sourceTree = "<group>"; };
+		52B0E2A99CEB4E5E9C8847B1 /* AppOwnedReminderBridgeRecordMapper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppOwnedReminderBridgeRecordMapper.swift; sourceTree = "<group>"; };
+		52B0E2A39CEB4E5E9C8847B1 /* AppOwnedRetainedTaskCommandService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppOwnedRetainedTaskCommandService.swift; sourceTree = "<group>"; };
+		52B0E2A59CEB4E5E9C8847B1 /* AppOwnedRetainedProjectCommandService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppOwnedRetainedProjectCommandService.swift; sourceTree = "<group>"; };
+		52B0E2AB9CEB4E5E9C8847B1 /* AppOwnedWorkspaceStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppOwnedWorkspaceStore.swift; sourceTree = "<group>"; };
+		52B0E2AD9CEB4E5E9C8847B1 /* AppOwnedWorkspaceStoreSQLite.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppOwnedWorkspaceStoreSQLite.swift; sourceTree = "<group>"; };
+		52B0E2AF9CEB4E5E9C8847B1 /* RetainedTaskCommandMutationGate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RetainedTaskCommandMutationGate.swift; sourceTree = "<group>"; };
+		52B0E2B19CEB4E5E9C8847B1 /* TimelineProjectListSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimelineProjectListSession.swift; sourceTree = "<group>"; };
 		548DFBDD3433AE83FF2F7A1F /* ProjectIdentityResolver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProjectIdentityResolver.swift; sourceTree = "<group>"; };
 		55F9F6FCA5E8411D7A3633D6 /* OwnershipTypes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OwnershipTypes.swift; sourceTree = "<group>"; };
 		574B3E6ABB66853539EE9014 /* AppCommand.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppCommand.swift; sourceTree = "<group>"; };
@@ -467,6 +483,12 @@
 		AA22460A638E2E37C0FC7CE2 /* Services */ = {
 			isa = PBXGroup;
 			children = (
+				52B0E2A79CEB4E5E9C8847B1 /* AppOwnedReminderBackupStore.swift */,
+				52B0E2A99CEB4E5E9C8847B1 /* AppOwnedReminderBridgeRecordMapper.swift */,
+				52B0E2A59CEB4E5E9C8847B1 /* AppOwnedRetainedProjectCommandService.swift */,
+				52B0E2A39CEB4E5E9C8847B1 /* AppOwnedRetainedTaskCommandService.swift */,
+				52B0E2AB9CEB4E5E9C8847B1 /* AppOwnedWorkspaceStore.swift */,
+				52B0E2AD9CEB4E5E9C8847B1 /* AppOwnedWorkspaceStoreSQLite.swift */,
 				6505481B83E40324311D478E /* ObsidianChangedProjectProjectionRefresh.swift */,
 				F98F1E3EF6E9DBFFCA4A5065 /* ObsidianHelperPluginInstaller.swift */,
 				20C566D141AFD6239A3995EB /* ObsidianProjectDeletionSync.swift */,
@@ -511,6 +533,7 @@
 				3A2FC953B474C119705FEE7B /* RetainedProjectionBuilder.swift */,
 				A7C173752BD8789FFFEB2DF4 /* RetainedProjectionModels.swift */,
 				C1322A7BC684850631EFD07C /* RetainedTaskCommandService.swift */,
+				52B0E2AF9CEB4E5E9C8847B1 /* RetainedTaskCommandMutationGate.swift */,
 				9159CA5631C74C880E28A32F /* RetainedWorkspaceRecords.swift */,
 				B212FE0ABB16E5A836D161E7 /* RetainedWorkspaceSurfaceProjection.swift */,
 				97E7C405496B88B1BB63A7ED /* ScheduleCalendarStore.swift */,
@@ -533,6 +556,7 @@
 				8B721AD98A258C527A77D282 /* TimelineBoardView.swift */,
 				679A55D0A210BC487FE136C2 /* TimelineProjectDropSupport.swift */,
 				21B3F453411E704B032D846B /* TimelineTaskEditPopover.swift */,
+				52B0E2B19CEB4E5E9C8847B1 /* TimelineProjectListSession.swift */,
 				7C9F4A2E1B8D5F3C6A0E2B4D /* TimelineProjectListWindow.swift */,
 				D0A441F8F2F745C39D8A1001 /* TimelineProjectListWindowSnapshotFactory.swift */,
 			);
@@ -667,6 +691,12 @@
 				9E9D0817D0133BE0E011D6AE /* AppStateSourceIO.swift in Sources */,
 				0A38E6C19CAD91A46D60891C /* AppStateSyncAndPersistence.swift in Sources */,
 				EA6F16B8473070AC661D5D4E /* AppStateWorkspaceUI.swift in Sources */,
+				52B0E2A89CEB4E5E9C8847B1 /* AppOwnedReminderBackupStore.swift in Sources */,
+				52B0E2AA9CEB4E5E9C8847B1 /* AppOwnedReminderBridgeRecordMapper.swift in Sources */,
+				52B0E2A69CEB4E5E9C8847B1 /* AppOwnedRetainedProjectCommandService.swift in Sources */,
+				52B0E2A49CEB4E5E9C8847B1 /* AppOwnedRetainedTaskCommandService.swift in Sources */,
+				52B0E2AC9CEB4E5E9C8847B1 /* AppOwnedWorkspaceStore.swift in Sources */,
+				52B0E2AE9CEB4E5E9C8847B1 /* AppOwnedWorkspaceStoreSQLite.swift in Sources */,
 				BE2C7E9EA856B1E9C9DDD374 /* BUFApp.swift in Sources */,
 				A68CE4DFBC0B4087B6351781 /* ColorHexCodec.swift in Sources */,
 				51AF201EA8B756B65E708021 /* ContainerPaths.swift in Sources */,
@@ -736,6 +766,7 @@
 				ECB4C30BB6ACEAE3AE5C2CED /* RetainedProjectionBuilder.swift in Sources */,
 				F504CE031B027C1CF6FEDDB1 /* RetainedProjectionModels.swift in Sources */,
 				4561B83B77DA18535CFBE0DC /* RetainedTaskCommandService.swift in Sources */,
+				52B0E2B09CEB4E5E9C8847B1 /* RetainedTaskCommandMutationGate.swift in Sources */,
 				A857272268000E3F8E205295 /* RetainedWorkspaceRecords.swift in Sources */,
 				0BF410D1F6D2653AD0C066AF /* RetainedWorkspaceSurfaceProjection.swift in Sources */,
 				3D96093353677D4C498F64E3 /* RootSceneView.swift in Sources */,
@@ -768,6 +799,7 @@
 				D7E5DD01F876A85563529DEF /* TimelineBoardView.swift in Sources */,
 				ABD6CD9F9A35FF12D207682F /* TimelineProjectDropSupport.swift in Sources */,
 				49A2BE6603135C9BD9969F04 /* TimelineTaskEditPopover.swift in Sources */,
+				52B0E2B29CEB4E5E9C8847B1 /* TimelineProjectListSession.swift in Sources */,
 				B4D2A6C8E0F3B5D7A9C1E3F5 /* TimelineProjectListWindow.swift in Sources */,
 				D0A441F9F2F745C39D8A1001 /* TimelineProjectListWindowSnapshotFactory.swift in Sources */,
 				D0A441F7F2F745C39D8A1001 /* UITestScheduleCalendarService.swift in Sources */,

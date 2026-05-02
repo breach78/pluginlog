@@ -656,13 +656,11 @@ struct TimelineProjectListContent: View {
       commitSessionDrop()
     }
     guard !orderedTaskIDs.isEmpty else { return }
-    writeQueue.enqueue {
-      actions.onReorderTasks(
-        snapshot.projectID,
-        orderedTaskIDs,
-        true
-      )
-    }
+    actions.onReorderTasks(
+      snapshot.projectID,
+      orderedTaskIDs,
+      true
+    )
   }
 
   private func toggleTaskCompletion(_ taskID: UUID, isCompleted: Bool) {

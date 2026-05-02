@@ -276,6 +276,18 @@ enum TimelineProjectManualOrderStore {
     }
     return next
   }
+
+  static func mergedStoredOrder(
+    reminderOrderedProjectIDs: [UUID],
+    availableProjectIDs: [UUID],
+    defaults: UserDefaults = .standard
+  ) -> [UUID: Int64] {
+    mergedOrder(
+      existing: load(defaults: defaults),
+      reminderOrderedProjectIDs: reminderOrderedProjectIDs,
+      availableProjectIDs: availableProjectIDs
+    )
+  }
 }
 
 enum TimelineProjectTaskManualOrderStore {

@@ -608,17 +608,19 @@ private struct WorkspaceTaskEditProjectListHost: View {
   let onOpenProjectWindow: () -> Void
 
   @State private var snapshot: TimelineProjectListWindowSnapshot?
+  @State private var sessionStore: TimelineProjectListSessionStore?
   @State private var isLoading = false
   @State private var pendingDeferredReload = false
 
   var body: some View {
     Group {
-      if let snapshot {
+      if let snapshot, let sessionStore {
         TimelineProjectListContent(
           snapshot: snapshot,
           presentation: .embedded,
           actions: actions,
-          onOpenProjectWindow: onOpenProjectWindow
+          onOpenProjectWindow: onOpenProjectWindow,
+          sessionStore: sessionStore
         )
         .frame(height: 1080, alignment: .topLeading)
         .clipped()
@@ -658,7 +660,17 @@ private struct WorkspaceTaskEditProjectListHost: View {
   private func reloadSnapshot() async {
     isLoading = true
     defer { isLoading = false }
-    snapshot = await loadSnapshot(projectID)
+    let nextSnapshot = await loadSnapshot(projectID)
+    snapshot = nextSnapshot
+    guard let nextSnapshot else {
+      sessionStore = nil
+      return
+    }
+    if let sessionStore {
+      sessionStore.applySnapshot(nextSnapshot)
+    } else {
+      sessionStore = TimelineProjectListSessionStore(snapshot: nextSnapshot)
+    }
   }
 }
 

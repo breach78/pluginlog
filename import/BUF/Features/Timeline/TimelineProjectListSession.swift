@@ -41,6 +41,7 @@ struct TimelineProjectListSession {
 
   private var pendingCreates: [UUID: PendingCreate] = [:]
   private var pendingRenames: [UUID: Task] = [:]
+  private var pendingOpenTaskOrder: [UUID]?
 
   init(snapshot: TimelineProjectListWindowSnapshot) {
     self.projectID = snapshot.projectID
@@ -49,7 +50,14 @@ struct TimelineProjectListSession {
 
   mutating func applySnapshot(_ snapshot: TimelineProjectListWindowSnapshot) {
     guard snapshot.projectID == projectID else { return }
+    let snapshotOpenTaskIDs = TimelineProjectListTaskOrderPolicy.openTaskIDs(from: snapshot.tasks)
+    if pendingOpenTaskOrder == snapshotOpenTaskIDs {
+      pendingOpenTaskOrder = nil
+    }
     tasks = mergedTasks(from: snapshot.tasks)
+    if let pendingOpenTaskOrder {
+      tasks = reorderedTasksPreservingPendingOpenOrder(tasks, orderedOpenTaskIDs: pendingOpenTaskOrder)
+    }
     pruneInvalidAnchors()
   }
 
@@ -161,19 +169,14 @@ struct TimelineProjectListSession {
     placement: TimelineProjectDropPlacement
   ) -> Bool {
     guard draggingTaskID == draggedID || draggingTaskID == nil else { return false }
-    guard let reorderedIDs = TimelineBoardReadPath.reorderedTaskIDsAfterDrop(
-      tasks.map(\.id),
+    guard TimelineBoardReadPath.reorderedTaskIDsAfterDrop(
+      openTaskIDs,
       draggedID: draggedID,
       targetID: targetID,
       placement: placement
-    ) else {
+    ) != nil else {
       return false
     }
-    let tasksByID = Dictionary(uniqueKeysWithValues: tasks.map { ($0.id, $0) })
-    tasks = TimelineProjectListTaskOrderPolicy.reorderedTasks(
-      reorderedIDs,
-      tasksByID: tasksByID
-    )
     draggingTaskID = draggedID
     dropIndicator = TimelineProjectListTaskDropIndicator(
       targetTaskID: targetID,
@@ -183,7 +186,22 @@ struct TimelineProjectListSession {
   }
 
   mutating func commitDrop() -> [UUID] {
-    let orderedTaskIDs = openTaskIDs
+    guard
+      let currentDraggingTaskID = draggingTaskID,
+      let currentDropIndicator = dropIndicator,
+      let orderedTaskIDs = TimelineBoardReadPath.reorderedTaskIDsAfterDrop(
+        openTaskIDs,
+        draggedID: currentDraggingTaskID,
+        targetID: currentDropIndicator.targetTaskID,
+        placement: currentDropIndicator.placement
+      )
+    else {
+      self.draggingTaskID = nil
+      self.dropIndicator = nil
+      return []
+    }
+    tasks = reorderedTasksPreservingPendingOpenOrder(tasks, orderedOpenTaskIDs: orderedTaskIDs)
+    pendingOpenTaskOrder = orderedTaskIDs
     draggingTaskID = nil
     dropIndicator = nil
     return orderedTaskIDs
@@ -315,6 +333,29 @@ struct TimelineProjectListSession {
       focusedDraftAnchor = nil
     }
     pendingRenames = pendingRenames.filter { taskIDs.contains($0.key) }
+  }
+
+  private func reorderedTasksPreservingPendingOpenOrder(
+    _ tasks: [Task],
+    orderedOpenTaskIDs: [UUID]
+  ) -> [Task] {
+    let tasksByID = Dictionary(uniqueKeysWithValues: tasks.map { ($0.id, $0) })
+    var seen = Set<UUID>()
+    let reorderedOpenTasks: [Task] = orderedOpenTaskIDs.compactMap { taskID in
+      guard
+        let task = tasksByID[taskID],
+        !task.isCompleted,
+        seen.insert(taskID).inserted
+      else {
+        return nil
+      }
+      return task
+    }
+    let remainingOpenTasks = tasks.filter { task in
+      !task.isCompleted && seen.insert(task.id).inserted
+    }
+    let completedTasks = tasks.filter(\.isCompleted)
+    return reorderedOpenTasks + remainingOpenTasks + completedTasks
   }
 }
 
