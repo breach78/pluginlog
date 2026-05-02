@@ -82,9 +82,11 @@ struct TimelineTaskEditPopoverContent: View {
   @State private var pendingAttachmentRename: PendingAttachmentRename?
   @State private var errorText: String?
   @State private var isSyncEditingActive = false
+  @State private var skipCleanReloadAfterLocalSaveUntil: Date?
 
   private let calendar = Calendar.autoupdatingCurrent
   private static let autoSaveDelayNanoseconds: UInt64 = 1_200_000_000
+  private static let localSaveReloadSkipWindow: TimeInterval = 2
 
   init(
     initialFields: RetainedTaskEditFields,
@@ -274,7 +276,8 @@ struct TimelineTaskEditPopoverContent: View {
           vaultRootURL: vaultRootURL,
           allowsNewlines: true,
           lineHeightMultiple: 1.1,
-          allowsMailMessageDrops: true
+          allowsMailMessageDrops: true,
+          trailingInputReserveLineCount: 5
         )
         .frame(minHeight: TaskEditTypography.noteMinimumHeight)
         .frame(height: max(TaskEditTypography.noteMinimumHeight, noteHeight))
@@ -580,23 +583,39 @@ struct TimelineTaskEditPopoverContent: View {
   }
 
   private func loadLatest() async {
-    isLoading = true
-    let fields = await loadFields()
     let current = currentFields()
     guard current == lastCommittedFields else {
-      isLoading = false
+      return
+    }
+    let now = Date()
+    if TimelineTaskEditReloadPolicy.shouldSkipCleanReloadAfterLocalSave(
+      current: current,
+      lastCommitted: lastCommittedFields,
+      skipUntil: skipCleanReloadAfterLocalSaveUntil,
+      now: now
+    ) {
+      skipCleanReloadAfterLocalSaveUntil = nil
+      return
+    }
+    if let skipUntil = skipCleanReloadAfterLocalSaveUntil, now > skipUntil {
+      skipCleanReloadAfterLocalSaveUntil = nil
+    }
+
+    isLoading = true
+    defer { isLoading = false }
+    let fields = await loadFields()
+    let latestCurrent = currentFields()
+    guard latestCurrent == lastCommittedFields else {
       return
     }
     let loadedFields = committedFields(from: fields)
     guard !TimelineTaskEditReloadPolicy.shouldPreserveCurrentEditorFields(
-      current: current,
+      current: latestCurrent,
       loaded: loadedFields
     ) else {
-      isLoading = false
       return
     }
     apply(fields, committedFields: loadedFields)
-    isLoading = false
   }
 
   private func apply(_ fields: RetainedTaskEditFields, committedFields: RetainedTaskEditFields? = nil) {
@@ -702,6 +721,8 @@ struct TimelineTaskEditPopoverContent: View {
     do {
       try await saveFields(fields)
       lastCommittedFields = fields
+      skipCleanReloadAfterLocalSaveUntil = Date()
+        .addingTimeInterval(Self.localSaveReloadSkipWindow)
       isSaving = false
       let shouldSaveImmediately = saveAgainAfterCurrent
       saveAgainAfterCurrent = false
@@ -793,6 +814,16 @@ struct TimelineTaskEditPopoverContent: View {
 }
 
 enum TimelineTaskEditReloadPolicy {
+  static func shouldSkipCleanReloadAfterLocalSave(
+    current: RetainedTaskEditFields,
+    lastCommitted: RetainedTaskEditFields,
+    skipUntil: Date?,
+    now: Date
+  ) -> Bool {
+    guard current == lastCommitted, let skipUntil else { return false }
+    return now <= skipUntil
+  }
+
   static func shouldPreserveCurrentEditorFields(
     current: RetainedTaskEditFields,
     loaded: RetainedTaskEditFields

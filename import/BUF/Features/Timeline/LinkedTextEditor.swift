@@ -11,6 +11,7 @@ struct LinkedTextEditor: NSViewRepresentable {
   let allowsNewlines: Bool
   let lineHeightMultiple: CGFloat
   var allowsMailMessageDrops = false
+  var trailingInputReserveLineCount = 0
 
   func makeCoordinator() -> Coordinator {
     Coordinator(self)
@@ -60,6 +61,7 @@ struct LinkedTextEditor: NSViewRepresentable {
       context.coordinator.isApplyingText = true
       textView.string = text
       context.coordinator.isApplyingText = false
+      context.coordinator.clearTrailingInputReserve()
       context.coordinator.cancelDeferredUpdates()
       context.coordinator.applyAttributes(to: textView)
       context.coordinator.scheduleMeasuredHeightUpdate()
@@ -81,6 +83,10 @@ struct LinkedTextEditor: NSViewRepresentable {
     private var attributeRefreshTask: Task<Void, Never>?
     private var heightMeasurementTask: Task<Void, Never>?
     private var lastMeasuredWidth: CGFloat = 0
+    private var didConfigureMailMessageDrops = false
+    private var hasLinkAttributes = false
+    private var pendingTrailingInputReserveExpansion = false
+    private var trailingInputReserveHeightFloor: CGFloat?
     private let linkDetector = try? NSDataDetector(
       types: NSTextCheckingResult.CheckingType.link.rawValue
     )
@@ -131,6 +137,18 @@ struct LinkedTextEditor: NSViewRepresentable {
       shouldChangeTextIn affectedCharRange: NSRange,
       replacementString: String?
     ) -> Bool {
+      if parent.allowsNewlines,
+        parent.trailingInputReserveLineCount > 0,
+        let replacementString
+      {
+        let isEditingAtEnd = affectedCharRange.upperBound >= textView.string.utf16.count
+        if replacementString.contains(where: \.isNewline), isEditingAtEnd {
+          pendingTrailingInputReserveExpansion = true
+        } else if affectedCharRange.length > 0 || !isEditingAtEnd {
+          clearTrailingInputReserve()
+        }
+      }
+
       guard !parent.allowsNewlines, let replacementString else { return true }
       guard replacementString.contains(where: \.isNewline) else { return true }
       let normalized = replacementString
@@ -150,11 +168,12 @@ struct LinkedTextEditor: NSViewRepresentable {
     }
 
     func configureMailMessageDropRegistration(on textView: NSTextView) {
-      guard parent.allowsMailMessageDrops else { return }
+      guard parent.allowsMailMessageDrops, !didConfigureMailMessageDrops else { return }
       let existingTypes = textView.registeredDraggedTypes
       let supportedTypes =
         urlPasteboardTypes + trustedTitlePasteboardTypes + mailSearchOnlyPasteboardTypes
       let additionalTypes = supportedTypes.filter { !existingTypes.contains($0) }
+      didConfigureMailMessageDrops = true
       guard !additionalTypes.isEmpty else { return }
       textView.registerForDraggedTypes(existingTypes + additionalTypes)
     }
@@ -211,8 +230,12 @@ struct LinkedTextEditor: NSViewRepresentable {
       if fullRange.length > 0 {
         storage.setAttributes(attributes, range: fullRange)
       }
-      applyDetectedLinks(in: storage)
-      applyMarkdownLinks(in: storage)
+      let hasLinkCandidates = LinkedTextEditorLinkPolicy.hasLinkCandidates(in: storage.string)
+      if hasLinkCandidates {
+        applyDetectedLinks(in: storage)
+        applyMarkdownLinks(in: storage)
+      }
+      hasLinkAttributes = hasLinkCandidates
       storage.endEditing()
       textView.selectedRanges = selectedRanges
     }
@@ -224,7 +247,17 @@ struct LinkedTextEditor: NSViewRepresentable {
       lastMeasuredWidth = currentMeasuredWidth()
       textView.layoutManager?.ensureLayout(for: textContainer)
       let usedRect = textView.layoutManager?.usedRect(for: textContainer) ?? .zero
-      let height = ceil(usedRect.height + textView.textContainerInset.height * 2 + 6)
+      let contentHeight = ceil(usedRect.height + textView.textContainerInset.height * 2 + 6)
+      let heightPolicy = LinkedTextEditorHeightPolicy.resolvedHeight(
+        contentHeight: contentHeight,
+        reserveHeightFloor: trailingInputReserveHeightFloor,
+        expandsReserve: pendingTrailingInputReserveExpansion,
+        reserveLineCount: parent.trailingInputReserveLineCount,
+        lineHeight: reservedLineHeight(for: textView)
+      )
+      trailingInputReserveHeightFloor = heightPolicy.reserveHeightFloor
+      pendingTrailingInputReserveExpansion = false
+      let height = heightPolicy.height
       if abs(parent.measuredHeight - height) > 1 {
         parent.measuredHeight = height
       }
@@ -237,6 +270,15 @@ struct LinkedTextEditor: NSViewRepresentable {
     }
 
     func scheduleAttributeRefresh(for textView: NSTextView) {
+      guard
+        LinkedTextEditorLinkPolicy.hasLinkCandidates(in: textView.string)
+          || hasLinkAttributes
+      else {
+        attributeRefreshTask?.cancel()
+        attributeRefreshTask = nil
+        return
+      }
+
       attributeRefreshTask?.cancel()
       attributeRefreshTask = Task { @MainActor [weak self, weak textView] in
         try? await Task.sleep(nanoseconds: Self.attributeRefreshDelayNanoseconds)
@@ -261,6 +303,11 @@ struct LinkedTextEditor: NSViewRepresentable {
       heightMeasurementTask = nil
     }
 
+    func clearTrailingInputReserve() {
+      pendingTrailingInputReserveExpansion = false
+      trailingInputReserveHeightFloor = nil
+    }
+
     private func baseAttributes() -> [NSAttributedString.Key: Any] {
       let paragraphStyle = NSMutableParagraphStyle()
       paragraphStyle.lineHeightMultiple = parent.lineHeightMultiple
@@ -269,6 +316,12 @@ struct LinkedTextEditor: NSViewRepresentable {
         .foregroundColor: NSColor.labelColor,
         .paragraphStyle: paragraphStyle,
       ]
+    }
+
+    private func reservedLineHeight(for textView: NSTextView) -> CGFloat {
+      let layoutHeight = textView.layoutManager?.defaultLineHeight(for: parent.font) ?? 0
+      let fontHeight = parent.font.ascender - parent.font.descender + parent.font.leading
+      return ceil(max(layoutHeight, fontHeight, parent.font.pointSize) * parent.lineHeightMultiple)
     }
 
     private func applyDetectedLinks(in storage: NSTextStorage) {
@@ -496,6 +549,53 @@ struct LinkedTextEditor: NSViewRepresentable {
       let width = textView?.enclosingScrollView?.contentSize.width ?? textView?.bounds.width ?? 0
       return width.rounded()
     }
+  }
+}
+
+struct LinkedTextEditorHeightPolicyResult: Equatable {
+  let height: CGFloat
+  let reserveHeightFloor: CGFloat?
+}
+
+enum LinkedTextEditorHeightPolicy {
+  static func resolvedHeight(
+    contentHeight: CGFloat,
+    reserveHeightFloor: CGFloat?,
+    expandsReserve: Bool,
+    reserveLineCount: Int,
+    lineHeight: CGFloat
+  ) -> LinkedTextEditorHeightPolicyResult {
+    let contentHeight = ceil(contentHeight)
+    guard reserveLineCount > 0, lineHeight > 0 else {
+      return LinkedTextEditorHeightPolicyResult(height: contentHeight, reserveHeightFloor: nil)
+    }
+
+    var reserveHeightFloor = reserveHeightFloor
+    if expandsReserve {
+      let reserveHeight = ceil(lineHeight * CGFloat(reserveLineCount))
+      reserveHeightFloor = max(reserveHeightFloor ?? 0, contentHeight + reserveHeight)
+    } else if let floor = reserveHeightFloor, contentHeight > floor {
+      reserveHeightFloor = nil
+    }
+
+    guard let floor = reserveHeightFloor else {
+      return LinkedTextEditorHeightPolicyResult(height: contentHeight, reserveHeightFloor: nil)
+    }
+    return LinkedTextEditorHeightPolicyResult(
+      height: max(contentHeight, floor),
+      reserveHeightFloor: floor
+    )
+  }
+}
+
+enum LinkedTextEditorLinkPolicy {
+  static func hasLinkCandidates(in text: String) -> Bool {
+    text.contains("://")
+      || text.localizedCaseInsensitiveContains("www.")
+      || text.localizedCaseInsensitiveContains("mailto:")
+      || text.localizedCaseInsensitiveContains("message:")
+      || text.contains("](")
+      || (text.contains("@") && text.contains("."))
   }
 }
 

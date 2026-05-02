@@ -138,6 +138,7 @@ extension MainWorkspaceView {
         WorkspaceTaskEditProjectListHost(
           projectID: target.projectID,
           workspaceTreeRevision: appState.workspaceTreeRevision,
+          deferReload: appState.isEditorActive,
           loadSnapshot: { projectID in
             await workspaceProjectListWindowSnapshot(projectID: projectID)
           },
@@ -601,12 +602,14 @@ extension MainWorkspaceView {
 private struct WorkspaceTaskEditProjectListHost: View {
   let projectID: UUID
   let workspaceTreeRevision: Int
+  let deferReload: Bool
   let loadSnapshot: (UUID) async -> TimelineProjectListWindowSnapshot?
   let actions: TimelineProjectListActions
   let onOpenProjectWindow: () -> Void
 
   @State private var snapshot: TimelineProjectListWindowSnapshot?
   @State private var isLoading = false
+  @State private var pendingDeferredReload = false
 
   var body: some View {
     Group {
@@ -632,7 +635,18 @@ private struct WorkspaceTaskEditProjectListHost: View {
     }
     .frame(maxWidth: .infinity, alignment: .topLeading)
     .task(id: reloadToken) {
+      guard !deferReload || snapshot == nil else {
+        pendingDeferredReload = true
+        return
+      }
       await reloadSnapshot()
+    }
+    .onChange(of: deferReload) { _, isDeferred in
+      guard !isDeferred, pendingDeferredReload else { return }
+      pendingDeferredReload = false
+      Task { @MainActor in
+        await reloadSnapshot()
+      }
     }
   }
 

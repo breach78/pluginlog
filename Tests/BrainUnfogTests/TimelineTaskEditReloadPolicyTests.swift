@@ -50,6 +50,47 @@ final class TimelineTaskEditReloadPolicyTests: XCTestCase {
     )
   }
 
+  func testSkipsCleanReloadImmediatelyAfterLocalSave() {
+    let now = Date(timeIntervalSince1970: 1_000)
+    let current = fields(noteText: "Saved")
+
+    XCTAssertTrue(
+      TimelineTaskEditReloadPolicy.shouldSkipCleanReloadAfterLocalSave(
+        current: current,
+        lastCommitted: current,
+        skipUntil: now.addingTimeInterval(2),
+        now: now
+      )
+    )
+  }
+
+  func testDoesNotSkipReloadAfterLocalSaveWindowExpires() {
+    let now = Date(timeIntervalSince1970: 1_000)
+    let current = fields(noteText: "Saved")
+
+    XCTAssertFalse(
+      TimelineTaskEditReloadPolicy.shouldSkipCleanReloadAfterLocalSave(
+        current: current,
+        lastCommitted: current,
+        skipUntil: now.addingTimeInterval(-1),
+        now: now
+      )
+    )
+  }
+
+  func testDoesNotSkipReloadWhenEditorHasDirtyChanges() {
+    let now = Date(timeIntervalSince1970: 1_000)
+
+    XCTAssertFalse(
+      TimelineTaskEditReloadPolicy.shouldSkipCleanReloadAfterLocalSave(
+        current: fields(noteText: "Typing"),
+        lastCommitted: fields(noteText: "Saved"),
+        skipUntil: now.addingTimeInterval(2),
+        now: now
+      )
+    )
+  }
+
   private func fields(
     title: String = "Task",
     noteText: String
