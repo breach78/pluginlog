@@ -103,6 +103,46 @@ final class RetainedWorkspaceSurfaceProjectionTests: XCTestCase {
     XCTAssertEqual(defaultDurationItem.endDate.timeIntervalSince(defaultDurationItem.startDate), 30 * 60)
   }
 
+  func testTimelineRuntimeBarsKeepAllDatedTaskPreviewItems() throws {
+    let projectID = UUID()
+    let scheduledDay = try XCTUnwrap(
+      Self.calendar.date(from: DateComponents(year: 2026, month: 4, day: 25))
+    )
+    let taskIDs = (0..<6).map { _ in UUID() }
+    let snapshot = RetainedWorkspaceSnapshot(
+      projects: [
+        makeProject(
+          projectID: projectID,
+          tasks: taskIDs.enumerated().map { index, taskID in
+            makeTask(taskID: taskID, title: "Task \(index + 1)", parsedDate: scheduledDay)
+          }
+        )
+      ]
+    )
+
+    let result = RetainedWorkspaceSurfaceProjectionBuilder.build(
+      snapshot: snapshot,
+      projectIDs: [projectID],
+      calendar: Self.calendar
+    )
+    let surface = try XCTUnwrap(result.loadedProjection)
+    let bar = try XCTUnwrap(
+      TimelineProjectionService.runtimeBars(
+        service: DefaultTimelineService(),
+        projectIDs: [projectID],
+        projectSnapshots: surface.projectSnapshots,
+        projectSummariesByID: surface.projectSummaries,
+        scheduleEntriesByProjectID: surface.scheduleEntriesByProjectID
+      ).first
+    )
+    let previewDay = Calendar.autoupdatingCurrent.startOfDay(for: scheduledDay)
+    let preview = try XCTUnwrap(bar.dailyTaskPreviews[previewDay])
+
+    XCTAssertEqual(bar.dailyTaskCounts[previewDay], taskIDs.count)
+    XCTAssertEqual(preview.totalCount, taskIDs.count)
+    XCTAssertEqual(preview.tasks.map(\.taskID), taskIDs)
+  }
+
   func testBuildBlocksPartialRequestedProjectCoverage() {
     let presentProjectID = UUID()
     let missingProjectID = UUID()

@@ -226,10 +226,10 @@ enum TimelineProjectionService {
         }
       }
       let normalizedTaskPreviews = taskPreviews.mapValues {
-        TimelineDayPreview(totalCount: $0.count, tasks: Array($0.prefix(4)))
+        TimelineDayPreview(totalCount: $0.count, tasks: $0)
       }
       let normalizedCompletedPreviews = completedPreviews.mapValues {
-        TimelineDayPreview(totalCount: $0.count, tasks: Array($0.prefix(4)))
+        TimelineDayPreview(totalCount: $0.count, tasks: $0)
       }
       bars.append(TimelineProjectBar(
         projectID: projectID,
