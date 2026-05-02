@@ -603,8 +603,6 @@ struct TimelineTaskEditPopoverContent: View {
     hasTime = fields.timeMinutes != nil
     selectedTime = Self.timeDate(minutes: fields.timeMinutes)
     durationMinutes = fields.durationMinutes
-    isDatePickerPresented = false
-    isTimePickerPresented = false
     lastCommittedFields = Self.savingFields(
       title: fields.title,
       noteText: nextNoteText,

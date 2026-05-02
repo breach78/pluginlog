@@ -1052,6 +1052,11 @@ extension MainWorkspaceView {
   }
 
   private func handleKeyDown(_ event: NSEvent) -> NSEvent? {
+    if isCommandTShortcut(event) {
+      jumpCurrentWorkspaceBoardToToday()
+      return nil
+    }
+
     if event.keyCode == 53 {
       if releaseActiveEditPanelTextResponder() {
         return nil
@@ -1066,6 +1071,21 @@ extension MainWorkspaceView {
       }
     }
     return event
+  }
+
+  private func isCommandTShortcut(_ event: NSEvent) -> Bool {
+    let shortcutModifiers = event.modifierFlags.intersection([.command, .shift, .option, .control])
+    return event.keyCode == 17 && shortcutModifiers == .command
+  }
+
+  private func jumpCurrentWorkspaceBoardToToday() {
+    showArchive = false
+    switch appState.viewMode {
+    case .timeline:
+      appState.jumpTimelineToToday()
+    case .schedule:
+      appState.jumpScheduleToToday()
+    }
   }
 
   private func handleMouseDown(_ event: NSEvent) -> NSEvent? {
