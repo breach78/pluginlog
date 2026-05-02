@@ -2,6 +2,8 @@ import Foundation
 
 @MainActor
 enum ObsidianRetainedTaskCommandService {
+  private static let reminderTimestampTolerance: TimeInterval = 0.5
+
   static func createTask(
     vaultRootURL: URL?,
     projectID: UUID,
@@ -1025,8 +1027,12 @@ enum ObsidianRetainedTaskCommandService {
     guard let remoteSnapshot = try reminderProjectProvider.taskSnapshot(for: reference) else {
       throw RetainedTaskCommandError.reminderOwnerUnresolved(reference.taskID)
     }
-    guard remoteSnapshot.modifiedAt.timeIntervalSince(baselineRemoteModifiedAt) <= 0.5 else {
+    let remoteModificationDelta = remoteSnapshot.modifiedAt.timeIntervalSince(baselineRemoteModifiedAt)
+    guard remoteModificationDelta <= reminderTimestampTolerance else {
       throw RetainedTaskCommandError.retainedProjectionFailed("stale reminder sync baseline")
+    }
+    if remoteModificationDelta < -reminderTimestampTolerance {
+      return baseline
     }
     let remoteState = ReminderSyncTaskState(remoteSnapshot: remoteSnapshot)
     guard remoteState.value(for: field) == baseline.state.value(for: field) else {
@@ -1050,7 +1056,7 @@ enum ObsidianRetainedTaskCommandService {
     guard let remoteSnapshot = try reminderProjectProvider.taskSnapshot(for: reference) else {
       throw RetainedTaskCommandError.reminderOwnerUnresolved(reference.taskID)
     }
-    guard remoteSnapshot.modifiedAt.timeIntervalSince(baselineRemoteModifiedAt) <= 0.5 else {
+    guard remoteSnapshot.modifiedAt.timeIntervalSince(baselineRemoteModifiedAt) <= reminderTimestampTolerance else {
       throw RetainedTaskCommandError.retainedProjectionFailed("stale reminder sync baseline")
     }
     return baseline

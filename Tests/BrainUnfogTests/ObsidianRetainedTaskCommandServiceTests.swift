@@ -400,6 +400,68 @@ final class ObsidianRetainedTaskCommandServiceTests: XCTestCase {
     XCTAssertEqual(ReminderSyncBaselineStore.baseline(for: "task-1")?.state.noteText, editedNote)
   }
 
+  func testSequentialNoteEditsAllowStaleReminderSnapshotFromPreviousWrite() async throws {
+    let dataRoot = try makeTemporaryDirectory(prefix: "ObsidianCommandData")
+    ReminderSyncBaselineStore.install(dataDirectory: dataRoot)
+    let vault = try makeTemporaryVault()
+    _ = try writeProjectNote(
+      vault: vault,
+      body: projectNote(
+        body: """
+        - [ ] Task one
+          %% brain-unfog: {"reminder_external_id":"task-1"} %%
+          - Existing note
+        """
+      )
+    )
+    let provider = FakeObsidianCommandReminderProjectProvider()
+    provider.snapshots["task-1"] = remoteSnapshot(title: "Task one", noteText: "Existing note")
+    upsertBaseline(
+      title: "Task one",
+      isCompleted: false,
+      date: nil,
+      noteText: "Existing note"
+    )
+
+    _ = try await ObsidianRetainedTaskCommandService.updateTaskEditFields(
+      vaultRootURL: vault,
+      projectID: projectID,
+      taskID: taskID,
+      fields: RetainedTaskEditFields(
+        title: "Task one",
+        noteText: "First edit",
+        day: nil,
+        timeMinutes: nil,
+        durationMinutes: nil
+      ),
+      calendar: calendar,
+      reminderProjectProvider: provider
+    )
+
+    XCTAssertEqual(provider.snapshots["task-1"]?.noteText, "Existing note")
+
+    _ = try await ObsidianRetainedTaskCommandService.updateTaskEditFields(
+      vaultRootURL: vault,
+      projectID: projectID,
+      taskID: taskID,
+      fields: RetainedTaskEditFields(
+        title: "Task one",
+        noteText: "Second edit",
+        day: nil,
+        timeMinutes: nil,
+        durationMinutes: nil
+      ),
+      calendar: calendar,
+      reminderProjectProvider: provider
+    )
+
+    let raw = try await firstRawMarkdown(in: vault)
+    XCTAssertFalse(raw.contains("First edit"))
+    XCTAssertTrue(raw.contains("Second edit"))
+    XCTAssertEqual(provider.noteWrites.map(\.noteText), ["First edit", "Second edit"])
+    XCTAssertEqual(ReminderSyncBaselineStore.baseline(for: "task-1")?.state.noteText, "Second edit")
+  }
+
   func testTaskEditFieldsRoundTripsAttachmentLinksInNoteText() async throws {
     let dataRoot = try makeTemporaryDirectory(prefix: "ObsidianCommandData")
     ReminderSyncBaselineStore.install(dataDirectory: dataRoot)
