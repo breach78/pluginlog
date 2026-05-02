@@ -283,11 +283,13 @@ struct TimelineBoardView: View {
 
   private var timelineBoardRoot: some View {
     let snapshot = timelineBoardSnapshot
+    let visibleProjectOrder = snapshot.bars.map(\.projectID)
 
     return GeometryReader { proxy in
       timelineBoardViewportSection(proxy: proxy, snapshot: snapshot)
     }
     .onAppear {
+      appState.updateTimelineProjectListVisibleOrder(visibleProjectOrder)
       refreshAnchorDateIfNeeded()
       let liveSourceSignature = timelineRefreshSignature(
         projectIDs: activeProjectIDs,
@@ -303,6 +305,7 @@ struct TimelineBoardView: View {
         sourceSignature: liveSourceSignature,
         force: true
       )
+      appState.updateTimelineProjectListVisibleOrder(refreshedBars.map(\.projectID))
       refreshTimelineDayHeaderSectionsIfNeeded(
         from: refreshedBars,
         sourceSignature: liveSourceSignature,
@@ -335,6 +338,7 @@ struct TimelineBoardView: View {
         sourceSignature: newSignature,
         force: false
       )
+      appState.updateTimelineProjectListVisibleOrder(refreshedBars.map(\.projectID))
       refreshTimelineDayHeaderSectionsIfNeeded(
         from: refreshedBars,
         sourceSignature: newSignature,
@@ -362,6 +366,7 @@ struct TimelineBoardView: View {
           sourceSignature: liveSourceSignature,
           force: true
         )
+        appState.updateTimelineProjectListVisibleOrder(refreshedBars.map(\.projectID))
         refreshTimelineDayHeaderSectionsIfNeeded(
           from: refreshedBars,
           sourceSignature: liveSourceSignature,
@@ -397,6 +402,7 @@ struct TimelineBoardView: View {
           sourceSignature: liveSourceSignature,
           force: true
         )
+        appState.updateTimelineProjectListVisibleOrder(refreshedBars.map(\.projectID))
         refreshTimelineDayHeaderSectionsIfNeeded(
           from: refreshedBars,
           sourceSignature: liveSourceSignature,
@@ -441,6 +447,9 @@ struct TimelineBoardView: View {
     }
     .onChange(of: selectedProjectID) { _, projectID in
       immediateSelectedProjectID = projectID
+    }
+    .onChange(of: visibleProjectOrder) { _, nextOrder in
+      appState.updateTimelineProjectListVisibleOrder(nextOrder)
     }
     .onDisappear {
       selectionCommitTask?.cancel()

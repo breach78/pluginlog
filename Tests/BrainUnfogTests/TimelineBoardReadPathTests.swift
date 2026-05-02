@@ -700,6 +700,24 @@ final class TimelineBoardReadPathTests: XCTestCase {
     XCTAssertEqual(ordered.map(\.taskID), [openFirstID, openSecondID, completedID])
   }
 
+  func testProjectListDefaultEditableEntryUsesWindowOrder() {
+    let projectID = UUID()
+    let openFirstID = UUID()
+    let openSecondID = UUID()
+    let completedID = UUID()
+
+    let entry = TimelineProjectListWindowSnapshotFactory.defaultEditableEntry(
+      projectID: projectID,
+      entries: [
+        makeScheduleEntry(taskID: completedID, title: "Completed", isCompleted: true, rowOrder: 0),
+        makeScheduleEntry(taskID: openSecondID, title: "Second", rowOrder: 20),
+        makeScheduleEntry(taskID: openFirstID, title: "First", rowOrder: 10),
+      ]
+    )
+
+    XCTAssertEqual(entry?.taskID, openFirstID)
+  }
+
   private func makeProject(
     projectID: UUID,
     title: String = "Project",

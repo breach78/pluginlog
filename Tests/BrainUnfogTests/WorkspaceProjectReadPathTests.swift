@@ -48,6 +48,21 @@ final class WorkspaceProjectReadPathTests: XCTestCase {
     )
   }
 
+  func testMenuProjectIDsPreferCurrentTimelineListOrderAndAppendMissingFallbacks() {
+    let firstID = UUID()
+    let secondID = UUID()
+    let thirdID = UUID()
+    let unknownID = UUID()
+
+    XCTAssertEqual(
+      MainWorkspaceView.WorkspaceProjectReadPath.menuProjectIDsInTimelineListOrder(
+        timelineVisibleOrder: [unknownID, thirdID, secondID, thirdID],
+        fallbackProjectIDs: [firstID, secondID, thirdID]
+      ),
+      [thirdID, secondID, firstID]
+    )
+  }
+
   private func makeDescriptor(
     id: UUID,
     title: String,

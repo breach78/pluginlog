@@ -209,6 +209,18 @@ extension MainWorkspaceView {
       },
       onRenameProject: { projectID, title in
         self.pendingRenameProject = .init(id: projectID, title: title)
+      },
+      moveOptions: {
+        self.activeQuickAddProjects.map {
+          TimelineProjectMoveOption(id: $0.id, title: $0.title)
+        }
+      },
+      onMoveTask: { sourceProjectID, taskID, targetProjectID in
+        await self.moveWorkspaceProjectListWindowTask(
+          taskID,
+          sourceProjectID: sourceProjectID,
+          targetProjectID: targetProjectID
+        )
       }
     )
   }
@@ -511,6 +523,41 @@ extension MainWorkspaceView {
       return true
     } catch {
       appState.reportError(error, logMessage: "workspace project list deleteTask failed")
+      return false
+    }
+  }
+
+  func moveWorkspaceProjectListWindowTask(
+    _ taskID: UUID,
+    sourceProjectID: UUID,
+    targetProjectID: UUID
+  ) async -> Bool {
+    guard sourceProjectID != targetProjectID else { return false }
+
+    do {
+      _ = try await ObsidianRetainedTaskCommandService.moveTask(
+        vaultRootURL: appState.obsidianVaultRootURL,
+        taskID: taskID,
+        sourceProjectID: sourceProjectID,
+        targetProjectID: targetProjectID,
+        reminderProjectProvider: appState.reminderProjectProvider
+      )
+      if let activeTarget = activeWorkspaceTaskEditPanelTarget,
+        activeTarget.projectID == sourceProjectID,
+        activeTarget.taskID == taskID
+      {
+        activeWorkspaceTaskEditPanelTarget = WorkspaceTaskEditPanelTarget(
+          projectID: targetProjectID,
+          taskID: taskID,
+          initialFields: activeTarget.initialFields
+        )
+      }
+      appState.bumpWorkspaceTreeRevision()
+      await refreshWorkspaceProjectListWindow(projectID: sourceProjectID)
+      await refreshWorkspaceProjectListWindow(projectID: targetProjectID)
+      return true
+    } catch {
+      appState.reportError(error, logMessage: "workspace project list moveTask failed")
       return false
     }
   }

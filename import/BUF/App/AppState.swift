@@ -61,6 +61,7 @@ final class AppState: ObservableObject {
   @Published var isEditorActive = false
   @Published var isEditorMotionSuppressed = false
   @Published var scheduleCalendarOverlayProjection: ScheduleCalendarOverlayProjection = .empty
+  @Published private(set) var timelineProjectListVisibleOrder: [UUID] = []
 
   let defaultTimelineDayColumnWidth: CGFloat = 44
   let minimumTimelineDayColumnWidth: CGFloat = 22
@@ -290,6 +291,11 @@ final class AppState: ObservableObject {
 
   func bumpWorkspaceTreeRevision() {
     workspaceTreeRevision &+= 1
+  }
+
+  func updateTimelineProjectListVisibleOrder(_ projectIDs: [UUID]) {
+    guard timelineProjectListVisibleOrder != projectIDs else { return }
+    timelineProjectListVisibleOrder = projectIDs
   }
 
   @discardableResult

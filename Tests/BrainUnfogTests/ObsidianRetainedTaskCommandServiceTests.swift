@@ -645,6 +645,124 @@ final class ObsidianRetainedTaskCommandServiceTests: XCTestCase {
     XCTAssertNotNil(ReminderSyncBaselineStore.baseline(for: "task-1"))
   }
 
+  func testMoveTaskAppendsTaskToTargetProjectAndMovesReminder() async throws {
+    let dataRoot = try makeTemporaryDirectory(prefix: "ObsidianCommandData")
+    ReminderSyncBaselineStore.install(dataDirectory: dataRoot)
+    let vault = try makeTemporaryVault()
+    _ = try writeProjectNote(
+      vault: vault,
+      body: projectNote(
+        body: """
+        - [ ] Task one
+          %% brain-unfog: {"reminder_external_id":"task-1","date":"2026-04-25"} %%
+          - Source note
+        - [ ] Task two
+          %% brain-unfog: {"reminder_external_id":"task-2"} %%
+        """
+      ),
+      fileName: "Source.md"
+    )
+    _ = try writeProjectNote(
+      vault: vault,
+      body: projectNote(
+        body: """
+        - [ ] Existing target
+          %% brain-unfog: {"reminder_external_id":"task-target"} %%
+        """,
+        listID: "list-2"
+      ),
+      fileName: "Target.md"
+    )
+    TaskIdentityBridgeStore.upsertTask(
+      taskID: taskID,
+      title: "Task one",
+      reminderExternalIdentifier: "task-1",
+      ownerProjectID: projectID
+    )
+    let provider = FakeObsidianCommandReminderProjectProvider()
+    provider.snapshots["task-1"] = remoteSnapshot(title: "Task one", date: "2026-04-25")
+    upsertBaseline(title: "Task one", isCompleted: false, date: "2026-04-25")
+    let targetProjectID = RetainedProjectionBuilder.derivedProjectID(for: "list-2")
+
+    let result = try await ObsidianRetainedTaskCommandService.moveTask(
+      vaultRootURL: vault,
+      taskID: taskID,
+      sourceProjectID: projectID,
+      targetProjectID: targetProjectID,
+      reminderProjectProvider: provider
+    )
+
+    let sourceRaw = try await rawMarkdown(in: vault, fileName: "Source.md")
+    let targetRaw = try await rawMarkdown(in: vault, fileName: "Target.md")
+    XCTAssertFalse(sourceRaw.contains("Task one"))
+    XCTAssertTrue(sourceRaw.contains("Task two"))
+    XCTAssertTrue(targetRaw.contains("Existing target"))
+    XCTAssertTrue(targetRaw.contains("Task one"))
+    XCTAssertTrue(targetRaw.contains("Source note"))
+    XCTAssertEqual(
+      provider.moveWrites,
+      [FakeObsidianCommandReminderProjectProvider.MoveWrite(
+        identifier: "task-1",
+        targetListID: "list-2"
+      )]
+    )
+    XCTAssertEqual(result.projectID, targetProjectID)
+    XCTAssertEqual(TaskIdentityBridgeStore.projectID(for: taskID), targetProjectID)
+    XCTAssertEqual(
+      ReminderSyncBaselineStore.baseline(for: "task-1")?.remoteModifiedAt,
+      provider.writeModificationDate
+    )
+  }
+
+  func testMoveReminderFailureRollsBackSourceAndTargetMarkdown() async throws {
+    let dataRoot = try makeTemporaryDirectory(prefix: "ObsidianCommandData")
+    ReminderSyncBaselineStore.install(dataDirectory: dataRoot)
+    let vault = try makeTemporaryVault()
+    _ = try writeProjectNote(
+      vault: vault,
+      body: projectNote(
+        body: """
+        - [ ] Task one
+          %% brain-unfog: {"reminder_external_id":"task-1"} %%
+        """
+      ),
+      fileName: "Source.md"
+    )
+    _ = try writeProjectNote(
+      vault: vault,
+      body: projectNote(
+        body: "- [ ] Existing target",
+        listID: "list-2"
+      ),
+      fileName: "Target.md"
+    )
+    let provider = FakeObsidianCommandReminderProjectProvider()
+    provider.snapshots["task-1"] = remoteSnapshot(title: "Task one")
+    provider.moveTaskError = FakeObsidianCommandReminderError.requestedFailure
+    upsertBaseline(title: "Task one", isCompleted: false, date: nil)
+    let targetProjectID = RetainedProjectionBuilder.derivedProjectID(for: "list-2")
+
+    do {
+      _ = try await ObsidianRetainedTaskCommandService.moveTask(
+        vaultRootURL: vault,
+        taskID: taskID,
+        sourceProjectID: projectID,
+        targetProjectID: targetProjectID,
+        reminderProjectProvider: provider
+      )
+      XCTFail("Expected move failure")
+    } catch FakeObsidianCommandReminderError.requestedFailure {
+    } catch {
+      XCTFail("Unexpected error: \(error)")
+    }
+
+    let sourceRaw = try await rawMarkdown(in: vault, fileName: "Source.md")
+    let targetRaw = try await rawMarkdown(in: vault, fileName: "Target.md")
+    XCTAssertTrue(sourceRaw.contains("Task one"))
+    XCTAssertFalse(targetRaw.contains("Task one"))
+    XCTAssertTrue(targetRaw.contains("Existing target"))
+  }
+
   func testDuplicateTaskIDsFailBeforeMarkdownOrReminderWrite() async throws {
     let vault = try makeTemporaryVault()
     _ = try writeProjectNote(
@@ -739,21 +857,25 @@ final class ObsidianRetainedTaskCommandServiceTests: XCTestCase {
     return calendar
   }
 
-  private func projectNote(body: String) -> String {
+  private func projectNote(body: String, listID: String = "list-1") -> String {
     """
     ---
     tags:
       - 프로젝트
-    reminder_list_external_id: list-1
+    reminder_list_external_id: \(listID)
     ---
     \(body)
     """
   }
 
   private func firstRawMarkdown(in vault: URL) async throws -> String {
+    try await rawMarkdown(in: vault, fileName: "Project.md")
+  }
+
+  private func rawMarkdown(in vault: URL, fileName: String) async throws -> String {
     let snapshots = try await ObsidianProjectMarkdownStore(vaultRootURL: vault)
       .loadProjectNotesInScope()
-    return try XCTUnwrap(snapshots.first?.rawMarkdown)
+    return try XCTUnwrap(snapshots.first(where: { $0.fileURL.lastPathComponent == fileName })?.rawMarkdown)
   }
 
   private func makeDate(year: Int, month: Int, day: Int) -> Date {
@@ -863,12 +985,16 @@ final class ObsidianRetainedTaskCommandServiceTests: XCTestCase {
   }
 
   @discardableResult
-  private func writeProjectNote(vault: URL, body: String) throws -> URL {
+  private func writeProjectNote(
+    vault: URL,
+    body: String,
+    fileName: String = "Project.md"
+  ) throws -> URL {
     let projects = vault
       .appendingPathComponent("raw", isDirectory: true)
       .appendingPathComponent("projects", isDirectory: true)
     try FileManager.default.createDirectory(at: projects, withIntermediateDirectories: true)
-    let url = projects.appendingPathComponent("Project.md", isDirectory: false)
+    let url = projects.appendingPathComponent(fileName, isDirectory: false)
     try body.write(to: url, atomically: true, encoding: .utf8)
     return url
   }
@@ -916,12 +1042,18 @@ private final class FakeObsidianCommandReminderProjectProvider: ReminderProjectP
     var noteText: String
   }
 
+  struct MoveWrite: Equatable {
+    var identifier: String?
+    var targetListID: String
+  }
+
   var completionWrites: [CompletionWrite] = []
   var scheduleWrites: [ScheduleWrite] = []
   var titleWrites: [TitleWrite] = []
   var projectTitleWrites: [ProjectTitleWrite] = []
   var noteWrites: [NoteWrite] = []
   var createdTasks: [CreatedTask] = []
+  var moveWrites: [MoveWrite] = []
   var removedTaskExternalIdentifiers: [String] = []
   var operationLog: [Operation] = []
   var recurringCompletionAdvanceDays: Int?
@@ -930,6 +1062,7 @@ private final class FakeObsidianCommandReminderProjectProvider: ReminderProjectP
   var completionError: Error?
   var scheduleError: Error?
   var removeTaskError: Error?
+  var moveTaskError: Error?
   let remoteModificationDate = Date(timeIntervalSince1970: 1_000)
   let writeModificationDate = Date(timeIntervalSince1970: 3_000)
 
@@ -1090,7 +1223,34 @@ private final class FakeObsidianCommandReminderProjectProvider: ReminderProjectP
   }
   func setTaskRecurrence(for task: ReminderTaskReference, recurrenceRuleRaw: String?) throws -> ReminderTaskRemoteMetadata? { nil }
   func setTaskPresentation(for task: ReminderTaskReference, priority: Int) throws -> ReminderTaskRemoteMetadata? { nil }
-  func moveTaskReminder(for task: ReminderTaskReference, toProject identifier: String) throws -> ReminderTaskRemoteMetadata? { nil }
+  func moveTaskReminder(
+    for task: ReminderTaskReference,
+    toProject identifier: String
+  ) throws -> ReminderTaskRemoteMetadata? {
+    if let moveTaskError { throw moveTaskError }
+    moveWrites.append(MoveWrite(identifier: task.reminderExternalIdentifier, targetListID: identifier))
+    guard let externalIdentifier = task.reminderExternalIdentifier,
+      let snapshot = snapshots[externalIdentifier]
+    else {
+      return nil
+    }
+    snapshots[externalIdentifier] = ReminderTaskRemoteSnapshot(
+      identifier: snapshot.identifier,
+      externalIdentifier: snapshot.externalIdentifier,
+      calendarIdentifier: identifier,
+      title: snapshot.title,
+      noteText: snapshot.noteText,
+      isCompleted: snapshot.isCompleted,
+      completionDate: snapshot.completionDate,
+      startDate: snapshot.startDate,
+      dueDate: snapshot.dueDate,
+      hasExplicitTime: snapshot.hasExplicitTime,
+      priority: snapshot.priority,
+      recurrenceRuleRaw: snapshot.recurrenceRuleRaw,
+      modifiedAt: writeModificationDate
+    )
+    return metadata(for: task)
+  }
   func restoreArchivedProject(_ project: ReminderArchivedProjectSnapshot) throws -> ReminderProjectRestoreResult {
     throw NSError(domain: "unused", code: 1)
   }

@@ -31,6 +31,13 @@ enum TimelineProjectListWindowSnapshotFactory {
     return orderedTaskIDs.compactMap { entriesByTaskID[$0] }
   }
 
+  static func defaultEditableEntry(
+    projectID: UUID,
+    entries: [ScheduleSliceEntry]
+  ) -> ScheduleSliceEntry? {
+    orderedEntries(projectID: projectID, entries: entries).first
+  }
+
   static func taskSnapshot(
     for entry: ScheduleSliceEntry,
     calendar: Calendar = .autoupdatingCurrent

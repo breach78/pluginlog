@@ -657,6 +657,23 @@ struct MainWorkspaceView: View {
       }
     }
 
+    static func menuProjectIDsInTimelineListOrder(
+      timelineVisibleOrder: [UUID],
+      fallbackProjectIDs: [UUID]
+    ) -> [UUID] {
+      let fallbackSet = Set(fallbackProjectIDs)
+      var seen = Set<UUID>()
+      var ordered = timelineVisibleOrder.filter { projectID in
+        fallbackSet.contains(projectID) && seen.insert(projectID).inserted
+      }
+      ordered.append(
+        contentsOf: fallbackProjectIDs.filter { projectID in
+          seen.insert(projectID).inserted
+        }
+      )
+      return ordered
+    }
+
     private static func orderedDescriptors(
       _ descriptors: [WorkspaceProjectDescriptor],
       mode: ProjectListSortMode
@@ -741,8 +758,13 @@ struct MainWorkspaceView: View {
   }
 
   var workspaceQuickAddProjectIDs: [UUID] {
-    WorkspaceProjectReadPath.quickAddProjectIDs(
-      timelineProjectIDs(from: workspaceFilteredProjectIDs),
+    let fallbackProjectIDs = timelineProjectIDs(from: workspaceFilteredProjectIDs)
+    let timelineListProjectIDs = WorkspaceProjectReadPath.menuProjectIDsInTimelineListOrder(
+      timelineVisibleOrder: appState.timelineProjectListVisibleOrder,
+      fallbackProjectIDs: fallbackProjectIDs
+    )
+    return WorkspaceProjectReadPath.quickAddProjectIDs(
+      timelineListProjectIDs,
       hiddenProjectIDs: hiddenTimelineProjectIDs,
       showsHiddenProjects: timelineShowsHiddenProjectLists
     )

@@ -22,6 +22,11 @@ struct TimelineProjectListWindowSnapshot: Equatable {
   let tasks: [Task]
 }
 
+struct TimelineProjectMoveOption: Identifiable, Equatable {
+  let id: UUID
+  let title: String
+}
+
 enum TimelineProjectListPresentation {
   case window
   case embedded
@@ -35,6 +40,30 @@ struct TimelineProjectListActions {
   let onRenameTask: (UUID, UUID, String) async -> TimelineProjectListWindowSnapshot.Task?
   let onDeleteTask: (UUID, UUID) async -> Bool
   let onRenameProject: (UUID, String) -> Void
+  let moveOptions: () -> [TimelineProjectMoveOption]
+  let onMoveTask: (UUID, UUID, UUID) async -> Bool
+
+  init(
+    onToggleTaskCompletion: @escaping (UUID, Bool) async -> Bool,
+    onEditTask: @escaping (UUID) -> Void,
+    onReorderTasks: @escaping (UUID, [UUID], Bool) -> Void,
+    onCreateTask: @escaping (UUID, String) async -> TimelineProjectListWindowSnapshot.Task?,
+    onRenameTask: @escaping (UUID, UUID, String) async -> TimelineProjectListWindowSnapshot.Task?,
+    onDeleteTask: @escaping (UUID, UUID) async -> Bool,
+    onRenameProject: @escaping (UUID, String) -> Void,
+    moveOptions: @escaping () -> [TimelineProjectMoveOption] = { [] },
+    onMoveTask: @escaping (UUID, UUID, UUID) async -> Bool = { _, _, _ in false }
+  ) {
+    self.onToggleTaskCompletion = onToggleTaskCompletion
+    self.onEditTask = onEditTask
+    self.onReorderTasks = onReorderTasks
+    self.onCreateTask = onCreateTask
+    self.onRenameTask = onRenameTask
+    self.onDeleteTask = onDeleteTask
+    self.onRenameProject = onRenameProject
+    self.moveOptions = moveOptions
+    self.onMoveTask = onMoveTask
+  }
 }
 
 @MainActor
@@ -220,6 +249,7 @@ struct TimelineProjectListContent: View {
   @State private var isRenamingTask = false
   @State private var completingTaskIDs: Set<UUID> = []
   @State private var deletingTaskIDs: Set<UUID> = []
+  @State private var movingTaskIDs: Set<UUID> = []
   @State private var focusedEditingTaskID: UUID?
   @State private var focusedDraftAnchor: TimelineProjectListDraftAnchor?
   @State private var showsCompletedTasks = false
@@ -267,7 +297,7 @@ struct TimelineProjectListContent: View {
             ForEach(visibleTasks) { task in
               dropLine(for: task, placement: .before)
               taskRow(task)
-                .opacity(draggingTaskID == task.id ? 0.42 : 1)
+                .opacity(draggingTaskID == task.id || movingTaskIDs.contains(task.id) ? 0.42 : 1)
                 .onDrag {
                   draggingTaskID = task.id
                   return TaskDragPayload.itemProvider(for: task.id)
@@ -318,6 +348,7 @@ struct TimelineProjectListContent: View {
       isRenamingTask = false
       completingTaskIDs = []
       deletingTaskIDs = []
+      movingTaskIDs = []
       focusedEditingTaskID = nil
       focusedDraftAnchor = nil
     }
@@ -433,11 +464,29 @@ struct TimelineProjectListContent: View {
         cancelInlineEditing()
         actions.onEditTask(task.id)
       }
+      moveTaskMenu(for: task)
       Divider()
       Button("삭제", role: .destructive) {
         deleteTask(task.id)
       }
       .disabled(deletingTaskIDs.contains(task.id))
+    }
+  }
+
+  @ViewBuilder
+  private func moveTaskMenu(
+    for task: TimelineProjectListWindowSnapshot.Task
+  ) -> some View {
+    let targets = actions.moveOptions().filter { $0.id != snapshot.projectID }
+    if !targets.isEmpty {
+      Menu("이동") {
+        ForEach(targets) { target in
+          Button(target.title) {
+            moveTaskToProject(task.id, targetProjectID: target.id)
+          }
+        }
+      }
+      .disabled(movingTaskIDs.contains(task.id))
     }
   }
 
@@ -614,6 +663,21 @@ struct TimelineProjectListContent: View {
       let didDelete = await actions.onDeleteTask(snapshot.projectID, taskID)
       deletingTaskIDs.remove(taskID)
       guard didDelete else { return }
+      removeTaskFromWindow(taskID)
+      actions.onReorderTasks(snapshot.projectID, openTaskIDs, false)
+    }
+  }
+
+  private func moveTaskToProject(_ taskID: UUID, targetProjectID: UUID) {
+    guard targetProjectID != snapshot.projectID else { return }
+    guard !movingTaskIDs.contains(taskID) else { return }
+    cancelInlineEditing()
+    cancelDraftIfEmpty()
+    movingTaskIDs.insert(taskID)
+    Task { @MainActor in
+      let didMove = await actions.onMoveTask(snapshot.projectID, taskID, targetProjectID)
+      movingTaskIDs.remove(taskID)
+      guard didMove else { return }
       removeTaskFromWindow(taskID)
       actions.onReorderTasks(snapshot.projectID, openTaskIDs, false)
     }

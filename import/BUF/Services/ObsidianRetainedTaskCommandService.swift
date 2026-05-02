@@ -333,6 +333,98 @@ enum ObsidianRetainedTaskCommandService {
     )
   }
 
+  static func moveTask(
+    vaultRootURL: URL?,
+    taskID: UUID,
+    sourceProjectID: UUID,
+    targetProjectID: UUID,
+    reminderProjectProvider: ReminderProjectProvider
+  ) async throws -> RetainedTaskCommandResult {
+    guard sourceProjectID != targetProjectID else {
+      throw RetainedTaskCommandError.retainedProjectionFailed("task already belongs to target project")
+    }
+    let sourceContext = try await commandContext(
+      vaultRootURL: vaultRootURL,
+      projectID: sourceProjectID,
+      taskID: taskID
+    )
+    let targetContext = try await projectContext(
+      vaultRootURL: vaultRootURL,
+      projectID: targetProjectID
+    )
+    let reminderReference = try reminderReference(for: sourceContext.task, taskID: taskID)
+    let originalBaseline = try assertReminderDeleteAllowed(
+      reference: reminderReference,
+      reminderProjectProvider: reminderProjectProvider
+    )
+    let (sourceWrittenSnapshot, movedLines) = try await writeRemovedTaskForMove(
+      using: sourceContext
+    )
+
+    let targetWrittenSnapshot: ObsidianProjectMarkdownStore.Snapshot
+    do {
+      targetWrittenSnapshot = try await writeMovedTask(
+        using: targetContext,
+        movedLines: movedLines,
+        validationNotes: [sourceWrittenSnapshot.note]
+      )
+    } catch {
+      try await rollbackProjectNote(
+        store: sourceContext.store,
+        originalSnapshot: sourceContext.snapshot,
+        writtenSnapshot: sourceWrittenSnapshot,
+        writeError: error
+      )
+      throw error
+    }
+
+    do {
+      guard let metadata = try reminderProjectProvider.moveTaskReminder(
+        for: reminderReference,
+        toProject: targetContext.reminderListExternalIdentifier
+      ) else {
+        throw RetainedTaskCommandError.reminderOwnerUnresolved(taskID)
+      }
+      try updateBaseline(
+        from: targetWrittenSnapshot,
+        taskID: taskID,
+        reminderExternalIdentifier: reminderReference.reminderExternalIdentifier,
+        remoteModifiedAt: metadata.modifiedAt,
+        pushedFields: [],
+        previousBaseline: originalBaseline
+      )
+      if let movedTask = targetWrittenSnapshot.note.tasks.first(
+        where: { retainedTaskID(for: $0) == taskID }
+      ) {
+        TaskIdentityBridgeStore.upsertTask(
+          taskID: taskID,
+          title: movedTask.title,
+          reminderExternalIdentifier: reminderReference.reminderExternalIdentifier,
+          ownerProjectID: targetProjectID
+        )
+      }
+      return try result(
+        projectID: targetProjectID,
+        taskID: taskID,
+        snapshot: targetWrittenSnapshot
+      )
+    } catch {
+      try await rollbackProjectNote(
+        store: targetContext.store,
+        originalSnapshot: targetContext.snapshot,
+        writtenSnapshot: targetWrittenSnapshot,
+        writeError: error
+      )
+      try await rollbackProjectNote(
+        store: sourceContext.store,
+        originalSnapshot: sourceContext.snapshot,
+        writtenSnapshot: sourceWrittenSnapshot,
+        writeError: error
+      )
+      throw error
+    }
+  }
+
   static func taskEditFields(
     vaultRootURL: URL?,
     projectID: UUID,
@@ -595,6 +687,50 @@ enum ObsidianRetainedTaskCommandService {
     )
   }
 
+  private static func writeRemovedTaskForMove(
+    using context: CommandContext
+  ) async throws -> (ObsidianProjectMarkdownStore.Snapshot, [String]) {
+    var bodyLines = context.snapshot.note.bodyMarkdown.components(separatedBy: "\n")
+    guard bodyLines.indices.contains(context.task.bodyLineIndex) else {
+      throw RetainedTaskCommandError.unmanagedTask(context.retainedTask.identity.taskID ?? UUID())
+    }
+    let deletionRange = taskDeletionRange(for: context.task, in: bodyLines)
+    let movedLines = Array(bodyLines[deletionRange])
+    bodyLines.removeSubrange(deletionRange)
+    let note = ObsidianReminderImportFormatting.reparsedNote(
+      from: context.snapshot.note,
+      bodyLines: bodyLines
+    )
+    try validateNotes([note])
+    let snapshot = try await context.store.writeProjectNote(
+      note,
+      preferredFileName: context.snapshot.fileURL.lastPathComponent,
+      expectedBaseline: ObsidianProjectMarkdownStore.WriteBaseline(snapshot: context.snapshot)
+    )
+    return (snapshot, movedLines)
+  }
+
+  private static func writeMovedTask(
+    using context: ProjectCommandContext,
+    movedLines: [String],
+    validationNotes: [ObsidianProjectNote]
+  ) async throws -> ObsidianProjectMarkdownStore.Snapshot {
+    var bodyLines = context.snapshot.note.bodyMarkdown.isEmpty
+      ? []
+      : context.snapshot.note.bodyMarkdown.components(separatedBy: "\n")
+    bodyLines.append(contentsOf: movedLines)
+    let note = ObsidianReminderImportFormatting.reparsedNote(
+      from: context.snapshot.note,
+      bodyLines: bodyLines
+    )
+    try validateNotes(validationNotes + [note])
+    return try await context.store.writeProjectNote(
+      note,
+      preferredFileName: context.snapshot.fileURL.lastPathComponent,
+      expectedBaseline: ObsidianProjectMarkdownStore.WriteBaseline(snapshot: context.snapshot)
+    )
+  }
+
   private static func writeCreatedTask(
     using context: ProjectCommandContext,
     title: String,
@@ -636,8 +772,23 @@ enum ObsidianRetainedTaskCommandService {
     writtenSnapshot: ObsidianProjectMarkdownStore.Snapshot,
     writeError: Error
   ) async throws -> Never {
+    try await rollbackProjectNote(
+      store: context.store,
+      originalSnapshot: context.snapshot,
+      writtenSnapshot: writtenSnapshot,
+      writeError: writeError
+    )
+    throw writeError
+  }
+
+  private static func rollbackProjectNote(
+    store: ObsidianProjectMarkdownStore,
+    originalSnapshot: ObsidianProjectMarkdownStore.Snapshot,
+    writtenSnapshot: ObsidianProjectMarkdownStore.Snapshot,
+    writeError: Error
+  ) async throws {
     do {
-      let currentSnapshot = try await context.store.loadProjectNotesInScope(
+      let currentSnapshot = try await store.loadProjectNotesInScope(
         at: [writtenSnapshot.fileURL]
       ).first
       guard let currentSnapshot,
@@ -648,9 +799,9 @@ enum ObsidianRetainedTaskCommandService {
           rollbackError: "Obsidian note changed after command write"
         )
       }
-      _ = try await context.store.writeProjectNote(
-        context.snapshot.note,
-        preferredFileName: context.snapshot.fileURL.lastPathComponent,
+      _ = try await store.writeProjectNote(
+        originalSnapshot.note,
+        preferredFileName: originalSnapshot.fileURL.lastPathComponent,
         expectedBaseline: ObsidianProjectMarkdownStore.WriteBaseline(snapshot: currentSnapshot)
       )
     } catch {
@@ -659,7 +810,6 @@ enum ObsidianRetainedTaskCommandService {
         rollbackError: error.localizedDescription
       )
     }
-    throw writeError
   }
 
   private static func applyTaskState(

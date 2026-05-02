@@ -425,7 +425,7 @@ extension TimelineBoardView {
     .simultaneousGesture(
       TapGesture(count: 2)
         .onEnded {
-          openTimelineProjectListWindow(for: bar)
+          openTimelineProjectTopTaskPanel(for: bar)
         }
     )
     .overlay(alignment: .top) {
@@ -573,6 +573,14 @@ extension TimelineBoardView {
 
   @ViewBuilder
   func projectContextMenu(for bar: TimelineProjectBar) -> some View {
+    Button {
+      openTimelineProjectListWindow(for: bar)
+    } label: {
+      Label("새 창으로 열기", systemImage: "macwindow")
+    }
+
+    Divider()
+
     Button {
       requestRename(for: bar)
     } label: {
