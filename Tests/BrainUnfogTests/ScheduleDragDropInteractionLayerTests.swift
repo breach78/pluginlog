@@ -119,6 +119,31 @@ final class ScheduleDragDropInteractionLayerTests: XCTestCase {
     XCTAssertEqual(pointerDay, days[2])
   }
 
+  func testDateBoundarySnapPolicySkipsTargetWhenDisabled() {
+    XCTAssertNil(
+      ScheduleDateBoundarySnapPolicy.targetX(
+        isEnabled: false,
+        originX: 82,
+        dayColumnWidth: 44,
+        documentWidth: 500,
+        viewportWidth: 160
+      )
+    )
+  }
+
+  func testDateBoundarySnapPolicyRoundsToNearestDayColumnWhenEnabled() {
+    XCTAssertEqual(
+      ScheduleDateBoundarySnapPolicy.targetX(
+        isEnabled: true,
+        originX: 82,
+        dayColumnWidth: 44,
+        documentWidth: 500,
+        viewportWidth: 160
+      ),
+      88
+    )
+  }
+
   func testAllDayPreviewViewportYPreservesGrabOffset() {
     let y = ScheduleDragDropInteractionLayer.allDayPreviewViewportY(
       pointerViewportY: 210,

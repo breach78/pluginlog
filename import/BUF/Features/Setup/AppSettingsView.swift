@@ -4,6 +4,8 @@ struct AppSettingsView: View {
   @EnvironmentObject private var appState: AppState
   @AppStorage(WorkspaceUserDefaultsKey.timelineShowsHiddenProjectLists)
   private var timelineShowsHiddenProjectLists = false
+  @AppStorage(ScheduleUserDefaultsKey.dateBoundarySnappingEnabled)
+  private var isScheduleDateBoundarySnappingEnabled = true
   @State private var isChangingObsidianVault = false
 
   var body: some View {
@@ -63,6 +65,18 @@ struct AppSettingsView: View {
             .toggleStyle(.switch)
 
           Text("켜면 타임라인에서 숨김 처리한 목록도 다시 보입니다. 끄면 기존 숨김 목록을 다시 제외합니다.")
+            .font(.footnote)
+            .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+      }
+
+      GroupBox("Schedule") {
+        VStack(alignment: .leading, spacing: 8) {
+          Toggle("날짜 경계 스냅", isOn: $isScheduleDateBoundarySnappingEnabled)
+            .toggleStyle(.switch)
+
+          Text("켜면 스케줄 보드를 가로로 스크롤한 뒤 가장 가까운 날짜 경계에 맞춥니다.")
             .font(.footnote)
             .foregroundStyle(.secondary)
         }

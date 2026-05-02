@@ -38,6 +38,10 @@ enum ScheduleInvalidDropReason: String {
   case projectionUnavailable = "projection_unavailable"
 }
 
+enum ScheduleUserDefaultsKey {
+  static let dateBoundarySnappingEnabled = "schedule.dateBoundarySnappingEnabled"
+}
+
 enum ScheduleCalendarFailureContext: String {
   case applyPreview = "apply_preview"
   case deleteEvent = "delete_event"
@@ -617,6 +621,8 @@ struct ScheduleBoardView: View {
 
   @AppStorage("BrainUnfog.ScheduleBoard.allDayVisibleRowCount")
   var storedAllDayVisibleRowCount: Int = 4
+  @AppStorage(ScheduleUserDefaultsKey.dateBoundarySnappingEnabled)
+  var isDateBoundarySnappingEnabled = true
   @State var dayRange: ClosedRange<Int> = -7...30
   // Root retains the shared scroll and quick-create state consumed by both the all-day rail and timed grid.
   @State var horizontalOffsetX: CGFloat = 0
@@ -1334,6 +1340,7 @@ struct ScheduleBoardView: View {
       scrollRequestGeneration: scrollRequestGeneration,
       publishesLiveOffsets: activeTaskDrag != nil || activeTaskResize != nil
         || activeCalendarDrag != nil || activeCalendarResize != nil,
+      isDateBoundarySnappingEnabled: isDateBoundarySnappingEnabled,
       viewportState: scrollViewportState,
       offsetX: $horizontalOffsetX,
       offsetY: $verticalOffsetY,

@@ -180,8 +180,31 @@ final class HorizontalPassthroughScheduleScrollView: NSScrollView {
   }
 }
 
+enum ScheduleDateBoundarySnapPolicy {
+  static func targetX(
+    isEnabled: Bool,
+    originX: CGFloat,
+    dayColumnWidth: CGFloat,
+    documentWidth: CGFloat,
+    viewportWidth: CGFloat
+  ) -> CGFloat? {
+    guard isEnabled, dayColumnWidth > 0.5 else { return nil }
+    let maxX = max(0, documentWidth - viewportWidth)
+    let targetX = min(max(0, round(originX / dayColumnWidth) * dayColumnWidth), maxX)
+    guard abs(targetX - originX) > 0.5 else { return nil }
+    return targetX
+  }
+}
+
 final class SnappingScheduleScrollView: NSScrollView {
   var dayColumnWidth: CGFloat = 0
+  var isDateBoundarySnappingEnabled = true {
+    didSet {
+      if !isDateBoundarySnappingEnabled {
+        cancelActiveSnap()
+      }
+    }
+  }
   private(set) var isSnapping = false
   var onSnapDidFinish: (() -> Void)?
   private var activeSnap: ScheduleSnapAnimation?
@@ -195,6 +218,12 @@ final class SnappingScheduleScrollView: NSScrollView {
   }
 
   override func scrollWheel(with event: NSEvent) {
+    guard isDateBoundarySnappingEnabled else {
+      cancelActiveSnap()
+      super.scrollWheel(with: event)
+      return
+    }
+
     // Cancel any snap that may have started prematurely (before momentum began)
     if event.phase.contains(.began) || event.momentumPhase.contains(.began) {
       cancelActiveSnap()
@@ -227,12 +256,17 @@ final class SnappingScheduleScrollView: NSScrollView {
   }
 
   private func triggerSnap() {
-    guard dayColumnWidth > 0.5 else { return }
     let bounds = contentView.bounds
     guard let docWidth = documentView?.frame.width else { return }
-    let maxX = max(0, docWidth - bounds.width)
-    let targetX = min(max(0, round(bounds.origin.x / dayColumnWidth) * dayColumnWidth), maxX)
-    guard abs(targetX - bounds.origin.x) > 0.5 else { return }
+    guard let targetX = ScheduleDateBoundarySnapPolicy.targetX(
+      isEnabled: isDateBoundarySnappingEnabled,
+      originX: bounds.origin.x,
+      dayColumnWidth: dayColumnWidth,
+      documentWidth: docWidth,
+      viewportWidth: bounds.width
+    ) else {
+      return
+    }
 
     activeSnap?.cancel()
     let distance = abs(targetX - bounds.origin.x)
@@ -500,6 +534,7 @@ struct UnifiedScheduleBoardScrollView<
   let pinnedTopVersion: Int
   let scrollRequestGeneration: Int
   let publishesLiveOffsets: Bool
+  let isDateBoundarySnappingEnabled: Bool
   let viewportState: ScheduleScrollViewportState
 
   @Binding var offsetX: CGFloat
@@ -521,6 +556,7 @@ struct UnifiedScheduleBoardScrollView<
     pinnedTopVersion: Int,
     scrollRequestGeneration: Int,
     publishesLiveOffsets: Bool,
+    isDateBoundarySnappingEnabled: Bool,
     viewportState: ScheduleScrollViewportState,
     offsetX: Binding<CGFloat>,
     offsetY: Binding<CGFloat>,
@@ -539,6 +575,7 @@ struct UnifiedScheduleBoardScrollView<
     self.pinnedTopVersion = pinnedTopVersion
     self.scrollRequestGeneration = scrollRequestGeneration
     self.publishesLiveOffsets = publishesLiveOffsets
+    self.isDateBoundarySnappingEnabled = isDateBoundarySnappingEnabled
     self.viewportState = viewportState
     self._offsetX = offsetX
     self._offsetY = offsetY
@@ -724,6 +761,7 @@ struct UnifiedScheduleBoardScrollView<
   func makeNSView(context: Context) -> NSScrollView {
     let scrollView = SnappingScheduleScrollView()
     scrollView.dayColumnWidth = dayColumnWidth
+    scrollView.isDateBoundarySnappingEnabled = isDateBoundarySnappingEnabled
     let clipView = FlippedScheduleClipView()
     clipView.drawsBackground = false
     scrollView.contentView = clipView
@@ -779,7 +817,10 @@ struct UnifiedScheduleBoardScrollView<
   func updateNSView(_ scrollView: NSScrollView, context: Context) {
     let coordinator = context.coordinator
     viewportState.scrollView = scrollView as? SnappingScheduleScrollView
-    (scrollView as? SnappingScheduleScrollView)?.dayColumnWidth = dayColumnWidth
+    if let snappingScrollView = scrollView as? SnappingScheduleScrollView {
+      snappingScrollView.dayColumnWidth = dayColumnWidth
+      snappingScrollView.isDateBoundarySnappingEnabled = isDateBoundarySnappingEnabled
+    }
 
     if coordinator.lastBoardContentVersion != boardContentVersion {
       coordinator.boardHosting.rootView = boardContent
