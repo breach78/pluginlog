@@ -119,6 +119,31 @@ final class ScheduleDragDropInteractionLayerTests: XCTestCase {
     XCTAssertEqual(pointerDay, days[2])
   }
 
+  func testPointerDayCanChangeWhenTranslationDateSnappingIsDisabled() {
+    let calendar = Calendar(identifier: .gregorian)
+    let firstDay = Date(timeIntervalSince1970: 0)
+    let days = (0..<4).compactMap { calendar.date(byAdding: .day, value: $0, to: firstDay) }
+    let preview = ScheduleInteractionPreview(
+      day: firstDay,
+      timeMinutes: 10 * 60,
+      durationMinutes: 60
+    )
+
+    let resolvedPreview = ScheduleDragDropInteractionLayer.previewByApplyingPointerDay(
+      preview,
+      pointerViewportLocation: CGPoint(x: 76 + 120 + 40, y: 300),
+      allowsDayChange: true,
+      titleColumnWidth: 76,
+      scrollOffsetX: 0,
+      days: days,
+      metrics: metrics
+    )
+
+    XCTAssertEqual(resolvedPreview.day, days[1])
+    XCTAssertEqual(resolvedPreview.timeMinutes, preview.timeMinutes)
+    XCTAssertEqual(resolvedPreview.durationMinutes, preview.durationMinutes)
+  }
+
   func testDateBoundarySnapPolicySkipsTargetWhenDisabled() {
     XCTAssertNil(
       ScheduleDateBoundarySnapPolicy.targetX(

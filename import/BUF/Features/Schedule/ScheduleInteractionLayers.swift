@@ -72,6 +72,35 @@ enum ScheduleDragDropInteractionLayer {
     return days[dayIndex]
   }
 
+  static func previewByApplyingPointerDay(
+    _ preview: ScheduleInteractionPreview,
+    pointerViewportLocation: CGPoint?,
+    allowsDayChange: Bool,
+    titleColumnWidth: CGFloat,
+    scrollOffsetX: CGFloat,
+    days: [Date],
+    metrics: ScheduleInteractionMetrics
+  ) -> ScheduleInteractionPreview {
+    guard allowsDayChange,
+      let pointerViewportLocation,
+      let day = dayForPointerViewportX(
+        pointerViewportLocation.x,
+        titleColumnWidth: titleColumnWidth,
+        scrollOffsetX: scrollOffsetX,
+        days: days,
+        metrics: metrics
+      )
+    else {
+      return preview
+    }
+
+    return ScheduleInteractionPreview(
+      day: day,
+      timeMinutes: preview.timeMinutes,
+      durationMinutes: preview.durationMinutes
+    )
+  }
+
   static func allDayPreviewViewportY(
     pointerViewportY: CGFloat?,
     originalPointerViewportY: CGFloat,

@@ -389,7 +389,8 @@ extension ScheduleBoardView {
       ? dragState.originalTopScheduleY + dragState.translation.height + currentScrollOffsetY
       : nil
 
-    let allowsDateSnap = allowsScheduleDragDateSnapping && !dragState.isPreparationSlot
+    let allowsDayChange = !dragState.isPreparationSlot
+    let allowsTranslationDateSnap = allowsScheduleDragDateSnapping && allowsDayChange
     let preview = ScheduleDragDropInteractionLayer.preview(
       originalDay: dragState.originalDay,
       originalTimeMinutes: dragState.originalTimeMinutes,
@@ -400,7 +401,7 @@ extension ScheduleBoardView {
       currentPointerScheduleY: currentPointerScheduleY,
       currentTopScheduleY: currentTopScheduleY,
       forceAllDay: dragState.isInAllDayZone,
-      allowsDayChange: allowsDateSnap,
+      allowsDayChange: allowsTranslationDateSnap,
       allowsAllDay: true,
       metrics: interactionMetrics,
       calendar: calendar
@@ -408,7 +409,7 @@ extension ScheduleBoardView {
     return previewWithPointerDay(
       preview,
       pointerViewportLocation: dragState.currentPointerViewportLocation,
-      allowsDayChange: allowsDateSnap
+      allowsDayChange: allowsDayChange
     )
   }
 
@@ -457,23 +458,14 @@ extension ScheduleBoardView {
     pointerViewportLocation: CGPoint?,
     allowsDayChange: Bool
   ) -> ScheduleInteractionPreview {
-    guard allowsDayChange,
-      let pointerViewportLocation,
-      let day = ScheduleDragDropInteractionLayer.dayForPointerViewportX(
-        pointerViewportLocation.x,
-        titleColumnWidth: titleColumnWidth,
-        scrollOffsetX: currentScrollOffsetX,
-        days: days,
-        metrics: interactionMetrics
-      )
-    else {
-      return preview
-    }
-
-    return ScheduleInteractionPreview(
-      day: day,
-      timeMinutes: preview.timeMinutes,
-      durationMinutes: preview.durationMinutes
+    ScheduleDragDropInteractionLayer.previewByApplyingPointerDay(
+      preview,
+      pointerViewportLocation: pointerViewportLocation,
+      allowsDayChange: allowsDayChange,
+      titleColumnWidth: titleColumnWidth,
+      scrollOffsetX: currentScrollOffsetX,
+      days: days,
+      metrics: interactionMetrics
     )
   }
 
