@@ -316,6 +316,8 @@ struct TimelineProjectListContent: View {
                     session.beginDragging(taskID: task.id)
                   }
                   return TaskDragPayload.itemProvider(for: task.id)
+                } preview: {
+                  TimelineProjectListHiddenDragPreview()
                 }
                 .onDrop(
                   of: [UTType.text.identifier],
@@ -1014,6 +1016,14 @@ struct TimelineProjectListContent: View {
   }
 
   private static let embeddedTextSize: CGFloat = 12 * 1.3 * 0.9
+}
+
+private struct TimelineProjectListHiddenDragPreview: View {
+  var body: some View {
+    Color.clear
+      .frame(width: 1, height: 1)
+      .accessibilityHidden(true)
+  }
 }
 
 private struct TimelineProjectListTaskDropDelegate: DropDelegate {
