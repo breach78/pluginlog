@@ -615,7 +615,7 @@ extension ScheduleBoardView {
       }
     }
     .overlay(alignment: .top) {
-      if event.canEditTiming && !isBackgroundCalendar {
+      if event.canEditTiming && !event.spansMultipleDays && !isBackgroundCalendar {
         eventResizeHandle(
           for: event,
           edge: .start,
@@ -624,7 +624,7 @@ extension ScheduleBoardView {
       }
     }
     .overlay(alignment: .bottom) {
-      if event.canEditTiming && !isBackgroundCalendar {
+      if event.canEditTiming && !event.spansMultipleDays && !isBackgroundCalendar {
         eventResizeHandle(
           for: event,
           edge: .end,
@@ -2254,8 +2254,18 @@ extension ScheduleBoardView {
     for dragState: ScheduleCalendarDragState,
     preview: ScheduleInteractionPreview
   ) -> CGRect? {
-    dragDropTargetViewportFrame(
-      for: preview,
+    let visualPreview: ScheduleInteractionPreview
+    if let timeMinutes = preview.timeMinutes, let durationMinutes = preview.durationMinutes {
+      visualPreview = ScheduleInteractionPreview(
+        day: preview.day,
+        timeMinutes: timeMinutes,
+        durationMinutes: min(durationMinutes, max(timedMinimumDuration, (24 * 60) - timeMinutes))
+      )
+    } else {
+      visualPreview = preview
+    }
+    return dragDropTargetViewportFrame(
+      for: visualPreview,
       allDayViewportY: allDayPreviewViewportY(for: dragState, preview: preview)
     )
   }

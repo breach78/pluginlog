@@ -419,14 +419,24 @@ extension ScheduleBoardView {
       currentPointerScheduleY: currentPointerScheduleY,
       currentTopScheduleY: currentTopScheduleY,
       forceAllDay: dragState.isInAllDayZone,
-      allowsDayChange: allowsScheduleDragDateSnapping,
+      allowsDayChange: true,
       metrics: interactionMetrics,
       calendar: calendar
     )
-    return previewWithPointerDay(
-      preview,
-      pointerViewportLocation: dragState.currentPointerViewportLocation,
-      allowsDayChange: allowsScheduleDragDateSnapping
+    guard let timeMinutes = preview.timeMinutes else {
+      return preview
+    }
+    guard dragState.originalTimeMinutes != nil else {
+      return ScheduleInteractionPreview(
+        day: preview.day,
+        timeMinutes: timeMinutes,
+        durationMinutes: timedMinimumDuration
+      )
+    }
+    return ScheduleInteractionPreview(
+      day: preview.day,
+      timeMinutes: timeMinutes,
+      durationMinutes: dragState.originalDurationMinutes
     )
   }
 
@@ -802,7 +812,7 @@ extension ScheduleBoardView {
       .onChanged { value in
         guard event.canEditTiming,
           activeTaskDrag == nil, activeTaskResize == nil, activeCalendarDrag == nil,
-          !event.isAllDay
+          !event.isAllDay, !event.spansMultipleDays
         else {
           return
         }
@@ -1139,9 +1149,69 @@ extension ScheduleBoardView {
 
   func deleteScheduleCalendarEvent(
     _ event: ScheduleCalendarEvent,
-    scope: ScheduleCalendarRecurringEditScope
+    scope: ScheduleCalendarRecurringEditScope,
+    actionName: String = "캘린더 일정 삭제",
+    registerUndo: Bool = true
   ) {
-    guard allowScheduleMutation("delete-calendar-event") else { return }
+    Task { @MainActor in
+      do {
+        let snapshot = try await appState.deleteScheduleCalendarEvent(
+          event,
+          scope: scope,
+          undoManager: undoManager
+        )
+        calendarEditError = nil
+        refreshCalendarOverlay(force: true)
+
+        guard registerUndo else { return }
+        appState.registerUndo(with: undoManager, actionName: actionName) {
+          self.restoreDeletedScheduleCalendarEvent(
+            snapshot,
+            actionName: actionName
+          )
+        }
+      } catch let error as ScheduleCalendarEditError {
+        handleScheduleCalendarEditError(error, context: .deleteEvent)
+      } catch {
+        handleScheduleCalendarEditFailure(
+          error,
+          context: .deleteEvent,
+          fallback: .removeFailed(error.localizedDescription)
+        )
+      }
+    }
+  }
+
+  func restoreDeletedScheduleCalendarEvent(
+    _ snapshot: DeletedScheduleCalendarEventSnapshot,
+    actionName: String
+  ) {
+    Task { @MainActor in
+      do {
+        let restoredEvent = try await appState.restoreDeletedScheduleCalendarEvent(
+          snapshot,
+          undoManager: undoManager
+        )
+        calendarEditError = nil
+        refreshCalendarOverlay(force: true)
+        appState.registerUndo(with: undoManager, actionName: actionName) {
+          self.deleteScheduleCalendarEvent(
+            restoredEvent,
+            scope: snapshot.scope,
+            actionName: actionName,
+            registerUndo: true
+          )
+        }
+      } catch let error as ScheduleCalendarEditError {
+        handleScheduleCalendarEditError(error, context: .restoreDeletedEvent)
+      } catch {
+        handleScheduleCalendarEditFailure(
+          error,
+          context: .restoreDeletedEvent,
+          fallback: .saveFailed(error.localizedDescription)
+        )
+      }
+    }
   }
 
   func suppressTaskTap(for duration: TimeInterval = 0.35) {

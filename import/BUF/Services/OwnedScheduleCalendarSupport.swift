@@ -87,10 +87,10 @@ extension ScheduleCalendarStore {
       || liveEvent.endDate != endDate
       || liveEvent.isAllDay
 
+    liveEvent.isAllDay = false
     liveEvent.title = resolvedTitle
     liveEvent.startDate = request.startDate
     liveEvent.endDate = endDate
-    liveEvent.isAllDay = false
 
     if didChange || liveEvent.calendarItemExternalIdentifier == nil {
       do {

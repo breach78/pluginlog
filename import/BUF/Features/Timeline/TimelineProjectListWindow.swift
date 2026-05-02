@@ -442,6 +442,7 @@ struct TimelineProjectListContent: View {
           .font(.system(size: 14))
           .foregroundStyle(completionMarkerColor(for: task))
           .frame(width: 18, height: 22, alignment: .top)
+          .offset(y: 3)
       }
       .buttonStyle(.plain)
       .disabled(completingTaskIDs.contains(task.id))

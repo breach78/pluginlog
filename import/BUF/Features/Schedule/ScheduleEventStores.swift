@@ -253,7 +253,7 @@ enum CalendarScheduleEventStore {
       }
       if event.canEditTiming {
         capabilities.insert(.drag)
-        if !event.isAllDay {
+        if !event.isAllDay && !event.spansMultipleDays {
           capabilities.insert(.resize)
         }
       }

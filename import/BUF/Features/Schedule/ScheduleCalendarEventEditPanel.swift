@@ -18,6 +18,9 @@ struct ScheduleCalendarEventEditPanelContent: View {
   @State private var title: String
   @State private var noteText: String
   @State private var selectedDate: Date
+  @State private var selectedEndDate: Date
+  @State private var isStartDatePickerPresented = false
+  @State private var isEndDatePickerPresented = false
   @State private var hasTime: Bool
   @State private var selectedStartTime: Date
   @State private var selectedEndTime: Date
@@ -50,6 +53,7 @@ struct ScheduleCalendarEventEditPanelContent: View {
     _title = State(initialValue: initialFields.title)
     _noteText = State(initialValue: initialFields.noteText)
     _selectedDate = State(initialValue: initialFields.day)
+    _selectedEndDate = State(initialValue: initialFields.endDay)
     _hasTime = State(initialValue: !initialFields.isAllDay)
     _selectedStartTime = State(initialValue: Self.timeDate(minutes: initialFields.startMinutes))
     _selectedEndTime = State(initialValue: Self.timeDate(minutes: initialFields.endMinutes ?? 10 * 60))
@@ -99,7 +103,14 @@ struct ScheduleCalendarEventEditPanelContent: View {
     .background(Color(nsColor: NSColor(calibratedWhite: 1, alpha: 1)))
     .onChange(of: title) { _, _ in scheduleAutoSave() }
     .onChange(of: noteText) { _, _ in scheduleAutoSave() }
-    .onChange(of: selectedDate) { _, _ in scheduleAutoSave() }
+    .onChange(of: selectedDate) { _, _ in
+      normalizeEndDateAfterStartDateChange()
+      scheduleAutoSave()
+    }
+    .onChange(of: selectedEndDate) { _, _ in
+      normalizeEndDateAfterStartDateChange()
+      scheduleAutoSave()
+    }
     .onChange(of: hasTime) { _, enabled in
       if enabled {
         normalizeEndTimeAfterStartChange()
@@ -196,20 +207,29 @@ struct ScheduleCalendarEventEditPanelContent: View {
   private var scheduleSection: some View {
     VStack(alignment: .leading, spacing: 12) {
       HStack(alignment: .top, spacing: 18) {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 10) {
           Text("날짜")
             .font(.system(size: 14, weight: .semibold))
             .foregroundStyle(.secondary)
 
-          DatePicker("", selection: $selectedDate, displayedComponents: .date)
-            .datePickerStyle(.graphical)
-            .labelsHidden()
-            .frame(maxWidth: 260, alignment: .leading)
+          dateControl(
+            title: "시작",
+            date: $selectedDate,
+            isPresented: $isStartDatePickerPresented
+          )
+
+          dateControl(
+            title: "끝",
+            date: $selectedEndDate,
+            isPresented: $isEndDatePickerPresented
+          )
         }
+        .frame(width: 260, alignment: .topLeading)
 
         VStack(alignment: .leading, spacing: 10) {
           Toggle("시간 설정", isOn: $hasTime)
             .font(.system(size: 15, weight: .semibold))
+            .toggleStyle(.checkbox)
 
           if hasTime {
             DatePicker("시작", selection: $selectedStartTime, displayedComponents: .hourAndMinute)
@@ -228,6 +248,43 @@ struct ScheduleCalendarEventEditPanelContent: View {
     }
   }
 
+  private func dateControl(
+    title: String,
+    date: Binding<Date>,
+    isPresented: Binding<Bool>
+  ) -> some View {
+    Button {
+      isPresented.wrappedValue = true
+    } label: {
+      HStack(spacing: 8) {
+        Text(title)
+          .font(.system(size: 14, weight: .semibold))
+          .foregroundStyle(.secondary)
+          .frame(width: 34, alignment: .leading)
+        Image(systemName: "calendar")
+          .font(.system(size: 13, weight: .semibold))
+        Text(date.wrappedValue.formatted(.dateTime.year().month(.wide).day()))
+          .font(.system(size: 15, weight: .medium))
+          .lineLimit(1)
+        Spacer(minLength: 0)
+        Image(systemName: "chevron.down")
+          .font(.system(size: 10, weight: .semibold))
+          .foregroundStyle(.secondary)
+      }
+      .calendarEventCompactControlBackground()
+    }
+    .buttonStyle(.plain)
+    .foregroundStyle(Color.primary)
+    .popover(isPresented: isPresented, arrowEdge: .bottom) {
+      DatePicker("", selection: date, displayedComponents: .date)
+        .datePickerStyle(.graphical)
+        .labelsHidden()
+        .padding(12)
+        .frame(width: 284, alignment: .leading)
+        .background(CalendarEventEditFieldStyle.panelBackgroundColor)
+    }
+  }
+
   private var fieldBackground: some View {
     Rectangle()
       .fill(Color(nsColor: NSColor(calibratedWhite: 0.92, alpha: 1)))
@@ -241,7 +298,9 @@ struct ScheduleCalendarEventEditPanelContent: View {
     guard let startMinutes = fields.startMinutes, let endMinutes = fields.endMinutes else {
       return "시작과 끝 시간을 확인해야 저장됩니다."
     }
-    guard endMinutes > startMinutes else { return "끝 시간은 시작 시간보다 뒤여야 합니다." }
+    guard fields.endDay > fields.day || endMinutes > startMinutes else {
+      return "끝 시간은 시작 시간보다 뒤여야 합니다."
+    }
     return nil
   }
 
@@ -254,6 +313,7 @@ struct ScheduleCalendarEventEditPanelContent: View {
     title = normalized.title
     noteText = normalized.noteText
     selectedDate = normalized.day
+    selectedEndDate = normalized.endDay
     hasTime = !normalized.isAllDay
     selectedStartTime = Self.timeDate(minutes: normalized.startMinutes)
     selectedEndTime = Self.timeDate(minutes: normalized.endMinutes ?? 10 * 60)
@@ -347,6 +407,7 @@ struct ScheduleCalendarEventEditPanelContent: View {
         title: title,
         noteText: noteText,
         day: calendar.startOfDay(for: selectedDate),
+        endDay: calendar.startOfDay(for: selectedEndDate),
         isAllDay: !hasTime,
         startMinutes: hasTime ? Self.timeMinutes(from: selectedStartTime) : nil,
         endMinutes: hasTime ? Self.timeMinutes(from: selectedEndTime) : nil
@@ -356,10 +417,20 @@ struct ScheduleCalendarEventEditPanelContent: View {
 
   private func normalizeEndTimeAfterStartChange() {
     guard hasTime else { return }
+    guard calendar.startOfDay(for: selectedDate) == calendar.startOfDay(for: selectedEndDate) else {
+      return
+    }
     let startMinutes = Self.timeMinutes(from: selectedStartTime)
     let endMinutes = Self.timeMinutes(from: selectedEndTime)
     guard endMinutes <= startMinutes else { return }
     selectedEndTime = Self.timeDate(minutes: min(startMinutes + 60, 23 * 60 + 59))
+  }
+
+  private func normalizeEndDateAfterStartDateChange() {
+    let startDay = calendar.startOfDay(for: selectedDate)
+    let endDay = calendar.startOfDay(for: selectedEndDate)
+    guard endDay < startDay else { return }
+    selectedEndDate = startDay
   }
 
   static func normalizedFields(
@@ -373,11 +444,16 @@ struct ScheduleCalendarEventEditPanelContent: View {
       ? ""
       : fields.noteText
     let normalizedDay = Calendar.autoupdatingCurrent.startOfDay(for: fields.day)
+    let normalizedEndDay = max(
+      normalizedDay,
+      Calendar.autoupdatingCurrent.startOfDay(for: fields.endDay)
+    )
     if fields.isAllDay {
       return ScheduleCalendarEventEditFields(
         title: normalizedTitle,
         noteText: normalizedNoteText,
         day: normalizedDay,
+        endDay: normalizedEndDay,
         isAllDay: true,
         startMinutes: nil,
         endMinutes: nil
@@ -388,9 +464,10 @@ struct ScheduleCalendarEventEditPanelContent: View {
       title: normalizedTitle,
       noteText: normalizedNoteText,
       day: normalizedDay,
+      endDay: normalizedEndDay,
       isAllDay: false,
       startMinutes: fields.startMinutes.map { min(max(0, $0), 23 * 60 + 59) },
-      endMinutes: fields.endMinutes.map { min(max(1, $0), 23 * 60 + 59) }
+      endMinutes: fields.endMinutes.map { min(max(0, $0), 23 * 60 + 59) }
     )
   }
 
@@ -398,13 +475,25 @@ struct ScheduleCalendarEventEditPanelContent: View {
     let calendar = Calendar.autoupdatingCurrent
     let startMinutes = timeMinutes(from: event.startDate)
     let endMinutes = timeMinutes(from: event.endDate)
+    let startDay = calendar.startOfDay(for: event.startDate)
+    let endDay: Date
+    if event.isAllDay {
+      let exclusiveEndDay = calendar.startOfDay(for: event.endDate)
+      let visibleEndDay =
+        calendar.date(byAdding: .day, value: -1, to: exclusiveEndDay)
+        ?? startDay
+      endDay = max(startDay, visibleEndDay)
+    } else {
+      endDay = max(startDay, calendar.startOfDay(for: event.endDate))
+    }
     return ScheduleCalendarEventEditFields(
       title: event.title,
       noteText: event.notes,
-      day: calendar.startOfDay(for: event.startDate),
+      day: startDay,
+      endDay: endDay,
       isAllDay: event.isAllDay,
       startMinutes: event.isAllDay ? nil : startMinutes,
-      endMinutes: event.isAllDay ? nil : max(startMinutes + 1, endMinutes)
+      endMinutes: event.isAllDay ? nil : endMinutes
     )
   }
 
@@ -421,5 +510,34 @@ struct ScheduleCalendarEventEditPanelContent: View {
   private static func timeMinutes(from date: Date) -> Int {
     let components = Calendar.autoupdatingCurrent.dateComponents([.hour, .minute], from: date)
     return (components.hour ?? 0) * 60 + (components.minute ?? 0)
+  }
+}
+
+private enum CalendarEventEditFieldStyle {
+  static let panelBackgroundColor = Color(
+    nsColor: NSColor(calibratedWhite: 1, alpha: 1)
+  )
+
+  static let controlBackgroundColor = Color(
+    nsColor: NSColor(calibratedWhite: 0.985, alpha: 1)
+  )
+}
+
+private struct CalendarEventEditCompactControlBackground: ViewModifier {
+  func body(content: Content) -> some View {
+    content
+      .padding(.horizontal, 10)
+      .frame(height: 32)
+      .frame(maxWidth: .infinity, alignment: .leading)
+      .background(
+        RoundedRectangle(cornerRadius: 4)
+          .fill(CalendarEventEditFieldStyle.controlBackgroundColor)
+      )
+  }
+}
+
+private extension View {
+  func calendarEventCompactControlBackground() -> some View {
+    modifier(CalendarEventEditCompactControlBackground())
   }
 }

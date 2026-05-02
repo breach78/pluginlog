@@ -80,7 +80,10 @@ extension AppState {
     undoManager: UndoManager? = nil
   ) async throws -> DeletedScheduleCalendarEventSnapshot {
     _ = undoManager
-    return try await calendarServiceRegistry.scheduleCalendarService.delete(event, scope: scope)
+    let snapshot = try await calendarServiceRegistry.scheduleCalendarService.delete(event, scope: scope)
+    scheduleCalendarOverlayProjection =
+      calendarServiceRegistry.scheduleCalendarService.overlayProjection
+    return snapshot
   }
 
   func restoreDeletedScheduleCalendarEvent(
@@ -88,6 +91,9 @@ extension AppState {
     undoManager: UndoManager? = nil
   ) async throws -> ScheduleCalendarEvent {
     _ = undoManager
-    return try await calendarServiceRegistry.scheduleCalendarService.restoreDeletedEvent(snapshot)
+    let restoredEvent = try await calendarServiceRegistry.scheduleCalendarService.restoreDeletedEvent(snapshot)
+    scheduleCalendarOverlayProjection =
+      calendarServiceRegistry.scheduleCalendarService.overlayProjection
+    return restoredEvent
   }
 }

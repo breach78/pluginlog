@@ -40,10 +40,24 @@ struct ScheduleCalendarEvent: Identifiable, Hashable, Sendable {
   }
 }
 
+extension ScheduleCalendarEvent {
+  var spansMultipleDays: Bool {
+    let calendar = Calendar.autoupdatingCurrent
+    let startDay = calendar.startOfDay(for: startDate)
+    let endDay = calendar.startOfDay(for: endDate)
+    if isAllDay {
+      let durationDays = calendar.dateComponents([.day], from: startDay, to: endDay).day ?? 0
+      return durationDays > 1
+    }
+    return startDay != endDay
+  }
+}
+
 struct ScheduleCalendarEventEditFields: Equatable, Sendable {
   var title: String
   var noteText: String
   var day: Date
+  var endDay: Date
   var isAllDay: Bool
   var startMinutes: Int?
   var endMinutes: Int?
@@ -540,9 +554,7 @@ private final class DefaultScheduleCalendarCapabilityService: ScheduleCalendarCa
       } else {
         liveEvent.title = trimmedTitle
         liveEvent.notes = notes
-        liveEvent.startDate = target.startDate
-        liveEvent.endDate = target.endDate
-        liveEvent.isAllDay = target.isAllDay
+        applyTimingTarget(target, to: liveEvent)
         try eventStore.save(liveEvent, span: scope.eventKitSpan)
         savedEvent = liveEvent
       }
@@ -586,9 +598,7 @@ private final class DefaultScheduleCalendarCapabilityService: ScheduleCalendarCa
           notes: nil
         )
       } else {
-        liveEvent.startDate = target.startDate
-        liveEvent.endDate = target.endDate
-        liveEvent.isAllDay = target.isAllDay
+        applyTimingTarget(target, to: liveEvent)
         try eventStore.save(liveEvent, span: scope.eventKitSpan)
         savedEvent = liveEvent
       }
@@ -614,8 +624,9 @@ private final class DefaultScheduleCalendarCapabilityService: ScheduleCalendarCa
   ) throws -> ScheduleResolvedTimingTarget {
     let calendar = Calendar.autoupdatingCurrent
     let normalizedDay = calendar.startOfDay(for: fields.day)
+    let normalizedEndDay = max(normalizedDay, calendar.startOfDay(for: fields.endDay))
     if fields.isAllDay {
-      guard let endDate = calendar.date(byAdding: .day, value: 1, to: normalizedDay) else {
+      guard let endDate = calendar.date(byAdding: .day, value: 1, to: normalizedEndDay) else {
         throw ScheduleCalendarEditError.invalidTarget
       }
       return ScheduleResolvedTimingTarget(startDate: normalizedDay, endDate: endDate, isAllDay: true)
@@ -625,7 +636,7 @@ private final class DefaultScheduleCalendarCapabilityService: ScheduleCalendarCa
       let endMinutes = fields.endMinutes,
       startMinutes >= 0,
       endMinutes <= 24 * 60,
-      endMinutes > startMinutes
+      normalizedEndDay > normalizedDay || endMinutes > startMinutes
     else {
       throw ScheduleCalendarEditError.invalidTarget
     }
@@ -637,14 +648,19 @@ private final class DefaultScheduleCalendarCapabilityService: ScheduleCalendarCa
       ),
       let endDate = calendar.date(
         byAdding: DateComponents(hour: endMinutes / 60, minute: endMinutes % 60),
-        to: normalizedDay
-      ),
-      calendar.isDate(startDate, inSameDayAs: endDate)
+        to: normalizedEndDay
+      )
     else {
       throw ScheduleCalendarEditError.invalidTarget
     }
 
     return ScheduleResolvedTimingTarget(startDate: startDate, endDate: endDate, isAllDay: false)
+  }
+
+  private func applyTimingTarget(_ target: ScheduleResolvedTimingTarget, to event: EKEvent) {
+    event.isAllDay = target.isAllDay
+    event.startDate = target.startDate
+    event.endDate = target.endDate
   }
 
   func delete(
@@ -707,9 +723,9 @@ private final class DefaultScheduleCalendarCapabilityService: ScheduleCalendarCa
     restored.availability = snapshot.availability
     restored.structuredLocation = snapshot.structuredLocation?.copy() as? EKStructuredLocation
     restored.alarms = snapshot.alarms.compactMap { $0.copy() as? EKAlarm }
+    restored.isAllDay = snapshot.isAllDay
     restored.startDate = snapshot.startDate
     restored.endDate = snapshot.endDate
-    restored.isAllDay = snapshot.isAllDay
 
     if snapshot.scope == .futureEvents, snapshot.wasRecurring {
       restored.recurrenceRules = snapshot.recurrenceRules
@@ -887,9 +903,9 @@ final class ScheduleCalendarStore: ObservableObject, ScheduleCalendarServicing,
     replacement.availability = event.availability
     replacement.structuredLocation = event.structuredLocation?.copy() as? EKStructuredLocation
     replacement.alarms = event.alarms?.compactMap { $0.copy() as? EKAlarm }
+    replacement.isAllDay = target.isAllDay
     replacement.startDate = target.startDate
     replacement.endDate = target.endDate
-    replacement.isAllDay = target.isAllDay
 
     do {
       try eventStore.save(replacement, span: .thisEvent, commit: false)
@@ -1340,27 +1356,10 @@ final class ScheduleCalendarStore: ObservableObject, ScheduleCalendarServicing,
       )
     }
 
-    guard let startDate = event.startDate, let endDate = event.endDate else {
+    guard event.startDate != nil, event.endDate != nil else {
       return ScheduleTimingEditability(
         canEditTiming: false,
         restrictionReason: ScheduleCalendarEditError.eventNotFound.errorDescription
-      )
-    }
-
-    let startDay = calendar.startOfDay(for: startDate)
-    if event.isAllDay {
-      let endDay = calendar.startOfDay(for: endDate)
-      let durationDays = calendar.dateComponents([.day], from: startDay, to: endDay).day ?? 0
-      guard durationDays == 1 else {
-        return ScheduleTimingEditability(
-          canEditTiming: false,
-          restrictionReason: ScheduleCalendarEditError.unsupportedMultiDay.errorDescription
-        )
-      }
-    } else if !calendar.isDate(startDate, inSameDayAs: endDate) {
-      return ScheduleTimingEditability(
-        canEditTiming: false,
-        restrictionReason: ScheduleCalendarEditError.unsupportedMultiDay.errorDescription
       )
     }
 
@@ -1396,10 +1395,21 @@ final class ScheduleCalendarStore: ObservableObject, ScheduleCalendarServicing,
       return ScheduleResolvedTimingTarget(startDate: startDate, endDate: endDate, isAllDay: false)
     }
 
-    guard let endDate = calendar.date(byAdding: .day, value: 1, to: normalizedDay) else {
+    let durationDays = currentAllDayDurationDays(for: event, calendar: calendar)
+    guard let endDate = calendar.date(byAdding: .day, value: durationDays, to: normalizedDay) else {
       throw ScheduleCalendarEditError.invalidTarget
     }
     return ScheduleResolvedTimingTarget(startDate: normalizedDay, endDate: endDate, isAllDay: true)
+  }
+
+  private func currentAllDayDurationDays(
+    for event: ScheduleCalendarEvent,
+    calendar: Calendar
+  ) -> Int {
+    let startDay = calendar.startOfDay(for: event.startDate)
+    let endDay = calendar.startOfDay(for: event.endDate)
+    let daySpan = calendar.dateComponents([.day], from: startDay, to: endDay).day ?? 1
+    return max(1, daySpan)
   }
 
   private func currentDurationMinutes(
