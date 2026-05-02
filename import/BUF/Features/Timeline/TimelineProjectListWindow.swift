@@ -950,25 +950,6 @@ struct TimelineProjectListContent: View {
   private static let embeddedTextSize: CGFloat = 12 * 1.3 * 0.9
 }
 
-private enum TimelineProjectListDraftAnchor: Hashable {
-  case beginning
-  case after(UUID)
-
-  var taskID: UUID? {
-    switch self {
-    case .beginning:
-      return nil
-    case .after(let taskID):
-      return taskID
-    }
-  }
-}
-
-private struct TimelineProjectListTaskDropIndicator: Equatable {
-  let targetTaskID: UUID
-  let placement: TimelineProjectDropPlacement
-}
-
 private struct TimelineProjectListTaskDropDelegate: DropDelegate {
   let targetTaskID: UUID
   @Binding var draggingTaskID: UUID?

@@ -1,0 +1,204 @@
+import XCTest
+@testable import BrainUnfog
+
+final class TimelineProjectListSessionTests: XCTestCase {
+  func testApplySnapshotPreservesDraftWhileMergingLatestTasks() {
+    let projectID = UUID()
+    let firstID = UUID()
+    let secondID = UUID()
+    var session = TimelineProjectListSession(
+      snapshot: snapshot(projectID: projectID, tasks: [
+        task(id: firstID, title: "First")
+      ])
+    )
+    session.startDraft(after: firstID)
+    session.updateDraftTitle("New task")
+
+    session.applySnapshot(
+      snapshot(projectID: projectID, tasks: [
+        task(id: firstID, title: "First updated"),
+        task(id: secondID, title: "Second"),
+      ])
+    )
+
+    XCTAssertEqual(session.tasks.map(\.id), [firstID, secondID])
+    XCTAssertEqual(session.tasks.first?.title, "First updated")
+    XCTAssertEqual(session.draftAnchor, .after(firstID))
+    XCTAssertEqual(session.draftTitle, "New task")
+    XCTAssertEqual(session.focusedDraftAnchor, .after(firstID))
+  }
+
+  func testApplySnapshotPreservesEditingFields() {
+    let projectID = UUID()
+    let taskID = UUID()
+    var session = TimelineProjectListSession(
+      snapshot: snapshot(projectID: projectID, tasks: [
+        task(id: taskID, title: "Original")
+      ])
+    )
+    session.startEditing(task(id: taskID, title: "Original"))
+    session.updateEditingTitle("Local edit")
+
+    session.applySnapshot(
+      snapshot(projectID: projectID, tasks: [
+        task(id: taskID, title: "Remote edit")
+      ])
+    )
+
+    XCTAssertEqual(session.tasks.first?.title, "Remote edit")
+    XCTAssertEqual(session.editingTaskID, taskID)
+    XCTAssertEqual(session.editingTitle, "Local edit")
+    XCTAssertEqual(session.focusedEditingTaskID, taskID)
+  }
+
+  func testOptimisticCreateSuccessReplacesTemporaryIdentifier() {
+    let projectID = UUID()
+    let firstID = UUID()
+    let secondID = UUID()
+    let temporaryID = UUID()
+    let createdID = UUID()
+    var session = TimelineProjectListSession(
+      snapshot: snapshot(projectID: projectID, tasks: [
+        task(id: firstID, title: "First"),
+        task(id: secondID, title: "Second"),
+      ])
+    )
+    session.startDraft(after: firstID)
+    session.updateDraftTitle("Created")
+
+    let optimisticTask = session.submitDraftOptimistically(temporaryID: temporaryID)
+    XCTAssertEqual(optimisticTask?.id, temporaryID)
+    XCTAssertEqual(session.tasks.map(\.id), [firstID, temporaryID, secondID])
+    XCTAssertTrue(session.isPendingCreate(temporaryID))
+
+    session.resolveOptimisticCreate(
+      temporaryID: temporaryID,
+      createdTask: task(id: createdID, title: "Created")
+    )
+
+    XCTAssertEqual(session.tasks.map(\.id), [firstID, createdID, secondID])
+    XCTAssertFalse(session.isPendingCreate(temporaryID))
+    XCTAssertEqual(session.draftAnchor, .after(createdID))
+    XCTAssertEqual(session.focusedDraftAnchor, .after(createdID))
+  }
+
+  func testOptimisticCreateFailureRestoresDraftAtOriginalAnchor() {
+    let projectID = UUID()
+    let firstID = UUID()
+    let temporaryID = UUID()
+    var session = TimelineProjectListSession(
+      snapshot: snapshot(projectID: projectID, tasks: [
+        task(id: firstID, title: "First")
+      ])
+    )
+    session.startDraft(after: firstID)
+    session.updateDraftTitle("Created")
+    _ = session.submitDraftOptimistically(temporaryID: temporaryID)
+
+    session.failOptimisticCreate(temporaryID: temporaryID)
+
+    XCTAssertEqual(session.tasks.map(\.id), [firstID])
+    XCTAssertFalse(session.isPendingCreate(temporaryID))
+    XCTAssertEqual(session.draftAnchor, .after(firstID))
+    XCTAssertEqual(session.draftTitle, "Created")
+    XCTAssertEqual(session.focusedDraftAnchor, .after(firstID))
+  }
+
+  func testLiveReorderPreviewCommitsOpenTaskOrderOnly() {
+    let projectID = UUID()
+    let firstID = UUID()
+    let completedID = UUID()
+    let thirdID = UUID()
+    var session = TimelineProjectListSession(
+      snapshot: snapshot(projectID: projectID, tasks: [
+        task(id: firstID, title: "First"),
+        task(id: completedID, title: "Completed", isCompleted: true),
+        task(id: thirdID, title: "Third"),
+      ])
+    )
+    session.beginDragging(taskID: firstID)
+
+    XCTAssertTrue(
+      session.previewDrop(draggedID: firstID, targetID: thirdID, placement: .after)
+    )
+    XCTAssertEqual(session.tasks.map(\.id), [completedID, thirdID, firstID])
+
+    let committedOpenTaskIDs = session.commitDrop()
+    XCTAssertEqual(committedOpenTaskIDs, [thirdID, firstID])
+    XCTAssertNil(session.draggingTaskID)
+    XCTAssertNil(session.dropIndicator)
+  }
+
+  func testOptimisticRenameFailureRestoresPreviousTask() {
+    let projectID = UUID()
+    let taskID = UUID()
+    var session = TimelineProjectListSession(
+      snapshot: snapshot(projectID: projectID, tasks: [
+        task(id: taskID, title: "Original")
+      ])
+    )
+    session.startEditing(task(id: taskID, title: "Original"))
+    session.updateEditingTitle("Renamed")
+
+    let renamed = session.submitRenameOptimistically(taskID: taskID)
+    XCTAssertEqual(renamed?.title, "Renamed")
+    XCTAssertEqual(session.tasks.first?.title, "Renamed")
+
+    session.failOptimisticRename(taskID: taskID)
+    XCTAssertEqual(session.tasks.first?.title, "Original")
+  }
+
+  func testWriteQueueRunsOperationsInOrder() async {
+    let queue = TimelineProjectListWriteQueue()
+    let recorder = WriteQueueRecorder()
+
+    await queue.enqueue {
+      await recorder.append(1)
+    }
+    await queue.enqueue {
+      await recorder.append(2)
+    }
+    await queue.drain()
+
+    let values = await recorder.allValues()
+    XCTAssertEqual(values, [1, 2])
+  }
+
+  private func snapshot(
+    projectID: UUID,
+    tasks: [TimelineProjectListWindowSnapshot.Task]
+  ) -> TimelineProjectListWindowSnapshot {
+    TimelineProjectListWindowSnapshot(
+      projectID: projectID,
+      title: "Project",
+      colorHex: nil,
+      tasks: tasks
+    )
+  }
+
+  private func task(
+    id: UUID,
+    title: String,
+    isCompleted: Bool = false
+  ) -> TimelineProjectListWindowSnapshot.Task {
+    TimelineProjectListWindowSnapshot.Task(
+      id: id,
+      title: title,
+      dateText: nil,
+      isCompleted: isCompleted,
+      isOverdue: false
+    )
+  }
+}
+
+private actor WriteQueueRecorder {
+  private(set) var values: [Int] = []
+
+  func append(_ value: Int) {
+    values.append(value)
+  }
+
+  func allValues() -> [Int] {
+    values
+  }
+}
