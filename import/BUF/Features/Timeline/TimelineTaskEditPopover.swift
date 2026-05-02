@@ -582,15 +582,24 @@ struct TimelineTaskEditPopoverContent: View {
   private func loadLatest() async {
     isLoading = true
     let fields = await loadFields()
-    guard currentFields() == lastCommittedFields else {
+    let current = currentFields()
+    guard current == lastCommittedFields else {
       isLoading = false
       return
     }
-    apply(fields)
+    let loadedFields = committedFields(from: fields)
+    guard !TimelineTaskEditReloadPolicy.shouldPreserveCurrentEditorFields(
+      current: current,
+      loaded: loadedFields
+    ) else {
+      isLoading = false
+      return
+    }
+    apply(fields, committedFields: loadedFields)
     isLoading = false
   }
 
-  private func apply(_ fields: RetainedTaskEditFields) {
+  private func apply(_ fields: RetainedTaskEditFields, committedFields: RetainedTaskEditFields? = nil) {
     autoSaveTask?.cancel()
     autoSaveTask = nil
     let nextNoteText = TaskEditAttachmentService.noteTextByRemovingAttachmentLinks(from: fields.noteText)
@@ -603,7 +612,23 @@ struct TimelineTaskEditPopoverContent: View {
     hasTime = fields.timeMinutes != nil
     selectedTime = Self.timeDate(minutes: fields.timeMinutes)
     durationMinutes = fields.durationMinutes
-    lastCommittedFields = Self.savingFields(
+    lastCommittedFields =
+      committedFields
+      ?? Self.savingFields(
+        title: fields.title,
+        noteText: nextNoteText,
+        attachments: nextAttachments,
+        day: fields.day,
+        timeMinutes: fields.timeMinutes,
+        durationMinutes: fields.durationMinutes
+      )
+    endSyncEditingSessionIfClean()
+  }
+
+  private func committedFields(from fields: RetainedTaskEditFields) -> RetainedTaskEditFields {
+    let nextNoteText = TaskEditAttachmentService.noteTextByRemovingAttachmentLinks(from: fields.noteText)
+    let nextAttachments = TaskEditAttachmentService.attachments(in: fields.noteText, vaultRootURL: vaultRootURL)
+    return Self.savingFields(
       title: fields.title,
       noteText: nextNoteText,
       attachments: nextAttachments,
@@ -611,7 +636,6 @@ struct TimelineTaskEditPopoverContent: View {
       timeMinutes: fields.timeMinutes,
       durationMinutes: fields.durationMinutes
     )
-    endSyncEditingSessionIfClean()
   }
 
   private func closeEditor() {
@@ -765,6 +789,28 @@ struct TimelineTaskEditPopoverContent: View {
   private static func timeMinutes(from date: Date) -> Int {
     let components = Calendar.autoupdatingCurrent.dateComponents([.hour, .minute], from: date)
     return (components.hour ?? 0) * 60 + (components.minute ?? 0)
+  }
+}
+
+enum TimelineTaskEditReloadPolicy {
+  static func shouldPreserveCurrentEditorFields(
+    current: RetainedTaskEditFields,
+    loaded: RetainedTaskEditFields
+  ) -> Bool {
+    guard current != loaded else { return true }
+    var normalizedCurrent = current
+    var normalizedLoaded = loaded
+    normalizedCurrent.noteText = noteTextByDroppingTrailingBlankLines(current.noteText)
+    normalizedLoaded.noteText = noteTextByDroppingTrailingBlankLines(loaded.noteText)
+    return normalizedCurrent == normalizedLoaded
+  }
+
+  private static func noteTextByDroppingTrailingBlankLines(_ noteText: String) -> String {
+    var lines = noteText.components(separatedBy: "\n")
+    while let last = lines.last, last.trimmingCharacters(in: .whitespaces).isEmpty {
+      lines.removeLast()
+    }
+    return lines.joined(separator: "\n")
   }
 }
 
