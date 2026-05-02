@@ -1126,11 +1126,12 @@ actor AppOwnedWorkspaceStore {
 
   private struct RecurringTaskContentSignature: Hashable {
     let title: String
-    let noteText: String
 
     init(title: String, noteText: String) {
+      // Completed Reminder occurrences can retain an older note body after the
+      // active recurring item is edited, so note text is not a stable match key.
       self.title = Self.normalizedText(title)
-      self.noteText = Self.normalizedText(noteText)
+      _ = noteText
     }
 
     private static func normalizedText(_ value: String) -> String {
