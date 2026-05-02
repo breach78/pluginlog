@@ -1597,17 +1597,11 @@ final class ScheduleCalendarStore: ObservableObject, ScheduleCalendarServicing,
     }
 
     let calendarScope = [calendar]
-    let calendarSystem = Calendar(identifier: .gregorian)
-    guard
-      let lowerBound = calendarSystem.date(from: DateComponents(year: 2000, month: 1, day: 1)),
-      let upperBound = calendarSystem.date(from: DateComponents(year: 2100, month: 1, day: 1))
-    else {
-      return []
-    }
+    guard let range = currentFetchRange else { return [] }
 
     let predicate = eventStore.predicateForEvents(
-      withStart: lowerBound,
-      end: upperBound,
+      withStart: range.lowerBound,
+      end: range.upperBound,
       calendars: calendarScope
     )
     return collapsedRecurringOccurrences(from: eventStore.events(matching: predicate))

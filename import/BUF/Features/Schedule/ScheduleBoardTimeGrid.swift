@@ -11,6 +11,8 @@ private enum ScheduleItemVisualStyle {
 }
 
 struct ScheduleCurrentTimeIndicator: View {
+  private static let refreshIntervalSeconds: TimeInterval = 60
+
   let dayRange: ClosedRange<Int>
   let dayColumnWidth: CGFloat
   let totalWidth: CGFloat
@@ -19,7 +21,7 @@ struct ScheduleCurrentTimeIndicator: View {
   let calendar: Calendar
 
   var body: some View {
-    TimelineView(.periodic(from: .now, by: 1)) { context in
+    TimelineView(.periodic(from: .now, by: Self.refreshIntervalSeconds)) { context in
       ZStack(alignment: .topLeading) {
         let currentDate = context.date
         let today = calendar.startOfDay(for: currentDate)
