@@ -24,11 +24,15 @@ extension AppOwnedWorkspaceStore {
       sqlite3_close(db)
       throw AppOwnedWorkspaceStoreError.openFailed(message)
     }
+    sqlite3_busy_timeout(db, 5000)
     return db
   }
 
   func migrate(_ db: OpaquePointer) throws {
     try exec(db, "PRAGMA foreign_keys = ON;")
+    if try schemaVersion(db) == "1" {
+      return
+    }
     try exec(
       db,
       """
@@ -183,6 +187,12 @@ extension AppOwnedWorkspaceStore {
     table: String,
     definition: String
   ) throws {
+    guard let columnName = definition.split(whereSeparator: \.isWhitespace).first else {
+      throw AppOwnedWorkspaceStoreError.invalidSQLiteValue("missing column name in migration")
+    }
+    guard try !columnExists(db, table: table, column: String(columnName)) else {
+      return
+    }
     do {
       try exec(db, "ALTER TABLE \(table) ADD COLUMN \(definition);")
     } catch {
@@ -191,6 +201,29 @@ extension AppOwnedWorkspaceStore {
         throw error
       }
     }
+  }
+
+  func schemaVersion(_ db: OpaquePointer) throws -> String? {
+    guard try tableExists(db, table: "app_metadata") else {
+      return nil
+    }
+    return try scalarText(db, sql: "SELECT value FROM app_metadata WHERE key = 'schema_version';")
+  }
+
+  func tableExists(_ db: OpaquePointer, table: String) throws -> Bool {
+    try scalarInt(
+      db,
+      sql: """
+      SELECT COUNT(*) FROM sqlite_master
+      WHERE type = 'table' AND name = \(sqlStringLiteral(table));
+      """
+    ) > 0
+  }
+
+  func columnExists(_ db: OpaquePointer, table: String, column: String) throws -> Bool {
+    try query(db, "PRAGMA table_info(\(quotedIdentifier(table)));") { statement in
+      columnText(statement, 1)
+    }.contains(column)
   }
 
   func bind(_ binding: Binding, to statement: OpaquePointer, at index: Int32) {
@@ -252,5 +285,13 @@ extension AppOwnedWorkspaceStore {
       return nil
     }
     return value
+  }
+
+  func sqlStringLiteral(_ value: String) -> String {
+    "'\(value.replacingOccurrences(of: "'", with: "''"))'"
+  }
+
+  func quotedIdentifier(_ value: String) -> String {
+    "\"\(value.replacingOccurrences(of: "\"", with: "\"\""))\""
   }
 }

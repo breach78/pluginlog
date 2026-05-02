@@ -1,4 +1,5 @@
 import XCTest
+import SQLite3
 @testable import BrainUnfog
 
 final class AppOwnedWorkspaceStoreTests: XCTestCase {
@@ -293,6 +294,40 @@ final class AppOwnedWorkspaceStoreTests: XCTestCase {
     case .blocked:
       break
     }
+  }
+
+  func testProjectionReadDoesNotAttemptSchemaWritesWhileAnotherConnectionIsWriting() async throws {
+    let containerRoot = try makeTemporaryDirectory()
+    let store = AppOwnedWorkspaceStore(containerRootURL: containerRoot)
+    let createdAt = Date(timeIntervalSinceReferenceDate: 500)
+    try await store.replaceReminderSnapshot(
+      ReminderImportSnapshotBatch(
+        lists: [
+          ReminderListImportSnapshot(
+            identifier: "list-1",
+            externalIdentifier: "list-1",
+            title: "Project",
+            colorHex: nil
+          )
+        ],
+        itemsByListIdentifier: [:]
+      ),
+      importedAt: createdAt
+    )
+    try await store.setProjectionReadEnabled(true)
+
+    var writer: OpaquePointer?
+    let sqliteURL = ContainerPaths(root: containerRoot).sqliteURL
+    XCTAssertEqual(sqlite3_open(sqliteURL.path, &writer), SQLITE_OK)
+    defer {
+      sqlite3_exec(writer, "ROLLBACK;", nil, nil, nil)
+      sqlite3_close(writer)
+    }
+    XCTAssertEqual(sqlite3_exec(writer, "BEGIN IMMEDIATE TRANSACTION;", nil, nil, nil), SQLITE_OK)
+
+    let snapshot = try await store.loadRetainedWorkspaceSnapshot(projectIDs: [])
+
+    XCTAssertEqual(snapshot.projects.first?.title, "Project")
   }
 
   private static let calendar: Calendar = {
