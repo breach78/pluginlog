@@ -87,6 +87,7 @@ extension AppState {
       }
       let snapshotProvider = ReminderGatewayImportSnapshotProvider(gateway: gateway)
       let batch = try await snapshotProvider.fetchAllBatch()
+      try await persistAppOwnedReminderSnapshot(batch, reason: reason)
       let store = ObsidianProjectMarkdownStore(vaultRootURL: obsidianVaultRootURL)
       if reason == .bootstrap, try await shouldRunReminderFirstBootstrap(store: store) {
         let result = try await ObsidianReminderBootstrapSync.sync(
@@ -115,6 +116,23 @@ extension AppState {
       reportError(error, logMessage: "reconcileObsidianVaultWithReminderSource failed")
       syncStatus = "Reminder sync failed"
     }
+  }
+
+  private func persistAppOwnedReminderSnapshot(
+    _ batch: ReminderImportSnapshotBatch,
+    reason: SyncReason
+  ) async throws {
+    guard let containerRootURL = storageCoordinator.paths?.root else { return }
+    if reason == .bootstrap || reason == .manual {
+      _ = try AppOwnedReminderBackupStore(containerRootURL: containerRootURL)
+        .savePreMigrationSnapshot(
+          batch,
+          reason: AppOwnedReminderBackupReason(syncReason: reason),
+          createdAt: .now
+        )
+    }
+    try await AppOwnedWorkspaceStore(containerRootURL: containerRootURL)
+      .replaceReminderSnapshot(batch, importedAt: .now)
   }
 
   private func shouldRunReminderFirstBootstrap(

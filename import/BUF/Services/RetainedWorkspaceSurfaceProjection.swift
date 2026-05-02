@@ -80,6 +80,18 @@ enum RetainedWorkspaceSurfaceProjectionBuilder {
       return .blocked(.obsidianVaultNotConfigured)
     }
 
+    let appStore = AppOwnedWorkspaceStore.storeForVaultRootURL(obsidianVaultRootURL)
+    do {
+      if try await appStore.isProjectionReadEnabled(),
+        try await appStore.hasImportedWorkspace()
+      {
+        let snapshot = try await appStore.loadRetainedWorkspaceSnapshot(projectIDs: projectIDs)
+        return build(snapshot: snapshot, projectIDs: projectIDs, calendar: calendar)
+      }
+    } catch {
+      return .blocked(.loadFailed("App-owned store load failed: \(error.localizedDescription)"))
+    }
+
     let store = ObsidianProjectMarkdownStore(vaultRootURL: obsidianVaultRootURL)
     do {
       let requestedProjectIDs = Set(projectIDs)
