@@ -660,6 +660,7 @@ struct ScheduleBoardView: View {
     [UUID: RetainedCalendarBridgeWriteMarker] = [:]
   @State var workspaceScheduleProjectSnapshots: [UUID: WorkspaceProjectRuntimeRecord] = [:]
   @State var workspaceScheduleSliceEntriesByProjectID: [UUID: [ScheduleSliceEntry]] = [:]
+  @State var workspaceScheduleLoadGeneration = 0
   @State var workspaceLoadFallback: ScheduleWorkspaceLoadFallback?
   @State var scheduleTaskWriteNotice: ScheduleBoardRuntimeNotice?
   @State var selectedScheduleTaskID: UUID?
@@ -1143,7 +1144,7 @@ struct ScheduleBoardView: View {
         force: true
       )
       if isActive {
-        refreshCalendarOverlay()
+        refreshCalendarOverlay(force: scheduleCalendarOverlayProjection.accessDenied)
       }
     }
     .task(

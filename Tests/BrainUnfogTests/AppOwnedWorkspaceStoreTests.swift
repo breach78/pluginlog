@@ -216,6 +216,283 @@ final class AppOwnedWorkspaceStoreTests: XCTestCase {
     XCTAssertEqual(task.schedule.durationMinutes, 45)
   }
 
+  func testRetainedSnapshotHidesCompletedRecurringOccurrenceWhenActiveOccurrenceIsRestored() async throws {
+    let store = AppOwnedWorkspaceStore(containerRootURL: try makeTemporaryDirectory())
+    let dueDate = try XCTUnwrap(Self.calendar.date(from: DateComponents(year: 2026, month: 5, day: 2, hour: 11)))
+    let rawDate = try XCTUnwrap(ReminderScheduleMetadataCodec.encodeDate(dueDate, hasExplicitTime: true))
+    let createdAt = Date(timeIntervalSinceReferenceDate: 410)
+    let active = ReminderItemImportSnapshot(
+      identifier: "active-identifier",
+      externalIdentifier: "task-1",
+      parentExternalIdentifier: nil,
+      sourceListIdentifier: "list-1",
+      sourceListTitle: "Project",
+      title: "Recurring",
+      notes: "",
+      attachmentCount: 0,
+      isCompleted: false,
+      completionDate: nil,
+      startDate: nil,
+      dueDate: dueDate,
+      scheduleHasExplicitTime: true,
+      scheduledDurationMinutes: nil,
+      priority: 0,
+      recurrenceRuleRaw: "daily",
+      isFlagged: false,
+      requiredWorkDays: 0,
+      createdAt: createdAt,
+      modifiedAt: createdAt
+    )
+    let completed = ReminderItemImportSnapshot(
+      identifier: "completed-identifier",
+      externalIdentifier: "task-1::completed::\(rawDate)",
+      parentExternalIdentifier: nil,
+      sourceListIdentifier: "list-1",
+      sourceListTitle: "Project",
+      title: "Recurring",
+      notes: "",
+      attachmentCount: 0,
+      isCompleted: true,
+      completionDate: dueDate,
+      startDate: nil,
+      dueDate: dueDate,
+      scheduleHasExplicitTime: true,
+      scheduledDurationMinutes: nil,
+      priority: 0,
+      recurrenceRuleRaw: "daily",
+      isFlagged: false,
+      requiredWorkDays: 0,
+      createdAt: createdAt,
+      modifiedAt: createdAt
+    )
+
+    try await store.replaceReminderSnapshot(
+      ReminderImportSnapshotBatch(
+        lists: [
+          ReminderListImportSnapshot(
+            identifier: "list-1",
+            externalIdentifier: "list-1",
+            title: "Project",
+            colorHex: nil
+          )
+        ],
+        itemsByListIdentifier: ["list-1": [active, completed]]
+      ),
+      importedAt: createdAt
+    )
+    let snapshot = try await store.loadRetainedWorkspaceSnapshot(projectIDs: [])
+
+    XCTAssertEqual(snapshot.tasks.map(\.identity.reminderExternalIdentifier), ["task-1"])
+  }
+
+  func testRetainedSnapshotHidesCompletedRecurringOccurrencesEvenWhenCompletedDateIsAfterRestoredAnchor()
+    async throws
+  {
+    let store = AppOwnedWorkspaceStore(containerRootURL: try makeTemporaryDirectory())
+    let activeDueDate = try XCTUnwrap(Self.calendar.date(from: DateComponents(year: 2026, month: 5, day: 2, hour: 9, minute: 45)))
+    let completedDueDate = try XCTUnwrap(Self.calendar.date(from: DateComponents(year: 2026, month: 5, day: 2, hour: 12)))
+    let completedAt = try XCTUnwrap(Self.calendar.date(from: DateComponents(year: 2026, month: 5, day: 2, hour: 22, minute: 48)))
+    let createdAt = Date(timeIntervalSinceReferenceDate: 420)
+    let active = ReminderItemImportSnapshot(
+      identifier: "active-identifier",
+      externalIdentifier: "task-active",
+      parentExternalIdentifier: nil,
+      sourceListIdentifier: "list-1",
+      sourceListTitle: "Project",
+      title: "Recurring",
+      notes: "",
+      attachmentCount: 0,
+      isCompleted: false,
+      completionDate: nil,
+      startDate: nil,
+      dueDate: activeDueDate,
+      scheduleHasExplicitTime: true,
+      scheduledDurationMinutes: nil,
+      priority: 0,
+      recurrenceRuleRaw: "daily|3",
+      isFlagged: false,
+      requiredWorkDays: 0,
+      createdAt: createdAt,
+      modifiedAt: createdAt
+    )
+    let completed = ReminderItemImportSnapshot(
+      identifier: "completed-identifier",
+      externalIdentifier: "task-completed",
+      parentExternalIdentifier: nil,
+      sourceListIdentifier: "list-1",
+      sourceListTitle: "Project",
+      title: "Recurring",
+      notes: "",
+      attachmentCount: 0,
+      isCompleted: true,
+      completionDate: completedAt,
+      startDate: nil,
+      dueDate: completedDueDate,
+      scheduleHasExplicitTime: true,
+      scheduledDurationMinutes: nil,
+      priority: 0,
+      recurrenceRuleRaw: nil,
+      isFlagged: false,
+      requiredWorkDays: 0,
+      createdAt: createdAt,
+      modifiedAt: createdAt
+    )
+
+    try await store.replaceReminderSnapshot(
+      ReminderImportSnapshotBatch(
+        lists: [
+          ReminderListImportSnapshot(
+            identifier: "list-1",
+            externalIdentifier: "list-1",
+            title: "Project",
+            colorHex: nil
+          )
+        ],
+        itemsByListIdentifier: ["list-1": [active, completed]]
+      ),
+      importedAt: createdAt
+    )
+    let snapshot = try await store.loadRetainedWorkspaceSnapshot(projectIDs: [])
+
+    XCTAssertEqual(snapshot.tasks.map(\.identity.reminderExternalIdentifier), ["task-active"])
+  }
+
+  func testRetainedSnapshotHidesCompletedOccurrenceThatLostRecurrenceRule() async throws {
+    let store = AppOwnedWorkspaceStore(containerRootURL: try makeTemporaryDirectory())
+    let activeDueDate = try XCTUnwrap(Self.calendar.date(from: DateComponents(year: 2026, month: 5, day: 8)))
+    let completedDueDate = try XCTUnwrap(Self.calendar.date(from: DateComponents(year: 2026, month: 5, day: 2)))
+    let createdAt = Date(timeIntervalSinceReferenceDate: 415)
+    let active = ReminderItemImportSnapshot(
+      identifier: "active-identifier",
+      externalIdentifier: "active-external",
+      parentExternalIdentifier: nil,
+      sourceListIdentifier: "list-1",
+      sourceListTitle: "Project",
+      title: "Recurring",
+      notes: "same note",
+      attachmentCount: 0,
+      isCompleted: false,
+      completionDate: nil,
+      startDate: nil,
+      dueDate: activeDueDate,
+      scheduleHasExplicitTime: false,
+      scheduledDurationMinutes: nil,
+      priority: 0,
+      recurrenceRuleRaw: "daily|3",
+      isFlagged: false,
+      requiredWorkDays: 0,
+      createdAt: createdAt,
+      modifiedAt: createdAt
+    )
+    let completed = ReminderItemImportSnapshot(
+      identifier: "completed-identifier",
+      externalIdentifier: "completed-external",
+      parentExternalIdentifier: nil,
+      sourceListIdentifier: "list-1",
+      sourceListTitle: "Project",
+      title: "Recurring",
+      notes: "same note",
+      attachmentCount: 0,
+      isCompleted: true,
+      completionDate: completedDueDate,
+      startDate: nil,
+      dueDate: completedDueDate,
+      scheduleHasExplicitTime: false,
+      scheduledDurationMinutes: nil,
+      priority: 0,
+      recurrenceRuleRaw: nil,
+      isFlagged: false,
+      requiredWorkDays: 0,
+      createdAt: createdAt,
+      modifiedAt: createdAt
+    )
+
+    try await store.replaceReminderSnapshot(
+      ReminderImportSnapshotBatch(
+        lists: [
+          ReminderListImportSnapshot(
+            identifier: "list-1",
+            externalIdentifier: "list-1",
+            title: "Project",
+            colorHex: nil
+          )
+        ],
+        itemsByListIdentifier: ["list-1": [active, completed]]
+      ),
+      importedAt: createdAt
+    )
+    let snapshot = try await store.loadRetainedWorkspaceSnapshot(projectIDs: [])
+
+    XCTAssertEqual(snapshot.tasks.map(\.identity.reminderExternalIdentifier), ["active-external"])
+  }
+
+  func testReplaceReminderSnapshotKeepsRecurringTaskIDWhenExternalIdentifierChanges()
+    async throws
+  {
+    let store = AppOwnedWorkspaceStore(containerRootURL: try makeTemporaryDirectory())
+    let firstDueDate = try XCTUnwrap(Self.calendar.date(from: DateComponents(year: 2026, month: 5, day: 2)))
+    let nextDueDate = try XCTUnwrap(Self.calendar.date(from: DateComponents(year: 2026, month: 5, day: 5)))
+    let createdAt = Date(timeIntervalSinceReferenceDate: 418)
+    let first = ReminderItemImportSnapshot(
+      identifier: "first-identifier",
+      externalIdentifier: "old-external",
+      parentExternalIdentifier: nil,
+      sourceListIdentifier: "list-1",
+      sourceListTitle: "Project",
+      title: "Recurring",
+      notes: "same note",
+      attachmentCount: 0,
+      isCompleted: false,
+      completionDate: nil,
+      startDate: nil,
+      dueDate: firstDueDate,
+      scheduleHasExplicitTime: false,
+      scheduledDurationMinutes: nil,
+      priority: 0,
+      recurrenceRuleRaw: "daily|3",
+      isFlagged: false,
+      requiredWorkDays: 0,
+      createdAt: createdAt,
+      modifiedAt: createdAt
+    )
+    let next = ReminderItemImportSnapshot(
+      identifier: "next-identifier",
+      externalIdentifier: "new-external",
+      parentExternalIdentifier: nil,
+      sourceListIdentifier: "list-1",
+      sourceListTitle: "Project",
+      title: "Recurring",
+      notes: "same note",
+      attachmentCount: 0,
+      isCompleted: false,
+      completionDate: nil,
+      startDate: nil,
+      dueDate: nextDueDate,
+      scheduleHasExplicitTime: false,
+      scheduledDurationMinutes: nil,
+      priority: 0,
+      recurrenceRuleRaw: "daily|3",
+      isFlagged: false,
+      requiredWorkDays: 0,
+      createdAt: createdAt,
+      modifiedAt: createdAt.addingTimeInterval(10)
+    )
+
+    try await store.replaceReminderSnapshot(
+      Self.batch(items: [first], createdAt: createdAt),
+      importedAt: createdAt
+    )
+    try await store.replaceReminderSnapshot(
+      Self.batch(items: [next], createdAt: createdAt.addingTimeInterval(10)),
+      importedAt: createdAt.addingTimeInterval(10)
+    )
+    let snapshot = try await store.loadRetainedWorkspaceSnapshot(projectIDs: [])
+    let task = try XCTUnwrap(snapshot.tasks.first)
+
+    XCTAssertEqual(task.identity.taskID, ReminderProjectionIdentity.taskID(for: "old-external"))
+    XCTAssertEqual(task.identity.reminderExternalIdentifier, "new-external")
+  }
+
   func testReorderOpenTasksPersistsRetainedWorkspaceTaskOrder() async throws {
     let store = AppOwnedWorkspaceStore(containerRootURL: try makeTemporaryDirectory())
     let createdAt = Date(timeIntervalSinceReferenceDate: 420)
@@ -422,6 +699,24 @@ final class AppOwnedWorkspaceStoreTests: XCTestCase {
           )
         }
       ]
+    )
+  }
+
+  private static func batch(
+    items: [ReminderItemImportSnapshot],
+    createdAt: Date
+  ) -> ReminderImportSnapshotBatch {
+    _ = createdAt
+    return ReminderImportSnapshotBatch(
+      lists: [
+        ReminderListImportSnapshot(
+          identifier: "list-1",
+          externalIdentifier: "list-1",
+          title: "Project",
+          colorHex: nil
+        )
+      ],
+      itemsByListIdentifier: ["list-1": items]
     )
   }
 

@@ -215,6 +215,8 @@ extension ScheduleBoardView {
   }
 
   func reloadWorkspaceScheduleProjectDetails(for projectIDs: [UUID]) async {
+    workspaceScheduleLoadGeneration += 1
+    let loadGeneration = workspaceScheduleLoadGeneration
     let requestedProjectIDs = Array(Set(projectIDs))
     guard !requestedProjectIDs.isEmpty else {
       await MainActor.run {
@@ -235,6 +237,7 @@ extension ScheduleBoardView {
     )
 
     await MainActor.run {
+      guard loadGeneration == workspaceScheduleLoadGeneration else { return }
       let resolvedRead = RetainedWorkspaceSurfaceProjectionBuilder.resolveRetainedOnly(retainedResult)
       workspaceScheduleProjectSnapshots = resolvedRead.projectSnapshots
       workspaceScheduleSliceEntriesByProjectID = resolvedRead.scheduleEntriesByProjectID
@@ -291,6 +294,15 @@ extension ScheduleBoardView {
     calendarOverlayRefreshTask = Task { @MainActor in
       guard !Task.isCancelled else { return }
       await appState.refreshScheduleCalendarOverlay(visibleRange: fetchRange, force: force)
+    }
+  }
+
+  func refreshCalendarOverlayIfChanged(by result: RetainedTaskCommandResult) {
+    switch result.calendarBridgeDecision {
+    case .upsert, .removeOwnedEvent:
+      refreshCalendarOverlay(force: true)
+    case .noAction, .failClosed:
+      break
     }
   }
 
@@ -1296,7 +1308,7 @@ extension ScheduleBoardView {
         await reloadWorkspaceScheduleProjectDetails(for: activeProjectIDs)
         retainedScheduleCalendarBridgeDecisionsByTaskID[taskID] = result.calendarBridgeDecision
         retainedScheduleCalendarBridgeWriteMarkersByTaskID[taskID] = nil
-        refreshCalendarOverlay(force: true)
+        refreshCalendarOverlayIfChanged(by: result)
 
         guard registerUndo else { return }
         appState.registerUndo(with: undoManager, actionName: actionName) {
@@ -1479,7 +1491,7 @@ extension ScheduleBoardView {
         retainedScheduleCalendarBridgeDecisionsByTaskID[result.taskID] = result.calendarBridgeDecision
         retainedScheduleCalendarBridgeWriteMarkersByTaskID[result.taskID] = result.calendarWriteMarker
         appState.bumpWorkspaceTreeRevision()
-        refreshCalendarOverlay(force: true)
+        refreshCalendarOverlayIfChanged(by: result)
         guard registerUndo else { return }
         appState.registerUndo(with: undoManager, actionName: "할일 추가") {
           self.deleteScheduleTask(result.taskID, actionName: "할일 추가", registerUndo: false)
@@ -1529,7 +1541,7 @@ extension ScheduleBoardView {
       retainedScheduleCalendarBridgeDecisionsByTaskID[result.taskID] = result.calendarBridgeDecision
       retainedScheduleCalendarBridgeWriteMarkersByTaskID[result.taskID] = result.calendarWriteMarker
       appState.bumpWorkspaceTreeRevision()
-      refreshCalendarOverlay(force: true)
+      refreshCalendarOverlayIfChanged(by: result)
       if registerUndo {
         appState.registerUndo(with: undoManager, actionName: "할일 삭제 취소") {
           self.deleteScheduleTask(result.taskID, actionName: "할일 삭제 취소", registerUndo: false)
@@ -1605,21 +1617,21 @@ extension ScheduleBoardView {
     registerUndo: Bool
   ) {
     guard allowScheduleRetainedWrite("task-completion") else { return }
-    guard let taskDescriptor = scheduleTaskDescriptor(for: taskID) else { return }
-    let previousState = scheduleCompletionState(for: taskDescriptor.taskRow)
-    let nextState =
-      targetState
-      ?? ScheduleTaskCompletionState(
-        isCompleted: isCompleted,
-        completionDate: isCompleted ? (completionDate ?? .now) : nil,
-        isRecurring: previousState.isRecurring,
-        occurrenceDate: previousState.occurrenceDate,
-        editFields: previousState.editFields
-      )
-    guard previousState != nextState else {
-      return
-    }
     Task { @MainActor in
+      guard let taskDescriptor = scheduleTaskDescriptor(for: taskID) else { return }
+      let previousState = scheduleCompletionState(for: taskDescriptor.taskRow)
+      let nextState =
+        targetState
+        ?? ScheduleTaskCompletionState(
+          isCompleted: isCompleted,
+          completionDate: isCompleted ? (completionDate ?? .now) : nil,
+          isRecurring: previousState.isRecurring,
+          occurrenceDate: previousState.occurrenceDate,
+          editFields: previousState.editFields
+        )
+      guard previousState != nextState else {
+        return
+      }
       do {
         let shouldRestoreSchedule = RecurringCompletionUndoScheduleRestorePolicy.shouldRestore(
           previousIsCompleted: previousState.isCompleted,
@@ -1657,7 +1669,8 @@ extension ScheduleBoardView {
             timeMinutes: nextState.editFields.timeMinutes,
             durationMinutes: nextState.editFields.durationMinutes,
             calendar: calendar,
-            reminderProjectProvider: appState.reminderProjectProvider
+            reminderProjectProvider: appState.reminderProjectProvider,
+            resetRecurringAnchor: nextState.isRecurring
           )
         }
         guard let result else {

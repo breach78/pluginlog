@@ -12,7 +12,7 @@ final class ReminderGatewayImportSnapshotProviderTests: XCTestCase {
     let itemsByList = try await provider.fetchItemsByList(for: lists)
 
     XCTAssertEqual(gateway.singleCalendarFetchCount, 0)
-    XCTAssertEqual(gateway.batchCalendarFetchCount, 2)
+    XCTAssertEqual(gateway.batchCalendarFetchCount, 1)
     XCTAssertEqual(itemsByList[gateway.firstCalendar.calendarIdentifier]?.map(\.title), ["First task"])
     XCTAssertEqual(itemsByList[gateway.secondCalendar.calendarIdentifier]?.map(\.title), ["Second task"])
   }
@@ -25,24 +25,65 @@ final class ReminderGatewayImportSnapshotProviderTests: XCTestCase {
 
     XCTAssertEqual(gateway.calendarLookupCount, 0)
     XCTAssertEqual(gateway.singleCalendarFetchCount, 0)
-    XCTAssertEqual(gateway.batchCalendarFetchCount, 2)
+    XCTAssertEqual(gateway.batchCalendarFetchCount, 1)
     XCTAssertEqual(batch.lists.map(\.title), ["A", "B"])
     XCTAssertEqual(batch.itemsByListIdentifier[gateway.firstCalendar.calendarIdentifier]?.map(\.title), ["First task"])
   }
 
-  func testFetchItemsByListIncludesCompletedRecurringRemindersWithOccurrenceIdentity() async throws {
+  func testFetchItemsByListDropsCompletedRecurringReminders() async throws {
     let gateway = BatchImportSnapshotGateway(includeCompletedRecurringReminder: true)
     let provider = ReminderGatewayImportSnapshotProvider(gateway: gateway)
     let lists = try await provider.fetchAllLists()
 
     let itemsByList = try await provider.fetchItemsByList(for: lists)
     let firstListItems = try XCTUnwrap(itemsByList[gateway.firstCalendar.calendarIdentifier])
-    let completed = try XCTUnwrap(firstListItems.first { $0.title == "Completed recurring" })
 
-    XCTAssertEqual(firstListItems.map(\.title), ["First task", "Completed recurring"])
-    XCTAssertTrue(completed.isCompleted)
-    XCTAssertEqual(completed.recurrenceRuleRaw, "daily|8")
-    XCTAssertTrue(completed.externalIdentifier?.contains("::completed::2026-04-30 12:00") == true)
+    XCTAssertEqual(firstListItems.map(\.title), ["First task"])
+  }
+
+  func testFetchItemsByListDropsCompletedOccurrenceThatLostRecurrenceRuleWhenActiveRecurringExists()
+    async throws
+  {
+    let gateway = BatchImportSnapshotGateway(includeCompletedOccurrenceWithoutRecurrence: true)
+    let provider = ReminderGatewayImportSnapshotProvider(gateway: gateway)
+    let lists = try await provider.fetchAllLists()
+
+    let itemsByList = try await provider.fetchItemsByList(for: lists)
+    let firstListItems = try XCTUnwrap(itemsByList[gateway.firstCalendar.calendarIdentifier])
+
+    XCTAssertEqual(firstListItems.filter { $0.title == "Active recurring" }.count, 1)
+  }
+
+  func testFetchItemsByListDropsCompletedOccurrenceAfterRestoredActiveAnchor() async throws {
+    let gateway = BatchImportSnapshotGateway(includeCompletedOccurrenceAfterActiveAnchor: true)
+    let provider = ReminderGatewayImportSnapshotProvider(gateway: gateway)
+    let lists = try await provider.fetchAllLists()
+
+    let itemsByList = try await provider.fetchItemsByList(for: lists)
+    let firstListItems = try XCTUnwrap(itemsByList[gateway.firstCalendar.calendarIdentifier])
+
+    XCTAssertEqual(firstListItems.filter { $0.title == "Restored recurring" }.count, 1)
+  }
+
+  func testEventKitProviderPrefersActiveRecurringReminderOverStaleCompletedIdentifier() throws {
+    let gateway = ActiveRecurringResolutionGateway()
+    let provider = EventKitReminderProjectProvider(gateway: gateway)
+    let dueDate = try XCTUnwrap(Calendar(identifier: .gregorian).date(
+      from: DateComponents(year: 2026, month: 5, day: 2, hour: 11)
+    ))
+
+    _ = try provider.setTaskSchedule(
+      for: ReminderTaskReference(
+        taskID: UUID(),
+        reminderIdentifier: "stale-completed-id",
+        reminderExternalIdentifier: "recurring-external"
+      ),
+      dueDate: dueDate,
+      hasExplicitTime: true
+    )
+
+    XCTAssertTrue(gateway.savedReminder === gateway.activeReminder)
+    XCTAssertNotEqual(gateway.completedReminder.dueDateComponents?.day, 2)
   }
 }
 
@@ -57,7 +98,11 @@ private final class BatchImportSnapshotGateway: ReminderGateway {
   var batchCalendarFetchCount = 0
   var calendarLookupCount = 0
 
-  init(includeCompletedRecurringReminder: Bool = false) {
+  init(
+    includeCompletedRecurringReminder: Bool = false,
+    includeCompletedOccurrenceWithoutRecurrence: Bool = false,
+    includeCompletedOccurrenceAfterActiveAnchor: Bool = false
+  ) {
     firstCalendar = EKCalendar(for: .reminder, eventStore: eventStore)
     firstCalendar.title = "A"
     secondCalendar = EKCalendar(for: .reminder, eventStore: eventStore)
@@ -66,10 +111,71 @@ private final class BatchImportSnapshotGateway: ReminderGateway {
     let firstReminder = EKReminder(eventStore: eventStore)
     firstReminder.calendar = firstCalendar
     firstReminder.title = "First task"
+    var primaryReminders = [firstReminder]
+    if includeCompletedOccurrenceWithoutRecurrence {
+      let activeRecurring = EKReminder(eventStore: eventStore)
+      activeRecurring.calendar = firstCalendar
+      activeRecurring.title = "Active recurring"
+      activeRecurring.dueDateComponents = DateComponents(
+        calendar: Calendar(identifier: .gregorian),
+        year: 2026,
+        month: 5,
+        day: 8
+      )
+      activeRecurring.addRecurrenceRule(
+        EKRecurrenceRule(recurrenceWith: .daily, interval: 3, end: nil)
+      )
+      let completedOccurrence = EKReminder(eventStore: eventStore)
+      completedOccurrence.calendar = firstCalendar
+      completedOccurrence.title = "Completed occurrence"
+      completedOccurrence.dueDateComponents = DateComponents(
+        calendar: Calendar(identifier: .gregorian),
+        year: 2026,
+        month: 5,
+        day: 2
+      )
+      completedOccurrence.isCompleted = true
+      completedOccurrence.completionDate = Date(timeIntervalSinceReferenceDate: 700)
+      completedOccurrence.notes = activeRecurring.notes
+      activeRecurring.title = "Active recurring"
+      completedOccurrence.title = "Active recurring"
+      primaryReminders.append(activeRecurring)
+      primaryReminders.append(completedOccurrence)
+    }
+    if includeCompletedOccurrenceAfterActiveAnchor {
+      let activeRecurring = EKReminder(eventStore: eventStore)
+      activeRecurring.calendar = firstCalendar
+      activeRecurring.title = "Restored recurring"
+      activeRecurring.dueDateComponents = DateComponents(
+        calendar: Calendar(identifier: .gregorian),
+        year: 2026,
+        month: 5,
+        day: 2,
+        hour: 9,
+        minute: 45
+      )
+      activeRecurring.addRecurrenceRule(
+        EKRecurrenceRule(recurrenceWith: .daily, interval: 3, end: nil)
+      )
+      let completedOccurrence = EKReminder(eventStore: eventStore)
+      completedOccurrence.calendar = firstCalendar
+      completedOccurrence.title = "Restored recurring"
+      completedOccurrence.dueDateComponents = DateComponents(
+        calendar: Calendar(identifier: .gregorian),
+        year: 2026,
+        month: 5,
+        day: 2,
+        hour: 12
+      )
+      completedOccurrence.isCompleted = true
+      completedOccurrence.completionDate = Date(timeIntervalSinceReferenceDate: 700)
+      primaryReminders.append(activeRecurring)
+      primaryReminders.append(completedOccurrence)
+    }
     let secondReminder = EKReminder(eventStore: eventStore)
     secondReminder.calendar = secondCalendar
     secondReminder.title = "Second task"
-    reminders = [firstReminder, secondReminder]
+    reminders = primaryReminders + [secondReminder]
 
     if includeCompletedRecurringReminder {
       let completedReminder = EKReminder(eventStore: eventStore)
@@ -169,4 +275,77 @@ private final class BatchImportSnapshotGateway: ReminderGateway {
 
 private enum BatchImportSnapshotGatewayError: Error {
   case unexpectedCall
+}
+
+@MainActor
+private final class ActiveRecurringResolutionGateway: ReminderGateway {
+  let eventStore = EKEventStore()
+  let calendar: EKCalendar
+  let activeReminder: EKReminder
+  let completedReminder: EKReminder
+  var savedReminder: EKReminder?
+
+  init() {
+    calendar = EKCalendar(for: .reminder, eventStore: eventStore)
+    calendar.title = "A"
+
+    activeReminder = EKReminder(eventStore: eventStore)
+    activeReminder.calendar = calendar
+    activeReminder.title = "Recurring"
+    activeReminder.isCompleted = false
+
+    completedReminder = EKReminder(eventStore: eventStore)
+    completedReminder.calendar = calendar
+    completedReminder.title = "Recurring"
+    completedReminder.isCompleted = true
+    completedReminder.dueDateComponents = DateComponents(
+      calendar: Calendar(identifier: .gregorian),
+      year: 2026,
+      month: 5,
+      day: 5
+    )
+  }
+
+  func requestAccess() async throws -> Bool { true }
+  func fetchAllCalendars() async throws -> [EKCalendar] { [calendar] }
+  func fetchReminders(in calendar: EKCalendar, scope: ReminderFetchScope) async throws -> [EKReminder] {
+    _ = calendar
+    _ = scope
+    return [activeReminder, completedReminder]
+  }
+  func defaultCalendarIdentifierForNewReminders() -> String? { calendar.calendarIdentifier }
+  func calendar(withIdentifier identifier: String) -> EKCalendar? {
+    identifier == calendar.calendarIdentifier ? calendar : nil
+  }
+  func reminder(withIdentifier identifier: String) -> EKReminder? {
+    identifier == "stale-completed-id" ? completedReminder : nil
+  }
+  func reminders(withExternalIdentifier externalIdentifier: String) -> [EKReminder] {
+    externalIdentifier == "recurring-external" ? [completedReminder, activeReminder] : []
+  }
+  func lastModifiedDate(for reminder: EKReminder) -> Date? {
+    _ = reminder
+    return Date(timeIntervalSinceReferenceDate: 600)
+  }
+  func makeReminder(in calendar: EKCalendar) -> EKReminder {
+    let reminder = EKReminder(eventStore: eventStore)
+    reminder.calendar = calendar
+    return reminder
+  }
+  func createCalendar(title: String) throws -> EKCalendar {
+    _ = title
+    return calendar
+  }
+  func save(_ reminder: EKReminder) throws {
+    savedReminder = reminder
+  }
+  func remove(_ reminder: EKReminder) throws {
+    _ = reminder
+  }
+  func save(_ calendar: EKCalendar) throws {
+    _ = calendar
+  }
+  func remove(_ calendar: EKCalendar) throws {
+    _ = calendar
+  }
 }

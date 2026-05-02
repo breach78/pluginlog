@@ -296,7 +296,9 @@ final class EventKitReminderGateway: ReminderGateway {
 
   func save(_ reminder: EKReminder) throws {
     do {
-      try eventStore.save(reminder, commit: true)
+      try performAppAuthoredMutation {
+        try eventStore.save(reminder, commit: true)
+      }
     } catch {
       AppLogger.sync.error(
         "save reminder failed. calendar=\(reminder.calendar.calendarIdentifier, privacy: .public) id=\(reminder.calendarItemIdentifier, privacy: .public): \(error.localizedDescription, privacy: .public)"
@@ -307,7 +309,9 @@ final class EventKitReminderGateway: ReminderGateway {
 
   func remove(_ reminder: EKReminder) throws {
     do {
-      try eventStore.remove(reminder, commit: true)
+      try performAppAuthoredMutation {
+        try eventStore.remove(reminder, commit: true)
+      }
     } catch {
       AppLogger.sync.error(
         "remove reminder failed. calendar=\(reminder.calendar.calendarIdentifier, privacy: .public) id=\(reminder.calendarItemIdentifier, privacy: .public): \(error.localizedDescription, privacy: .public)"
@@ -318,7 +322,9 @@ final class EventKitReminderGateway: ReminderGateway {
 
   func save(_ calendar: EKCalendar) throws {
     do {
-      try eventStore.saveCalendar(calendar, commit: true)
+      try performAppAuthoredMutation {
+        try eventStore.saveCalendar(calendar, commit: true)
+      }
     } catch {
       AppLogger.sync.error(
         "save calendar failed. id=\(calendar.calendarIdentifier, privacy: .public) title=\(calendar.title, privacy: .public): \(error.localizedDescription, privacy: .public)"
@@ -329,7 +335,9 @@ final class EventKitReminderGateway: ReminderGateway {
 
   func remove(_ calendar: EKCalendar) throws {
     do {
-      try eventStore.removeCalendar(calendar, commit: true)
+      try performAppAuthoredMutation {
+        try eventStore.removeCalendar(calendar, commit: true)
+      }
     } catch {
       AppLogger.sync.error(
         "remove calendar failed. id=\(calendar.calendarIdentifier, privacy: .public) title=\(calendar.title, privacy: .public): \(error.localizedDescription, privacy: .public)"
@@ -347,6 +355,12 @@ final class EventKitReminderGateway: ReminderGateway {
       ?? eventStore.sources.first(where: { $0.sourceType == .exchange })
       ?? eventStore.sources.first(where: { $0.sourceType == .local })
       ?? eventStore.sources.first
+  }
+
+  private func performAppAuthoredMutation(_ mutation: () throws -> Void) throws {
+    ReminderSourceChangeEchoSuppressor.markAppAuthoredMutation()
+    try mutation()
+    ReminderSourceChangeEchoSuppressor.markAppAuthoredMutation()
   }
 
   private func uniqueCalendarIdentifiers(from calendars: [EKCalendar]) -> [String] {
@@ -1041,6 +1055,12 @@ final class EventKitReminderProjectProvider: ReminderProjectProvider {
   }
 
   private func resolvedReminder(for task: ReminderTaskReference) -> EKReminder? {
+    if let externalIdentifier = normalizedIdentifier(task.reminderExternalIdentifier),
+      let reminder = activeReminder(withExternalIdentifier: externalIdentifier)
+    {
+      return reminder
+    }
+
     if let reminderID = task.reminderIdentifier,
       let reminder = gateway.reminder(withIdentifier: reminderID)
     {
@@ -1063,6 +1083,30 @@ final class EventKitReminderProjectProvider: ReminderProjectProvider {
         "resolvedReminder found multiple reminder matches for external identifier")
     }
     return ReminderTaskAdoptionPolicy.uniqueMatch(from: matches)
+  }
+
+  private func activeReminder(withExternalIdentifier externalIdentifier: String) -> EKReminder? {
+    guard !externalIdentifier.contains("::completed::") else { return nil }
+    let matches = gateway.reminders(withExternalIdentifier: externalIdentifier)
+    guard !matches.isEmpty else { return nil }
+    let activeMatches = matches.filter { !$0.isCompleted }
+    if activeMatches.count > 1 {
+      AppLogger.sync.error(
+        "resolvedReminder found multiple active reminder matches for external identifier")
+    }
+    if let activeReminder = ReminderTaskAdoptionPolicy.uniqueMatch(from: activeMatches) {
+      return activeReminder
+    }
+    return nil
+  }
+
+  private func normalizedIdentifier(_ value: String?) -> String? {
+    guard let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines),
+      !trimmed.isEmpty
+    else {
+      return nil
+    }
+    return trimmed
   }
 
   private func mutateReminder(

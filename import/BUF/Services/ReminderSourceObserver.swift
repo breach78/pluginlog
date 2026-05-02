@@ -2,6 +2,33 @@ import Combine
 @preconcurrency import EventKit
 import Foundation
 
+enum ReminderSourceChangeEchoSuppressor {
+  private static let lock = NSLock()
+  private nonisolated(unsafe) static var suppressUntil = Date.distantPast
+  static let defaultSuppressionDuration: TimeInterval = 5
+
+  static func markAppAuthoredMutation(
+    now: Date = .now,
+    duration: TimeInterval = defaultSuppressionDuration
+  ) {
+    lock.lock()
+    suppressUntil = max(suppressUntil, now.addingTimeInterval(duration))
+    lock.unlock()
+  }
+
+  static func shouldSuppress(now: Date = .now) -> Bool {
+    lock.lock()
+    defer { lock.unlock() }
+    return now < suppressUntil
+  }
+
+  static func reset() {
+    lock.lock()
+    suppressUntil = .distantPast
+    lock.unlock()
+  }
+}
+
 @MainActor
 final class ReminderSourceObserver: ObservableObject {
   private final class StoreObserverBox: @unchecked Sendable {
@@ -45,6 +72,8 @@ final class ReminderSourceObserver: ObservableObject {
   typealias SourceInvalidationHandler = @MainActor (SyncReason) async -> Bool
   typealias ExternalOwnerChangeHandler = @MainActor (AppCommand) async -> Bool
 
+  static let defaultPollingInterval: Duration? = nil
+
   @Published private(set) var status: String = "Idle"
 
   private let gateway: ReminderGateway
@@ -67,7 +96,7 @@ final class ReminderSourceObserver: ObservableObject {
     handleExternalOwnerChange: @escaping ExternalOwnerChangeHandler,
     eventDebounceDelay: Duration = .milliseconds(900),
     eventFollowUpDelay: Duration = .seconds(2),
-    pollingInterval: Duration? = .seconds(3),
+    pollingInterval: Duration? = ReminderSourceObserver.defaultPollingInterval,
     authorizationStatusProvider: @escaping () -> EKAuthorizationStatus = {
       EKEventStore.authorizationStatus(for: .reminder)
     }
@@ -347,6 +376,10 @@ final class ReminderSourceObserver: ObservableObject {
       Task { @MainActor [weak self] in
         guard let self else { return }
         SyncPerformanceCounter.recordEKObserverFire()
+        guard !ReminderSourceChangeEchoSuppressor.shouldSuppress() else {
+          self.status = "Own reminder change observed"
+          return
+        }
 
         self.eventDebounceTask?.cancel()
         self.eventDebounceTask = Task { @MainActor [weak self] in

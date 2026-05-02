@@ -246,7 +246,8 @@ enum ObsidianRetainedTaskCommandService {
     timeMinutes: Int?,
     durationMinutes: Int?,
     calendar: Calendar = .autoupdatingCurrent,
-    reminderProjectProvider: ReminderProjectProvider
+    reminderProjectProvider: ReminderProjectProvider,
+    resetRecurringAnchor: Bool = false
   ) async throws -> RetainedTaskCommandResult {
     let lease = await mutationLease(projectID: projectID, taskID: taskID)
     defer { releaseMutationLease(lease) }
@@ -260,7 +261,8 @@ enum ObsidianRetainedTaskCommandService {
         timeMinutes: timeMinutes,
         durationMinutes: durationMinutes,
         calendar: calendar,
-        reminderProjectProvider: reminderProjectProvider
+        reminderProjectProvider: reminderProjectProvider,
+        resetRecurringAnchor: resetRecurringAnchor
       )
     }
 

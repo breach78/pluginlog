@@ -463,6 +463,8 @@ enum TimelineBoardReadPath {
 extension TimelineBoardView {
   @MainActor
   func reloadWorkspaceTimelineProjectDetails(for projectIDs: [UUID]) async {
+    workspaceTimelineLoadGeneration += 1
+    let loadGeneration = workspaceTimelineLoadGeneration
     let requestedProjectIDs = TimelineBoardReadPath.normalizedProjectIDs(projectIDs)
     guard !requestedProjectIDs.isEmpty else {
       workspaceTimelineProjectSnapshots = [:]
@@ -479,6 +481,7 @@ extension TimelineBoardView {
       obsidianVaultRootURL: appState.obsidianVaultRootURL,
       projectIDs: requestedProjectIDs
     )
+    guard loadGeneration == workspaceTimelineLoadGeneration else { return }
     let resolvedRead = RetainedWorkspaceSurfaceProjectionBuilder.resolveRetainedOnly(retainedResult)
     if case .blocked(let blocker) = resolvedRead.source {
       retainedTimelineReadBlocker = blocker

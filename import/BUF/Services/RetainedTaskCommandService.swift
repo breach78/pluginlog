@@ -65,9 +65,9 @@ enum RecurringCompletionUndoScheduleRestorePolicy {
     )
   }
 
-  static func hasTimedSchedule(_ fields: RetainedTaskEditFields?) -> Bool {
+  static func hasScheduledDay(_ fields: RetainedTaskEditFields?) -> Bool {
     guard let fields else { return false }
-    return fields.day != nil && fields.timeMinutes != nil
+    return fields.day != nil
   }
 
   static func shouldRestore(
@@ -79,7 +79,7 @@ enum RecurringCompletionUndoScheduleRestorePolicy {
   ) -> Bool {
     guard !nextIsCompleted,
       isRecurring,
-      hasTimedSchedule(fields)
+      hasScheduledDay(fields)
     else {
       return false
     }

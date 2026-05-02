@@ -88,8 +88,16 @@ extension AppState {
       let snapshotProvider = ReminderGatewayImportSnapshotProvider(gateway: gateway)
       let batch = try await snapshotProvider.fetchAllBatch()
       let importedAt = Date.now
-      if try await persistAppOwnedReminderSnapshot(batch, reason: reason, importedAt: importedAt) != nil {
-        let records = AppOwnedReminderBridgeRecordMapper.records(from: batch, importedAt: importedAt)
+      if let appOwnedStore = try await persistAppOwnedReminderSnapshot(
+        batch,
+        reason: reason,
+        importedAt: importedAt
+      ) {
+        let retainedSnapshot = try await appOwnedStore.loadRetainedWorkspaceSnapshot(projectIDs: [])
+        let records = AppOwnedReminderBridgeRecordMapper.records(
+          from: retainedSnapshot,
+          importedAt: importedAt
+        )
         replaceObsidianBridgeRecords(projects: records.projects, tasks: records.tasks)
         syncStatus = "Imported app-owned \(records.projects.count) lists / \(records.tasks.count) tasks"
         bumpWorkspaceTreeRevision()

@@ -326,7 +326,8 @@ extension AppState {
           timeMinutes: fields.timeMinutes,
           durationMinutes: fields.durationMinutes,
           calendar: calendar,
-          reminderProjectProvider: reminderProjectProvider
+          reminderProjectProvider: reminderProjectProvider,
+          resetRecurringAnchor: isRecurring
         )
       }
       bumpWorkspaceTreeRevision()

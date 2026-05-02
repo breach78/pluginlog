@@ -2,6 +2,35 @@ import Foundation
 
 enum AppOwnedReminderBridgeRecordMapper {
   static func records(
+    from snapshot: RetainedWorkspaceSnapshot,
+    importedAt: Date
+  ) -> (projects: [ProjectIdentityBridgeRecord], tasks: [TaskIdentityBridgeRecord]) {
+    let projects = snapshot.projects.map { project in
+      ProjectIdentityBridgeRecord(
+        projectID: project.identity.projectID,
+        title: project.title,
+        reminderListExternalIdentifier: project.identity.reminderListExternalIdentifier,
+        createdAt: importedAt,
+        updatedAt: project.updatedAt
+      )
+    }
+    let tasks = snapshot.projects.flatMap { project in
+      project.tasks.compactMap { task -> TaskIdentityBridgeRecord? in
+        guard let taskID = task.identity.taskID else { return nil }
+        return TaskIdentityBridgeRecord(
+          taskID: taskID,
+          title: task.title,
+          reminderExternalIdentifier: task.identity.reminderExternalIdentifier,
+          ownerProjectID: project.identity.projectID,
+          createdAt: importedAt,
+          updatedAt: importedAt
+        )
+      }
+    }
+    return (projects, tasks)
+  }
+
+  static func records(
     from batch: ReminderImportSnapshotBatch,
     importedAt: Date
   ) -> (projects: [ProjectIdentityBridgeRecord], tasks: [TaskIdentityBridgeRecord]) {

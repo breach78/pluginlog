@@ -677,28 +677,13 @@ extension TimelineBoardView {
     registerUndo: Bool
   ) {
     guard allowTimelineRetainedWrite("task-completion") else { return }
-    guard let previousState = timelineTaskCompletionState(taskID: taskID, projectID: projectID) else {
-      return
-    }
-
-    let nextState =
-      targetState
-      ?? TimelineTaskCompletionUndoSnapshot(
+    Task { @MainActor in
+      _ = await updateTimelineTaskCompletionAndWait(
         taskID: taskID,
         projectID: projectID,
         isCompleted: isCompleted,
-        completionDate: isCompleted ? (completionDate ?? .now) : nil,
-        isRecurring: previousState.isRecurring,
-        occurrenceDate: previousState.occurrenceDate,
-        editFields: previousState.editFields
-      )
-    guard previousState != nextState else { return }
-    Task { @MainActor in
-      await updateTimelineTaskCompletionAndWait(
-        taskID: taskID,
-        projectID: projectID,
-        previousState: previousState,
-        nextState: nextState,
+        completionDate: completionDate,
+        targetState: targetState,
         undoTargetState: undoTargetState,
         registerUndo: registerUndo
       )
@@ -787,7 +772,8 @@ extension TimelineBoardView {
           timeMinutes: nextState.editFields.timeMinutes,
           durationMinutes: nextState.editFields.durationMinutes,
           calendar: calendar,
-          reminderProjectProvider: appState.reminderProjectProvider
+          reminderProjectProvider: appState.reminderProjectProvider,
+          resetRecurringAnchor: nextState.isRecurring
         )
       }
       guard let result else {

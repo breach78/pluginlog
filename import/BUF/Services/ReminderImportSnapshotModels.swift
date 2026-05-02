@@ -161,21 +161,7 @@ struct ReminderGatewayImportSnapshotProvider {
 
   private func fetchImportReminders(in calendars: [EKCalendar]) async throws -> [EKReminder] {
     let primaryReminders = try await gateway.fetchReminders(in: calendars, scope: .all)
-    let completedRecurringReminders = try await gateway.fetchReminders(
-      in: calendars,
-      scope: .completedByCompletionDate(start: nil, end: nil)
-    )
-    .filter(isCompletedRecurringReminder)
-
-    let completedRecurringIdentifiers = Set(
-      completedRecurringReminders.map(\.calendarItemIdentifier)
-    )
-    let primaryWithoutCompletedRecurringDuplicates = primaryReminders.filter { reminder in
-      !(isCompletedRecurringReminder(reminder)
-        && completedRecurringIdentifiers.contains(reminder.calendarItemIdentifier))
-    }
-
-    return primaryWithoutCompletedRecurringDuplicates + completedRecurringReminders
+    return primaryReminders.filter { shouldImportReminder($0, in: primaryReminders) }
   }
 
   func fetchBatch(
@@ -318,6 +304,83 @@ struct ReminderGatewayImportSnapshotProvider {
 
   private func isCompletedRecurringReminder(_ reminder: EKReminder) -> Bool {
     reminder.isCompleted && !(reminder.recurrenceRules?.isEmpty ?? true)
+  }
+
+  private func shouldImportReminder(_ reminder: EKReminder, in reminders: [EKReminder]) -> Bool {
+    guard reminder.isCompleted else { return true }
+    if isCompletedRecurringReminder(reminder) {
+      return false
+    }
+    guard let completedCandidate = recurringOccurrenceCandidate(for: reminder) else {
+      return true
+    }
+    return !reminders.contains { activeReminder in
+      guard let activeCandidate = activeRecurringCandidate(for: activeReminder),
+        activeCandidate.signature == completedCandidate.signature
+      else {
+        return false
+      }
+      return true
+    }
+  }
+
+  private struct RecurringOccurrenceSignature: Hashable {
+    let calendarIdentifier: String
+    let title: String
+    let notes: String
+  }
+
+  private struct ActiveRecurringCandidate {
+    let signature: RecurringOccurrenceSignature
+    let dueDate: Date?
+  }
+
+  private struct CompletedOccurrenceCandidate {
+    let signature: RecurringOccurrenceSignature
+    let dueDate: Date?
+  }
+
+  private func activeRecurringCandidate(for reminder: EKReminder) -> ActiveRecurringCandidate? {
+    guard !reminder.isCompleted,
+      !(reminder.recurrenceRules?.isEmpty ?? true)
+    else {
+      return nil
+    }
+    return ActiveRecurringCandidate(
+      signature: recurringOccurrenceSignature(for: reminder),
+      dueDate: dueDate(for: reminder)
+    )
+  }
+
+  private func recurringOccurrenceCandidate(for reminder: EKReminder) -> CompletedOccurrenceCandidate? {
+    guard reminder.isCompleted,
+      dueDate(for: reminder) != nil || reminder.completionDate != nil
+    else {
+      return nil
+    }
+    return CompletedOccurrenceCandidate(
+      signature: recurringOccurrenceSignature(for: reminder),
+      dueDate: dueDate(for: reminder) ?? reminder.completionDate
+    )
+  }
+
+  private func recurringOccurrenceSignature(for reminder: EKReminder) -> RecurringOccurrenceSignature {
+    RecurringOccurrenceSignature(
+      calendarIdentifier: reminder.calendar.calendarIdentifier,
+      title: normalizedSignatureText(reminder.title),
+      notes: normalizedSignatureText(reminder.notes)
+    )
+  }
+
+  private func dueDate(for reminder: EKReminder) -> Date? {
+    reminder.dueDateComponents.flatMap { Calendar.current.date(from: $0) }
+  }
+
+  private func normalizedSignatureText(_ value: String?) -> String {
+    (value ?? "")
+      .replacingOccurrences(of: "\r\n", with: "\n")
+      .replacingOccurrences(of: "\r", with: "\n")
+      .trimmingCharacters(in: .whitespacesAndNewlines)
   }
 
   private func normalized(_ value: String?) -> String? {

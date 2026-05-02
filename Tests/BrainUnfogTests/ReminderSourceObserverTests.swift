@@ -4,6 +4,20 @@ import XCTest
 
 @MainActor
 final class ReminderSourceObserverTests: XCTestCase {
+  override func setUp() {
+    super.setUp()
+    ReminderSourceChangeEchoSuppressor.reset()
+  }
+
+  override func tearDown() {
+    ReminderSourceChangeEchoSuppressor.reset()
+    super.tearDown()
+  }
+
+  func testDefaultObserverDoesNotUsePeriodicPolling() {
+    XCTAssertNil(ReminderSourceObserver.defaultPollingInterval)
+  }
+
   func testEventStoreChangeSchedulesImmediateAndDelayedRefresh() async throws {
     let gateway = ObserverTestReminderGateway()
     var invalidationReasons: [SyncReason] = []
@@ -25,6 +39,30 @@ final class ReminderSourceObserverTests: XCTestCase {
     observer.stop()
 
     XCTAssertEqual(invalidationReasons, [.eventStoreChanged, .eventStoreChanged])
+  }
+
+  func testAppAuthoredEventStoreChangeIsSuppressed() async throws {
+    let gateway = ObserverTestReminderGateway()
+    var invalidationReasons: [SyncReason] = []
+    let observer = ReminderSourceObserver(
+      gateway: gateway,
+      invalidateSource: { reason in
+        invalidationReasons.append(reason)
+        return true
+      },
+      handleExternalOwnerChange: { _ in true },
+      eventDebounceDelay: .milliseconds(1),
+      eventFollowUpDelay: .milliseconds(5),
+      authorizationStatusProvider: { .fullAccess }
+    )
+
+    await observer.startObserving()
+    ReminderSourceChangeEchoSuppressor.markAppAuthoredMutation(duration: 1)
+    NotificationCenter.default.post(name: .EKEventStoreChanged, object: gateway.eventStore)
+    try await Task.sleep(for: .milliseconds(60))
+    observer.stop()
+
+    XCTAssertTrue(invalidationReasons.isEmpty)
   }
 
   func testGlobalEventStoreChangeSchedulesImmediateAndDelayedRefresh() async throws {

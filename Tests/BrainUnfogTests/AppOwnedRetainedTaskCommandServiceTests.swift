@@ -192,6 +192,54 @@ final class AppOwnedRetainedTaskCommandServiceTests: XCTestCase {
     XCTAssertEqual(task.schedule.rawRepeatRule, "daily")
   }
 
+  @MainActor
+  func testAppOwnedRecurringScheduleRestoreWithResetRecreatesReminderAnchor() async throws {
+    let advancedDueDate = try XCTUnwrap(Self.calendar.date(from: DateComponents(year: 2026, month: 5, day: 5)))
+    let originalDueDate = try XCTUnwrap(Self.calendar.date(from: DateComponents(year: 2026, month: 5, day: 2, hour: 11)))
+    let fixture = try await makeEnabledStoreFixture(
+      taskExternalIdentifier: "task-1",
+      taskTitle: "Recurring",
+      dueDate: advancedDueDate,
+      scheduleHasExplicitTime: false,
+      scheduledDurationMinutes: nil,
+      recurrenceRuleRaw: "daily|3"
+    )
+    let provider = FakeAppOwnedReminderProjectProvider()
+    provider.createdTaskMetadata = ReminderTaskRemoteMetadata(
+      identifier: "recreated-identifier",
+      externalIdentifier: "task-recreated",
+      modifiedAt: Date(timeIntervalSinceReferenceDate: 900)
+    )
+    let taskID = ReminderProjectionIdentity.taskID(for: "task-1")
+
+    _ = try await ObsidianRetainedTaskCommandService.setTaskSchedule(
+      vaultRootURL: fixture.vaultRoot,
+      projectID: fixture.projectID,
+      taskID: taskID,
+      day: Self.calendar.startOfDay(for: originalDueDate),
+      timeMinutes: 11 * 60,
+      durationMinutes: 45,
+      calendar: Self.calendar,
+      reminderProjectProvider: provider,
+      resetRecurringAnchor: true
+    )
+    let snapshot = try await fixture.store.loadRetainedWorkspaceSnapshot(projectIDs: [fixture.projectID])
+    let task = try XCTUnwrap(snapshot.projects.first?.tasks.first)
+
+    XCTAssertEqual(provider.createdProjectIdentifier, "list-1")
+    XCTAssertEqual(provider.createdTaskTitle, "Recurring")
+    XCTAssertEqual(provider.createdTaskDueDate, originalDueDate)
+    XCTAssertEqual(provider.createdTaskHasExplicitTime, true)
+    XCTAssertEqual(provider.recurrenceUpdate?.0, "task-recreated")
+    XCTAssertEqual(provider.recurrenceUpdate?.1, "daily|3")
+    XCTAssertEqual(provider.removedTaskExternalIdentifiers, ["task-1"])
+    XCTAssertEqual(task.identity.reminderExternalIdentifier, "task-recreated")
+    XCTAssertEqual(task.schedule.parsedDate, originalDueDate)
+    XCTAssertTrue(task.schedule.hasExplicitTime)
+    XCTAssertEqual(task.schedule.durationMinutes, 45)
+    XCTAssertEqual(task.schedule.rawRepeatRule, "daily|3")
+  }
+
   private struct StoreFixture {
     let vaultRoot: URL
     let store: AppOwnedWorkspaceStore
@@ -281,6 +329,9 @@ final class AppOwnedRetainedTaskCommandServiceTests: XCTestCase {
 @MainActor
 private final class FakeAppOwnedReminderProjectProvider: ReminderProjectProvider {
   var createdTaskMetadata: ReminderTaskRemoteMetadata?
+  var createdTaskTitle: String?
+  var createdTaskDueDate: Date?
+  var createdTaskHasExplicitTime: Bool?
   var updateMetadata = ReminderTaskRemoteMetadata(
     identifier: "task-identifier",
     externalIdentifier: "task-1",
@@ -293,6 +344,8 @@ private final class FakeAppOwnedReminderProjectProvider: ReminderProjectProvider
   var projectColorUpdate: (String, String?)?
   var completionUpdate: (UUID, Bool)?
   var scheduleUpdate: (Date?, Bool)?
+  var recurrenceUpdate: (String?, String?)?
+  var removedTaskExternalIdentifiers: [String?] = []
   var remoteTaskSnapshot: ReminderTaskRemoteSnapshot?
 
   var defaultCalendarIdentifierForNewReminders: String? { "list-1" }
@@ -325,10 +378,16 @@ private final class FakeAppOwnedReminderProjectProvider: ReminderProjectProvider
     noteText: String
   ) throws -> ReminderTaskRemoteMetadata? {
     createdProjectIdentifier = identifier
+    createdTaskTitle = title
+    createdTaskDueDate = dueDate
+    createdTaskHasExplicitTime = hasExplicitTime
     return createdTaskMetadata
   }
 
-  func removeTaskReminder(for task: ReminderTaskReference) throws -> Bool { true }
+  func removeTaskReminder(for task: ReminderTaskReference) throws -> Bool {
+    removedTaskExternalIdentifiers.append(task.reminderExternalIdentifier)
+    return true
+  }
   func taskSnapshot(for task: ReminderTaskReference) throws -> ReminderTaskRemoteSnapshot? {
     _ = task
     return remoteTaskSnapshot
@@ -390,7 +449,8 @@ private final class FakeAppOwnedReminderProjectProvider: ReminderProjectProvider
     for task: ReminderTaskReference,
     recurrenceRuleRaw: String?
   ) throws -> ReminderTaskRemoteMetadata? {
-    updateMetadata
+    recurrenceUpdate = (task.reminderExternalIdentifier, recurrenceRuleRaw)
+    return updateMetadata
   }
 
   func setTaskPresentation(

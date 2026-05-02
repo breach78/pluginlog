@@ -21,11 +21,30 @@ final class RecurringCompletionUndoScheduleRestorePolicyTests: XCTestCase {
     )
   }
 
-  func testDoesNotRestoreWhenNextScheduleIsAllDay() {
+  func testRestoresAllDayScheduleWhenUndoingCompletedRecurringTask() {
     let fields = RetainedTaskEditFields(
       title: "Task",
       noteText: "",
       day: Date(timeIntervalSince1970: 0),
+      timeMinutes: nil,
+      durationMinutes: nil
+    )
+
+    XCTAssertTrue(
+      RecurringCompletionUndoScheduleRestorePolicy.shouldRestore(
+        previousIsCompleted: true,
+        nextIsCompleted: false,
+        isRecurring: true,
+        fields: fields
+      )
+    )
+  }
+
+  func testDoesNotRestoreWhenTargetHasNoDay() {
+    let fields = RetainedTaskEditFields(
+      title: "Task",
+      noteText: "",
+      day: nil,
       timeMinutes: nil,
       durationMinutes: nil
     )
@@ -99,6 +118,42 @@ final class RecurringCompletionUndoScheduleRestorePolicyTests: XCTestCase {
         isRecurring: true,
         previousFields: advancedNextOccurrenceFields,
         fields: originalOccurrenceFields
+      )
+    )
+  }
+
+  func testRecurringCompletionRedoRestoresAdvancedAllDayOccurrence() {
+    let originalOccurrenceFields = RetainedTaskEditFields(
+      title: "Task",
+      noteText: "",
+      day: Date(timeIntervalSince1970: 0),
+      timeMinutes: 13 * 60,
+      durationMinutes: 30
+    )
+    let advancedNextOccurrenceFields = RetainedTaskEditFields(
+      title: "Task",
+      noteText: "",
+      day: Date(timeIntervalSince1970: 8 * 24 * 60 * 60),
+      timeMinutes: nil,
+      durationMinutes: nil
+    )
+
+    XCTAssertFalse(
+      RecurringCompletionUndoScheduleRestorePolicy.shouldWriteCompletion(
+        previousIsCompleted: false,
+        nextIsCompleted: false,
+        isRecurring: true,
+        previousFields: originalOccurrenceFields,
+        fields: advancedNextOccurrenceFields
+      )
+    )
+    XCTAssertTrue(
+      RecurringCompletionUndoScheduleRestorePolicy.shouldRestore(
+        previousIsCompleted: false,
+        nextIsCompleted: false,
+        isRecurring: true,
+        previousFields: originalOccurrenceFields,
+        fields: advancedNextOccurrenceFields
       )
     )
   }

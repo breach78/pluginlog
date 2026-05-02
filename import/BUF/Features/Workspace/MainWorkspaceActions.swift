@@ -490,7 +490,8 @@ extension MainWorkspaceView {
           timeMinutes: targetSnapshot.fields.timeMinutes,
           durationMinutes: targetSnapshot.fields.durationMinutes,
           calendar: .autoupdatingCurrent,
-          reminderProjectProvider: appState.reminderProjectProvider
+          reminderProjectProvider: appState.reminderProjectProvider,
+          resetRecurringAnchor: isRecurring
         )
       }
       appState.bumpWorkspaceTreeRevision()

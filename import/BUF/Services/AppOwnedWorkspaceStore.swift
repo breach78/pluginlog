@@ -126,6 +126,7 @@ actor AppOwnedWorkspaceStore {
     do {
       let preservedProjectSupplements = try loadProjectSupplements(db, preservesImportedColor: true)
       let preservedTaskSupplements = try loadTaskSupplements(db)
+      let taskIdentityResolver = try loadTaskIdentityResolver(db)
       try exec(db, "DELETE FROM app_tasks;")
       try exec(db, "DELETE FROM app_projects;")
       try upsertMetadata(db, key: "last_reminders_import_at", value: String(importedAt.timeIntervalSinceReferenceDate))
@@ -135,7 +136,13 @@ actor AppOwnedWorkspaceStore {
         try insertProject(db, list: list, importedAt: importedAt)
         let items = batch.itemsByListIdentifier[list.identifier] ?? []
         for (index, item) in items.enumerated() {
-          try insertTask(db, item: item, list: list, rowOrder: index)
+          try insertTask(
+            db,
+            item: item,
+            list: list,
+            rowOrder: index,
+            taskIdentityResolver: taskIdentityResolver
+          )
         }
       }
 
@@ -148,7 +155,13 @@ actor AppOwnedWorkspaceStore {
         )
         try insertProject(db, list: fallbackList, importedAt: importedAt)
         for (index, item) in items.enumerated() {
-          try insertTask(db, item: item, list: fallbackList, rowOrder: index)
+          try insertTask(
+            db,
+            item: item,
+            list: fallbackList,
+            rowOrder: index,
+            taskIdentityResolver: taskIdentityResolver
+          )
         }
       }
       try mergeProjectSupplements(
@@ -542,12 +555,17 @@ actor AppOwnedWorkspaceStore {
     _ db: OpaquePointer,
     item: ReminderItemImportSnapshot,
     list: ReminderListImportSnapshot,
-    rowOrder: Int
+    rowOrder: Int,
+    taskIdentityResolver: TaskIdentityResolver
   ) throws {
     let projectIdentity = normalized(list.externalIdentifier) ?? list.identifier
     let projectID = RetainedProjectionBuilder.derivedProjectID(for: projectIdentity)
     let taskIdentity = normalized(item.externalIdentifier) ?? item.identifier
-    let taskID = ReminderProjectionIdentity.taskID(for: taskIdentity)
+    let taskID = taskIdentityResolver.taskID(
+      for: item,
+      projectID: projectID,
+      fallbackIdentity: taskIdentity
+    )
     let parentTaskID = normalized(item.parentExternalIdentifier).map(ReminderProjectionIdentity.taskID(for:))
     try execute(
       db,
@@ -646,6 +664,112 @@ actor AppOwnedWorkspaceStore {
   private struct StoredTaskOrderRow {
     let taskID: UUID
     let isCompleted: Bool
+  }
+
+  private struct TaskIdentityResolver {
+    let idsByExternalIdentifier: [String: UUID]
+    let recurringIDsBySignature: [RecurringTaskSignature: UUID]
+
+    func taskID(
+      for item: ReminderItemImportSnapshot,
+      projectID: UUID,
+      fallbackIdentity: String
+    ) -> UUID {
+      if let externalIdentifier = normalizedValue(item.externalIdentifier),
+        let existingID = idsByExternalIdentifier[externalIdentifier]
+      {
+        return existingID
+      }
+      if !item.isCompleted,
+        normalizedValue(item.recurrenceRuleRaw) != nil,
+        let existingID = recurringIDsBySignature[
+          RecurringTaskSignature(projectID: projectID, title: item.title, noteText: item.notes)
+        ]
+      {
+        return existingID
+      }
+      return ReminderProjectionIdentity.taskID(for: fallbackIdentity)
+    }
+
+    private func normalizedValue(_ value: String?) -> String? {
+      guard let value = value?.trimmingCharacters(in: .whitespacesAndNewlines),
+        !value.isEmpty
+      else {
+        return nil
+      }
+      return value
+    }
+  }
+
+  private struct RecurringTaskSignature: Hashable {
+    let projectID: UUID
+    let title: String
+    let noteText: String
+
+    init(projectID: UUID, title: String, noteText: String) {
+      self.projectID = projectID
+      self.title = Self.normalizedText(title)
+      self.noteText = Self.normalizedText(noteText)
+    }
+
+    private static func normalizedText(_ value: String) -> String {
+      value
+        .replacingOccurrences(of: "\r\n", with: "\n")
+        .replacingOccurrences(of: "\r", with: "\n")
+        .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+  }
+
+  private func loadTaskIdentityResolver(_ db: OpaquePointer) throws -> TaskIdentityResolver {
+    let rows = try query(
+      db,
+      """
+      SELECT id, project_id, reminder_external_identifier, title, note_text, is_completed,
+        recurrence_rule_raw
+      FROM app_tasks
+      ORDER BY is_completed ASC, modified_at DESC;
+      """
+    ) { statement -> (UUID, UUID, String?, RecurringTaskSignature?) in
+      guard let taskID = UUID(uuidString: columnText(statement, 0) ?? ""),
+        let projectID = UUID(uuidString: columnText(statement, 1) ?? "")
+      else {
+        throw AppOwnedWorkspaceStoreError.invalidSQLiteValue("invalid task id")
+      }
+      let externalIdentifier = normalized(columnText(statement, 2))
+      let recurrenceRuleRaw = normalized(columnText(statement, 6))
+      let signature = recurrenceRuleRaw.map { _ in
+        RecurringTaskSignature(
+          projectID: projectID,
+          title: columnText(statement, 3) ?? "",
+          noteText: columnText(statement, 4) ?? ""
+        )
+      }
+      return (taskID, projectID, externalIdentifier, signature)
+    }
+
+    var idsByExternalIdentifier: [String: UUID] = [:]
+    var recurringIDsBySignature: [RecurringTaskSignature: UUID] = [:]
+    var ambiguousRecurringSignatures = Set<RecurringTaskSignature>()
+    for row in rows {
+      if let externalIdentifier = row.2, idsByExternalIdentifier[externalIdentifier] == nil {
+        idsByExternalIdentifier[externalIdentifier] = row.0
+      }
+      guard let signature = row.3,
+        !ambiguousRecurringSignatures.contains(signature)
+      else {
+        continue
+      }
+      if let existingID = recurringIDsBySignature[signature], existingID != row.0 {
+        recurringIDsBySignature.removeValue(forKey: signature)
+        ambiguousRecurringSignatures.insert(signature)
+      } else {
+        recurringIDsBySignature[signature] = row.0
+      }
+    }
+    return TaskIdentityResolver(
+      idsByExternalIdentifier: idsByExternalIdentifier,
+      recurringIDsBySignature: recurringIDsBySignature
+    )
   }
 
   private func loadTaskOrderRows(
@@ -751,7 +875,94 @@ actor AppOwnedWorkspaceStore {
     for (projectID, task) in rows {
       result[projectID, default: []].append(task)
     }
-    return result
+    return result.mapValues(tasksHidingShadowedCompletedRecurringOccurrences(_:))
+  }
+
+  private func tasksHidingShadowedCompletedRecurringOccurrences(
+    _ tasks: [RetainedTask]
+  ) -> [RetainedTask] {
+    let activeRecurringTasks = tasks.filter { task in
+      !task.isCompleted && task.schedule.canonicalRepeatRule != nil
+    }
+    let activeRecurringExternalIdentifiers = Set(
+      activeRecurringTasks.compactMap(\.identity.reminderExternalIdentifier)
+    )
+    let activeRecurringCandidates = activeRecurringTasks.map { task in
+      ActiveRecurringTaskCandidate(
+        signature: RecurringTaskContentSignature(
+          title: task.title,
+          noteText: task.noteText
+        ),
+        dueDate: task.schedule.parsedDate
+      )
+    }
+    guard !activeRecurringExternalIdentifiers.isEmpty || !activeRecurringCandidates.isEmpty else {
+      return tasks
+    }
+    return tasks.filter { task in
+      guard task.isCompleted else { return true }
+      if let externalIdentifier = task.identity.reminderExternalIdentifier,
+        let baseIdentifier = completedRecurringBaseIdentifier(from: externalIdentifier),
+        activeRecurringExternalIdentifiers.contains(baseIdentifier)
+      {
+        return false
+      }
+      guard let completedCandidate = completedRecurringTaskCandidate(for: task)
+      else {
+        return true
+      }
+      return !activeRecurringCandidates.contains { activeCandidate in
+        activeCandidate.signature == completedCandidate.signature
+      }
+    }
+  }
+
+  private struct ActiveRecurringTaskCandidate {
+    let signature: RecurringTaskContentSignature
+    let dueDate: Date?
+  }
+
+  private struct CompletedRecurringTaskCandidate {
+    let signature: RecurringTaskContentSignature
+    let dueDate: Date?
+  }
+
+  private struct RecurringTaskContentSignature: Hashable {
+    let title: String
+    let noteText: String
+
+    init(title: String, noteText: String) {
+      self.title = Self.normalizedText(title)
+      self.noteText = Self.normalizedText(noteText)
+    }
+
+    private static func normalizedText(_ value: String) -> String {
+      value
+        .replacingOccurrences(of: "\r\n", with: "\n")
+        .replacingOccurrences(of: "\r", with: "\n")
+        .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+  }
+
+  private func completedRecurringBaseIdentifier(
+    from externalIdentifier: String
+  ) -> String? {
+    let marker = "::completed::"
+    guard let markerRange = externalIdentifier.range(of: marker) else { return nil }
+    let baseIdentifier = String(externalIdentifier[..<markerRange.lowerBound])
+    return baseIdentifier.isEmpty ? nil : baseIdentifier
+  }
+
+  private func completedRecurringTaskCandidate(
+    for task: RetainedTask
+  ) -> CompletedRecurringTaskCandidate? {
+    return CompletedRecurringTaskCandidate(
+      signature: RecurringTaskContentSignature(
+        title: task.title,
+        noteText: task.noteText
+      ),
+      dueDate: task.schedule.parsedDate
+    )
   }
 
 }

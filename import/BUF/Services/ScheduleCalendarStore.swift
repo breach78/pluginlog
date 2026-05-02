@@ -252,15 +252,15 @@ enum ScheduleCalendarAccessPromptPolicy {
     authorizationStatus: EKAuthorizationStatus,
     promptAttempted: Bool
   ) -> Bool {
-    _ = authorizationStatus
-    _ = promptAttempted
-    return false
+    authorizationStatus == .notDetermined && promptAttempted
   }
 
   static func shouldPersistPromptAttempt(after authorizationStatus: EKAuthorizationStatus) -> Bool {
     switch authorizationStatus {
-    case .notDetermined, .fullAccess, .authorized, .writeOnly, .denied, .restricted:
+    case .fullAccess, .authorized, .writeOnly, .denied, .restricted:
       return true
+    case .notDetermined:
+      return false
     @unknown default:
       return false
     }
@@ -769,6 +769,7 @@ final class ScheduleCalendarStore: ObservableObject, ScheduleCalendarServicing,
   private let ownedEventInvalidationSubject = PassthroughSubject<[String], Never>()
   private var currentFetchRange: ClosedRange<Date>?
   private var hasLoadedCurrentRange = false
+  private var usesLegacyCalendarAccessFallback = false
   private var lastOwnedCalendarEventsSnapshot: [ScheduleCalendarEvent] = []
   nonisolated(unsafe) private var eventStoreObserver: NSObjectProtocol?
   private var eventStoreChangedTask: Task<Void, Never>?
@@ -937,7 +938,11 @@ final class ScheduleCalendarStore: ObservableObject, ScheduleCalendarServicing,
   @discardableResult
   func requestCalendarAccessOnceIfNeeded() async -> Bool {
     do {
-      return try await requestAccessIfNeeded()
+      let granted = try await requestAccessIfNeeded()
+      if granted, accessDenied {
+        await reloadCurrentRange(force: true)
+      }
+      return granted
     } catch {
       AppLogger.sync.error(
         "calendar access request failed: \(error.localizedDescription, privacy: .public)"
@@ -954,7 +959,7 @@ final class ScheduleCalendarStore: ObservableObject, ScheduleCalendarServicing,
   }
 
   private func reload(range: ClosedRange<Date>, force: Bool) async {
-    if !force, hasLoadedCurrentRange, isCovered(range, by: currentFetchRange) {
+    if !force, !accessDenied, hasLoadedCurrentRange, isCovered(range, by: currentFetchRange) {
       return
     }
 
@@ -963,14 +968,14 @@ final class ScheduleCalendarStore: ObservableObject, ScheduleCalendarServicing,
       guard granted else {
         projectionState.applyAccessDenied()
         applyProjectionStateSnapshot(projectionState.snapshot)
-        currentFetchRange = nil
+        currentFetchRange = range
         hasLoadedCurrentRange = false
         return
       }
     } catch {
       projectionState.applyAccessDenied()
       applyProjectionStateSnapshot(projectionState.snapshot)
-      currentFetchRange = nil
+      currentFetchRange = range
       hasLoadedCurrentRange = false
       AppLogger.sync.error(
         "calendar access request failed: \(error.localizedDescription, privacy: .public)"
@@ -1433,6 +1438,9 @@ final class ScheduleCalendarStore: ObservableObject, ScheduleCalendarServicing,
     case .denied, .restricted:
       return false
     case .notDetermined:
+      if usesLegacyCalendarAccessFallback {
+        return true
+      }
       let promptAttemptedKey = ScheduleCalendarAccessPromptPolicy.promptAttemptedKey
       let currentIdentity = AppPermissionPromptIdentity.current()
       let storedPromptAttempted =
@@ -1443,9 +1451,17 @@ final class ScheduleCalendarStore: ObservableObject, ScheduleCalendarServicing,
           currentIdentity: currentIdentity,
           legacyPromptAttempted: userDefaults.bool(forKey: promptAttemptedKey)
         )
-      guard ScheduleCalendarAccessPromptPolicy.shouldRequestAccess(
+      let hasStalePromptAttempt = ScheduleCalendarAccessPromptPolicy.hasStalePromptAttempt(
         authorizationStatus: authorizationStatus,
         promptAttempted: storedPromptAttempted
+      )
+      if hasStalePromptAttempt {
+        userDefaults.removeObject(forKey: promptAttemptedKey)
+        userDefaults.removeObject(forKey: ScheduleCalendarAccessPromptPolicy.promptAttemptedIdentityKey)
+      }
+      guard ScheduleCalendarAccessPromptPolicy.shouldRequestAccess(
+        authorizationStatus: authorizationStatus,
+        promptAttempted: hasStalePromptAttempt ? false : storedPromptAttempted
       ) else {
         return false
       }
@@ -1458,16 +1474,38 @@ final class ScheduleCalendarStore: ObservableObject, ScheduleCalendarServicing,
       }
       var granted = try await eventStore.requestFullAccessToEvents()
       if !granted && EKEventStore.authorizationStatus(for: .event) == .notDetermined {
+        // Some upgraded macOS installs keep a legacy Calendar grant that the full-access prompt rejects.
+        granted = try await requestLegacyAccessToEvents()
+      }
+      if !granted && EKEventStore.authorizationStatus(for: .event) == .notDetermined {
         granted = try await requestFullAccessToEventsWithCompletionHandler()
+      }
+      if granted && EKEventStore.authorizationStatus(for: .event) == .notDetermined {
+        usesLegacyCalendarAccessFallback = true
       }
       if ScheduleCalendarAccessPromptPolicy.shouldPersistPromptAttempt(
         after: EKEventStore.authorizationStatus(for: .event)
       ) {
         userDefaults.set(true, forKey: promptAttemptedKey)
+      } else {
+        userDefaults.removeObject(forKey: promptAttemptedKey)
+        userDefaults.removeObject(forKey: ScheduleCalendarAccessPromptPolicy.promptAttemptedIdentityKey)
       }
       return granted
     @unknown default:
       return false
+    }
+  }
+
+  private func requestLegacyAccessToEvents() async throws -> Bool {
+    try await withCheckedThrowingContinuation { continuation in
+      eventStore.requestAccess(to: .event) { granted, error in
+        if let error {
+          continuation.resume(throwing: error)
+        } else {
+          continuation.resume(returning: granted)
+        }
+      }
     }
   }
 
