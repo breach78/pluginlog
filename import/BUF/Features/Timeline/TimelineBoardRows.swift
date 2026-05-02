@@ -2,6 +2,16 @@ import AppKit
 import SwiftUI
 import UniformTypeIdentifiers
 
+enum TimelinePriorityBoundaryPolicy {
+  static func shouldShowBoundary(
+    sortMode: ProjectListSortMode,
+    previousStage: ProjectProgressStage,
+    currentStage: ProjectProgressStage
+  ) -> Bool {
+    sortMode == .priority && previousStage != currentStage
+  }
+}
+
 extension TimelineBoardView {
   func boardContent(
     bars: [TimelineProjectBar],
@@ -310,7 +320,7 @@ extension TimelineBoardView {
     )
     .overlay(alignment: .top) {
       if showsPriorityBoundary {
-        priorityBoundaryLine
+        priorityBoundaryLine(for: priorityStage(for: bar))
       }
     }
     .overlay(alignment: projectDropIndicatorAlignment(for: interactiveProjectID)) {
@@ -430,7 +440,7 @@ extension TimelineBoardView {
     )
     .overlay(alignment: .top) {
       if showsPriorityBoundary {
-        priorityBoundaryLine
+        priorityBoundaryLine(for: priorityStage(for: bar))
       }
     }
     .overlay(alignment: projectDropIndicatorAlignment(for: interactiveProjectID)) {
@@ -633,10 +643,10 @@ extension TimelineBoardView {
     rowLayout.metrics.bottomPadding(for: index, totalCount: totalCount)
   }
 
-  var priorityBoundaryLine: some View {
+  func priorityBoundaryLine(for stage: ProjectProgressStage) -> some View {
     Rectangle()
-      .fill(Color.secondary.opacity(0.20))
-      .frame(height: 1)
+      .fill(priorityStageBoundaryColor(for: stage))
+      .frame(height: 2)
       .allowsHitTesting(false)
   }
 
@@ -925,7 +935,11 @@ extension TimelineBoardView {
       return false
     }
 
-    return priorityStage(for: bars[rowIndex - 1]) != priorityStage(for: bars[rowIndex])
+    return TimelinePriorityBoundaryPolicy.shouldShowBoundary(
+      sortMode: projectListSortMode,
+      previousStage: priorityStage(for: bars[rowIndex - 1]),
+      currentStage: priorityStage(for: bars[rowIndex])
+    )
   }
 
   func rowBackgroundFill(
@@ -956,6 +970,19 @@ extension TimelineBoardView {
       return Color.green.opacity(0.5)
     case .later:
       return Color.secondary.opacity(0.35)
+    }
+  }
+
+  func priorityStageBoundaryColor(for stage: ProjectProgressStage) -> Color {
+    switch stage {
+    case .do:
+      return Color.red.opacity(0.72)
+    case .decide:
+      return Color.yellow.opacity(0.76)
+    case .area:
+      return Color.green.opacity(0.72)
+    case .later:
+      return Color.secondary.opacity(0.48)
     }
   }
 
