@@ -37,6 +37,37 @@ enum WorkspaceOverdueTaskRolloverPlanner {
   }
 }
 
+enum WorkspaceEscapeKeyAction: Equatable {
+  case releaseTextResponder
+  case clearSearch
+  case dismissInspector
+  case dismissEditPanel
+  case passThrough
+}
+
+enum WorkspaceEscapeKeyPolicy {
+  static func action(
+    didReleaseTextResponder: Bool,
+    hasSearchQuery: Bool,
+    hasInspectorSelection: Bool,
+    hasEditPanel: Bool
+  ) -> WorkspaceEscapeKeyAction {
+    if didReleaseTextResponder {
+      return .releaseTextResponder
+    }
+    if hasSearchQuery {
+      return .clearSearch
+    }
+    if hasInspectorSelection {
+      return .dismissInspector
+    }
+    if hasEditPanel {
+      return .dismissEditPanel
+    }
+    return .passThrough
+  }
+}
+
 extension MainWorkspaceView {
   func toggleSyncQuickAddPopover() {
     guard !syncQuickAddProjects.isEmpty else {
@@ -1058,16 +1089,26 @@ extension MainWorkspaceView {
     }
 
     if event.keyCode == 53 {
-      if releaseActiveEditPanelTextResponder() {
+      let action = WorkspaceEscapeKeyPolicy.action(
+        didReleaseTextResponder: releaseActiveEditPanelTextResponder(),
+        hasSearchQuery: !chromeState.workspaceSearchQuery.isEmpty,
+        hasInspectorSelection: inspectorSelection != nil,
+        hasEditPanel: hasActiveWorkspaceEditPanel
+      )
+      switch action {
+      case .releaseTextResponder:
         return nil
-      }
-      if !chromeState.workspaceSearchQuery.isEmpty {
+      case .clearSearch:
         clearWorkspaceSearch()
         return nil
-      }
-      if inspectorSelection != nil {
+      case .dismissInspector:
         dismissInspectorSelection()
         return nil
+      case .dismissEditPanel:
+        dismissActiveWorkspaceEditPanel()
+        return nil
+      case .passThrough:
+        break
       }
     }
     return event
@@ -1091,6 +1132,23 @@ extension MainWorkspaceView {
   private func handleMouseDown(_ event: NSEvent) -> NSEvent? {
     releaseActiveEditPanelTextResponder(for: event)
     return event
+  }
+
+  private var hasActiveWorkspaceEditPanel: Bool {
+    activeWorkspaceTaskEditPanelTarget != nil || activeWorkspaceCalendarEventEditPanelTarget != nil
+  }
+
+  @discardableResult
+  private func dismissActiveWorkspaceEditPanel() -> Bool {
+    if activeWorkspaceTaskEditPanelTarget != nil {
+      dismissTimelineTaskEditor()
+      return true
+    }
+    if activeWorkspaceCalendarEventEditPanelTarget != nil {
+      dismissCalendarEventEditor()
+      return true
+    }
+    return false
   }
 
   @discardableResult

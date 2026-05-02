@@ -15,6 +15,23 @@ final class LinkedTextEditorPolicyTests: XCTestCase {
     XCTAssertEqual(result.reserveHeightFloor, 160)
   }
 
+  func testTrailingReserveWaitsUntilContentReachesVisibleBottom() {
+    XCTAssertFalse(
+      LinkedTextEditorHeightPolicy.shouldExpandReserve(
+        contentHeight: 80,
+        currentVisibleHeight: 150,
+        lineHeight: 16
+      )
+    )
+    XCTAssertTrue(
+      LinkedTextEditorHeightPolicy.shouldExpandReserve(
+        contentHeight: 136,
+        currentVisibleHeight: 150,
+        lineHeight: 16
+      )
+    )
+  }
+
   func testTrailingReserveKeepsHeightStableWhileContentFits() {
     let result = LinkedTextEditorHeightPolicy.resolvedHeight(
       contentHeight: 124,

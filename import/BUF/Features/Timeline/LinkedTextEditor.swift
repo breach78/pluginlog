@@ -12,6 +12,7 @@ struct LinkedTextEditor: NSViewRepresentable {
   let lineHeightMultiple: CGFloat
   var allowsMailMessageDrops = false
   var trailingInputReserveLineCount = 0
+  var trailingInputReserveActivationHeight: CGFloat = 0
 
   func makeCoordinator() -> Coordinator {
     Coordinator(self)
@@ -248,12 +249,24 @@ struct LinkedTextEditor: NSViewRepresentable {
       textView.layoutManager?.ensureLayout(for: textContainer)
       let usedRect = textView.layoutManager?.usedRect(for: textContainer) ?? .zero
       let contentHeight = ceil(usedRect.height + textView.textContainerInset.height * 2 + 6)
+      let lineHeight = reservedLineHeight(for: textView)
+      let currentVisibleHeight = max(
+        parent.measuredHeight,
+        parent.trailingInputReserveActivationHeight,
+        trailingInputReserveHeightFloor ?? 0
+      )
+      let expandsReserve = pendingTrailingInputReserveExpansion
+        && LinkedTextEditorHeightPolicy.shouldExpandReserve(
+          contentHeight: contentHeight,
+          currentVisibleHeight: currentVisibleHeight,
+          lineHeight: lineHeight
+        )
       let heightPolicy = LinkedTextEditorHeightPolicy.resolvedHeight(
         contentHeight: contentHeight,
         reserveHeightFloor: trailingInputReserveHeightFloor,
-        expandsReserve: pendingTrailingInputReserveExpansion,
+        expandsReserve: expandsReserve,
         reserveLineCount: parent.trailingInputReserveLineCount,
-        lineHeight: reservedLineHeight(for: textView)
+        lineHeight: lineHeight
       )
       trailingInputReserveHeightFloor = heightPolicy.reserveHeightFloor
       pendingTrailingInputReserveExpansion = false
@@ -558,6 +571,15 @@ struct LinkedTextEditorHeightPolicyResult: Equatable {
 }
 
 enum LinkedTextEditorHeightPolicy {
+  static func shouldExpandReserve(
+    contentHeight: CGFloat,
+    currentVisibleHeight: CGFloat,
+    lineHeight: CGFloat
+  ) -> Bool {
+    guard lineHeight > 0 else { return true }
+    return contentHeight >= currentVisibleHeight - lineHeight
+  }
+
   static func resolvedHeight(
     contentHeight: CGFloat,
     reserveHeightFloor: CGFloat?,
