@@ -3,6 +3,7 @@ import Foundation
 @MainActor
 enum ObsidianRetainedTaskCommandService {
   private static let reminderTimestampTolerance: TimeInterval = 0.5
+  private static let mutationGate = RetainedTaskCommandMutationGate()
 
   static func createTask(
     vaultRootURL: URL?,
@@ -18,6 +19,9 @@ enum ObsidianRetainedTaskCommandService {
     guard !title.isEmpty else {
       throw RetainedTaskCommandError.retainedProjectionFailed("empty task title")
     }
+    let lease = await mutationLease(projectID: projectID)
+    defer { releaseMutationLease(lease) }
+
     let context = try await projectContext(vaultRootURL: vaultRootURL, projectID: projectID)
     let dueDate = scheduledDate(day: day, timeMinutes: timeMinutes, calendar: calendar)
     let hasExplicitTime = dueDate != nil && timeMinutes != nil
@@ -71,6 +75,9 @@ enum ObsidianRetainedTaskCommandService {
     completionDate: Date?,
     reminderProjectProvider: ReminderProjectProvider
   ) async throws -> RetainedTaskCommandResult {
+    let lease = await mutationLease(projectID: projectID, taskID: taskID)
+    defer { releaseMutationLease(lease) }
+
     let context = try await commandContext(
       vaultRootURL: vaultRootURL,
       projectID: projectID,
@@ -217,6 +224,9 @@ enum ObsidianRetainedTaskCommandService {
     calendar: Calendar = .autoupdatingCurrent,
     reminderProjectProvider: ReminderProjectProvider
   ) async throws -> RetainedTaskCommandResult {
+    let lease = await mutationLease(projectID: projectID, taskID: taskID)
+    defer { releaseMutationLease(lease) }
+
     let context = try await commandContext(
       vaultRootURL: vaultRootURL,
       projectID: projectID,
@@ -297,6 +307,9 @@ enum ObsidianRetainedTaskCommandService {
     taskID: UUID,
     reminderProjectProvider: ReminderProjectProvider
   ) async throws -> RetainedTaskDeletionResult {
+    let lease = await mutationLease(projectID: projectID, taskID: taskID)
+    defer { releaseMutationLease(lease) }
+
     let context = try await commandContext(
       vaultRootURL: vaultRootURL,
       projectID: projectID,
@@ -345,6 +358,13 @@ enum ObsidianRetainedTaskCommandService {
     guard sourceProjectID != targetProjectID else {
       throw RetainedTaskCommandError.retainedProjectionFailed("task already belongs to target project")
     }
+    let lease = await mutationLease(
+      sourceProjectID: sourceProjectID,
+      targetProjectID: targetProjectID,
+      taskID: taskID
+    )
+    defer { releaseMutationLease(lease) }
+
     let sourceContext = try await commandContext(
       vaultRootURL: vaultRootURL,
       projectID: sourceProjectID,
@@ -462,6 +482,8 @@ enum ObsidianRetainedTaskCommandService {
     guard !title.isEmpty else {
       throw RetainedTaskCommandError.retainedProjectionFailed("empty task title")
     }
+    let lease = await mutationLease(projectID: projectID, taskID: taskID)
+    defer { releaseMutationLease(lease) }
 
     let context = try await commandContext(
       vaultRootURL: vaultRootURL,
@@ -582,6 +604,35 @@ enum ObsidianRetainedTaskCommandService {
     let store: ObsidianProjectMarkdownStore
     let snapshot: ObsidianProjectMarkdownStore.Snapshot
     let reminderListExternalIdentifier: String
+  }
+
+  private static func mutationLease(
+    projectID: UUID,
+    taskID: UUID? = nil
+  ) async -> RetainedTaskCommandMutationLease {
+    var keys: Set<RetainedTaskCommandMutationKey> = [.project(projectID)]
+    if let taskID {
+      keys.insert(.task(taskID))
+    }
+    return await mutationGate.acquire(keys)
+  }
+
+  private static func mutationLease(
+    sourceProjectID: UUID,
+    targetProjectID: UUID,
+    taskID: UUID
+  ) async -> RetainedTaskCommandMutationLease {
+    await mutationGate.acquire([
+      .project(sourceProjectID),
+      .project(targetProjectID),
+      .task(taskID),
+    ])
+  }
+
+  private static func releaseMutationLease(_ lease: RetainedTaskCommandMutationLease) {
+    Task {
+      await lease.release()
+    }
   }
 
   private static func projectContext(

@@ -1685,6 +1685,9 @@ extension ScheduleBoardView {
           )
         }
       } catch {
+        if await handleRetainedScheduleWriteFailure(error) {
+          return
+        }
         appState.errorMessage = error.localizedDescription
       }
     }
