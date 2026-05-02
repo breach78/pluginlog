@@ -317,13 +317,19 @@ extension TimelineBoardView {
     orderedTaskIDs: [UUID],
     registerUndo: Bool = true
   ) {
+    let currentStoredOrder = TimelineProjectTaskManualOrderStore.projectOrder(for: projectID)
     let previousOrder = TimelineProjectTaskManualOrderStore.orderedTaskIDs(
       orderedTaskIDs,
-      using: TimelineProjectTaskManualOrderStore.projectOrder(for: projectID)
+      using: currentStoredOrder
     )
-    guard previousOrder != orderedTaskIDs else { return }
+    guard TimelineProjectTaskManualOrderStore.shouldSaveProjectOrder(
+      orderedTaskIDs,
+      currentStoredOrder: currentStoredOrder
+    ) else {
+      return
+    }
     TimelineProjectTaskManualOrderStore.saveProjectOrder(orderedTaskIDs, for: projectID)
-    guard registerUndo else { return }
+    guard registerUndo, previousOrder != orderedTaskIDs else { return }
     appState.registerUndo(with: undoManager, actionName: "목록 순서 변경") {
       self.saveTimelineProjectListWindowTaskOrder(
         projectID: projectID,

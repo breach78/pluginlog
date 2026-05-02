@@ -1079,9 +1079,6 @@ enum ObsidianRetainedTaskCommandService {
       throw RetainedTaskCommandError.reminderOwnerUnresolved(reference.taskID)
     }
     let remoteModificationDelta = remoteSnapshot.modifiedAt.timeIntervalSince(baselineRemoteModifiedAt)
-    guard remoteModificationDelta <= reminderTimestampTolerance else {
-      throw RetainedTaskCommandError.retainedProjectionFailed("stale reminder sync baseline")
-    }
     if remoteModificationDelta < -reminderTimestampTolerance {
       return baseline
     }

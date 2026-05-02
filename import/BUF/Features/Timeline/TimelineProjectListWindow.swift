@@ -66,6 +66,21 @@ struct TimelineProjectListActions {
   }
 }
 
+enum TimelineProjectListTaskOrderPolicy {
+  static func reorderedTasks(
+    _ orderedTaskIDs: [UUID],
+    tasksByID: [UUID: TimelineProjectListWindowSnapshot.Task]
+  ) -> [TimelineProjectListWindowSnapshot.Task] {
+    orderedTaskIDs.compactMap { tasksByID[$0] }
+  }
+
+  static func openTaskIDs(
+    from tasks: [TimelineProjectListWindowSnapshot.Task]
+  ) -> [UUID] {
+    tasks.filter { !$0.isCompleted }.map(\.id)
+  }
+}
+
 @MainActor
 final class TimelineProjectListWindowPresenter {
   static let shared = TimelineProjectListWindowPresenter()
@@ -633,8 +648,16 @@ struct TimelineProjectListContent: View {
     }
 
     let tasksByID = Dictionary(uniqueKeysWithValues: tasks.map { ($0.id, $0) })
-    tasks = reorderedIDs.compactMap { tasksByID[$0] }
-    actions.onReorderTasks(snapshot.projectID, openTaskIDs, true)
+    let nextTasks = TimelineProjectListTaskOrderPolicy.reorderedTasks(
+      reorderedIDs,
+      tasksByID: tasksByID
+    )
+    tasks = nextTasks
+    actions.onReorderTasks(
+      snapshot.projectID,
+      TimelineProjectListTaskOrderPolicy.openTaskIDs(from: nextTasks),
+      true
+    )
     draggingTaskID = nil
     dropIndicator = nil
   }
@@ -921,7 +944,7 @@ struct TimelineProjectListContent: View {
   }
 
   private var openTaskIDs: [UUID] {
-    tasks.filter { !$0.isCompleted }.map(\.id)
+    TimelineProjectListTaskOrderPolicy.openTaskIDs(from: tasks)
   }
 
   private static let embeddedTextSize: CGFloat = 12 * 1.3 * 0.9

@@ -326,6 +326,13 @@ enum TimelineProjectTaskManualOrderStore {
     save(allOrders, defaults: defaults)
   }
 
+  static func shouldSaveProjectOrder(
+    _ orderedTaskIDs: [UUID],
+    currentStoredOrder: [UUID: Int64]
+  ) -> Bool {
+    orderMap(for: orderedTaskIDs) != currentStoredOrder
+  }
+
   static func orderedTaskIDs(
     _ taskIDs: [UUID],
     using storedOrder: [UUID: Int64]

@@ -400,6 +400,54 @@ final class ObsidianRetainedTaskCommandServiceTests: XCTestCase {
     XCTAssertEqual(ReminderSyncBaselineStore.baseline(for: "task-1")?.state.noteText, editedNote)
   }
 
+  func testTaskEditFieldsAllowsNoteEditWhenOnlyRemoteTimestampChanged() async throws {
+    let dataRoot = try makeTemporaryDirectory(prefix: "ObsidianCommandData")
+    ReminderSyncBaselineStore.install(dataDirectory: dataRoot)
+    let vault = try makeTemporaryVault()
+    _ = try writeProjectNote(
+      vault: vault,
+      body: projectNote(
+        body: """
+        - [ ] Task one
+          %% brain-unfog: {"reminder_external_id":"task-1"} %%
+          - Existing note
+        """
+      )
+    )
+    let provider = FakeObsidianCommandReminderProjectProvider()
+    provider.snapshots["task-1"] = remoteSnapshot(
+      title: "Task one",
+      noteText: "Existing note",
+      modifiedAt: Date(timeIntervalSince1970: 4_000)
+    )
+    upsertBaseline(
+      title: "Task one",
+      isCompleted: false,
+      date: nil,
+      noteText: "Existing note"
+    )
+
+    _ = try await ObsidianRetainedTaskCommandService.updateTaskEditFields(
+      vaultRootURL: vault,
+      projectID: projectID,
+      taskID: taskID,
+      fields: RetainedTaskEditFields(
+        title: "Task one",
+        noteText: "Edited note",
+        day: nil,
+        timeMinutes: nil,
+        durationMinutes: nil
+      ),
+      calendar: calendar,
+      reminderProjectProvider: provider
+    )
+
+    let raw = try await firstRawMarkdown(in: vault)
+    XCTAssertTrue(raw.contains("  - Edited note"))
+    XCTAssertEqual(provider.noteWrites.map(\.noteText), ["Edited note"])
+    XCTAssertEqual(ReminderSyncBaselineStore.baseline(for: "task-1")?.state.noteText, "Edited note")
+  }
+
   func testSequentialNoteEditsAllowStaleReminderSnapshotFromPreviousWrite() async throws {
     let dataRoot = try makeTemporaryDirectory(prefix: "ObsidianCommandData")
     ReminderSyncBaselineStore.install(dataDirectory: dataRoot)

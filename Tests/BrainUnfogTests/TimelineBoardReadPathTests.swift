@@ -290,6 +290,18 @@ final class TimelineBoardReadPathTests: XCTestCase {
     )
   }
 
+  func testTimelineProjectTaskManualOrderSavesFirstManualReorder() {
+    let firstTaskID = UUID()
+    let secondTaskID = UUID()
+
+    XCTAssertTrue(
+      TimelineProjectTaskManualOrderStore.shouldSaveProjectOrder(
+        [secondTaskID, firstTaskID],
+        currentStoredOrder: [:]
+      )
+    )
+  }
+
   func testTimelineProjectTaskManualOrderAppliesStoredOrderAndAppendsNewTasks() {
     let firstTaskID = UUID()
     let secondTaskID = UUID()
@@ -317,6 +329,29 @@ final class TimelineBoardReadPathTests: XCTestCase {
         placement: .after
       ),
       [secondTaskID, thirdTaskID, firstTaskID]
+    )
+  }
+
+  func testProjectListTaskOrderPolicySavesNextOpenTaskOrderAfterDrop() {
+    let firstTaskID = UUID()
+    let completedTaskID = UUID()
+    let thirdTaskID = UUID()
+    let tasks = [
+      projectListTask(id: firstTaskID, isCompleted: false),
+      projectListTask(id: completedTaskID, isCompleted: true),
+      projectListTask(id: thirdTaskID, isCompleted: false),
+    ]
+    let tasksByID = Dictionary(uniqueKeysWithValues: tasks.map { ($0.id, $0) })
+
+    let reorderedTasks = TimelineProjectListTaskOrderPolicy.reorderedTasks(
+      [thirdTaskID, completedTaskID, firstTaskID],
+      tasksByID: tasksByID
+    )
+
+    XCTAssertEqual(reorderedTasks.map(\.id), [thirdTaskID, completedTaskID, firstTaskID])
+    XCTAssertEqual(
+      TimelineProjectListTaskOrderPolicy.openTaskIDs(from: reorderedTasks),
+      [thirdTaskID, firstTaskID]
     )
   }
 
@@ -801,6 +836,19 @@ final class TimelineBoardReadPathTests: XCTestCase {
       isArchived: isArchived,
       localUpdatedAt: .distantPast,
       createdAt: .distantPast
+    )
+  }
+
+  private func projectListTask(
+    id: UUID,
+    isCompleted: Bool
+  ) -> TimelineProjectListWindowSnapshot.Task {
+    TimelineProjectListWindowSnapshot.Task(
+      id: id,
+      title: "Task",
+      dateText: nil,
+      isCompleted: isCompleted,
+      isOverdue: false
     )
   }
 
