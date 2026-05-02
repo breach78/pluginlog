@@ -21,10 +21,37 @@ enum MotionTransaction {
     perform(token, quality: MotionSystem.quality(for: context), body: body)
   }
 
+  static func withResult<Result>(
+    _ token: MotionToken,
+    context: MotionContext,
+    body: () -> Result
+  ) -> Result {
+    let quality = MotionSystem.quality(for: context)
+    if let animation = MotionSystem.animation(for: token, quality: quality) {
+      var result: Result!
+      withAnimation(animation) {
+        result = body()
+      }
+      return result
+    }
+
+    return withoutAnimation(body)
+  }
+
   static func withoutAnimation(_ body: () -> Void) {
     var transaction = Transaction()
     transaction.disablesAnimations = true
     withTransaction(transaction, body)
+  }
+
+  static func withoutAnimation<Result>(_ body: () -> Result) -> Result {
+    var transaction = Transaction()
+    transaction.disablesAnimations = true
+    var result: Result!
+    withTransaction(transaction) {
+      result = body()
+    }
+    return result
   }
 
   static func performIfAllowed(

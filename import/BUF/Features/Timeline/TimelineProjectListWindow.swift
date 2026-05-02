@@ -630,18 +630,28 @@ struct TimelineProjectListContent: View {
     placement: TimelineProjectDropPlacement
   ) -> Bool {
     var didPreview = false
-    updateSession { session in
-      didPreview = session.previewDrop(
-        draggedID: draggedID,
-        targetID: targetID,
-        placement: placement
-      )
+    MotionTransaction.perform(
+      .interactionPreview,
+      context: MotionContext(tier: .hotPath, isDragging: true)
+    ) {
+      updateSession { session in
+        didPreview = session.previewDrop(
+          draggedID: draggedID,
+          targetID: targetID,
+          placement: placement
+        )
+      }
     }
     return didPreview
   }
 
   private func commitTaskDrop() {
-    let orderedTaskIDs = commitSessionDrop()
+    let orderedTaskIDs = MotionTransaction.withResult(
+      .interactionCommit,
+      context: MotionContext(tier: .hotPath, isDragging: true)
+    ) {
+      commitSessionDrop()
+    }
     guard !orderedTaskIDs.isEmpty else { return }
     actions.onReorderTasks(
       snapshot.projectID,
