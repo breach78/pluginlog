@@ -87,7 +87,14 @@ extension AppState {
       }
       let snapshotProvider = ReminderGatewayImportSnapshotProvider(gateway: gateway)
       let batch = try await snapshotProvider.fetchAllBatch()
-      try await persistAppOwnedReminderSnapshot(batch, reason: reason)
+      let importedAt = Date.now
+      if try await persistAppOwnedReminderSnapshot(batch, reason: reason, importedAt: importedAt) != nil {
+        let records = AppOwnedReminderBridgeRecordMapper.records(from: batch, importedAt: importedAt)
+        replaceObsidianBridgeRecords(projects: records.projects, tasks: records.tasks)
+        syncStatus = "Imported app-owned \(records.projects.count) lists / \(records.tasks.count) tasks"
+        bumpWorkspaceTreeRevision()
+        return
+      }
       let store = ObsidianProjectMarkdownStore(vaultRootURL: obsidianVaultRootURL)
       if reason == .bootstrap, try await shouldRunReminderFirstBootstrap(store: store) {
         let result = try await ObsidianReminderBootstrapSync.sync(
@@ -120,19 +127,71 @@ extension AppState {
 
   private func persistAppOwnedReminderSnapshot(
     _ batch: ReminderImportSnapshotBatch,
-    reason: SyncReason
-  ) async throws {
-    guard let containerRootURL = storageCoordinator.paths?.root else { return }
+    reason: SyncReason,
+    importedAt: Date
+  ) async throws -> AppOwnedWorkspaceStore? {
+    guard let containerRootURL = storageCoordinator.paths?.root else { return nil }
     if reason == .bootstrap || reason == .manual {
       _ = try AppOwnedReminderBackupStore(containerRootURL: containerRootURL)
         .savePreMigrationSnapshot(
           batch,
           reason: AppOwnedReminderBackupReason(syncReason: reason),
-          createdAt: .now
+          createdAt: importedAt
         )
     }
-    try await AppOwnedWorkspaceStore(containerRootURL: containerRootURL)
-      .replaceReminderSnapshot(batch, importedAt: .now)
+    let store = AppOwnedWorkspaceStore(containerRootURL: containerRootURL)
+    try await store.replaceReminderSnapshot(batch, importedAt: importedAt)
+    if let obsidianVaultRootURL {
+      do {
+        let snapshots = try await ObsidianProjectMarkdownStore(vaultRootURL: obsidianVaultRootURL)
+          .loadProjectNotesInScope()
+        try await store.mergeProjectSupplements(appOwnedProjectSupplements(from: snapshots))
+        let retainedSnapshot = try ObsidianRetainedProjectionAdapter.build(
+          snapshots: snapshots,
+          calendar: .autoupdatingCurrent
+        )
+        try await store.mergeTaskSupplements(appOwnedTaskSupplements(from: retainedSnapshot))
+      } catch {
+        AppLogger.storage.error(
+          "app-owned project supplement import failed: \(error.localizedDescription, privacy: .public)"
+        )
+      }
+    }
+    try await store.setProjectionReadEnabled(true)
+    return store
+  }
+
+  private func appOwnedProjectSupplements(
+    from snapshots: [ObsidianProjectMarkdownStore.Snapshot]
+  ) -> [AppOwnedWorkspaceStore.ProjectSupplement] {
+    snapshots.compactMap { snapshot in
+      guard let frontmatter = snapshot.note.frontmatter,
+        let listID = frontmatter.reminderListExternalIdentifier
+      else {
+        return nil
+      }
+      return AppOwnedWorkspaceStore.ProjectSupplement(
+        projectID: RetainedProjectionBuilder.derivedProjectID(for: listID),
+        noteMarkdown: snapshot.note.bodyMarkdown,
+        progressStageRaw: frontmatter.projectStage.storageRawValue,
+        startDate: ReminderScheduleMetadataCodec.decodeDate(frontmatter.startDate)?.date,
+        deadline: ReminderScheduleMetadataCodec.decodeDate(frontmatter.deadline)?.date,
+        isArchived: frontmatter.isArchived,
+        colorHex: frontmatter.colorHex
+      )
+    }
+  }
+
+  private func appOwnedTaskSupplements(
+    from snapshot: RetainedWorkspaceSnapshot
+  ) -> [AppOwnedWorkspaceStore.TaskSupplement] {
+    snapshot.tasks.compactMap { task in
+      guard let taskID = task.identity.taskID else { return nil }
+      return AppOwnedWorkspaceStore.TaskSupplement(
+        taskID: taskID,
+        durationMinutes: task.schedule.durationMinutes
+      )
+    }
   }
 
   private func shouldRunReminderFirstBootstrap(

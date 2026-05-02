@@ -8,6 +8,15 @@ enum ObsidianRetainedProjectCommandService {
     title rawTitle: String,
     reminderProjectProvider: ReminderProjectProvider
   ) async throws -> ObsidianProjectMarkdownStore.Snapshot {
+    if let appOwnedStore = try await AppOwnedRetainedTaskCommandService.enabledStore(vaultRootURL: vaultRootURL) {
+      return try await AppOwnedRetainedProjectCommandService.setProjectTitle(
+        vaultRootURL: vaultRootURL,
+        store: appOwnedStore,
+        projectID: projectID,
+        title: rawTitle,
+        reminderProjectProvider: reminderProjectProvider
+      )
+    }
     let title = rawTitle.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !title.isEmpty else {
       throw RetainedTaskCommandError.retainedProjectionFailed("empty project title")
@@ -30,6 +39,14 @@ enum ObsidianRetainedProjectCommandService {
     projectID: UUID,
     stage: ProjectProgressStage
   ) async throws -> ObsidianProjectMarkdownStore.Snapshot {
+    if let appOwnedStore = try await AppOwnedRetainedTaskCommandService.enabledStore(vaultRootURL: vaultRootURL) {
+      return try await AppOwnedRetainedProjectCommandService.setProjectStage(
+        vaultRootURL: vaultRootURL,
+        store: appOwnedStore,
+        projectID: projectID,
+        stage: stage
+      )
+    }
     let context = try await commandContext(vaultRootURL: vaultRootURL, projectID: projectID)
     return try await writeProject(using: context) { frontmatter in
       frontmatter.projectStage = stage
@@ -42,6 +59,15 @@ enum ObsidianRetainedProjectCommandService {
     colorHex: String?,
     reminderProjectProvider: ReminderProjectProvider
   ) async throws -> ObsidianProjectMarkdownStore.Snapshot {
+    if let appOwnedStore = try await AppOwnedRetainedTaskCommandService.enabledStore(vaultRootURL: vaultRootURL) {
+      return try await AppOwnedRetainedProjectCommandService.setProjectColor(
+        vaultRootURL: vaultRootURL,
+        store: appOwnedStore,
+        projectID: projectID,
+        colorHex: colorHex,
+        reminderProjectProvider: reminderProjectProvider
+      )
+    }
     let context = try await commandContext(vaultRootURL: vaultRootURL, projectID: projectID)
     guard let listID = context.snapshot.note.reminderListExternalIdentifier else {
       throw RetainedTaskCommandError.unsafeProjectNote(projectID)

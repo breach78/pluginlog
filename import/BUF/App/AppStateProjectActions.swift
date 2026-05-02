@@ -175,6 +175,28 @@ extension AppState {
     }
 
     do {
+      if try await AppOwnedRetainedTaskCommandService.enabledStore(vaultRootURL: obsidianVaultRootURL) != nil {
+        let calendar = Calendar.autoupdatingCurrent
+        let day = startDate.map { calendar.startOfDay(for: $0) }
+        let timeMinutes = startDate.flatMap { date -> Int? in
+          let startOfDay = calendar.startOfDay(for: date)
+          guard date != startOfDay else { return nil }
+          let components = calendar.dateComponents([.hour, .minute], from: date)
+          return (components.hour ?? 0) * 60 + (components.minute ?? 0)
+        }
+        let result = try await ObsidianRetainedTaskCommandService.createTask(
+          vaultRootURL: obsidianVaultRootURL,
+          projectID: projectID,
+          title: title,
+          day: day,
+          timeMinutes: timeMinutes,
+          durationMinutes: durationMinutes,
+          calendar: calendar,
+          reminderProjectProvider: reminderProjectProvider
+        )
+        bumpWorkspaceTreeRevision()
+        return result.taskID
+      }
       let store = ObsidianProjectMarkdownStore(vaultRootURL: obsidianVaultRootURL)
       let snapshots = try await store.loadProjectNotesInScope()
       guard let snapshot = snapshots.first(where: { snapshot in

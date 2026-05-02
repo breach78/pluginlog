@@ -86,17 +86,27 @@ final class RetainedSetupFlowTests: XCTestCase {
       at: projectsRoot,
       includingPropertiesForKeys: nil
     )
-    let projectFile = try XCTUnwrap(projectFiles.first { $0.pathExtension == "md" })
-    let markdown = try String(contentsOf: projectFile, encoding: .utf8)
+    XCTAssertNil(projectFiles.first { $0.pathExtension == "md" })
     let taskIdentifier = try XCTUnwrap(
       gateway.reminder.calendarItemExternalIdentifier ?? gateway.reminder.calendarItemIdentifier
     )
     let projectID = RetainedProjectionBuilder.derivedProjectID(for: gateway.calendar.calendarIdentifier)
     let taskID = ReminderProjectionIdentity.taskID(for: taskIdentifier)
-    XCTAssertTrue(markdown.contains("reminder_list_external_id:"))
-    XCTAssertTrue(markdown.contains("reminder_external_id"))
-    XCTAssertTrue(markdown.contains("- [ ] Imported task"))
-    XCTAssertTrue(markdown.contains("note line"))
+    let appStore = AppOwnedWorkspaceStore.storeForVaultRootURL(vaultRoot)
+    let appSnapshot = try await appStore.loadRetainedWorkspaceSnapshot(projectIDs: [])
+    let appProject = try XCTUnwrap(appSnapshot.projects.first)
+    let appTask = try XCTUnwrap(appProject.tasks.first)
+    let backupRoot = expectedContainerRoot
+      .appendingPathComponent("backups", isDirectory: true)
+      .appendingPathComponent("reminders", isDirectory: true)
+    let isProjectionReadEnabled = try await appStore.isProjectionReadEnabled()
+    XCTAssertTrue(isProjectionReadEnabled)
+    XCTAssertEqual(appProject.identity.projectID, projectID)
+    XCTAssertEqual(appProject.title, "Imported list")
+    XCTAssertEqual(appTask.identity.taskID, taskID)
+    XCTAssertEqual(appTask.title, "Imported task")
+    XCTAssertEqual(appTask.noteText, "note line")
+    XCTAssertFalse(try FileManager.default.contentsOfDirectory(at: backupRoot, includingPropertiesForKeys: nil).isEmpty)
     XCTAssertEqual(TaskIdentityBridgeStore.projectTitle(for: projectID), "Imported list")
     XCTAssertEqual(TaskIdentityBridgeStore.taskRecord(for: taskID)?.title, "Imported task")
   }
@@ -150,25 +160,11 @@ final class RetainedSetupFlowTests: XCTestCase {
     await appState.configureObsidianVault(at: vaultRoot, activateWhenReady: true)
 
     let afterMarkdown = try String(contentsOf: noteURL, encoding: .utf8)
-    XCTAssertEqual(
-      afterMarkdown,
-      """
-      ---
-      reminder_list_external_id: \(gateway.calendar.calendarIdentifier)
-      아카이브: false
-      분류:
-        - Do
-      시작일:
-      마감일:
-      완료 가리기: true
-      ---
-      Local prose that must stay.
-      - [ ] Imported task
-        %% brain-unfog: {"reminder_external_id":"\(taskIdentifier)"} %%
-        - note line
-
-      """
-    )
+    let appSnapshot = try await AppOwnedWorkspaceStore.storeForVaultRootURL(vaultRoot)
+      .loadRetainedWorkspaceSnapshot(projectIDs: [])
+    let appProject = try XCTUnwrap(appSnapshot.projects.first)
+    XCTAssertEqual(afterMarkdown, originalMarkdown)
+    XCTAssertTrue(appProject.noteMarkdown.contains("Local prose that must stay."))
     XCTAssertEqual(appState.obsidianVaultRootURL?.standardizedFileURL, vaultRoot.standardizedFileURL)
     XCTAssertTrue(appState.hasCompletedInitialSetup)
     XCTAssertNil(appState.errorMessage)
@@ -211,11 +207,13 @@ final class RetainedSetupFlowTests: XCTestCase {
 
     let afterMarkdown = try String(contentsOf: conflictingNoteURL, encoding: .utf8)
     XCTAssertEqual(afterMarkdown, originalMarkdown)
-    XCTAssertNil(appState.obsidianVaultRootURL)
-    XCTAssertNil(appState.containerRootURL)
-    XCTAssertFalse(appState.hasCompletedInitialSetup)
-    XCTAssertNil(UserDefaults.standard.string(forKey: "container.rootPath"))
-    XCTAssertNotNil(appState.errorMessage)
+    XCTAssertEqual(appState.obsidianVaultRootURL?.standardizedFileURL, vaultRoot.standardizedFileURL)
+    XCTAssertEqual(
+      appState.containerRootURL?.standardizedFileURL,
+      vaultRoot.appendingPathComponent(".buf", isDirectory: true).standardizedFileURL
+    )
+    XCTAssertTrue(appState.hasCompletedInitialSetup)
+    XCTAssertNil(appState.errorMessage)
   }
 
   func testManualRefreshDoesNotProvisionLocalOnlyObsidianProjectNote() async throws {
@@ -428,7 +426,7 @@ final class RetainedSetupFlowTests: XCTestCase {
     XCTAssertEqual(appState.pendingReminderSourceRefreshReason, .manual)
   }
 
-  func testExternalReminderChangeAfterAppAuthoredWriteStillRefreshesMarkdown()
+  func testExternalReminderChangeAfterAppAuthoredWriteRefreshesAppOwnedStore()
     async throws
   {
     let vaultRoot = try makeVaultRoot()
@@ -441,11 +439,12 @@ final class RetainedSetupFlowTests: XCTestCase {
 
     let didRefresh = await appState.performReminderSourceRefresh(reason: .eventStoreChanged)
 
-    let markdown = try firstProjectMarkdown(in: vaultRoot)
+    let snapshot = try await firstAppOwnedProject(in: vaultRoot)
+    let task = try XCTUnwrap(snapshot.tasks.first)
 
     XCTAssertTrue(didRefresh)
-    XCTAssertTrue(markdown.contains("- [ ] Edited in Reminders"))
-    XCTAssertTrue(markdown.contains("- Edited note in Reminders"))
+    XCTAssertEqual(task.title, "Edited in Reminders")
+    XCTAssertEqual(task.noteText, "Edited note in Reminders")
     XCTAssertEqual(appState.syncStatus, "Refreshed (\(SyncReason.eventStoreChanged.rawValue))")
   }
 
@@ -470,17 +469,18 @@ final class RetainedSetupFlowTests: XCTestCase {
     }
 
     try await Task.sleep(nanoseconds: 80_000_000)
-    let beforeMarkdown = try firstProjectMarkdown(in: vaultRoot)
-    XCTAssertFalse(beforeMarkdown.contains("Edited while panel is dirty"))
+    let beforeProject = try await firstAppOwnedProject(in: vaultRoot)
+    XCTAssertNotEqual(beforeProject.tasks.first?.title, "Edited while panel is dirty")
     XCTAssertEqual(appState.syncStatus, "Ready")
 
     appState.endEditorSession(id: "test-task-edit-session")
     let didRefresh = await refreshTask.value
-    let afterMarkdown = try firstProjectMarkdown(in: vaultRoot)
+    let afterProject = try await firstAppOwnedProject(in: vaultRoot)
+    let afterTask = try XCTUnwrap(afterProject.tasks.first)
 
     XCTAssertTrue(didRefresh)
-    XCTAssertTrue(afterMarkdown.contains("- [ ] Edited while panel is dirty"))
-    XCTAssertTrue(afterMarkdown.contains("- Dirty panel should not be overwritten"))
+    XCTAssertEqual(afterTask.title, "Edited while panel is dirty")
+    XCTAssertEqual(afterTask.noteText, "Dirty panel should not be overwritten")
     XCTAssertEqual(appState.syncStatus, "Refreshed (\(SyncReason.eventStoreChanged.rawValue))")
   }
 
@@ -531,18 +531,10 @@ final class RetainedSetupFlowTests: XCTestCase {
     return root
   }
 
-  private func firstProjectMarkdown(in vaultRoot: URL) throws -> String {
-    let projectsRoot = vaultRoot
-      .appendingPathComponent("raw", isDirectory: true)
-      .appendingPathComponent("projects", isDirectory: true)
-    let projectFile = try XCTUnwrap(
-      FileManager.default.contentsOfDirectory(
-        at: projectsRoot,
-        includingPropertiesForKeys: nil
-      )
-      .first { $0.pathExtension == "md" }
-    )
-    return try String(contentsOf: projectFile, encoding: .utf8)
+  private func firstAppOwnedProject(in vaultRoot: URL) async throws -> RetainedProject {
+    let snapshot = try await AppOwnedWorkspaceStore.storeForVaultRootURL(vaultRoot)
+      .loadRetainedWorkspaceSnapshot(projectIDs: [])
+    return try XCTUnwrap(snapshot.projects.first)
   }
 
   private func clearRetainedSetupDefaults() {

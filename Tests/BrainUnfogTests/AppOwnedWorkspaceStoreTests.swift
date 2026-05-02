@@ -71,6 +71,150 @@ final class AppOwnedWorkspaceStoreTests: XCTestCase {
     XCTAssertEqual(task.schedule.rawRepeatRule, "daily")
   }
 
+  func testMergeProjectSupplementsPreservesAppOwnedProjectFields() async throws {
+    let store = AppOwnedWorkspaceStore(containerRootURL: try makeTemporaryDirectory())
+    let startDate = try XCTUnwrap(Self.calendar.date(from: DateComponents(year: 2026, month: 5, day: 1)))
+    let deadline = try XCTUnwrap(Self.calendar.date(from: DateComponents(year: 2026, month: 5, day: 9)))
+    let projectID = RetainedProjectionBuilder.derivedProjectID(for: "list-1")
+    try await store.replaceReminderSnapshot(
+      ReminderImportSnapshotBatch(
+        lists: [
+          ReminderListImportSnapshot(
+            identifier: "list-1",
+            externalIdentifier: "list-1",
+            title: "Project",
+            colorHex: "#111111"
+          )
+        ],
+        itemsByListIdentifier: [:]
+      ),
+      importedAt: Date(timeIntervalSinceReferenceDate: 250)
+    )
+
+    try await store.mergeProjectSupplements([
+      AppOwnedWorkspaceStore.ProjectSupplement(
+        projectID: projectID,
+        noteMarkdown: "Project note",
+        progressStageRaw: ProjectProgressStage.later.storageRawValue,
+        startDate: startDate,
+        deadline: deadline,
+        isArchived: true,
+        colorHex: "#222222"
+      )
+    ])
+    let snapshot = try await store.loadRetainedWorkspaceSnapshot(projectIDs: [projectID])
+    let project = try XCTUnwrap(snapshot.projects.first)
+
+    XCTAssertEqual(project.noteMarkdown, "Project note")
+    XCTAssertEqual(project.progressStage, .later)
+    XCTAssertEqual(project.localStartDate, startDate)
+    XCTAssertEqual(project.localDeadline, deadline)
+    XCTAssertTrue(project.isArchived)
+    XCTAssertEqual(project.colorHex, "#222222")
+  }
+
+  func testReplaceReminderSnapshotKeepsAppOwnedProjectFieldsAcrossImports() async throws {
+    let store = AppOwnedWorkspaceStore(containerRootURL: try makeTemporaryDirectory())
+    let projectID = RetainedProjectionBuilder.derivedProjectID(for: "list-1")
+    try await store.replaceReminderSnapshot(
+      ReminderImportSnapshotBatch(
+        lists: [
+          ReminderListImportSnapshot(
+            identifier: "list-1",
+            externalIdentifier: "list-1",
+            title: "Original",
+            colorHex: "#111111"
+          )
+        ],
+        itemsByListIdentifier: [:]
+      ),
+      importedAt: Date(timeIntervalSinceReferenceDate: 250)
+    )
+    try await store.mergeProjectSupplements([
+      AppOwnedWorkspaceStore.ProjectSupplement(
+        projectID: projectID,
+        noteMarkdown: "App note",
+        progressStageRaw: ProjectProgressStage.area.storageRawValue,
+        startDate: nil,
+        deadline: nil,
+        isArchived: true,
+        colorHex: "#222222"
+      )
+    ])
+
+    try await store.replaceReminderSnapshot(
+      ReminderImportSnapshotBatch(
+        lists: [
+          ReminderListImportSnapshot(
+            identifier: "list-1",
+            externalIdentifier: "list-1",
+            title: "Imported Update",
+            colorHex: "#333333"
+          )
+        ],
+        itemsByListIdentifier: [:]
+      ),
+      importedAt: Date(timeIntervalSinceReferenceDate: 260)
+    )
+    let snapshot = try await store.loadRetainedWorkspaceSnapshot(projectIDs: [projectID])
+    let project = try XCTUnwrap(snapshot.projects.first)
+
+    XCTAssertEqual(project.title, "Imported Update")
+    XCTAssertEqual(project.noteMarkdown, "App note")
+    XCTAssertEqual(project.progressStage, .area)
+    XCTAssertTrue(project.isArchived)
+    XCTAssertEqual(project.colorHex, "#333333")
+  }
+
+  func testReplaceReminderSnapshotKeepsTaskDurationAcrossImports() async throws {
+    let store = AppOwnedWorkspaceStore(containerRootURL: try makeTemporaryDirectory())
+    let taskID = ReminderProjectionIdentity.taskID(for: "task-1")
+    let createdAt = Date(timeIntervalSinceReferenceDate: 300)
+    let item = ReminderItemImportSnapshot(
+      identifier: "task-identifier",
+      externalIdentifier: "task-1",
+      parentExternalIdentifier: nil,
+      sourceListIdentifier: "list-1",
+      sourceListTitle: "Project",
+      title: "Task",
+      notes: "",
+      attachmentCount: 0,
+      isCompleted: false,
+      completionDate: nil,
+      startDate: nil,
+      dueDate: nil,
+      scheduleHasExplicitTime: false,
+      scheduledDurationMinutes: nil,
+      priority: 0,
+      recurrenceRuleRaw: nil,
+      isFlagged: false,
+      requiredWorkDays: 0,
+      createdAt: createdAt,
+      modifiedAt: createdAt
+    )
+    let batch = ReminderImportSnapshotBatch(
+      lists: [
+        ReminderListImportSnapshot(
+          identifier: "list-1",
+          externalIdentifier: "list-1",
+          title: "Project",
+          colorHex: nil
+        )
+      ],
+      itemsByListIdentifier: ["list-1": [item]]
+    )
+
+    try await store.replaceReminderSnapshot(batch, importedAt: createdAt)
+    try await store.mergeTaskSupplements([
+      AppOwnedWorkspaceStore.TaskSupplement(taskID: taskID, durationMinutes: 45)
+    ])
+    try await store.replaceReminderSnapshot(batch, importedAt: createdAt.addingTimeInterval(10))
+    let snapshot = try await store.loadRetainedWorkspaceSnapshot(projectIDs: [])
+    let task = try XCTUnwrap(snapshot.tasks.first)
+
+    XCTAssertEqual(task.schedule.durationMinutes, 45)
+  }
+
   func testLoadPrefersAppOwnedStoreWhenSQLiteHasImportedRows() async throws {
     let vaultRoot = try makeTemporaryDirectory()
     try FileManager.default.createDirectory(

@@ -22,6 +22,19 @@ enum ObsidianRetainedTaskCommandService {
     let lease = await mutationLease(projectID: projectID)
     defer { releaseMutationLease(lease) }
 
+    if let store = try await AppOwnedRetainedTaskCommandService.enabledStore(vaultRootURL: vaultRootURL) {
+      return try await AppOwnedRetainedTaskCommandService.createTask(
+        store: store,
+        projectID: projectID,
+        title: title,
+        day: day,
+        timeMinutes: timeMinutes,
+        durationMinutes: durationMinutes,
+        calendar: calendar,
+        reminderProjectProvider: reminderProjectProvider
+      )
+    }
+
     let context = try await projectContext(vaultRootURL: vaultRootURL, projectID: projectID)
     let dueDate = scheduledDate(day: day, timeMinutes: timeMinutes, calendar: calendar)
     let hasExplicitTime = dueDate != nil && timeMinutes != nil
@@ -77,6 +90,17 @@ enum ObsidianRetainedTaskCommandService {
   ) async throws -> RetainedTaskCommandResult {
     let lease = await mutationLease(projectID: projectID, taskID: taskID)
     defer { releaseMutationLease(lease) }
+
+    if let store = try await AppOwnedRetainedTaskCommandService.enabledStore(vaultRootURL: vaultRootURL) {
+      return try await AppOwnedRetainedTaskCommandService.setTaskCompletion(
+        store: store,
+        projectID: projectID,
+        taskID: taskID,
+        isCompleted: isCompleted,
+        completionDate: completionDate,
+        reminderProjectProvider: reminderProjectProvider
+      )
+    }
 
     let context = try await commandContext(
       vaultRootURL: vaultRootURL,
@@ -227,6 +251,19 @@ enum ObsidianRetainedTaskCommandService {
     let lease = await mutationLease(projectID: projectID, taskID: taskID)
     defer { releaseMutationLease(lease) }
 
+    if let store = try await AppOwnedRetainedTaskCommandService.enabledStore(vaultRootURL: vaultRootURL) {
+      return try await AppOwnedRetainedTaskCommandService.setTaskSchedule(
+        store: store,
+        projectID: projectID,
+        taskID: taskID,
+        day: day,
+        timeMinutes: timeMinutes,
+        durationMinutes: durationMinutes,
+        calendar: calendar,
+        reminderProjectProvider: reminderProjectProvider
+      )
+    }
+
     let context = try await commandContext(
       vaultRootURL: vaultRootURL,
       projectID: projectID,
@@ -310,6 +347,15 @@ enum ObsidianRetainedTaskCommandService {
     let lease = await mutationLease(projectID: projectID, taskID: taskID)
     defer { releaseMutationLease(lease) }
 
+    if let store = try await AppOwnedRetainedTaskCommandService.enabledStore(vaultRootURL: vaultRootURL) {
+      return try await AppOwnedRetainedTaskCommandService.deleteTask(
+        store: store,
+        projectID: projectID,
+        taskID: taskID,
+        reminderProjectProvider: reminderProjectProvider
+      )
+    }
+
     let context = try await commandContext(
       vaultRootURL: vaultRootURL,
       projectID: projectID,
@@ -364,6 +410,16 @@ enum ObsidianRetainedTaskCommandService {
       taskID: taskID
     )
     defer { releaseMutationLease(lease) }
+
+    if let store = try await AppOwnedRetainedTaskCommandService.enabledStore(vaultRootURL: vaultRootURL) {
+      return try await AppOwnedRetainedTaskCommandService.moveTask(
+        store: store,
+        taskID: taskID,
+        sourceProjectID: sourceProjectID,
+        targetProjectID: targetProjectID,
+        reminderProjectProvider: reminderProjectProvider
+      )
+    }
 
     let sourceContext = try await commandContext(
       vaultRootURL: vaultRootURL,
@@ -453,6 +509,14 @@ enum ObsidianRetainedTaskCommandService {
     taskID: UUID,
     calendar: Calendar = .autoupdatingCurrent
   ) async throws -> RetainedTaskEditFields {
+    if let store = try await AppOwnedRetainedTaskCommandService.enabledStore(vaultRootURL: vaultRootURL) {
+      return try await AppOwnedRetainedTaskCommandService.taskEditFields(
+        store: store,
+        projectID: projectID,
+        taskID: taskID,
+        calendar: calendar
+      )
+    }
     let context = try await commandContext(
       vaultRootURL: vaultRootURL,
       projectID: projectID,
@@ -484,6 +548,17 @@ enum ObsidianRetainedTaskCommandService {
     }
     let lease = await mutationLease(projectID: projectID, taskID: taskID)
     defer { releaseMutationLease(lease) }
+
+    if let store = try await AppOwnedRetainedTaskCommandService.enabledStore(vaultRootURL: vaultRootURL) {
+      return try await AppOwnedRetainedTaskCommandService.updateTaskEditFields(
+        store: store,
+        projectID: projectID,
+        taskID: taskID,
+        fields: rawFields,
+        calendar: calendar,
+        reminderProjectProvider: reminderProjectProvider
+      )
+    }
 
     let context = try await commandContext(
       vaultRootURL: vaultRootURL,

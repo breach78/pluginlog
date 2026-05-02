@@ -1,8 +1,6 @@
 import Foundation
 import SQLite3
 
-private let appOwnedSQLiteTransient = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
-
 enum AppOwnedWorkspaceStoreError: LocalizedError {
   case openFailed(String)
   case prepareFailed(String)
@@ -24,8 +22,45 @@ enum AppOwnedWorkspaceStoreError: LocalizedError {
 }
 
 actor AppOwnedWorkspaceStore {
-  private let sqliteURL: URL
-  private let fileManager: FileManager
+  struct ProjectReference: Equatable, Sendable {
+    let projectID: UUID
+    let reminderListIdentifier: String
+    let reminderListExternalIdentifier: String?
+    let title: String
+  }
+
+  struct TaskReference: Equatable, Sendable {
+    let projectID: UUID
+    let taskID: UUID
+    let reminderIdentifier: String
+    let reminderExternalIdentifier: String?
+    let title: String
+    let noteText: String
+    let isCompleted: Bool
+    let completionDate: Date?
+    let dueDate: Date?
+    let hasExplicitTime: Bool
+    let durationMinutes: Int?
+    let recurrenceRuleRaw: String?
+  }
+
+  struct ProjectSupplement: Equatable, Sendable {
+    let projectID: UUID
+    let noteMarkdown: String
+    let progressStageRaw: String
+    let startDate: Date?
+    let deadline: Date?
+    let isArchived: Bool
+    let colorHex: String?
+  }
+
+  struct TaskSupplement: Equatable, Sendable {
+    let taskID: UUID
+    let durationMinutes: Int?
+  }
+
+  let sqliteURL: URL
+  let fileManager: FileManager
 
   init(containerRootURL: URL, fileManager: FileManager = .default) {
     self.sqliteURL = ContainerPaths(root: containerRootURL.standardizedFileURL).sqliteURL
@@ -81,6 +116,8 @@ actor AppOwnedWorkspaceStore {
     try migrate(db)
     try exec(db, "BEGIN IMMEDIATE TRANSACTION;")
     do {
+      let preservedProjectSupplements = try loadProjectSupplements(db, preservesImportedColor: true)
+      let preservedTaskSupplements = try loadTaskSupplements(db)
       try exec(db, "DELETE FROM app_tasks;")
       try exec(db, "DELETE FROM app_projects;")
       try upsertMetadata(db, key: "last_reminders_import_at", value: String(importedAt.timeIntervalSinceReferenceDate))
@@ -106,11 +143,144 @@ actor AppOwnedWorkspaceStore {
           try insertTask(db, item: item, list: fallbackList, rowOrder: index)
         }
       }
+      try mergeProjectSupplements(
+        db,
+        supplements: preservedProjectSupplements,
+        colorAssignmentSQL: "color_hex = COALESCE(color_hex, ?)"
+      )
+      try mergeTaskSupplements(
+        db,
+        supplements: preservedTaskSupplements,
+        durationAssignmentSQL: "scheduled_duration_minutes = COALESCE(scheduled_duration_minutes, ?)"
+      )
       try exec(db, "COMMIT;")
     } catch {
       try? exec(db, "ROLLBACK;")
       throw error
     }
+  }
+
+  func mergeProjectSupplements(_ supplements: [ProjectSupplement]) throws {
+    guard !supplements.isEmpty else { return }
+    let db = try openDatabase()
+    defer { sqlite3_close(db) }
+    try migrate(db)
+    try mergeProjectSupplements(
+      db,
+      supplements: supplements,
+      colorAssignmentSQL: "color_hex = COALESCE(?, color_hex)"
+    )
+  }
+
+  func mergeTaskSupplements(_ supplements: [TaskSupplement]) throws {
+    let db = try openDatabase()
+    defer { sqlite3_close(db) }
+    try migrate(db)
+    try mergeTaskSupplements(
+      db,
+      supplements: supplements,
+      durationAssignmentSQL: "scheduled_duration_minutes = COALESCE(?, scheduled_duration_minutes)"
+    )
+  }
+
+  private func mergeTaskSupplements(
+    _ db: OpaquePointer,
+    supplements: [TaskSupplement],
+    durationAssignmentSQL: String
+  ) throws {
+    guard !supplements.isEmpty else { return }
+    for supplement in supplements {
+      try execute(
+        db,
+        """
+        UPDATE app_tasks
+        SET \(durationAssignmentSQL)
+        WHERE id = ?;
+        """,
+        bindings: [
+          .optionalInt(supplement.durationMinutes),
+          .text(supplement.taskID.uuidString),
+        ]
+      )
+    }
+  }
+
+  @discardableResult
+  func updateProjectTitle(projectID: UUID, title: String, modifiedAt: Date) throws -> ProjectReference {
+    try updateProject(
+      projectID: projectID,
+      assignments: "title = ?",
+      bindings: [.text(title)],
+      modifiedAt: modifiedAt
+    )
+  }
+
+  @discardableResult
+  func updateProjectColor(projectID: UUID, colorHex: String?, modifiedAt: Date) throws -> ProjectReference {
+    try updateProject(
+      projectID: projectID,
+      assignments: "color_hex = ?",
+      bindings: [.optionalText(normalized(colorHex))],
+      modifiedAt: modifiedAt
+    )
+  }
+
+  @discardableResult
+  func updateProjectStage(projectID: UUID, stage: ProjectProgressStage, modifiedAt: Date) throws -> ProjectReference {
+    try updateProject(
+      projectID: projectID,
+      assignments: "progress_stage = ?",
+      bindings: [.text(stage.storageRawValue)],
+      modifiedAt: modifiedAt
+    )
+  }
+
+  private func mergeProjectSupplements(
+    _ db: OpaquePointer,
+    supplements: [ProjectSupplement],
+    colorAssignmentSQL: String
+  ) throws {
+    guard !supplements.isEmpty else { return }
+    for supplement in supplements {
+      try execute(
+        db,
+        """
+        UPDATE app_projects
+        SET note_markdown = ?, progress_stage = ?, start_date = ?, deadline = ?,
+          is_archived = ?, \(colorAssignmentSQL)
+        WHERE id = ?;
+        """,
+        bindings: [
+          .text(supplement.noteMarkdown),
+          .text(supplement.progressStageRaw),
+          .optionalDouble(supplement.startDate?.timeIntervalSinceReferenceDate),
+          .optionalDouble(supplement.deadline?.timeIntervalSinceReferenceDate),
+          .int(supplement.isArchived ? 1 : 0),
+          .optionalText(normalized(supplement.colorHex)),
+          .text(supplement.projectID.uuidString),
+        ]
+      )
+    }
+  }
+
+  private func updateProject(
+    projectID: UUID,
+    assignments: String,
+    bindings: [Binding],
+    modifiedAt: Date
+  ) throws -> ProjectReference {
+    let db = try openDatabase()
+    defer { sqlite3_close(db) }
+    try migrate(db)
+    try execute(
+      db,
+      "UPDATE app_projects SET \(assignments), updated_at = ? WHERE id = ?;",
+      bindings: bindings + [
+        .double(modifiedAt.timeIntervalSinceReferenceDate),
+        .text(projectID.uuidString),
+      ]
+    )
+    return try projectReference(projectID: projectID)
   }
 
   func loadRetainedWorkspaceSnapshot(projectIDs: [UUID]) throws -> RetainedWorkspaceSnapshot {
@@ -134,89 +304,163 @@ actor AppOwnedWorkspaceStore {
           ),
           fileURL: sqliteURL,
           title: project.title,
-          noteMarkdown: "",
+          noteMarkdown: project.noteMarkdown,
           tasks: tasksByProjectID[project.projectID] ?? [],
           usesProjectTag: true,
           isBUFOwned: true,
           hasManagedTaskSection: true,
           canSafelyPersistProjectNote: true,
-          isArchived: false,
+          isArchived: project.isArchived,
           colorHex: project.colorHex,
+          localStartDate: project.startDate,
+          localDeadline: project.deadline,
+          progressStage: ProjectProgressStage.fromStorageValue(project.progressStageRaw) ?? .do,
           updatedAt: project.updatedAt
         )
       }
     )
   }
 
-  private func openDatabase() throws -> OpaquePointer {
-    try fileManager.createDirectory(
-      at: sqliteURL.deletingLastPathComponent(),
-      withIntermediateDirectories: true
-    )
-    var db: OpaquePointer?
-    guard sqlite3_open(sqliteURL.path, &db) == SQLITE_OK, let db else {
-      let message = db.map(errorMessage) ?? "unknown"
-      sqlite3_close(db)
-      throw AppOwnedWorkspaceStoreError.openFailed(message)
+  func projectReference(projectID: UUID) throws -> ProjectReference {
+    let db = try openDatabase()
+    defer { sqlite3_close(db) }
+    try migrate(db)
+    let rows = try query(
+      db,
+      """
+      SELECT reminder_list_identifier, reminder_list_external_identifier, title
+      FROM app_projects WHERE id = '\(projectID.uuidString)';
+      """
+    ) { statement in
+      ProjectReference(
+        projectID: projectID,
+        reminderListIdentifier: columnText(statement, 0) ?? "",
+        reminderListExternalIdentifier: columnText(statement, 1),
+        title: columnText(statement, 2) ?? ""
+      )
     }
-    return db
+    guard let reference = rows.first, !reference.reminderListIdentifier.isEmpty else {
+      throw RetainedTaskCommandError.projectNotFound(projectID)
+    }
+    return reference
   }
 
-  private func migrate(_ db: OpaquePointer) throws {
-    try exec(db, "PRAGMA foreign_keys = ON;")
-    try exec(
+  func taskReference(projectID: UUID, taskID: UUID) throws -> TaskReference {
+    let db = try openDatabase()
+    defer { sqlite3_close(db) }
+    try migrate(db)
+    let rows = try query(
       db,
       """
-      CREATE TABLE IF NOT EXISTS app_metadata (
-        key TEXT PRIMARY KEY NOT NULL,
-        value TEXT NOT NULL
-      );
+      SELECT reminder_identifier, reminder_external_identifier, title, note_text, is_completed,
+        completion_date, due_date, schedule_has_explicit_time, scheduled_duration_minutes,
+        recurrence_rule_raw
+      FROM app_tasks WHERE project_id = '\(projectID.uuidString)' AND id = '\(taskID.uuidString)';
       """
-    )
-    try exec(
+    ) { statement in
+      TaskReference(
+        projectID: projectID,
+        taskID: taskID,
+        reminderIdentifier: columnText(statement, 0) ?? "",
+        reminderExternalIdentifier: columnText(statement, 1),
+        title: columnText(statement, 2) ?? "",
+        noteText: columnText(statement, 3) ?? "",
+        isCompleted: columnInt(statement, 4) == 1,
+        completionDate: columnDouble(statement, 5).map(Date.init(timeIntervalSinceReferenceDate:)),
+        dueDate: columnDouble(statement, 6).map(Date.init(timeIntervalSinceReferenceDate:)),
+        hasExplicitTime: columnInt(statement, 7) == 1,
+        durationMinutes: columnInt(statement, 8).flatMap { $0 > 0 ? $0 : nil },
+        recurrenceRuleRaw: columnText(statement, 9)
+      )
+    }
+    guard let reference = rows.first, !reference.reminderIdentifier.isEmpty else {
+      throw RetainedTaskCommandError.taskNotFound(taskID)
+    }
+    return reference
+  }
+
+  func upsertTask(
+    projectID: UUID,
+    taskID: UUID,
+    reminderIdentifier: String,
+    reminderExternalIdentifier: String?,
+    title: String,
+    noteText: String,
+    isCompleted: Bool,
+    completionDate: Date?,
+    dueDate: Date?,
+    hasExplicitTime: Bool,
+    durationMinutes: Int?,
+    recurrenceRuleRaw: String? = nil,
+    modifiedAt: Date,
+    appendIfMissing: Bool = true
+  ) throws {
+    let db = try openDatabase()
+    defer { sqlite3_close(db) }
+    try migrate(db)
+    let existingRowOrder = try existingTaskRowOrder(db, taskID: taskID)
+    let rowOrder: Int
+    if let existingRowOrder {
+      rowOrder = existingRowOrder
+    } else if appendIfMissing {
+      rowOrder = try nextTaskRowOrder(db, projectID: projectID)
+    } else {
+      rowOrder = 0
+    }
+    try execute(
       db,
       """
-      CREATE TABLE IF NOT EXISTS app_projects (
-        id TEXT PRIMARY KEY NOT NULL,
-        reminder_list_identifier TEXT NOT NULL,
-        reminder_list_external_identifier TEXT,
-        title TEXT NOT NULL,
-        color_hex TEXT,
-        updated_at REAL NOT NULL
-      );
-      """
+      INSERT OR REPLACE INTO app_tasks (
+        id, project_id, reminder_identifier, reminder_external_identifier, parent_task_id,
+        title, note_text, is_completed, completion_date, start_date, due_date,
+        schedule_has_explicit_time, scheduled_duration_minutes, priority, recurrence_rule_raw,
+        is_flagged, required_work_days, attachment_count, created_at, modified_at, row_order
+      ) VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?, NULL, ?, ?, ?, 0, ?, 0, 0, 0, ?, ?, ?);
+      """,
+      bindings: [
+        .text(taskID.uuidString),
+        .text(projectID.uuidString),
+        .text(reminderIdentifier),
+        .optionalText(normalized(reminderExternalIdentifier)),
+        .text(title),
+        .text(noteText),
+        .int(isCompleted ? 1 : 0),
+        .optionalDouble(completionDate?.timeIntervalSinceReferenceDate),
+        .optionalDouble(dueDate?.timeIntervalSinceReferenceDate),
+        .int(hasExplicitTime ? 1 : 0),
+        .optionalInt(durationMinutes),
+        .optionalText(normalized(recurrenceRuleRaw)),
+        .double(modifiedAt.timeIntervalSinceReferenceDate),
+        .double(modifiedAt.timeIntervalSinceReferenceDate),
+        .int(rowOrder),
+      ]
     )
-    try exec(
+  }
+
+  func moveTask(taskID: UUID, toProjectID projectID: UUID) throws {
+    let db = try openDatabase()
+    defer { sqlite3_close(db) }
+    try migrate(db)
+    try execute(
       db,
-      """
-      CREATE TABLE IF NOT EXISTS app_tasks (
-        id TEXT PRIMARY KEY NOT NULL,
-        project_id TEXT NOT NULL,
-        reminder_identifier TEXT NOT NULL,
-        reminder_external_identifier TEXT,
-        parent_task_id TEXT,
-        title TEXT NOT NULL,
-        note_text TEXT NOT NULL,
-        is_completed INTEGER NOT NULL,
-        completion_date REAL,
-        start_date REAL,
-        due_date REAL,
-        schedule_has_explicit_time INTEGER NOT NULL,
-        scheduled_duration_minutes INTEGER,
-        priority INTEGER NOT NULL,
-        recurrence_rule_raw TEXT,
-        is_flagged INTEGER NOT NULL,
-        required_work_days INTEGER NOT NULL,
-        attachment_count INTEGER NOT NULL,
-        created_at REAL NOT NULL,
-        modified_at REAL NOT NULL,
-        row_order INTEGER NOT NULL,
-        FOREIGN KEY(project_id) REFERENCES app_projects(id) ON DELETE CASCADE
-      );
-      """
+      "UPDATE app_tasks SET project_id = ?, row_order = ? WHERE id = ?;",
+      bindings: [
+        .text(projectID.uuidString),
+        .int(nextTaskRowOrder(db, projectID: projectID)),
+        .text(taskID.uuidString),
+      ]
     )
-    try exec(db, "CREATE INDEX IF NOT EXISTS idx_app_tasks_project_order ON app_tasks(project_id, row_order);")
-    try upsertMetadata(db, key: "schema_version", value: "1")
+  }
+
+  func deleteTask(taskID: UUID) throws {
+    let db = try openDatabase()
+    defer { sqlite3_close(db) }
+    try migrate(db)
+    try execute(
+      db,
+      "DELETE FROM app_tasks WHERE id = ?;",
+      bindings: [.text(taskID.uuidString)]
+    )
   }
 
   private func insertProject(
@@ -296,13 +540,66 @@ actor AppOwnedWorkspaceStore {
     let reminderListExternalIdentifier: String?
     let title: String
     let colorHex: String?
+    let noteMarkdown: String
+    let progressStageRaw: String
+    let startDate: Date?
+    let deadline: Date?
+    let isArchived: Bool
     let updatedAt: Date
+  }
+
+  private func loadProjectSupplements(
+    _ db: OpaquePointer,
+    preservesImportedColor: Bool
+  ) throws -> [ProjectSupplement] {
+    try query(
+      db,
+      """
+      SELECT id, note_markdown, progress_stage, start_date, deadline, is_archived, color_hex
+      FROM app_projects;
+      """
+    ) { statement in
+      guard let projectID = UUID(uuidString: columnText(statement, 0) ?? "") else {
+        throw AppOwnedWorkspaceStoreError.invalidSQLiteValue("invalid project id")
+      }
+      return ProjectSupplement(
+        projectID: projectID,
+        noteMarkdown: columnText(statement, 1) ?? "",
+        progressStageRaw: columnText(statement, 2) ?? ProjectProgressStage.do.storageRawValue,
+        startDate: columnDouble(statement, 3).map(Date.init(timeIntervalSinceReferenceDate:)),
+        deadline: columnDouble(statement, 4).map(Date.init(timeIntervalSinceReferenceDate:)),
+        isArchived: columnInt(statement, 5) == 1,
+        colorHex: preservesImportedColor ? columnText(statement, 6) : nil
+      )
+    }
+  }
+
+  private func loadTaskSupplements(_ db: OpaquePointer) throws -> [TaskSupplement] {
+    try query(
+      db,
+      """
+      SELECT id, scheduled_duration_minutes
+      FROM app_tasks;
+      """
+    ) { statement in
+      guard let taskID = UUID(uuidString: columnText(statement, 0) ?? "") else {
+        throw AppOwnedWorkspaceStoreError.invalidSQLiteValue("invalid task id")
+      }
+      return TaskSupplement(
+        taskID: taskID,
+        durationMinutes: columnInt(statement, 1).flatMap { $0 > 0 ? $0 : nil }
+      )
+    }
   }
 
   private func loadProjects(_ db: OpaquePointer) throws -> [StoredProject] {
     try query(
       db,
-      "SELECT id, reminder_list_external_identifier, title, color_hex, updated_at FROM app_projects ORDER BY title COLLATE NOCASE;"
+      """
+      SELECT id, reminder_list_external_identifier, title, color_hex, note_markdown,
+        progress_stage, start_date, deadline, is_archived, updated_at
+      FROM app_projects ORDER BY title COLLATE NOCASE;
+      """
     ) { statement in
       guard let projectID = UUID(uuidString: columnText(statement, 0) ?? "") else {
         throw AppOwnedWorkspaceStoreError.invalidSQLiteValue("invalid project id")
@@ -312,7 +609,12 @@ actor AppOwnedWorkspaceStore {
         reminderListExternalIdentifier: columnText(statement, 1),
         title: columnText(statement, 2) ?? "",
         colorHex: columnText(statement, 3),
-        updatedAt: Date(timeIntervalSinceReferenceDate: columnDouble(statement, 4) ?? 0)
+        noteMarkdown: columnText(statement, 4) ?? "",
+        progressStageRaw: columnText(statement, 5) ?? ProjectProgressStage.do.storageRawValue,
+        startDate: columnDouble(statement, 6).map(Date.init(timeIntervalSinceReferenceDate:)),
+        deadline: columnDouble(statement, 7).map(Date.init(timeIntervalSinceReferenceDate:)),
+        isArchived: columnInt(statement, 8) == 1,
+        updatedAt: Date(timeIntervalSinceReferenceDate: columnDouble(statement, 9) ?? 0)
       )
     }
   }
@@ -373,137 +675,4 @@ actor AppOwnedWorkspaceStore {
     return result
   }
 
-  private enum Binding {
-    case text(String)
-    case optionalText(String?)
-    case int(Int)
-    case optionalInt(Int?)
-    case double(Double)
-    case optionalDouble(Double?)
-  }
-
-  private func execute(_ db: OpaquePointer, _ sql: String, bindings: [Binding]) throws {
-    var statement: OpaquePointer?
-    guard sqlite3_prepare_v2(db, sql, -1, &statement, nil) == SQLITE_OK, let statement else {
-      throw AppOwnedWorkspaceStoreError.prepareFailed(errorMessage(db))
-    }
-    defer { sqlite3_finalize(statement) }
-    for (index, binding) in bindings.enumerated() {
-      bind(binding, to: statement, at: Int32(index + 1))
-    }
-    guard sqlite3_step(statement) == SQLITE_DONE else {
-      throw AppOwnedWorkspaceStoreError.stepFailed(errorMessage(db))
-    }
-  }
-
-  private func query<T>(
-    _ db: OpaquePointer,
-    _ sql: String,
-    map: (OpaquePointer) throws -> T
-  ) throws -> [T] {
-    var statement: OpaquePointer?
-    guard sqlite3_prepare_v2(db, sql, -1, &statement, nil) == SQLITE_OK, let statement else {
-      throw AppOwnedWorkspaceStoreError.prepareFailed(errorMessage(db))
-    }
-    defer { sqlite3_finalize(statement) }
-
-    var values: [T] = []
-    while true {
-      let status = sqlite3_step(statement)
-      if status == SQLITE_ROW {
-        values.append(try map(statement))
-      } else if status == SQLITE_DONE {
-        return values
-      } else {
-        throw AppOwnedWorkspaceStoreError.stepFailed(errorMessage(db))
-      }
-    }
-  }
-
-  private func scalarInt(_ db: OpaquePointer, sql: String) throws -> Int {
-    try query(db, sql) { statement in
-      columnInt(statement, 0) ?? 0
-    }.first ?? 0
-  }
-
-  private func scalarText(_ db: OpaquePointer, sql: String) throws -> String? {
-    try query(db, sql) { statement in
-      columnText(statement, 0)
-    }.first ?? nil
-  }
-
-  private func upsertMetadata(_ db: OpaquePointer, key: String, value: String) throws {
-    try execute(
-      db,
-      "INSERT OR REPLACE INTO app_metadata (key, value) VALUES (?, ?);",
-      bindings: [.text(key), .text(value)]
-    )
-  }
-
-  private func exec(_ db: OpaquePointer, _ sql: String) throws {
-    guard sqlite3_exec(db, sql, nil, nil, nil) == SQLITE_OK else {
-      throw AppOwnedWorkspaceStoreError.stepFailed(errorMessage(db))
-    }
-  }
-
-  private func bind(_ binding: Binding, to statement: OpaquePointer, at index: Int32) {
-    switch binding {
-    case .text(let value):
-      sqlite3_bind_text(statement, index, value, -1, appOwnedSQLiteTransient)
-    case .optionalText(let value):
-      if let value {
-        sqlite3_bind_text(statement, index, value, -1, appOwnedSQLiteTransient)
-      } else {
-        sqlite3_bind_null(statement, index)
-      }
-    case .int(let value):
-      sqlite3_bind_int64(statement, index, sqlite3_int64(value))
-    case .optionalInt(let value):
-      if let value {
-        sqlite3_bind_int64(statement, index, sqlite3_int64(value))
-      } else {
-        sqlite3_bind_null(statement, index)
-      }
-    case .double(let value):
-      sqlite3_bind_double(statement, index, value)
-    case .optionalDouble(let value):
-      if let value {
-        sqlite3_bind_double(statement, index, value)
-      } else {
-        sqlite3_bind_null(statement, index)
-      }
-    }
-  }
-
-  private func columnText(_ statement: OpaquePointer, _ index: Int32) -> String? {
-    guard sqlite3_column_type(statement, index) != SQLITE_NULL,
-      let text = sqlite3_column_text(statement, index)
-    else {
-      return nil
-    }
-    return String(cString: text)
-  }
-
-  private func columnInt(_ statement: OpaquePointer, _ index: Int32) -> Int? {
-    guard sqlite3_column_type(statement, index) != SQLITE_NULL else { return nil }
-    return Int(sqlite3_column_int64(statement, index))
-  }
-
-  private func columnDouble(_ statement: OpaquePointer, _ index: Int32) -> Double? {
-    guard sqlite3_column_type(statement, index) != SQLITE_NULL else { return nil }
-    return sqlite3_column_double(statement, index)
-  }
-
-  private func errorMessage(_ db: OpaquePointer) -> String {
-    String(cString: sqlite3_errmsg(db))
-  }
-
-  private func normalized(_ value: String?) -> String? {
-    guard let value = value?.trimmingCharacters(in: .whitespacesAndNewlines),
-      !value.isEmpty
-    else {
-      return nil
-    }
-    return value
-  }
 }

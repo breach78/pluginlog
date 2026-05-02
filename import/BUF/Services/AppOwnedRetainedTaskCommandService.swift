@@ -1,0 +1,479 @@
+import Foundation
+
+@MainActor
+enum AppOwnedRetainedTaskCommandService {
+  static func enabledStore(vaultRootURL: URL?) async throws -> AppOwnedWorkspaceStore? {
+    guard let vaultRootURL else { return nil }
+    let store = AppOwnedWorkspaceStore.storeForVaultRootURL(vaultRootURL)
+    guard try await store.isProjectionReadEnabled(),
+      try await store.hasImportedWorkspace()
+    else {
+      return nil
+    }
+    return store
+  }
+
+  static func createTask(
+    store: AppOwnedWorkspaceStore,
+    projectID: UUID,
+    title rawTitle: String,
+    day: Date?,
+    timeMinutes: Int?,
+    durationMinutes: Int?,
+    calendar: Calendar,
+    reminderProjectProvider: ReminderProjectProvider
+  ) async throws -> RetainedTaskCommandResult {
+    let title = rawTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !title.isEmpty else {
+      throw RetainedTaskCommandError.retainedProjectionFailed("empty task title")
+    }
+    let project = try await store.projectReference(projectID: projectID)
+    let dueDate = scheduledDate(day: day, timeMinutes: timeMinutes, calendar: calendar)
+    let hasExplicitTime = dueDate != nil && timeMinutes != nil
+    guard let metadata = try reminderProjectProvider.createTaskReminder(
+      inProject: project.reminderListIdentifier,
+      title: title,
+      dueDate: dueDate,
+      hasExplicitTime: hasExplicitTime,
+      noteText: ""
+    ), let reminderExternalIdentifier = normalized(metadata.externalIdentifier) else {
+      throw RetainedTaskCommandError.retainedProjectionFailed("created reminder missing external id")
+    }
+    let taskID = ReminderProjectionIdentity.taskID(for: reminderExternalIdentifier)
+    do {
+      try await store.upsertTask(
+        projectID: projectID,
+        taskID: taskID,
+        reminderIdentifier: metadata.identifier,
+        reminderExternalIdentifier: reminderExternalIdentifier,
+        title: title,
+        noteText: "",
+        isCompleted: false,
+        completionDate: nil,
+        dueDate: dueDate,
+        hasExplicitTime: hasExplicitTime,
+        durationMinutes: durationMinutes,
+        modifiedAt: metadata.modifiedAt
+      )
+    } catch {
+      _ = try? reminderProjectProvider.removeTaskReminder(
+        for: ReminderTaskReference(
+          taskID: taskID,
+          reminderIdentifier: metadata.identifier,
+          reminderExternalIdentifier: reminderExternalIdentifier
+        )
+      )
+      throw error
+    }
+    updateBaseline(
+      reminderExternalIdentifier: reminderExternalIdentifier,
+      title: title,
+      isCompleted: false,
+      noteText: "",
+      dueDate: dueDate,
+      hasExplicitTime: hasExplicitTime,
+      remoteModifiedAt: metadata.modifiedAt
+    )
+    TaskIdentityBridgeStore.upsertProject(
+      projectID: projectID,
+      title: project.title,
+      reminderListExternalIdentifier: project.reminderListExternalIdentifier ?? project.reminderListIdentifier
+    )
+    TaskIdentityBridgeStore.upsertTask(
+      taskID: taskID,
+      title: title,
+      reminderExternalIdentifier: reminderExternalIdentifier,
+      ownerProjectID: projectID
+    )
+    return RetainedTaskCommandResult(
+      projectID: projectID,
+      taskID: taskID,
+      calendarBridgeDecision: .noAction,
+      calendarWriteMarker: nil
+    )
+  }
+
+  static func taskEditFields(
+    store: AppOwnedWorkspaceStore,
+    projectID: UUID,
+    taskID: UUID,
+    calendar: Calendar
+  ) async throws -> RetainedTaskEditFields {
+    let task = try await store.taskReference(projectID: projectID, taskID: taskID)
+    return RetainedTaskEditFields(
+      title: task.title,
+      noteText: task.noteText,
+      day: task.dueDate.map { calendar.startOfDay(for: $0) },
+      timeMinutes: task.hasExplicitTime ? task.dueDate.map { minutesSinceStartOfDay(for: $0, calendar: calendar) } : nil,
+      durationMinutes: task.durationMinutes
+    )
+  }
+
+  static func updateTaskEditFields(
+    store: AppOwnedWorkspaceStore,
+    projectID: UUID,
+    taskID: UUID,
+    fields rawFields: RetainedTaskEditFields,
+    calendar: Calendar,
+    reminderProjectProvider: ReminderProjectProvider
+  ) async throws -> RetainedTaskCommandResult {
+    let task = try await store.taskReference(projectID: projectID, taskID: taskID)
+    let dueDate = scheduledDate(day: rawFields.day, timeMinutes: rawFields.timeMinutes, calendar: calendar)
+    let hasExplicitTime = dueDate != nil && rawFields.timeMinutes != nil
+    let reference = reminderReference(task)
+    var latestModifiedAt: Date?
+
+    if rawFields.title != task.title {
+      latestModifiedAt = try reminderProjectProvider.setTaskTitle(
+        for: reference,
+        title: rawFields.title
+      )?.modifiedAt
+    }
+    if rawFields.noteText != task.noteText {
+      latestModifiedAt = try reminderProjectProvider.setTaskReminderNote(
+        for: reference,
+        noteText: rawFields.noteText
+      )?.modifiedAt ?? latestModifiedAt
+    }
+    if dueDate != task.dueDate || hasExplicitTime != task.hasExplicitTime {
+      latestModifiedAt = try reminderProjectProvider.setTaskSchedule(
+        for: reference,
+        dueDate: dueDate,
+        hasExplicitTime: hasExplicitTime
+      )?.modifiedAt ?? latestModifiedAt
+    }
+
+    let modifiedAt = latestModifiedAt ?? .now
+    try await store.upsertTask(
+      projectID: projectID,
+      taskID: taskID,
+      reminderIdentifier: task.reminderIdentifier,
+      reminderExternalIdentifier: task.reminderExternalIdentifier,
+      title: rawFields.title,
+      noteText: rawFields.noteText,
+      isCompleted: task.isCompleted,
+      completionDate: task.completionDate,
+      dueDate: dueDate,
+      hasExplicitTime: hasExplicitTime,
+      durationMinutes: hasExplicitTime ? rawFields.durationMinutes : nil,
+      recurrenceRuleRaw: task.recurrenceRuleRaw,
+      modifiedAt: modifiedAt,
+      appendIfMissing: false
+    )
+    updateBaseline(
+      reminderExternalIdentifier: task.reminderExternalIdentifier,
+      title: rawFields.title,
+      isCompleted: task.isCompleted,
+      noteText: rawFields.noteText,
+      dueDate: dueDate,
+      hasExplicitTime: hasExplicitTime,
+      remoteModifiedAt: modifiedAt
+    )
+    TaskIdentityBridgeStore.upsertTask(
+      taskID: taskID,
+      title: rawFields.title,
+      reminderExternalIdentifier: task.reminderExternalIdentifier,
+      ownerProjectID: projectID
+    )
+    return commandResult(projectID: projectID, taskID: taskID)
+  }
+
+  static func setTaskCompletion(
+    store: AppOwnedWorkspaceStore,
+    projectID: UUID,
+    taskID: UUID,
+    isCompleted: Bool,
+    completionDate: Date?,
+    reminderProjectProvider: ReminderProjectProvider
+  ) async throws -> RetainedTaskCommandResult {
+    let task = try await store.taskReference(projectID: projectID, taskID: taskID)
+    let reference = reminderReference(task)
+    guard let metadata = try reminderProjectProvider.setTaskCompletion(
+      for: reference,
+      isCompleted: isCompleted,
+      completionDate: isCompleted ? (completionDate ?? .now) : nil
+    ) else {
+      throw RetainedTaskCommandError.reminderOwnerUnresolved(taskID)
+    }
+    if isCompleted,
+      normalized(task.recurrenceRuleRaw) != nil,
+      var remoteSnapshot = try recurringCompletionSnapshot(
+        reference: reference,
+        reminderProjectProvider: reminderProjectProvider
+      )
+    {
+      if task.hasExplicitTime,
+        remoteSnapshot.hasExplicitTime,
+        let nextDueDate = remoteSnapshot.dueDate,
+        let scheduleMetadata = try reminderProjectProvider.setTaskSchedule(
+          for: reference,
+          dueDate: nextDueDate,
+          hasExplicitTime: false
+        )
+      {
+        remoteSnapshot = try recurringCompletionSnapshot(
+          reference: reference,
+          reminderProjectProvider: reminderProjectProvider
+        ) ?? remoteSnapshotClearingExplicitTime(remoteSnapshot, modifiedAt: scheduleMetadata.modifiedAt)
+      }
+      try await store.upsertTask(
+        projectID: projectID,
+        taskID: taskID,
+        reminderIdentifier: remoteSnapshot.identifier,
+        reminderExternalIdentifier: remoteSnapshot.externalIdentifier ?? task.reminderExternalIdentifier,
+        title: remoteSnapshot.title,
+        noteText: remoteSnapshot.noteText,
+        isCompleted: remoteSnapshot.isCompleted,
+        completionDate: remoteSnapshot.completionDate,
+        dueDate: remoteSnapshot.dueDate,
+        hasExplicitTime: remoteSnapshot.hasExplicitTime,
+        durationMinutes: remoteSnapshot.hasExplicitTime ? task.durationMinutes : nil,
+        recurrenceRuleRaw: remoteSnapshot.recurrenceRuleRaw,
+        modifiedAt: remoteSnapshot.modifiedAt,
+        appendIfMissing: false
+      )
+      updateBaseline(
+        reminderExternalIdentifier: remoteSnapshot.externalIdentifier ?? task.reminderExternalIdentifier,
+        title: remoteSnapshot.title,
+        isCompleted: remoteSnapshot.isCompleted,
+        noteText: remoteSnapshot.noteText,
+        dueDate: remoteSnapshot.dueDate,
+        hasExplicitTime: remoteSnapshot.hasExplicitTime,
+        remoteModifiedAt: remoteSnapshot.modifiedAt
+      )
+      TaskIdentityBridgeStore.upsertTask(
+        taskID: taskID,
+        title: remoteSnapshot.title,
+        reminderExternalIdentifier: remoteSnapshot.externalIdentifier ?? task.reminderExternalIdentifier,
+        ownerProjectID: projectID
+      )
+      return commandResult(projectID: projectID, taskID: taskID)
+    }
+    try await store.upsertTask(
+      projectID: projectID,
+      taskID: taskID,
+      reminderIdentifier: task.reminderIdentifier,
+      reminderExternalIdentifier: task.reminderExternalIdentifier,
+      title: task.title,
+      noteText: task.noteText,
+      isCompleted: isCompleted,
+      completionDate: isCompleted ? (completionDate ?? .now) : nil,
+      dueDate: task.dueDate,
+      hasExplicitTime: task.hasExplicitTime,
+      durationMinutes: task.durationMinutes,
+      recurrenceRuleRaw: task.recurrenceRuleRaw,
+      modifiedAt: metadata.modifiedAt,
+      appendIfMissing: false
+    )
+    updateBaseline(
+      reminderExternalIdentifier: task.reminderExternalIdentifier,
+      title: task.title,
+      isCompleted: isCompleted,
+      noteText: task.noteText,
+      dueDate: task.dueDate,
+      hasExplicitTime: task.hasExplicitTime,
+      remoteModifiedAt: metadata.modifiedAt
+    )
+    return commandResult(projectID: projectID, taskID: taskID)
+  }
+
+  static func setTaskSchedule(
+    store: AppOwnedWorkspaceStore,
+    projectID: UUID,
+    taskID: UUID,
+    day: Date?,
+    timeMinutes: Int?,
+    durationMinutes: Int?,
+    calendar: Calendar,
+    reminderProjectProvider: ReminderProjectProvider
+  ) async throws -> RetainedTaskCommandResult {
+    let task = try await store.taskReference(projectID: projectID, taskID: taskID)
+    let dueDate = scheduledDate(day: day, timeMinutes: timeMinutes, calendar: calendar)
+    let hasExplicitTime = dueDate != nil && timeMinutes != nil
+    guard let metadata = try reminderProjectProvider.setTaskSchedule(
+      for: reminderReference(task),
+      dueDate: dueDate,
+      hasExplicitTime: hasExplicitTime
+    ) else {
+      throw RetainedTaskCommandError.reminderOwnerUnresolved(taskID)
+    }
+    try await store.upsertTask(
+      projectID: projectID,
+      taskID: taskID,
+      reminderIdentifier: task.reminderIdentifier,
+      reminderExternalIdentifier: task.reminderExternalIdentifier,
+      title: task.title,
+      noteText: task.noteText,
+      isCompleted: task.isCompleted,
+      completionDate: task.completionDate,
+      dueDate: dueDate,
+      hasExplicitTime: hasExplicitTime,
+      durationMinutes: durationMinutes,
+      recurrenceRuleRaw: task.recurrenceRuleRaw,
+      modifiedAt: metadata.modifiedAt,
+      appendIfMissing: false
+    )
+    updateBaseline(
+      reminderExternalIdentifier: task.reminderExternalIdentifier,
+      title: task.title,
+      isCompleted: task.isCompleted,
+      noteText: task.noteText,
+      dueDate: dueDate,
+      hasExplicitTime: hasExplicitTime,
+      remoteModifiedAt: metadata.modifiedAt
+    )
+    return commandResult(projectID: projectID, taskID: taskID)
+  }
+
+  static func deleteTask(
+    store: AppOwnedWorkspaceStore,
+    projectID: UUID,
+    taskID: UUID,
+    reminderProjectProvider: ReminderProjectProvider
+  ) async throws -> RetainedTaskDeletionResult {
+    let task = try await store.taskReference(projectID: projectID, taskID: taskID)
+    guard try reminderProjectProvider.removeTaskReminder(for: reminderReference(task)) else {
+      throw RetainedTaskCommandError.reminderOwnerUnresolved(taskID)
+    }
+    try await store.deleteTask(taskID: taskID)
+    if let reminderExternalIdentifier = task.reminderExternalIdentifier {
+      ReminderSyncBaselineStore.remove(reminderExternalIdentifier: reminderExternalIdentifier)
+    }
+    TaskIdentityBridgeStore.removeTask(taskID: taskID)
+    return RetainedTaskDeletionResult(
+      projectID: projectID,
+      taskID: taskID,
+      reminderExternalIdentifier: task.reminderExternalIdentifier ?? task.reminderIdentifier
+    )
+  }
+
+  static func moveTask(
+    store: AppOwnedWorkspaceStore,
+    taskID: UUID,
+    sourceProjectID: UUID,
+    targetProjectID: UUID,
+    reminderProjectProvider: ReminderProjectProvider
+  ) async throws -> RetainedTaskCommandResult {
+    let targetProject = try await store.projectReference(projectID: targetProjectID)
+    let task = try await store.taskReference(projectID: sourceProjectID, taskID: taskID)
+    guard try reminderProjectProvider.moveTaskReminder(
+      for: reminderReference(task),
+      toProject: targetProject.reminderListIdentifier
+    ) != nil else {
+      throw RetainedTaskCommandError.reminderOwnerUnresolved(taskID)
+    }
+    try await store.moveTask(taskID: taskID, toProjectID: targetProjectID)
+    TaskIdentityBridgeStore.upsertTask(
+      taskID: taskID,
+      title: task.title,
+      reminderExternalIdentifier: task.reminderExternalIdentifier,
+      ownerProjectID: targetProjectID
+    )
+    return commandResult(projectID: targetProjectID, taskID: taskID)
+  }
+
+  private static func commandResult(projectID: UUID, taskID: UUID) -> RetainedTaskCommandResult {
+    RetainedTaskCommandResult(
+      projectID: projectID,
+      taskID: taskID,
+      calendarBridgeDecision: .noAction,
+      calendarWriteMarker: nil
+    )
+  }
+
+  private static func reminderReference(
+    _ task: AppOwnedWorkspaceStore.TaskReference
+  ) -> ReminderTaskReference {
+    ReminderTaskReference(
+      taskID: task.taskID,
+      reminderIdentifier: task.reminderIdentifier,
+      reminderExternalIdentifier: task.reminderExternalIdentifier
+    )
+  }
+
+  private static func updateBaseline(
+    reminderExternalIdentifier: String?,
+    title: String,
+    isCompleted: Bool,
+    noteText: String,
+    dueDate: Date?,
+    hasExplicitTime: Bool,
+    remoteModifiedAt: Date?
+  ) {
+    ReminderSyncBaselineStore.upsert(
+      reminderExternalIdentifier: reminderExternalIdentifier,
+      state: ReminderSyncTaskState(
+        title: title,
+        isCompleted: isCompleted,
+        date: ReminderScheduleMetadataCodec.encodeDate(dueDate, hasExplicitTime: hasExplicitTime),
+        repeatRule: nil,
+        noteText: noteText
+      ),
+      remoteModifiedAt: remoteModifiedAt
+    )
+  }
+
+  private static func scheduledDate(
+    day: Date?,
+    timeMinutes: Int?,
+    calendar: Calendar
+  ) -> Date? {
+    guard let day else { return nil }
+    let normalizedDay = calendar.startOfDay(for: day)
+    guard let timeMinutes else { return normalizedDay }
+    let boundedMinutes = min(max(0, timeMinutes), 23 * 60 + 59)
+    return calendar.date(
+      bySettingHour: boundedMinutes / 60,
+      minute: boundedMinutes % 60,
+      second: 0,
+      of: normalizedDay
+    ) ?? normalizedDay
+  }
+
+  private static func recurringCompletionSnapshot(
+    reference: ReminderTaskReference,
+    reminderProjectProvider: ReminderProjectProvider
+  ) throws -> ReminderTaskRemoteSnapshot? {
+    guard let snapshot = try reminderProjectProvider.taskSnapshot(for: reference),
+      normalized(snapshot.recurrenceRuleRaw) != nil
+    else {
+      return nil
+    }
+    return snapshot
+  }
+
+  private static func remoteSnapshotClearingExplicitTime(
+    _ snapshot: ReminderTaskRemoteSnapshot,
+    modifiedAt: Date
+  ) -> ReminderTaskRemoteSnapshot {
+    ReminderTaskRemoteSnapshot(
+      identifier: snapshot.identifier,
+      externalIdentifier: snapshot.externalIdentifier,
+      calendarIdentifier: snapshot.calendarIdentifier,
+      title: snapshot.title,
+      noteText: snapshot.noteText,
+      isCompleted: snapshot.isCompleted,
+      completionDate: snapshot.completionDate,
+      startDate: snapshot.startDate,
+      dueDate: snapshot.dueDate,
+      hasExplicitTime: false,
+      priority: snapshot.priority,
+      recurrenceRuleRaw: snapshot.recurrenceRuleRaw,
+      modifiedAt: modifiedAt
+    )
+  }
+
+  private static func minutesSinceStartOfDay(for date: Date, calendar: Calendar) -> Int {
+    let components = calendar.dateComponents([.hour, .minute], from: date)
+    return (components.hour ?? 0) * 60 + (components.minute ?? 0)
+  }
+
+  private static func normalized(_ value: String?) -> String? {
+    guard let value = value?.trimmingCharacters(in: .whitespacesAndNewlines),
+      !value.isEmpty
+    else {
+      return nil
+    }
+    return value
+  }
+}
