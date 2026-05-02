@@ -324,6 +324,7 @@ enum RetainedWorkspaceSurfaceProjectionBuilder {
       isLocalCompletedRecurringOccurrence: AppOwnedWorkspaceStore
         .isLocalCompletedRecurringExternalIdentifier(task.identity.reminderExternalIdentifier),
       attachmentCount: 0,
+      hasReminderNoteContent: hasVisibleReminderNoteContent(task.noteText),
       reminderNoteText: task.noteText,
       requiredWorkDays: 0,
       completedWorkUnits: 0,
@@ -336,6 +337,12 @@ enum RetainedWorkspaceSurfaceProjectionBuilder {
       localUpdatedAt: .distantPast,
       createdAt: .distantPast
     )
+  }
+
+  private static func hasVisibleReminderNoteContent(_ noteText: String) -> Bool {
+    !TaskEditAttachmentService.noteTextByRemovingAttachmentLinks(from: noteText)
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+      .isEmpty
   }
 
   private static func projectSummary(

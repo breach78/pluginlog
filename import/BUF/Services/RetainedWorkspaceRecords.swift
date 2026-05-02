@@ -69,6 +69,7 @@ struct ScheduleSliceEntry: Identifiable, Equatable, Sendable {
   let recurrenceRuleRaw: String?
   let isLocalCompletedRecurringOccurrence: Bool
   let attachmentCount: Int
+  let hasReminderNoteContent: Bool
   let reminderNoteText: String
   let requiredWorkDays: Int
   let completedWorkUnits: Int
@@ -91,6 +92,20 @@ struct ScheduleSliceEntry: Identifiable, Equatable, Sendable {
     hasher.combine(scheduledDurationMinutes)
     hasher.combine(attachmentCount)
     hasher.combine(reminderNoteText)
+    hasher.combine(rowOrder)
+    return hasher.finalize()
+  }
+
+  var scheduleRenderFingerprint: Int {
+    var hasher = Hasher()
+    hasher.combine(taskID)
+    hasher.combine(title)
+    hasher.combine(displayedDate)
+    hasher.combine(isCompleted)
+    hasher.combine(isLocalCompletedRecurringOccurrence)
+    hasher.combine(scheduledDurationMinutes)
+    hasher.combine(attachmentCount)
+    hasher.combine(hasReminderNoteContent)
     hasher.combine(rowOrder)
     return hasher.finalize()
   }
@@ -119,6 +134,7 @@ struct TaskRowSnapshot: Identifiable, Hashable, Sendable {
   let recurrenceRuleRaw: String?
   let isLocalCompletedRecurringOccurrence: Bool
   let attachmentCount: Int
+  let hasReminderNoteContent: Bool
   let reminderNoteText: String
   let requiredWorkDays: Int
   let completedWorkUnits: Int
@@ -127,6 +143,29 @@ struct TaskRowSnapshot: Identifiable, Hashable, Sendable {
   let rowOrder: Int
   let createdAt: Date
   let isArchived: Bool
+}
+
+extension TaskRowSnapshot {
+  func hash(into hasher: inout Hasher) {
+    hasher.combine(id)
+    hasher.combine(title)
+    hasher.combine(reminderDate)
+    hasher.combine(scheduleHasExplicitTime)
+    hasher.combine(scheduledDurationMinutes)
+    hasher.combine(isCompleted)
+    hasher.combine(completionDate)
+    hasher.combine(recurrenceRuleRaw)
+    hasher.combine(isLocalCompletedRecurringOccurrence)
+    hasher.combine(attachmentCount)
+    hasher.combine(hasReminderNoteContent)
+    hasher.combine(requiredWorkDays)
+    hasher.combine(completedWorkUnits)
+    hasher.combine(completedWorkUnitDates)
+    hasher.combine(preparationScheduleOverridesRaw)
+    hasher.combine(rowOrder)
+    hasher.combine(createdAt)
+    hasher.combine(isArchived)
+  }
 }
 
 struct TimelineProjectTaskPreview: Identifiable, Equatable, Sendable {
@@ -283,6 +322,7 @@ enum ScheduleProjectionService {
             recurrenceRuleRaw: entry.recurrenceRuleRaw,
             isLocalCompletedRecurringOccurrence: entry.isLocalCompletedRecurringOccurrence,
             attachmentCount: entry.attachmentCount,
+            hasReminderNoteContent: entry.hasReminderNoteContent,
             reminderNoteText: entry.reminderNoteText,
             requiredWorkDays: entry.requiredWorkDays,
             completedWorkUnits: entry.completedWorkUnits,

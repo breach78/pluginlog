@@ -773,6 +773,78 @@ final class TimelineBoardReadPathTests: XCTestCase {
     XCTAssertEqual(entry?.taskID, openFirstID)
   }
 
+  func testScheduleSourceSignatureIgnoresNoteBodyWhenVisibleMetadataIsUnchanged() {
+    let projectID = UUID()
+    let taskID = UUID()
+    let today = Date(timeIntervalSinceReferenceDate: 100)
+    let project = makeProject(projectID: projectID)
+    let firstEntry = makeScheduleEntry(
+      taskID: taskID,
+      title: "Task",
+      rowOrder: 0,
+      hasReminderNoteContent: true,
+      reminderNoteText: String(repeating: "first note ", count: 200)
+    )
+    let secondEntry = makeScheduleEntry(
+      taskID: taskID,
+      title: "Task",
+      rowOrder: 0,
+      hasReminderNoteContent: true,
+      reminderNoteText: String(repeating: "second note ", count: 200)
+    )
+
+    let firstSignature = ScheduleBoardReadPath.sourceSignature(
+      today: today,
+      projectIDs: [projectID],
+      projectSnapshots: [projectID: project],
+      scheduleEntriesByProjectID: [projectID: [firstEntry]]
+    )
+    let secondSignature = ScheduleBoardReadPath.sourceSignature(
+      today: today,
+      projectIDs: [projectID],
+      projectSnapshots: [projectID: project],
+      scheduleEntriesByProjectID: [projectID: [secondEntry]]
+    )
+
+    XCTAssertEqual(firstSignature, secondSignature)
+  }
+
+  func testScheduleSourceSignatureTracksNoteIconVisibility() {
+    let projectID = UUID()
+    let taskID = UUID()
+    let today = Date(timeIntervalSinceReferenceDate: 100)
+    let project = makeProject(projectID: projectID)
+    let emptyNoteEntry = makeScheduleEntry(
+      taskID: taskID,
+      title: "Task",
+      rowOrder: 0,
+      hasReminderNoteContent: false,
+      reminderNoteText: ""
+    )
+    let visibleNoteEntry = makeScheduleEntry(
+      taskID: taskID,
+      title: "Task",
+      rowOrder: 0,
+      hasReminderNoteContent: true,
+      reminderNoteText: "visible note"
+    )
+
+    let emptySignature = ScheduleBoardReadPath.sourceSignature(
+      today: today,
+      projectIDs: [projectID],
+      projectSnapshots: [projectID: project],
+      scheduleEntriesByProjectID: [projectID: [emptyNoteEntry]]
+    )
+    let visibleSignature = ScheduleBoardReadPath.sourceSignature(
+      today: today,
+      projectIDs: [projectID],
+      projectSnapshots: [projectID: project],
+      scheduleEntriesByProjectID: [projectID: [visibleNoteEntry]]
+    )
+
+    XCTAssertNotEqual(emptySignature, visibleSignature)
+  }
+
   private func makeProject(
     projectID: UUID,
     title: String = "Project",
@@ -830,7 +902,10 @@ final class TimelineBoardReadPathTests: XCTestCase {
     title: String,
     isCompleted: Bool = false,
     isArchived: Bool = false,
-    rowOrder: Int
+    rowOrder: Int,
+    attachmentCount: Int = 0,
+    hasReminderNoteContent: Bool = false,
+    reminderNoteText: String = ""
   ) -> ScheduleSliceEntry {
     ScheduleSliceEntry(
       taskID: taskID,
@@ -845,8 +920,9 @@ final class TimelineBoardReadPathTests: XCTestCase {
       completionDate: isCompleted ? .distantPast : nil,
       recurrenceRuleRaw: nil,
       isLocalCompletedRecurringOccurrence: false,
-      attachmentCount: 0,
-      reminderNoteText: "",
+      attachmentCount: attachmentCount,
+      hasReminderNoteContent: hasReminderNoteContent,
+      reminderNoteText: reminderNoteText,
       requiredWorkDays: 0,
       completedWorkUnits: 0,
       completedWorkUnitDates: [],

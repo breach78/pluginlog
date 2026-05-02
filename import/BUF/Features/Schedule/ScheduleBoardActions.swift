@@ -124,7 +124,7 @@ enum ScheduleBoardReadPath {
       hasher.combine(scheduleEntries.count)
       for entry in scheduleEntries {
         hasher.combine(entry.taskID)
-        hasher.combine(entry.renderFingerprint)
+        hasher.combine(entry.scheduleRenderFingerprint)
       }
     }
     return hasher.finalize()

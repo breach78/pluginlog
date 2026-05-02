@@ -2051,7 +2051,7 @@ extension ScheduleBoardView {
     color: Color
   ) -> some View {
     scheduleMetadataIndicators(
-      hasNote: hasScheduleNote(taskDescriptor.taskRow.reminderNoteText),
+      hasNote: taskDescriptor.taskRow.hasReminderNoteContent,
       attachmentCount: max(0, taskDescriptor.taskRow.attachmentCount),
       color: color
     )
