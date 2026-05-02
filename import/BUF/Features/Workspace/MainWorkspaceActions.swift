@@ -664,6 +664,12 @@ extension MainWorkspaceView {
       return
     }
     TimelineProjectTaskManualOrderStore.saveProjectOrder(orderedTaskIDs, for: projectID)
+    Task { @MainActor in
+      await appState.persistAppOwnedProjectTaskOrder(
+        projectID: projectID,
+        orderedTaskIDs: orderedTaskIDs
+      )
+    }
     guard registerUndo, previousOrder != orderedTaskIDs else { return }
     appState.registerUndo(with: undoManager, actionName: "목록 순서 변경") {
       self.saveWorkspaceProjectListWindowTaskOrder(

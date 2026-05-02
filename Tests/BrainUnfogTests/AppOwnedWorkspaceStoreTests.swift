@@ -216,6 +216,53 @@ final class AppOwnedWorkspaceStoreTests: XCTestCase {
     XCTAssertEqual(task.schedule.durationMinutes, 45)
   }
 
+  func testReorderOpenTasksPersistsRetainedWorkspaceTaskOrder() async throws {
+    let store = AppOwnedWorkspaceStore(containerRootURL: try makeTemporaryDirectory())
+    let createdAt = Date(timeIntervalSinceReferenceDate: 420)
+    try await store.replaceReminderSnapshot(
+      Self.batch(
+        taskExternalIdentifiers: ["task-1", "task-2", "task-3"],
+        createdAt: createdAt
+      ),
+      importedAt: createdAt
+    )
+    let firstID = ReminderProjectionIdentity.taskID(for: "task-1")
+    let secondID = ReminderProjectionIdentity.taskID(for: "task-2")
+    let thirdID = ReminderProjectionIdentity.taskID(for: "task-3")
+    let projectID = RetainedProjectionBuilder.derivedProjectID(for: "list-1")
+
+    try await store.reorderOpenTasks(
+      projectID: projectID,
+      orderedTaskIDs: [thirdID, firstID, secondID]
+    )
+    let snapshot = try await store.loadRetainedWorkspaceSnapshot(projectIDs: [projectID])
+
+    XCTAssertEqual(snapshot.tasks.map(\.identity.taskID), [thirdID, firstID, secondID])
+  }
+
+  func testReplaceReminderSnapshotKeepsManualTaskOrderAcrossImports() async throws {
+    let store = AppOwnedWorkspaceStore(containerRootURL: try makeTemporaryDirectory())
+    let createdAt = Date(timeIntervalSinceReferenceDate: 430)
+    let projectID = RetainedProjectionBuilder.derivedProjectID(for: "list-1")
+    let firstID = ReminderProjectionIdentity.taskID(for: "task-1")
+    let secondID = ReminderProjectionIdentity.taskID(for: "task-2")
+    let thirdID = ReminderProjectionIdentity.taskID(for: "task-3")
+    let batch = Self.batch(
+      taskExternalIdentifiers: ["task-1", "task-2", "task-3"],
+      createdAt: createdAt
+    )
+
+    try await store.replaceReminderSnapshot(batch, importedAt: createdAt)
+    try await store.reorderOpenTasks(
+      projectID: projectID,
+      orderedTaskIDs: [thirdID, firstID, secondID]
+    )
+    try await store.replaceReminderSnapshot(batch, importedAt: createdAt.addingTimeInterval(10))
+    let snapshot = try await store.loadRetainedWorkspaceSnapshot(projectIDs: [projectID])
+
+    XCTAssertEqual(snapshot.tasks.map(\.identity.taskID), [thirdID, firstID, secondID])
+  }
+
   func testLoadPrefersAppOwnedStoreWhenSQLiteHasImportedRows() async throws {
     let vaultRoot = try makeTemporaryDirectory()
     try FileManager.default.createDirectory(
@@ -335,6 +382,48 @@ final class AppOwnedWorkspaceStoreTests: XCTestCase {
     calendar.timeZone = TimeZone(secondsFromGMT: 0)!
     return calendar
   }()
+
+  private static func batch(
+    taskExternalIdentifiers: [String],
+    createdAt: Date
+  ) -> ReminderImportSnapshotBatch {
+    ReminderImportSnapshotBatch(
+      lists: [
+        ReminderListImportSnapshot(
+          identifier: "list-1",
+          externalIdentifier: "list-1",
+          title: "Project",
+          colorHex: nil
+        )
+      ],
+      itemsByListIdentifier: [
+        "list-1": taskExternalIdentifiers.map { identifier in
+          ReminderItemImportSnapshot(
+            identifier: "\(identifier)-identifier",
+            externalIdentifier: identifier,
+            parentExternalIdentifier: nil,
+            sourceListIdentifier: "list-1",
+            sourceListTitle: "Project",
+            title: identifier,
+            notes: "",
+            attachmentCount: 0,
+            isCompleted: false,
+            completionDate: nil,
+            startDate: nil,
+            dueDate: nil,
+            scheduleHasExplicitTime: false,
+            scheduledDurationMinutes: nil,
+            priority: 0,
+            recurrenceRuleRaw: nil,
+            isFlagged: false,
+            requiredWorkDays: 0,
+            createdAt: createdAt,
+            modifiedAt: createdAt
+          )
+        }
+      ]
+    )
+  }
 
   private func makeTemporaryDirectory() throws -> URL {
     let url = FileManager.default.temporaryDirectory

@@ -210,6 +210,20 @@ extension AppState {
     syncStatus = "Obsidian file changes ignored"
   }
 
+  func persistAppOwnedProjectTaskOrder(projectID: UUID, orderedTaskIDs: [UUID]) async {
+    do {
+      guard let store = try await AppOwnedRetainedTaskCommandService.enabledStore(
+        vaultRootURL: obsidianVaultRootURL
+      ) else {
+        return
+      }
+      try await store.reorderOpenTasks(projectID: projectID, orderedTaskIDs: orderedTaskIDs)
+      bumpWorkspaceTreeRevision()
+    } catch {
+      reportError(error, logMessage: "persistAppOwnedProjectTaskOrder failed")
+    }
+  }
+
   func applyObsidianImportResult(_ result: ObsidianReminderImportSync.SyncResult) {
     TaskIdentityBridgeStore.upsertAll(
       projects: result.projectRecords,

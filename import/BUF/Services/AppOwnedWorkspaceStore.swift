@@ -57,6 +57,14 @@ actor AppOwnedWorkspaceStore {
   struct TaskSupplement: Equatable, Sendable {
     let taskID: UUID
     let durationMinutes: Int?
+
+    let rowOrder: Int?
+
+    init(taskID: UUID, durationMinutes: Int?, rowOrder: Int? = nil) {
+      self.taskID = taskID
+      self.durationMinutes = durationMinutes
+      self.rowOrder = rowOrder
+    }
   }
 
   let sqliteURL: URL
@@ -151,7 +159,8 @@ actor AppOwnedWorkspaceStore {
       try mergeTaskSupplements(
         db,
         supplements: preservedTaskSupplements,
-        durationAssignmentSQL: "scheduled_duration_minutes = COALESCE(scheduled_duration_minutes, ?)"
+        durationAssignmentSQL: "scheduled_duration_minutes = COALESCE(scheduled_duration_minutes, ?)",
+        rowOrderAssignmentSQL: "row_order = COALESCE(?, row_order)"
       )
       try exec(db, "COMMIT;")
     } catch {
@@ -179,14 +188,16 @@ actor AppOwnedWorkspaceStore {
     try mergeTaskSupplements(
       db,
       supplements: supplements,
-      durationAssignmentSQL: "scheduled_duration_minutes = COALESCE(?, scheduled_duration_minutes)"
+      durationAssignmentSQL: "scheduled_duration_minutes = COALESCE(?, scheduled_duration_minutes)",
+      rowOrderAssignmentSQL: "row_order = COALESCE(?, row_order)"
     )
   }
 
   private func mergeTaskSupplements(
     _ db: OpaquePointer,
     supplements: [TaskSupplement],
-    durationAssignmentSQL: String
+    durationAssignmentSQL: String,
+    rowOrderAssignmentSQL: String
   ) throws {
     guard !supplements.isEmpty else { return }
     for supplement in supplements {
@@ -194,11 +205,12 @@ actor AppOwnedWorkspaceStore {
         db,
         """
         UPDATE app_tasks
-        SET \(durationAssignmentSQL)
+        SET \(durationAssignmentSQL), \(rowOrderAssignmentSQL)
         WHERE id = ?;
         """,
         bindings: [
           .optionalInt(supplement.durationMinutes),
+          .optionalInt(supplement.rowOrder),
           .text(supplement.taskID.uuidString),
         ]
       )
@@ -452,6 +464,44 @@ actor AppOwnedWorkspaceStore {
     )
   }
 
+  func reorderOpenTasks(projectID: UUID, orderedTaskIDs: [UUID]) throws {
+    let db = try openDatabase()
+    defer { sqlite3_close(db) }
+    try migrate(db)
+    let rows = try loadTaskOrderRows(db, projectID: projectID)
+    guard !rows.isEmpty else { return }
+
+    var seenOrderedTaskIDs = Set<UUID>()
+    let existingOpenTaskIDs = rows.filter { !$0.isCompleted }.map(\.taskID)
+    let existingOpenTaskIDSet = Set(existingOpenTaskIDs)
+    let requestedOpenTaskIDs = orderedTaskIDs.filter { taskID in
+      existingOpenTaskIDSet.contains(taskID) && seenOrderedTaskIDs.insert(taskID).inserted
+    }
+    let nextOpenTaskIDs = requestedOpenTaskIDs
+      + existingOpenTaskIDs.filter { !seenOrderedTaskIDs.contains($0) }
+    let nextTaskIDs = nextOpenTaskIDs + rows.filter(\.isCompleted).map(\.taskID)
+    guard nextTaskIDs != rows.map(\.taskID) else { return }
+
+    try exec(db, "BEGIN IMMEDIATE TRANSACTION;")
+    do {
+      for (index, taskID) in nextTaskIDs.enumerated() {
+        try execute(
+          db,
+          "UPDATE app_tasks SET row_order = ? WHERE project_id = ? AND id = ?;",
+          bindings: [
+            .int(index),
+            .text(projectID.uuidString),
+            .text(taskID.uuidString),
+          ]
+        )
+      }
+      try exec(db, "COMMIT;")
+    } catch {
+      try? exec(db, "ROLLBACK;")
+      throw error
+    }
+  }
+
   func deleteTask(taskID: UUID) throws {
     let db = try openDatabase()
     defer { sqlite3_close(db) }
@@ -578,7 +628,7 @@ actor AppOwnedWorkspaceStore {
     try query(
       db,
       """
-      SELECT id, scheduled_duration_minutes
+      SELECT id, scheduled_duration_minutes, row_order
       FROM app_tasks;
       """
     ) { statement in
@@ -587,7 +637,36 @@ actor AppOwnedWorkspaceStore {
       }
       return TaskSupplement(
         taskID: taskID,
-        durationMinutes: columnInt(statement, 1).flatMap { $0 > 0 ? $0 : nil }
+        durationMinutes: columnInt(statement, 1).flatMap { $0 > 0 ? $0 : nil },
+        rowOrder: columnInt(statement, 2)
+      )
+    }
+  }
+
+  private struct StoredTaskOrderRow {
+    let taskID: UUID
+    let isCompleted: Bool
+  }
+
+  private func loadTaskOrderRows(
+    _ db: OpaquePointer,
+    projectID: UUID
+  ) throws -> [StoredTaskOrderRow] {
+    try query(
+      db,
+      """
+      SELECT id, is_completed
+      FROM app_tasks
+      WHERE project_id = '\(projectID.uuidString)'
+      ORDER BY is_completed, row_order, title COLLATE NOCASE;
+      """
+    ) { statement in
+      guard let taskID = UUID(uuidString: columnText(statement, 0) ?? "") else {
+        throw AppOwnedWorkspaceStoreError.invalidSQLiteValue("invalid task id")
+      }
+      return StoredTaskOrderRow(
+        taskID: taskID,
+        isCompleted: columnInt(statement, 1) == 1
       )
     }
   }
