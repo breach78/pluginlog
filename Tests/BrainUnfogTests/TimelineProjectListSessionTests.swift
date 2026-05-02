@@ -51,6 +51,27 @@ final class TimelineProjectListSessionTests: XCTestCase {
     XCTAssertEqual(session.focusedEditingTaskID, taskID)
   }
 
+  func testApplySnapshotKeepsPendingOptimisticRename() {
+    let projectID = UUID()
+    let taskID = UUID()
+    var session = TimelineProjectListSession(
+      snapshot: snapshot(projectID: projectID, tasks: [
+        task(id: taskID, title: "Original")
+      ])
+    )
+    session.startEditing(task(id: taskID, title: "Original"))
+    session.updateEditingTitle("Renamed")
+
+    _ = session.submitRenameOptimistically(taskID: taskID)
+    session.applySnapshot(
+      snapshot(projectID: projectID, tasks: [
+        task(id: taskID, title: "Original")
+      ])
+    )
+
+    XCTAssertEqual(session.tasks.first?.title, "Renamed")
+  }
+
   func testOptimisticCreateSuccessReplacesTemporaryIdentifier() {
     let projectID = UUID()
     let firstID = UUID()
@@ -80,6 +101,31 @@ final class TimelineProjectListSessionTests: XCTestCase {
     XCTAssertFalse(session.isPendingCreate(temporaryID))
     XCTAssertEqual(session.draftAnchor, .after(createdID))
     XCTAssertEqual(session.focusedDraftAnchor, .after(createdID))
+  }
+
+  func testPersistableOpenTaskIDsExcludePendingCreate() {
+    let projectID = UUID()
+    let firstID = UUID()
+    let temporaryID = UUID()
+    let createdID = UUID()
+    var session = TimelineProjectListSession(
+      snapshot: snapshot(projectID: projectID, tasks: [
+        task(id: firstID, title: "First")
+      ])
+    )
+    session.startDraft(after: firstID)
+    session.updateDraftTitle("Created")
+
+    _ = session.submitDraftOptimistically(temporaryID: temporaryID)
+    XCTAssertEqual(session.openTaskIDs, [firstID, temporaryID])
+    XCTAssertEqual(session.persistableOpenTaskIDs, [firstID])
+
+    session.resolveOptimisticCreate(
+      temporaryID: temporaryID,
+      createdTask: task(id: createdID, title: "Created")
+    )
+
+    XCTAssertEqual(session.persistableOpenTaskIDs, [firstID, createdID])
   }
 
   func testOptimisticCreateFailureRestoresDraftAtOriginalAnchor() {

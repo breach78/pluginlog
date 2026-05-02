@@ -260,6 +260,7 @@ struct TimelineProjectListContent: View {
   @State private var deletingTaskIDs: Set<UUID> = []
   @State private var movingTaskIDs: Set<UUID> = []
   @State private var showsCompletedTasks = false
+  @State private var writeQueue = TimelineProjectListWriteQueue()
 
   init(
     snapshot: TimelineProjectListWindowSnapshot,
@@ -653,11 +654,13 @@ struct TimelineProjectListContent: View {
       commitSessionDrop()
     }
     guard !orderedTaskIDs.isEmpty else { return }
-    actions.onReorderTasks(
-      snapshot.projectID,
-      orderedTaskIDs,
-      true
-    )
+    writeQueue.enqueue {
+      actions.onReorderTasks(
+        snapshot.projectID,
+        orderedTaskIDs,
+        true
+      )
+    }
   }
 
   private func toggleTaskCompletion(_ taskID: UUID, isCompleted: Bool) {
@@ -673,7 +676,7 @@ struct TimelineProjectListContent: View {
           currentIsCompleted: isCompleted
         )
       )
-      actions.onReorderTasks(snapshot.projectID, openTaskIDs, false)
+      enqueueTaskOrderSave(registerUndo: false)
     }
   }
 
@@ -686,7 +689,7 @@ struct TimelineProjectListContent: View {
       deletingTaskIDs.remove(taskID)
       guard didDelete else { return }
       removeTaskFromWindow(taskID)
-      actions.onReorderTasks(snapshot.projectID, openTaskIDs, false)
+      enqueueTaskOrderSave(registerUndo: false)
     }
   }
 
@@ -701,7 +704,7 @@ struct TimelineProjectListContent: View {
       movingTaskIDs.remove(taskID)
       guard didMove else { return }
       removeTaskFromWindow(taskID)
-      actions.onReorderTasks(snapshot.projectID, openTaskIDs, false)
+      enqueueTaskOrderSave(registerUndo: false)
     }
   }
 
@@ -746,21 +749,24 @@ struct TimelineProjectListContent: View {
       }
       return
     }
+    guard submitRenameOptimistically(taskID: task.id) != nil else {
+      return
+    }
+    if createDraftBelow {
+      startDraft(after: task.id)
+    }
     isRenamingTask = true
 
-    Task { @MainActor in
+    writeQueue.enqueue {
       defer { isRenamingTask = false }
       guard let updatedTask = await actions.onRenameTask(snapshot.projectID, task.id, title) else {
+        updateSession { session in
+          session.failOptimisticRename(taskID: task.id)
+        }
         return
       }
-      replaceTask(updatedTask)
       updateSession { session in
-        session.editingTaskID = nil
-        session.editingTitle = ""
-        session.focusedEditingTaskID = nil
-      }
-      if createDraftBelow {
-        startDraft(after: updatedTask.id)
+        session.resolveOptimisticRename(taskID: task.id, updatedTask: updatedTask)
       }
     }
   }
@@ -808,7 +814,7 @@ struct TimelineProjectListContent: View {
     guard submitDraftOptimistically(temporaryID: temporaryID) != nil else { return }
     isCreatingTask = true
 
-    Task { @MainActor in
+    writeQueue.enqueue {
       defer { isCreatingTask = false }
       guard let createdTask = await actions.onCreateTask(snapshot.projectID, title) else {
         updateSession { session in
@@ -820,7 +826,7 @@ struct TimelineProjectListContent: View {
       updateSession { session in
         session.resolveOptimisticCreate(temporaryID: temporaryID, createdTask: createdTask)
       }
-      actions.onReorderTasks(snapshot.projectID, openTaskIDs, false)
+      enqueueTaskOrderSave(registerUndo: false)
       focusDraft(.after(createdTask.id))
     }
   }
@@ -868,12 +874,33 @@ struct TimelineProjectListContent: View {
     return createdTask
   }
 
+  private func submitRenameOptimistically(taskID: UUID)
+    -> TimelineProjectListWindowSnapshot.Task?
+  {
+    var renamedTask: TimelineProjectListWindowSnapshot.Task?
+    updateSession { session in
+      renamedTask = session.submitRenameOptimistically(taskID: taskID)
+    }
+    return renamedTask
+  }
+
   private func commitSessionDrop() -> [UUID] {
     var orderedTaskIDs: [UUID] = []
     updateSession { session in
       orderedTaskIDs = session.commitDrop()
     }
     return orderedTaskIDs
+  }
+
+  private func enqueueTaskOrderSave(registerUndo: Bool) {
+    writeQueue.enqueue {
+      let orderedTaskIDs = session.persistableOpenTaskIDs
+      actions.onReorderTasks(
+        snapshot.projectID,
+        orderedTaskIDs,
+        registerUndo
+      )
+    }
   }
 
   private func updateSession(_ mutate: (inout TimelineProjectListSession) -> Void) {

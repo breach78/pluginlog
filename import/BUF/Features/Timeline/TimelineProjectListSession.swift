@@ -235,6 +235,10 @@ struct TimelineProjectListSession {
     TimelineProjectListTaskOrderPolicy.openTaskIDs(from: tasks)
   }
 
+  var persistableOpenTaskIDs: [UUID] {
+    openTaskIDs.filter { !isPendingCreate($0) }
+  }
+
   func visibleTasks(showsCompletedTasks: Bool) -> [Task] {
     showsCompletedTasks ? tasks : tasks.filter { !$0.isCompleted }
   }
@@ -274,11 +278,19 @@ struct TimelineProjectListSession {
   }
 
   private func mergedTasks(from snapshotTasks: [Task]) -> [Task] {
-    let snapshotIDs = Set(snapshotTasks.map(\.id))
-    let localPendingTasks = tasks.filter { pendingCreates[$0.id] != nil && !snapshotIDs.contains($0.id) }
-    guard !localPendingTasks.isEmpty else { return snapshotTasks }
+    var merged = snapshotTasks.map { snapshotTask in
+      guard pendingRenames[snapshotTask.id] != nil,
+        let localTask = tasks.first(where: { $0.id == snapshotTask.id })
+      else {
+        return snapshotTask
+      }
+      return localTask
+    }
 
-    var merged = snapshotTasks
+    let mergedIDs = Set(merged.map(\.id))
+    let localPendingTasks = tasks.filter { pendingCreates[$0.id] != nil && !mergedIDs.contains($0.id) }
+    guard !localPendingTasks.isEmpty else { return merged }
+
     for pendingTask in localPendingTasks {
       let anchor = pendingCreates[pendingTask.id]?.anchor.taskID
       let orderedIDs = TimelineProjectTaskManualOrderStore.insertedTaskIDs(
@@ -302,15 +314,17 @@ struct TimelineProjectListSession {
       draftAnchor = nil
       focusedDraftAnchor = nil
     }
+    pendingRenames = pendingRenames.filter { taskIDs.contains($0.key) }
   }
 }
 
-actor TimelineProjectListWriteQueue {
+@MainActor
+final class TimelineProjectListWriteQueue {
   private var tail: Task<Void, Never>?
 
-  func enqueue(_ operation: @escaping @Sendable () async -> Void) {
+  func enqueue(_ operation: @escaping @MainActor () async -> Void) {
     let previous = tail
-    let next = Task {
+    let next = Task { @MainActor in
       await previous?.value
       await operation()
     }
