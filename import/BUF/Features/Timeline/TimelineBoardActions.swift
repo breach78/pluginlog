@@ -190,6 +190,7 @@ extension TimelineBoardView {
         id: result.taskID,
         title: timelinePreviewTitle(for: title),
         dateText: nil,
+        notePreviewText: nil,
         isCompleted: false,
         isOverdue: false
       )
@@ -243,6 +244,7 @@ extension TimelineBoardView {
         id: taskID,
         title: timelinePreviewTitle(for: title),
         dateText: timelineProjectListDateText(for: entry),
+        notePreviewText: TimelineProjectListWindowSnapshotFactory.notePreviewText(for: entry),
         isCompleted: entry.isCompleted,
         isOverdue: timelineProjectListEntryIsOverdue(entry)
       )
@@ -396,6 +398,9 @@ extension TimelineBoardView {
         id: created.id,
         title: timelinePreviewTitle(for: snapshot.fields.title),
         dateText: nil,
+        notePreviewText: TimelineProjectListWindowSnapshotFactory.notePreviewText(
+          for: snapshot.fields.noteText
+        ),
         isCompleted: snapshot.isCompleted,
         isOverdue: false
       )

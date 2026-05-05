@@ -793,6 +793,34 @@ final class TimelineBoardReadPathTests: XCTestCase {
     XCTAssertEqual(TimelineProjectListWindowSnapshotFactory.dateText(for: entry), "05-19 13:45")
   }
 
+  func testProjectListTaskSnapshotIncludesTrimmedNotePreviewText() {
+    let entry = makeScheduleEntry(
+      taskID: UUID(),
+      title: "Task",
+      rowOrder: 0,
+      hasReminderNoteContent: true,
+      reminderNoteText: "\n  first line\nsecond line  \n"
+    )
+
+    let task = TimelineProjectListWindowSnapshotFactory.taskSnapshot(for: entry)
+
+    XCTAssertEqual(task.notePreviewText, "first line\nsecond line")
+  }
+
+  func testProjectListTaskSnapshotSkipsEmptyNotePreviewText() {
+    let entry = makeScheduleEntry(
+      taskID: UUID(),
+      title: "Task",
+      rowOrder: 0,
+      hasReminderNoteContent: true,
+      reminderNoteText: " \n "
+    )
+
+    let task = TimelineProjectListWindowSnapshotFactory.taskSnapshot(for: entry)
+
+    XCTAssertNil(task.notePreviewText)
+  }
+
   func testScheduleSourceSignatureIgnoresNoteBodyWhenVisibleMetadataIsUnchanged() {
     let projectID = UUID()
     let taskID = UUID()
@@ -978,6 +1006,7 @@ final class TimelineBoardReadPathTests: XCTestCase {
       id: id,
       title: "Task",
       dateText: nil,
+      notePreviewText: nil,
       isCompleted: isCompleted,
       isOverdue: false
     )

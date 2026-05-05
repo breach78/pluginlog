@@ -12,6 +12,7 @@ struct TimelineProjectListWindowSnapshot: Equatable {
     let id: UUID
     let title: String
     let dateText: String?
+    let notePreviewText: String?
     let isCompleted: Bool
     let isOverdue: Bool
   }
@@ -273,6 +274,7 @@ struct TimelineProjectListContent: View {
   @State private var deletingTaskIDs: Set<UUID> = []
   @State private var movingTaskIDs: Set<UUID> = []
   @State private var showsCompletedTasks = false
+  @State private var showsTaskNotes = false
   @State private var writeQueue = TimelineProjectListWriteQueue()
   @State private var expandedTaskID: UUID?
 
@@ -431,6 +433,18 @@ struct TimelineProjectListContent: View {
       .help(showsCompletedTasks ? "완료항목 숨기기" : "완료항목 보기")
       .accessibilityLabel("완료항목 보기")
 
+      Button {
+        toggleTaskNotes()
+      } label: {
+        Image(systemName: "note.text")
+          .font(.system(size: 13, weight: .semibold))
+          .foregroundStyle(showsTaskNotes ? projectColor : Color.secondary)
+          .frame(width: 24, height: 24)
+      }
+      .buttonStyle(.borderless)
+      .help(showsTaskNotes ? "노트 미리보기 숨기기" : "노트 미리보기 보기")
+      .accessibilityLabel("노트 미리보기")
+
       Text("\(visibleTasks.count)")
         .font(projectListCountFont)
         .foregroundStyle(.secondary)
@@ -556,21 +570,31 @@ struct TimelineProjectListContent: View {
   }
 
   private func taskTitleContent(_ task: TimelineProjectListWindowSnapshot.Task) -> some View {
-    HStack(alignment: .firstTextBaseline, spacing: 8) {
-      Text(task.title)
-        .font(projectListBodyFont)
-        .foregroundStyle(task.isCompleted ? Color.secondary : Color.primary)
-        .strikethrough(task.isCompleted, color: Color.secondary.opacity(0.55))
-        .lineLimit(3)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .layoutPriority(1)
+    VStack(alignment: .leading, spacing: 5) {
+      HStack(alignment: .firstTextBaseline, spacing: 8) {
+        Text(task.title)
+          .font(projectListBodyFont)
+          .foregroundStyle(task.isCompleted ? Color.secondary : Color.primary)
+          .strikethrough(task.isCompleted, color: Color.secondary.opacity(0.55))
+          .lineLimit(3)
+          .frame(maxWidth: .infinity, alignment: .leading)
+          .layoutPriority(1)
 
-      if let dateText = task.dateText {
-        Text(dateText)
-          .font(projectListDateFont)
-          .foregroundStyle(task.isOverdue ? Color.red : Color.secondary)
-          .lineLimit(1)
-          .fixedSize(horizontal: true, vertical: false)
+        if let dateText = task.dateText {
+          Text(dateText)
+            .font(projectListDateFont)
+            .foregroundStyle(task.isOverdue ? Color.red : Color.secondary)
+            .lineLimit(1)
+            .fixedSize(horizontal: true, vertical: false)
+        }
+      }
+
+      if showsTaskNotes, let notePreviewText = task.notePreviewText {
+        Text(notePreviewText)
+          .font(projectListNoteFont)
+          .foregroundStyle(Color.secondary)
+          .lineLimit(6)
+          .frame(maxWidth: .infinity, alignment: .leading)
       }
     }
   }
@@ -801,6 +825,12 @@ struct TimelineProjectListContent: View {
     cancelInlineEditing()
     cancelDraftIfEmpty()
     showsCompletedTasks.toggle()
+  }
+
+  private func toggleTaskNotes() {
+    cancelInlineEditing()
+    cancelDraftIfEmpty()
+    showsTaskNotes.toggle()
   }
 
   private func requestProjectRename() {
@@ -1082,6 +1112,15 @@ struct TimelineProjectListContent: View {
       return .system(size: 11)
     case .embedded:
       return AppInputTypography.font(size: Self.embeddedTextSize)
+    }
+  }
+
+  private var projectListNoteFont: Font {
+    switch presentation {
+    case .window:
+      return .system(size: 11)
+    case .embedded:
+      return AppInputTypography.font(size: max(Self.embeddedTextSize - 1, 10))
     }
   }
 

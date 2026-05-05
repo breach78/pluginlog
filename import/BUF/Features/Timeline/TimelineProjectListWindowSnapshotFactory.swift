@@ -46,9 +46,20 @@ enum TimelineProjectListWindowSnapshotFactory {
       id: entry.taskID,
       title: TimelineBoardReadPath.timelinePreviewTitle(for: entry.title),
       dateText: dateText(for: entry),
+      notePreviewText: notePreviewText(for: entry),
       isCompleted: entry.isCompleted,
       isOverdue: isOverdue(entry, calendar: calendar)
     )
+  }
+
+  static func notePreviewText(for entry: ScheduleSliceEntry) -> String? {
+    guard entry.hasReminderNoteContent else { return nil }
+    return notePreviewText(for: entry.reminderNoteText)
+  }
+
+  static func notePreviewText(for noteText: String) -> String? {
+    let text = noteText.trimmingCharacters(in: .whitespacesAndNewlines)
+    return text.isEmpty ? nil : text
   }
 
   static func dateText(for entry: ScheduleSliceEntry) -> String? {

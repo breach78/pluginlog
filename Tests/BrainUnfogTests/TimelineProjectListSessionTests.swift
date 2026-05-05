@@ -271,6 +271,7 @@ final class TimelineProjectListSessionTests: XCTestCase {
       id: id,
       title: title,
       dateText: nil,
+      notePreviewText: nil,
       isCompleted: isCompleted,
       isOverdue: false
     )
