@@ -66,6 +66,17 @@ struct TimelineProjectListActions {
   }
 }
 
+struct TimelineProjectListInlineEditorConfiguration {
+  let initialExpandedTaskID: UUID?
+  let workspaceTreeRevision: Int
+  let vaultRootURL: URL?
+  let initialFields: (TimelineProjectListWindowSnapshot.Task) -> RetainedTaskEditFields
+  let loadFields: (UUID, RetainedTaskEditFields) async -> RetainedTaskEditFields
+  let saveFields: (UUID, RetainedTaskEditFields) async throws -> Void
+  let onSyncEditingChanged: (UUID, Bool) -> Void
+  let onSyncEditingActivity: () -> Void
+}
+
 enum TimelineProjectListTaskOrderPolicy {
   static func reorderedTasks(
     _ orderedTaskIDs: [UUID],
@@ -252,6 +263,8 @@ struct TimelineProjectListContent: View {
   let presentation: TimelineProjectListPresentation
   let actions: TimelineProjectListActions
   let onOpenProjectWindow: (() -> Void)?
+  let onClosePanel: (() -> Void)?
+  let inlineEditorConfiguration: TimelineProjectListInlineEditorConfiguration?
 
   @ObservedObject private var sessionStore: TimelineProjectListSessionStore
   @State private var isCreatingTask = false
@@ -261,21 +274,27 @@ struct TimelineProjectListContent: View {
   @State private var movingTaskIDs: Set<UUID> = []
   @State private var showsCompletedTasks = false
   @State private var writeQueue = TimelineProjectListWriteQueue()
+  @State private var expandedTaskID: UUID?
 
   init(
     snapshot: TimelineProjectListWindowSnapshot,
     presentation: TimelineProjectListPresentation = .window,
     actions: TimelineProjectListActions,
     onOpenProjectWindow: (() -> Void)? = nil,
+    onClosePanel: (() -> Void)? = nil,
+    inlineEditorConfiguration: TimelineProjectListInlineEditorConfiguration? = nil,
     sessionStore: TimelineProjectListSessionStore? = nil
   ) {
     self.snapshot = snapshot
     self.presentation = presentation
     self.actions = actions
     self.onOpenProjectWindow = onOpenProjectWindow
+    self.onClosePanel = onClosePanel
+    self.inlineEditorConfiguration = inlineEditorConfiguration
     _sessionStore = ObservedObject(
       wrappedValue: sessionStore ?? TimelineProjectListSessionStore(snapshot: snapshot)
     )
+    _expandedTaskID = State(initialValue: inlineEditorConfiguration?.initialExpandedTaskID)
   }
 
   func replacing(snapshot: TimelineProjectListWindowSnapshot) -> TimelineProjectListContent {
@@ -285,6 +304,8 @@ struct TimelineProjectListContent: View {
       presentation: presentation,
       actions: actions,
       onOpenProjectWindow: onOpenProjectWindow,
+      onClosePanel: onClosePanel,
+      inlineEditorConfiguration: inlineEditorConfiguration,
       sessionStore: sessionStore
     )
   }
@@ -329,6 +350,9 @@ struct TimelineProjectListContent: View {
                     onPerformDrop: commitTaskDrop
                   )
                 )
+              if expandedTaskID == task.id {
+                inlineTaskEditor(for: task)
+              }
               dropLine(for: task, placement: .after)
               if session.draftAnchor == .after(task.id) {
                 draftRow(anchor: .after(task.id))
@@ -356,6 +380,10 @@ struct TimelineProjectListContent: View {
     }
     .onChange(of: snapshot) { _, nextSnapshot in
       sessionStore.applySnapshot(nextSnapshot)
+      guard let expandedTaskID else { return }
+      if !nextSnapshot.tasks.contains(where: { $0.id == expandedTaskID }) {
+        self.expandedTaskID = nil
+      }
     }
   }
 
@@ -375,6 +403,19 @@ struct TimelineProjectListContent: View {
             Label("이름 변경", systemImage: "pencil")
           }
         }
+
+      if let onClosePanel {
+        Button {
+          onClosePanel()
+        } label: {
+          Image(systemName: "xmark")
+            .font(.system(size: 13, weight: .semibold))
+            .frame(width: 22, height: 22)
+        }
+        .buttonStyle(.borderless)
+        .foregroundStyle(.secondary)
+        .help("닫기")
+      }
 
       if let onOpenProjectWindow {
         Button {
@@ -466,9 +507,9 @@ struct TimelineProjectListContent: View {
       Button("제목 수정") {
         startEditing(task)
       }
-      Button("패널 열기") {
+      Button(inlineEditorConfiguration == nil ? "패널 열기" : "편집 열기") {
         cancelInlineEditing()
-        actions.onEditTask(task.id)
+        openTask(task)
       }
       moveTaskMenu(for: task)
       Divider()
@@ -543,9 +584,55 @@ struct TimelineProjectListContent: View {
         before: TapGesture(count: 1)
           .onEnded {
             cancelInlineEditing()
-            actions.onEditTask(task.id)
+            openTask(task)
           }
       )
+  }
+
+  @ViewBuilder
+  private func inlineTaskEditor(
+    for task: TimelineProjectListWindowSnapshot.Task
+  ) -> some View {
+    if let configuration = inlineEditorConfiguration {
+      TimelineTaskEditPopoverContent(
+        initialFields: configuration.initialFields(task),
+        presentationStyle: .inlinePanel,
+        reloadToken: TaskEditReloadToken.workspacePanel(
+          projectID: snapshot.projectID,
+          taskID: task.id,
+          workspaceTreeRevision: configuration.workspaceTreeRevision
+        ),
+        vaultRootURL: configuration.vaultRootURL,
+        loadFields: {
+          await configuration.loadFields(task.id, configuration.initialFields(task))
+        },
+        saveFields: { fields in
+          try await configuration.saveFields(task.id, fields)
+        },
+        onSyncEditingChanged: { isEditing in
+          configuration.onSyncEditingChanged(task.id, isEditing)
+        },
+        onSyncEditingActivity: configuration.onSyncEditingActivity,
+        onCancel: {
+          if expandedTaskID == task.id {
+            expandedTaskID = nil
+          }
+        }
+      )
+      .id(task.id)
+      .padding(.leading, 32)
+      .padding(.trailing, 12)
+      .padding(.bottom, 10)
+    }
+  }
+
+  private func openTask(_ task: TimelineProjectListWindowSnapshot.Task) {
+    if inlineEditorConfiguration != nil {
+      cancelDraftIfEmpty()
+      expandedTaskID = expandedTaskID == task.id ? nil : task.id
+      return
+    }
+    actions.onEditTask(task.id)
   }
 
   private func inlineTitleEditor(

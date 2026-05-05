@@ -32,6 +32,7 @@ enum TaskEditSyncSessionID {
 enum TimelineTaskEditPresentationStyle {
   case popover
   case panel
+  case inlinePanel
 }
 
 private struct PendingAttachmentRename: Identifiable, Equatable {
@@ -226,49 +227,60 @@ struct TimelineTaskEditPopoverContent: View {
       }
       .background(TaskEditFieldStyle.panelBackgroundColor)
       .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    case .inlinePanel:
+      formContent
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .topLeading)
+        .background(TaskEditFieldStyle.panelBackgroundColor)
     }
   }
 
   private var formContent: some View {
     VStack(alignment: .leading, spacing: 13) {
-      HStack(spacing: 8) {
-        Spacer(minLength: 0)
-        if isLoading || isSaving {
-          ProgressView()
-            .controlSize(.small)
+      if presentationStyle != .inlinePanel {
+        HStack(spacing: 8) {
+          Spacer(minLength: 0)
+          if isLoading || isSaving {
+            ProgressView()
+              .controlSize(.small)
+          }
+          Button {
+            closeEditor()
+          } label: {
+            Image(systemName: "xmark")
+              .font(.system(size: 14, weight: .semibold))
+              .frame(width: 28, height: 28)
+          }
+          .buttonStyle(.plain)
+          .help("닫기")
         }
-        Button {
-          closeEditor()
-        } label: {
-          Image(systemName: "xmark")
-            .font(.system(size: 14, weight: .semibold))
-            .frame(width: 28, height: 28)
+      }
+
+      if presentationStyle != .inlinePanel {
+        VStack(alignment: .leading, spacing: 6) {
+          Text("제목")
+            .font(TaskEditTypography.labelFont)
+            .foregroundStyle(.secondary)
+          LinkedTextEditor(
+            text: $title,
+            measuredHeight: $titleHeight,
+            font: TaskEditTypography.titleNSFont,
+            vaultRootURL: vaultRootURL,
+            allowsNewlines: false,
+            lineHeightMultiple: 1
+          )
+          .frame(minHeight: TaskEditTypography.titleMinimumHeight)
+          .frame(height: max(TaskEditTypography.titleMinimumHeight, titleHeight))
+          .taskEditFieldBackground(cornerRadius: 4, topPadding: 8, bottomPadding: 4)
         }
-        .buttonStyle(.plain)
-        .help("닫기")
       }
 
       VStack(alignment: .leading, spacing: 6) {
-        Text("제목")
-          .font(TaskEditTypography.labelFont)
-          .foregroundStyle(.secondary)
-        LinkedTextEditor(
-          text: $title,
-          measuredHeight: $titleHeight,
-          font: TaskEditTypography.titleNSFont,
-          vaultRootURL: vaultRootURL,
-          allowsNewlines: false,
-          lineHeightMultiple: 1
-        )
-        .frame(minHeight: TaskEditTypography.titleMinimumHeight)
-        .frame(height: max(TaskEditTypography.titleMinimumHeight, titleHeight))
-        .taskEditFieldBackground(cornerRadius: 4, topPadding: 8, bottomPadding: 4)
-      }
-
-      VStack(alignment: .leading, spacing: 6) {
-        Text("내용")
-          .font(TaskEditTypography.labelFont)
-          .foregroundStyle(.secondary)
+        if presentationStyle != .inlinePanel {
+          Text("내용")
+            .font(TaskEditTypography.labelFont)
+            .foregroundStyle(.secondary)
+        }
         LinkedTextEditor(
           text: $noteText,
           measuredHeight: $noteHeight,

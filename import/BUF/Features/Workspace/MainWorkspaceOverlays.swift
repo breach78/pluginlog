@@ -92,39 +92,39 @@ extension MainWorkspaceView {
   }
 
   func workspaceTaskEditPanel(_ target: WorkspaceTaskEditPanelTarget) -> some View {
-    let syncSessionID = TaskEditSyncSessionID.workspacePanel(
-      projectID: target.projectID,
-      taskID: target.taskID
-    )
-    return TimelineTaskEditPopoverContent(
-      initialFields: target.initialFields,
-      presentationStyle: .panel,
-      reloadToken: TaskEditReloadToken.workspacePanel(
-        projectID: target.projectID,
-        taskID: target.taskID,
-        workspaceTreeRevision: appState.workspaceTreeRevision
-      ),
+    let inlineEditorConfiguration = TimelineProjectListInlineEditorConfiguration(
+      initialExpandedTaskID: target.taskID,
+      workspaceTreeRevision: appState.workspaceTreeRevision,
       vaultRootURL: appState.obsidianVaultRootURL,
-      loadFields: {
+      initialFields: { task in
+        task.id == target.taskID
+          ? target.initialFields
+          : timelineTaskEditFallbackFields(title: task.title, date: nil)
+      },
+      loadFields: { taskID, fallback in
         await loadTimelineTaskEditFields(
           projectID: target.projectID,
-          taskID: target.taskID,
-          fallback: target.initialFields
+          taskID: taskID,
+          fallback: fallback
         )
       },
-      saveFields: { fields in
+      saveFields: { taskID, fields in
         try await saveTimelineTaskEditFields(
           fields,
           projectID: target.projectID,
-          taskID: target.taskID
+          taskID: taskID
         )
       },
-      onSyncEditingChanged: { isEditing in
+      onSyncEditingChanged: { taskID, isEditing in
+        let syncSessionID = TaskEditSyncSessionID.workspacePanel(
+          projectID: target.projectID,
+          taskID: taskID
+        )
         if isEditing {
           appState.beginEditorSession(
             id: syncSessionID,
             syncRelevant: true,
-            contentID: target.taskID,
+            contentID: taskID,
             projectID: target.projectID
           )
         } else {
@@ -133,23 +133,23 @@ extension MainWorkspaceView {
       },
       onSyncEditingActivity: {
         appState.notifyEditorActivity()
+      }
+    )
+
+    return WorkspaceTaskEditProjectListHost(
+      projectID: target.projectID,
+      workspaceTreeRevision: appState.workspaceTreeRevision,
+      deferReload: appState.isEditorActive,
+      loadSnapshot: { projectID in
+        await workspaceProjectListWindowSnapshot(projectID: projectID)
       },
-      bottomContent: AnyView(
-        WorkspaceTaskEditProjectListHost(
-          projectID: target.projectID,
-          workspaceTreeRevision: appState.workspaceTreeRevision,
-          deferReload: appState.isEditorActive,
-          loadSnapshot: { projectID in
-            await workspaceProjectListWindowSnapshot(projectID: projectID)
-          },
-          actions: workspaceProjectListActions(projectID: target.projectID),
-          onOpenProjectWindow: {
-            openWorkspaceTaskProjectListWindow(for: target)
-          }
-        )
-      ),
-      onCancel: {
+      actions: workspaceProjectListActions(projectID: target.projectID),
+      inlineEditorConfiguration: inlineEditorConfiguration,
+      onClosePanel: {
         dismissTimelineTaskEditor()
+      },
+      onOpenProjectWindow: {
+        openWorkspaceTaskProjectListWindow(for: target)
       }
     )
     .id("\(target.projectID.uuidString)-\(target.taskID.uuidString)")
@@ -605,6 +605,8 @@ private struct WorkspaceTaskEditProjectListHost: View {
   let deferReload: Bool
   let loadSnapshot: (UUID) async -> TimelineProjectListWindowSnapshot?
   let actions: TimelineProjectListActions
+  let inlineEditorConfiguration: TimelineProjectListInlineEditorConfiguration?
+  let onClosePanel: () -> Void
   let onOpenProjectWindow: () -> Void
 
   @State private var snapshot: TimelineProjectListWindowSnapshot?
@@ -620,9 +622,11 @@ private struct WorkspaceTaskEditProjectListHost: View {
           presentation: .embedded,
           actions: actions,
           onOpenProjectWindow: onOpenProjectWindow,
+          onClosePanel: onClosePanel,
+          inlineEditorConfiguration: inlineEditorConfiguration,
           sessionStore: sessionStore
         )
-        .frame(height: 1080, alignment: .topLeading)
+        .frame(maxHeight: .infinity, alignment: .topLeading)
         .clipped()
       } else if isLoading {
         ProgressView()
