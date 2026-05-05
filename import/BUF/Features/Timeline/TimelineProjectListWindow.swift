@@ -589,11 +589,13 @@ struct TimelineProjectListContent: View {
         }
       }
 
-      if showsTaskNotes, let notePreviewText = task.notePreviewText {
-        Text(notePreviewText)
+      if showsTaskNotes,
+        expandedTaskID != task.id,
+        let notePreviewText = task.notePreviewText
+      {
+        TimelineProjectListNotePreviewText(markdown: notePreviewText)
           .font(projectListNoteFont)
           .foregroundStyle(Color.secondary)
-          .lineLimit(6)
           .frame(maxWidth: .infinity, alignment: .leading)
       }
     }
@@ -1149,6 +1151,28 @@ private struct TimelineProjectListHiddenDragPreview: View {
     Color.clear
       .frame(width: 1, height: 1)
       .accessibilityHidden(true)
+  }
+}
+
+private struct TimelineProjectListNotePreviewText: View {
+  let markdown: String
+
+  var body: some View {
+    renderedText
+      .fixedSize(horizontal: false, vertical: true)
+  }
+
+  private var renderedText: Text {
+    guard let attributed = try? AttributedString(
+      markdown: markdown,
+      options: AttributedString.MarkdownParsingOptions(
+        interpretedSyntax: .full,
+        failurePolicy: .returnPartiallyParsedIfPossible
+      )
+    ) else {
+      return Text(markdown)
+    }
+    return Text(attributed)
   }
 }
 
