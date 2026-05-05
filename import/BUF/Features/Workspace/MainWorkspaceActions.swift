@@ -990,7 +990,6 @@ extension MainWorkspaceView {
           )
         }
       }
-      selectProjectContext(projectID)
     }
   }
 

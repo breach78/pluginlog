@@ -529,16 +529,12 @@ extension ScheduleBoardView {
     .clipped()
     .contentShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
     .onTapGesture(count: 2) {
-      guard shouldHandleTaskTap() else { return }
-      guard !taskRow.isLocalCompletedRecurringOccurrence else { return }
-      revealScheduleTask(taskID: taskRow.id, projectID: taskDescriptor.projectID)
+      handleScheduleTaskDetailTap(taskDescriptor)
     }
     .simultaneousGesture(
       TapGesture()
         .onEnded {
-          guard shouldHandleTaskTap() else { return }
-          guard !taskRow.isLocalCompletedRecurringOccurrence else { return }
-          showScheduleTaskEditor(taskDescriptor)
+          handleScheduleTaskPrimaryTap(taskDescriptor)
         }
     )
     .contextMenu {
@@ -945,16 +941,12 @@ extension ScheduleBoardView {
     }
     .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
     .onTapGesture(count: 2) {
-      guard shouldHandleTaskTap() else { return }
-      guard !taskRow.isLocalCompletedRecurringOccurrence else { return }
-      revealScheduleTask(taskID: taskRow.id, projectID: taskDescriptor.projectID)
+      handleScheduleTaskDetailTap(taskDescriptor)
     }
     .simultaneousGesture(
       TapGesture()
         .onEnded {
-          guard shouldHandleTaskTap() else { return }
-          guard !taskRow.isLocalCompletedRecurringOccurrence else { return }
-          showScheduleTaskEditor(taskDescriptor)
+          handleScheduleTaskPrimaryTap(taskDescriptor)
         }
     )
     .contextMenu {

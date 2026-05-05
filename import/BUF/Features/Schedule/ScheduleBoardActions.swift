@@ -1051,6 +1051,23 @@ extension ScheduleBoardView {
     showScheduleTaskEditor(taskDescriptor)
   }
 
+  func handleScheduleTaskPrimaryTap(_ taskDescriptor: WorkspaceScheduleTaskDescriptor) {
+    DispatchQueue.main.async {
+      guard shouldHandleTaskTap() else { return }
+      guard !taskDescriptor.taskRow.isLocalCompletedRecurringOccurrence else { return }
+      showScheduleTaskEditor(taskDescriptor)
+    }
+  }
+
+  func handleScheduleTaskDetailTap(_ taskDescriptor: WorkspaceScheduleTaskDescriptor) {
+    DispatchQueue.main.async {
+      let taskRow = taskDescriptor.taskRow
+      guard shouldHandleTaskTap() else { return }
+      guard !taskRow.isLocalCompletedRecurringOccurrence else { return }
+      revealScheduleTask(taskID: taskRow.id, projectID: taskDescriptor.projectID)
+    }
+  }
+
   func showScheduleTaskEditor(_ taskDescriptor: WorkspaceScheduleTaskDescriptor) {
     let taskRow = taskDescriptor.taskRow
     selectedScheduleTaskID = taskRow.id
@@ -1227,7 +1244,10 @@ extension ScheduleBoardView {
   }
 
   func shouldHandleTaskTap() -> Bool {
-    Date() >= suppressedTaskTapUntil
+    ScheduleTaskTapSuppressionPolicy.shouldHandleTaskTap(
+      now: Date(),
+      suppressedUntil: suppressedTaskTapUntil
+    )
   }
 
   func postponeScheduleAction(

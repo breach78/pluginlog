@@ -69,4 +69,21 @@ final class ScheduleBoardHostingInvalidationPolicyTests: XCTestCase {
     XCTAssertNotEqual(baseVersion, changedLayoutVersion)
     XCTAssertNotEqual(baseVersion, changedSelectionVersion)
   }
+
+  func testTaskTapSuppressionBlocksParentTapDuringCompletionControlWindow() {
+    let now = Date(timeIntervalSinceReferenceDate: 10)
+
+    XCTAssertFalse(
+      ScheduleTaskTapSuppressionPolicy.shouldHandleTaskTap(
+        now: now,
+        suppressedUntil: now.addingTimeInterval(0.2)
+      )
+    )
+    XCTAssertTrue(
+      ScheduleTaskTapSuppressionPolicy.shouldHandleTaskTap(
+        now: now.addingTimeInterval(0.21),
+        suppressedUntil: now.addingTimeInterval(0.2)
+      )
+    )
+  }
 }

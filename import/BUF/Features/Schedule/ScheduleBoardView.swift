@@ -581,6 +581,12 @@ enum ScheduleBoardHostingInvalidationPolicy {
   }
 }
 
+enum ScheduleTaskTapSuppressionPolicy {
+  static func shouldHandleTaskTap(now: Date, suppressedUntil: Date) -> Bool {
+    now >= suppressedUntil
+  }
+}
+
 struct ScheduleBoardView: View {
   static let dayHeaderWeekdayFormatter: DateFormatter = {
     let formatter = DateFormatter()
