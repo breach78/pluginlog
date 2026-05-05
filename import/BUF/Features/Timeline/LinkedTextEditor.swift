@@ -130,7 +130,7 @@ struct LinkedTextEditor: NSViewRepresentable {
       parent.text = textView.string
       textView.typingAttributes = baseAttributes()
       scheduleAttributeRefresh(for: textView)
-      scheduleMeasuredHeightUpdate()
+      refreshMeasuredHeightAfterUserEdit()
     }
 
     func textView(
@@ -143,7 +143,7 @@ struct LinkedTextEditor: NSViewRepresentable {
         let replacementString
       {
         let isEditingAtEnd = affectedCharRange.upperBound >= textView.string.utf16.count
-        if replacementString.contains(where: \.isNewline), isEditingAtEnd {
+        if !replacementString.isEmpty, isEditingAtEnd {
           pendingTrailingInputReserveExpansion = true
         } else if affectedCharRange.length > 0 || !isEditingAtEnd {
           clearTrailingInputReserve()
@@ -204,7 +204,7 @@ struct LinkedTextEditor: NSViewRepresentable {
       parent.text = textView.string
       textView.typingAttributes = baseAttributes()
       scheduleAttributeRefresh(for: textView)
-      scheduleMeasuredHeightUpdate()
+      refreshMeasuredHeightAfterUserEdit()
       return true
     }
 
@@ -306,6 +306,14 @@ struct LinkedTextEditor: NSViewRepresentable {
         try? await Task.sleep(nanoseconds: Self.heightMeasurementDelayNanoseconds)
         guard !Task.isCancelled, let self else { return }
         self.updateMeasuredHeight()
+      }
+    }
+
+    func refreshMeasuredHeightAfterUserEdit() {
+      if parent.trailingInputReserveLineCount > 0 {
+        updateMeasuredHeight()
+      } else {
+        scheduleMeasuredHeightUpdate()
       }
     }
 

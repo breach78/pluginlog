@@ -288,7 +288,9 @@ struct TimelineTaskEditPopoverContent: View {
           vaultRootURL: vaultRootURL,
           allowsNewlines: true,
           lineHeightMultiple: 1.1,
-          allowsMailMessageDrops: true
+          allowsMailMessageDrops: true,
+          trailingInputReserveLineCount: noteTrailingInputReserveLineCount,
+          trailingInputReserveActivationHeight: TaskEditTypography.noteMinimumHeight
         )
         .frame(minHeight: TaskEditTypography.noteMinimumHeight)
         .frame(height: max(TaskEditTypography.noteMinimumHeight, noteHeight))
@@ -488,6 +490,10 @@ struct TimelineTaskEditPopoverContent: View {
 
   private var attachmentItems: [TaskEditAttachment] {
     attachments
+  }
+
+  private var noteTrailingInputReserveLineCount: Int {
+    presentationStyle == .inlinePanel ? 2 : 0
   }
 
   private var selectedDateText: String {

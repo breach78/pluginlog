@@ -404,19 +404,6 @@ struct TimelineProjectListContent: View {
           }
         }
 
-      if let onClosePanel {
-        Button {
-          onClosePanel()
-        } label: {
-          Image(systemName: "xmark")
-            .font(.system(size: 13, weight: .semibold))
-            .frame(width: 22, height: 22)
-        }
-        .buttonStyle(.borderless)
-        .foregroundStyle(.secondary)
-        .help("닫기")
-      }
-
       if let onOpenProjectWindow {
         Button {
           onOpenProjectWindow()
@@ -458,6 +445,19 @@ struct TimelineProjectListContent: View {
       .buttonStyle(.borderless)
       .disabled(isCreatingTask)
       .help("할일 추가")
+
+      if let onClosePanel {
+        Button {
+          onClosePanel()
+        } label: {
+          Image(systemName: "xmark")
+            .font(.system(size: 13, weight: .semibold))
+            .frame(width: 24, height: 24)
+        }
+        .buttonStyle(.borderless)
+        .foregroundStyle(.secondary)
+        .help("닫기")
+      }
     }
     .padding(.horizontal, 18)
     .padding(.vertical, 14)
