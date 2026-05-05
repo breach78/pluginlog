@@ -593,9 +593,10 @@ struct TimelineProjectListContent: View {
         expandedTaskID != task.id,
         let notePreviewText = task.notePreviewText
       {
-        TimelineProjectListNotePreviewText(markdown: notePreviewText)
-          .font(projectListNoteFont)
-          .foregroundStyle(Color.secondary)
+        TimelineProjectListNotePreviewText(
+          markdown: notePreviewText,
+          presentation: presentation
+        )
           .frame(maxWidth: .infinity, alignment: .leading)
       }
     }
@@ -1117,15 +1118,6 @@ struct TimelineProjectListContent: View {
     }
   }
 
-  private var projectListNoteFont: Font {
-    switch presentation {
-    case .window:
-      return .system(size: 11)
-    case .embedded:
-      return AppInputTypography.font(size: max(Self.embeddedTextSize - 1, 10))
-    }
-  }
-
   private var projectListEmptyStateFont: Font {
     switch presentation {
     case .window:
@@ -1143,7 +1135,7 @@ struct TimelineProjectListContent: View {
     session.openTaskIDs
   }
 
-  private static let embeddedTextSize: CGFloat = 12 * 1.3 * 0.9
+  fileprivate static let embeddedTextSize: CGFloat = 12 * 1.3 * 0.9
 }
 
 private struct TimelineProjectListHiddenDragPreview: View {
@@ -1156,23 +1148,169 @@ private struct TimelineProjectListHiddenDragPreview: View {
 
 private struct TimelineProjectListNotePreviewText: View {
   let markdown: String
+  let presentation: TimelineProjectListPresentation
 
   var body: some View {
-    renderedText
+    VStack(alignment: .leading, spacing: 5) {
+      ForEach(renderLines) { line in
+        renderedLine(line)
+      }
+    }
       .fixedSize(horizontal: false, vertical: true)
   }
 
-  private var renderedText: Text {
+  @ViewBuilder
+  private func renderedLine(_ line: MarkdownLine) -> some View {
+    switch line.kind {
+    case .blank:
+      Color.clear
+        .frame(height: 4)
+    case .heading(let level, let text):
+      inlineText(text)
+        .font(headingFont(level: level))
+        .foregroundStyle(Color.secondary)
+        .frame(maxWidth: .infinity, alignment: .leading)
+    case .listItem(let marker, let text, let level):
+      HStack(alignment: .firstTextBaseline, spacing: 6) {
+        Text(marker)
+          .font(bodyFont.monospacedDigit())
+          .foregroundStyle(Color.secondary.opacity(0.7))
+          .frame(width: 25, alignment: .trailing)
+        inlineText(text)
+          .font(bodyFont)
+          .foregroundStyle(Color.secondary)
+          .frame(maxWidth: .infinity, alignment: .leading)
+      }
+      .padding(.leading, CGFloat(level) * 16)
+    case .paragraph(let text):
+      inlineText(text)
+        .font(bodyFont)
+        .foregroundStyle(Color.secondary)
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+  }
+
+  private func inlineText(_ markdown: String) -> Text {
     guard let attributed = try? AttributedString(
       markdown: markdown,
       options: AttributedString.MarkdownParsingOptions(
-        interpretedSyntax: .full,
+        interpretedSyntax: .inlineOnlyPreservingWhitespace,
         failurePolicy: .returnPartiallyParsedIfPossible
       )
     ) else {
       return Text(markdown)
     }
     return Text(attributed)
+  }
+
+  private var renderLines: [MarkdownLine] {
+    markdown
+      .components(separatedBy: .newlines)
+      .enumerated()
+      .map { index, line in MarkdownLine(id: index, rawLine: line) }
+  }
+
+  private var bodyFont: Font {
+    switch presentation {
+    case .window:
+      return .system(size: 11)
+    case .embedded:
+      return AppInputTypography.font(
+        size: max(TimelineProjectListContent.embeddedTextSize - 1, 10)
+      )
+    }
+  }
+
+  private func headingFont(level: Int) -> Font {
+    let scale: CGFloat
+    switch level {
+    case 1:
+      scale = 1.4
+    case 2:
+      scale = 1.3
+    case 3:
+      scale = 1.2
+    default:
+      scale = 1.08
+    }
+    switch presentation {
+    case .window:
+      return .system(size: 11 * scale, weight: .semibold)
+    case .embedded:
+      let size = max(TimelineProjectListContent.embeddedTextSize - 1, 10) * scale
+      return AppInputTypography.font(size: size, weight: .semibold)
+    }
+  }
+
+  private struct MarkdownLine: Identifiable {
+    enum Kind {
+      case blank
+      case heading(level: Int, text: String)
+      case listItem(marker: String, text: String, level: Int)
+      case paragraph(String)
+    }
+
+    let id: Int
+    let kind: Kind
+
+    init(id: Int, rawLine: String) {
+      self.id = id
+      let trimmed = rawLine.trimmingCharacters(in: .whitespaces)
+      guard !trimmed.isEmpty else {
+        kind = .blank
+        return
+      }
+      if let heading = Self.heading(from: rawLine) {
+        kind = heading
+        return
+      }
+      if let listItem = Self.listItem(from: rawLine) {
+        kind = listItem
+        return
+      }
+      kind = .paragraph(rawLine)
+    }
+
+    private static func heading(from line: String) -> Kind? {
+      let trimmed = line.trimmingCharacters(in: .whitespaces)
+      let level = trimmed.prefix { $0 == "#" }.count
+      guard (1...6).contains(level),
+        trimmed.dropFirst(level).first == " "
+      else {
+        return nil
+      }
+      return .heading(
+        level: level,
+        text: String(trimmed.dropFirst(level).dropFirst()).trimmingCharacters(in: .whitespaces)
+      )
+    }
+
+    private static func listItem(from line: String) -> Kind? {
+      let leadingSpaces = line.prefix { $0 == " " }.count
+      let trimmed = line.dropFirst(leadingSpaces)
+      if trimmed.hasPrefix("- ") {
+        return .listItem(
+          marker: "-",
+          text: String(trimmed.dropFirst(2)),
+          level: leadingSpaces / 4
+        )
+      }
+
+      let marker = trimmed.prefix { $0.isNumber || $0 == "." }
+      let digits = marker.dropLast()
+      guard marker.hasSuffix("."),
+        !digits.isEmpty,
+        digits.allSatisfy(\.isNumber),
+        trimmed.dropFirst(marker.count).first == " "
+      else {
+        return nil
+      }
+      return .listItem(
+        marker: String(marker),
+        text: String(trimmed.dropFirst(marker.count + 1)),
+        level: leadingSpaces / 4
+      )
+    }
   }
 }
 
