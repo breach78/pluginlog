@@ -432,6 +432,90 @@ enum TimelineHiddenProjectStore {
   }
 }
 
+struct TimelineProjectListDisplayPreferences: Codable, Equatable {
+  var showsCompletedTasks = false
+  var showsTaskNotes = false
+}
+
+enum TimelineProjectListDisplayPreferenceStore {
+  private static let storageKey = "workspace.timelineProjectListDisplayPreferencesByProject.v1"
+
+  static func load(
+    for projectID: UUID,
+    defaults: UserDefaults = .standard
+  ) -> TimelineProjectListDisplayPreferences {
+    loadAll(defaults: defaults)[projectID] ?? TimelineProjectListDisplayPreferences()
+  }
+
+  static func save(
+    _ preferences: TimelineProjectListDisplayPreferences,
+    for projectID: UUID,
+    defaults: UserDefaults = .standard
+  ) {
+    var preferencesByProjectID = loadAll(defaults: defaults)
+    if preferences == TimelineProjectListDisplayPreferences() {
+      preferencesByProjectID.removeValue(forKey: projectID)
+    } else {
+      preferencesByProjectID[projectID] = preferences
+    }
+    saveAll(preferencesByProjectID, defaults: defaults)
+  }
+
+  static func saveShowsCompletedTasks(
+    _ value: Bool,
+    for projectID: UUID,
+    defaults: UserDefaults = .standard
+  ) {
+    var preferences = load(for: projectID, defaults: defaults)
+    preferences.showsCompletedTasks = value
+    save(preferences, for: projectID, defaults: defaults)
+  }
+
+  static func saveShowsTaskNotes(
+    _ value: Bool,
+    for projectID: UUID,
+    defaults: UserDefaults = .standard
+  ) {
+    var preferences = load(for: projectID, defaults: defaults)
+    preferences.showsTaskNotes = value
+    save(preferences, for: projectID, defaults: defaults)
+  }
+
+  private static func loadAll(
+    defaults: UserDefaults
+  ) -> [UUID: TimelineProjectListDisplayPreferences] {
+    guard let data = defaults.data(forKey: storageKey),
+      let raw = try? JSONDecoder().decode(
+        [String: TimelineProjectListDisplayPreferences].self,
+        from: data
+      )
+    else {
+      return [:]
+    }
+    return raw.reduce(into: [UUID: TimelineProjectListDisplayPreferences]()) { result, item in
+      guard let projectID = UUID(uuidString: item.key) else { return }
+      result[projectID] = item.value
+    }
+  }
+
+  private static func saveAll(
+    _ preferencesByProjectID: [UUID: TimelineProjectListDisplayPreferences],
+    defaults: UserDefaults
+  ) {
+    guard !preferencesByProjectID.isEmpty else {
+      defaults.removeObject(forKey: storageKey)
+      return
+    }
+    let raw = Dictionary(
+      uniqueKeysWithValues: preferencesByProjectID.map { projectID, preferences in
+        (projectID.uuidString, preferences)
+      }
+    )
+    guard let data = try? JSONEncoder().encode(raw) else { return }
+    defaults.set(data, forKey: storageKey)
+  }
+}
+
 struct TimelineCompletedCountLayout: Identifiable {
   let id: String
   let date: Date

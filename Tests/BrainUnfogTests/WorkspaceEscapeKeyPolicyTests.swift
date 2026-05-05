@@ -2,22 +2,22 @@ import XCTest
 @testable import BrainUnfog
 
 final class WorkspaceEscapeKeyPolicyTests: XCTestCase {
-  func testTextResponderReleaseRunsBeforeOtherEscapeActions() {
+  func testActiveEditPanelTextResponderLetsEditorHandleEscapeBeforeWorkspaceActions() {
     XCTAssertEqual(
       WorkspaceEscapeKeyPolicy.action(
-        didReleaseTextResponder: true,
+        hasActiveEditPanelTextResponder: true,
         hasSearchQuery: true,
         hasInspectorSelection: true,
         hasEditPanel: true
       ),
-      .releaseTextResponder
+      .passThrough
     )
   }
 
   func testSearchClearRunsBeforePanelDismissals() {
     XCTAssertEqual(
       WorkspaceEscapeKeyPolicy.action(
-        didReleaseTextResponder: false,
+        hasActiveEditPanelTextResponder: false,
         hasSearchQuery: true,
         hasInspectorSelection: true,
         hasEditPanel: true
@@ -29,7 +29,7 @@ final class WorkspaceEscapeKeyPolicyTests: XCTestCase {
   func testInspectorDismissRunsBeforeEditPanelDismissal() {
     XCTAssertEqual(
       WorkspaceEscapeKeyPolicy.action(
-        didReleaseTextResponder: false,
+        hasActiveEditPanelTextResponder: false,
         hasSearchQuery: false,
         hasInspectorSelection: true,
         hasEditPanel: true
@@ -41,7 +41,7 @@ final class WorkspaceEscapeKeyPolicyTests: XCTestCase {
   func testEditPanelDismissalIsLastHandledEscapeAction() {
     XCTAssertEqual(
       WorkspaceEscapeKeyPolicy.action(
-        didReleaseTextResponder: false,
+        hasActiveEditPanelTextResponder: false,
         hasSearchQuery: false,
         hasInspectorSelection: false,
         hasEditPanel: true
@@ -53,7 +53,7 @@ final class WorkspaceEscapeKeyPolicyTests: XCTestCase {
   func testEscapePassesThroughWhenNothingHandlesIt() {
     XCTAssertEqual(
       WorkspaceEscapeKeyPolicy.action(
-        didReleaseTextResponder: false,
+        hasActiveEditPanelTextResponder: false,
         hasSearchQuery: false,
         hasInspectorSelection: false,
         hasEditPanel: false

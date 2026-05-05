@@ -236,6 +236,66 @@ final class TimelineBoardReadPathTests: XCTestCase {
     XCTAssertEqual(TimelineHiddenProjectStore.load(defaults: defaults), [])
   }
 
+  func testTimelineProjectListDisplayPreferenceStorePersistsTogglesPerProject() throws {
+    let suiteName = "TimelineProjectListDisplayPreferenceStoreTests-\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+    defer { defaults.removePersistentDomain(forName: suiteName) }
+    let firstProjectID = UUID()
+    let secondProjectID = UUID()
+
+    XCTAssertEqual(
+      TimelineProjectListDisplayPreferenceStore.load(for: firstProjectID, defaults: defaults),
+      TimelineProjectListDisplayPreferences()
+    )
+
+    TimelineProjectListDisplayPreferenceStore.save(
+      TimelineProjectListDisplayPreferences(
+        showsCompletedTasks: true,
+        showsTaskNotes: true
+      ),
+      for: firstProjectID,
+      defaults: defaults
+    )
+
+    XCTAssertEqual(
+      TimelineProjectListDisplayPreferenceStore.load(for: firstProjectID, defaults: defaults),
+      TimelineProjectListDisplayPreferences(
+        showsCompletedTasks: true,
+        showsTaskNotes: true
+      )
+    )
+    XCTAssertEqual(
+      TimelineProjectListDisplayPreferenceStore.load(for: secondProjectID, defaults: defaults),
+      TimelineProjectListDisplayPreferences()
+    )
+
+    TimelineProjectListDisplayPreferenceStore.saveShowsTaskNotes(
+      false,
+      for: firstProjectID,
+      defaults: defaults
+    )
+    TimelineProjectListDisplayPreferenceStore.saveShowsTaskNotes(
+      true,
+      for: secondProjectID,
+      defaults: defaults
+    )
+
+    XCTAssertEqual(
+      TimelineProjectListDisplayPreferenceStore.load(for: firstProjectID, defaults: defaults),
+      TimelineProjectListDisplayPreferences(
+        showsCompletedTasks: true,
+        showsTaskNotes: false
+      )
+    )
+    XCTAssertEqual(
+      TimelineProjectListDisplayPreferenceStore.load(for: secondProjectID, defaults: defaults),
+      TimelineProjectListDisplayPreferences(
+        showsCompletedTasks: false,
+        showsTaskNotes: true
+      )
+    )
+  }
+
   func testTimelineManualOrderSeedsMissingProjectsFromReminderOrder() {
     let firstID = UUID()
     let secondID = UUID()

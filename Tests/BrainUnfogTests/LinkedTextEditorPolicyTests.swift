@@ -388,6 +388,33 @@ final class LinkedTextEditorPolicyTests: XCTestCase {
     XCTAssertEqual(editorText, textView.string)
   }
 
+  @MainActor
+  func testEscapeCommandInvokesEditorEscapeHandler() {
+    var editorText = "note"
+    var measuredHeight: CGFloat = 0
+    var escapeCount = 0
+    let editor = LinkedTextEditor(
+      text: Binding(get: { editorText }, set: { editorText = $0 }),
+      measuredHeight: Binding(get: { measuredHeight }, set: { measuredHeight = $0 }),
+      font: .systemFont(ofSize: 14),
+      vaultRootURL: nil,
+      allowsNewlines: true,
+      lineHeightMultiple: 1,
+      onEscape: {
+        escapeCount += 1
+      }
+    )
+    let coordinator = LinkedTextEditor.Coordinator(editor)
+
+    let handled = coordinator.textView(
+      NSTextView(),
+      doCommandBy: #selector(NSResponder.cancelOperation(_:))
+    )
+
+    XCTAssertTrue(handled)
+    XCTAssertEqual(escapeCount, 1)
+  }
+
   func testMarkdownPreviewFindsListParagraphPrefixesForHangingIndent() {
     let text = "   - bullet wraps\nplain\n  1. ordered wraps\n100. ordered"
     let paragraphs = LinkedTextEditorMarkdownPreviewPolicy.listParagraphs(in: text)

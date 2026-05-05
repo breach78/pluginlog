@@ -38,7 +38,6 @@ enum WorkspaceOverdueTaskRolloverPlanner {
 }
 
 enum WorkspaceEscapeKeyAction: Equatable {
-  case releaseTextResponder
   case clearSearch
   case dismissInspector
   case dismissEditPanel
@@ -47,13 +46,13 @@ enum WorkspaceEscapeKeyAction: Equatable {
 
 enum WorkspaceEscapeKeyPolicy {
   static func action(
-    didReleaseTextResponder: Bool,
+    hasActiveEditPanelTextResponder: Bool,
     hasSearchQuery: Bool,
     hasInspectorSelection: Bool,
     hasEditPanel: Bool
   ) -> WorkspaceEscapeKeyAction {
-    if didReleaseTextResponder {
-      return .releaseTextResponder
+    if hasActiveEditPanelTextResponder {
+      return .passThrough
     }
     if hasSearchQuery {
       return .clearSearch
@@ -1103,14 +1102,12 @@ extension MainWorkspaceView {
 
     if event.keyCode == 53 {
       let action = WorkspaceEscapeKeyPolicy.action(
-        didReleaseTextResponder: releaseActiveEditPanelTextResponder(),
+        hasActiveEditPanelTextResponder: hasActiveEditPanelTextResponder(),
         hasSearchQuery: !chromeState.workspaceSearchQuery.isEmpty,
         hasInspectorSelection: inspectorSelection != nil,
         hasEditPanel: hasActiveWorkspaceEditPanel
       )
       switch action {
-      case .releaseTextResponder:
-        return nil
       case .clearSearch:
         clearWorkspaceSearch()
         return nil
@@ -1184,6 +1181,17 @@ extension MainWorkspaceView {
     window.endEditing(for: nil)
     window.makeFirstResponder(nil)
     return true
+  }
+
+  private func hasActiveEditPanelTextResponder(for event: NSEvent? = nil) -> Bool {
+    let window = event?.window ?? NSApp.keyWindow ?? NSApp.mainWindow
+    guard let window else { return false }
+    guard window.identifier != .timelineProjectListWindow else { return false }
+    return WorkspaceTextResponderReleasePolicy.shouldReleaseTextResponder(
+      hasActiveEditPanel: hasActiveWorkspaceEditPanel,
+      firstResponder: window.firstResponder,
+      mouseHitView: nil
+    )
   }
 
   private func mouseHitView(for event: NSEvent, in window: NSWindow) -> NSView? {

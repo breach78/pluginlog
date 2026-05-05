@@ -273,8 +273,8 @@ struct TimelineProjectListContent: View {
   @State private var completingTaskIDs: Set<UUID> = []
   @State private var deletingTaskIDs: Set<UUID> = []
   @State private var movingTaskIDs: Set<UUID> = []
-  @State private var showsCompletedTasks = false
-  @State private var showsTaskNotes = false
+  @State private var showsCompletedTasks: Bool
+  @State private var showsTaskNotes: Bool
   @State private var writeQueue = TimelineProjectListWriteQueue()
   @State private var expandedTaskID: UUID?
 
@@ -296,6 +296,11 @@ struct TimelineProjectListContent: View {
     _sessionStore = ObservedObject(
       wrappedValue: sessionStore ?? TimelineProjectListSessionStore(snapshot: snapshot)
     )
+    let displayPreferences = TimelineProjectListDisplayPreferenceStore.load(
+      for: snapshot.projectID
+    )
+    _showsCompletedTasks = State(initialValue: displayPreferences.showsCompletedTasks)
+    _showsTaskNotes = State(initialValue: displayPreferences.showsTaskNotes)
     _expandedTaskID = State(initialValue: inlineEditorConfiguration?.initialExpandedTaskID)
   }
 
@@ -508,7 +513,7 @@ struct TimelineProjectListContent: View {
       .disabled(completingTaskIDs.contains(task.id))
 
       if session.editingTaskID == task.id {
-        inlineTitleEditor(for: task)
+        taskTitleContent(task)
       } else {
         taskTitleContent(task)
           .contentShape(Rectangle())
@@ -572,13 +577,17 @@ struct TimelineProjectListContent: View {
   private func taskTitleContent(_ task: TimelineProjectListWindowSnapshot.Task) -> some View {
     VStack(alignment: .leading, spacing: 5) {
       HStack(alignment: .firstTextBaseline, spacing: 8) {
-        Text(task.title)
-          .font(projectListBodyFont)
-          .foregroundStyle(task.isCompleted ? Color.secondary : Color.primary)
-          .strikethrough(task.isCompleted, color: Color.secondary.opacity(0.55))
-          .lineLimit(3)
-          .frame(maxWidth: .infinity, alignment: .leading)
-          .layoutPriority(1)
+        if session.editingTaskID == task.id {
+          inlineTitleEditor(for: task)
+            .layoutPriority(1)
+        } else {
+          Text(task.title)
+            .font(projectListBodyFont)
+            .foregroundStyle(task.isCompleted ? Color.secondary : Color.primary)
+            .lineLimit(3)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .layoutPriority(1)
+        }
 
         if let dateText = task.dateText {
           Text(dateText)
@@ -674,12 +683,14 @@ struct TimelineProjectListContent: View {
       onSubmit: {
         submitInlineTitle(for: task, createDraftBelow: true)
       },
-      onEscape: cancelInlineEditing
+      onEscape: {
+        submitInlineTitle(for: task, createDraftBelow: false)
+      }
     )
       .frame(height: 22)
       .disabled(isRenamingTask)
       .onExitCommand {
-        cancelInlineEditing()
+        submitInlineTitle(for: task, createDraftBelow: false)
       }
   }
 
@@ -828,12 +839,20 @@ struct TimelineProjectListContent: View {
     cancelInlineEditing()
     cancelDraftIfEmpty()
     showsCompletedTasks.toggle()
+    TimelineProjectListDisplayPreferenceStore.saveShowsCompletedTasks(
+      showsCompletedTasks,
+      for: snapshot.projectID
+    )
   }
 
   private func toggleTaskNotes() {
     cancelInlineEditing()
     cancelDraftIfEmpty()
     showsTaskNotes.toggle()
+    TimelineProjectListDisplayPreferenceStore.saveShowsTaskNotes(
+      showsTaskNotes,
+      for: snapshot.projectID
+    )
   }
 
   private func requestProjectRename() {
@@ -922,11 +941,28 @@ struct TimelineProjectListContent: View {
   }
 
   private func handleExitCommand() {
+    if expandedTaskID != nil {
+      expandedTaskID = nil
+      return
+    }
+    if session.editingTaskID != nil {
+      submitCurrentInlineTitle()
+      return
+    }
     if session.draftAnchor != nil {
       cancelDraftIfEmpty()
       return
     }
-    cancelInlineEditing()
+  }
+
+  private func submitCurrentInlineTitle() {
+    guard let editingTaskID = session.editingTaskID,
+      let task = session.tasks.first(where: { $0.id == editingTaskID })
+    else {
+      cancelInlineEditing()
+      return
+    }
+    submitInlineTitle(for: task, createDraftBelow: false)
   }
 
   private func submitInlineDraft(anchor: TimelineProjectListDraftAnchor) {

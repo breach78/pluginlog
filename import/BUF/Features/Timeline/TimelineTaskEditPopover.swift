@@ -196,6 +196,9 @@ struct TimelineTaskEditPopoverContent: View {
       .onChange(of: attachments) { _, _ in
         scheduleAutoSave()
       }
+      .onExitCommand {
+        closeEditor()
+      }
       .task(id: reloadToken) {
         await loadLatest()
       }
@@ -267,7 +270,8 @@ struct TimelineTaskEditPopoverContent: View {
             font: TaskEditTypography.titleNSFont,
             vaultRootURL: vaultRootURL,
             allowsNewlines: false,
-            lineHeightMultiple: 1
+            lineHeightMultiple: 1,
+            onEscape: closeEditor
           )
           .frame(minHeight: TaskEditTypography.titleMinimumHeight)
           .frame(height: max(TaskEditTypography.titleMinimumHeight, titleHeight))
@@ -291,7 +295,8 @@ struct TimelineTaskEditPopoverContent: View {
           markdownPresentationMode: .livePreview,
           allowsMailMessageDrops: true,
           trailingInputReserveLineCount: noteTrailingInputReserveLineCount,
-          trailingInputReserveActivationHeight: TaskEditTypography.noteMinimumHeight
+          trailingInputReserveActivationHeight: TaskEditTypography.noteMinimumHeight,
+          onEscape: closeEditor
         )
         .frame(minHeight: TaskEditTypography.noteMinimumHeight)
         .frame(height: max(TaskEditTypography.noteMinimumHeight, noteHeight))

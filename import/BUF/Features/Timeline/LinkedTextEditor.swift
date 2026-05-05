@@ -14,6 +14,7 @@ struct LinkedTextEditor: NSViewRepresentable {
   var allowsMailMessageDrops = false
   var trailingInputReserveLineCount = 0
   var trailingInputReserveActivationHeight: CGFloat = 0
+  var onEscape: (() -> Void)?
 
   func makeCoordinator() -> Coordinator {
     Coordinator(self)
@@ -226,6 +227,19 @@ struct LinkedTextEditor: NSViewRepresentable {
       let signature = markdownPreviewActiveLineSignature(for: textView)
       guard signature != lastMarkdownPreviewActiveLineSignature else { return }
       applyAttributes(to: textView)
+    }
+
+    func textView(_ textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
+      guard commandSelector == #selector(NSResponder.cancelOperation(_:)) else {
+        return false
+      }
+      return handleEscapeCommand()
+    }
+
+    func handleEscapeCommand() -> Bool {
+      guard let onEscape = parent.onEscape else { return false }
+      onEscape()
+      return true
     }
 
     func configureMailMessageDropRegistration(on textView: NSTextView) {
@@ -829,6 +843,20 @@ enum LinkedTextEditorLinkPolicy {
 
 private final class LinkedTextView: NSTextView {
   weak var linkedCoordinator: LinkedTextEditor.Coordinator?
+
+  override func keyDown(with event: NSEvent) {
+    if event.keyCode == 53, linkedCoordinator?.handleEscapeCommand() == true {
+      return
+    }
+    super.keyDown(with: event)
+  }
+
+  override func cancelOperation(_ sender: Any?) {
+    if linkedCoordinator?.handleEscapeCommand() == true {
+      return
+    }
+    super.cancelOperation(sender)
+  }
 
   override func draggingEntered(_ sender: any NSDraggingInfo) -> NSDragOperation {
     if linkedCoordinator?.canHandleMailMessageDrop(sender) == true {
