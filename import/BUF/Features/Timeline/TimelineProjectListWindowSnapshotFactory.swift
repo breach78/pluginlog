@@ -62,19 +62,11 @@ enum TimelineProjectListWindowSnapshotFactory {
       return nil
     }
 
-    let locale = Locale(identifier: "ko_KR")
     if entry.scheduleHasExplicitTime {
-      return date.formatted(
-        .dateTime
-          .locale(locale)
-          .month(.abbreviated)
-          .day()
-          .hour(.twoDigits(amPM: .omitted))
-          .minute(.twoDigits)
-      )
+      return compactDateTimeText(for: date)
     }
 
-    return date.formatted(.dateTime.locale(locale).month(.abbreviated).day())
+    return compactDateText(for: date)
   }
 
   static func isOverdue(
@@ -92,5 +84,28 @@ enum TimelineProjectListWindowSnapshotFactory {
       return false
     }
     return calendar.startOfDay(for: date) < calendar.startOfDay(for: .now)
+  }
+
+  private static func compactDateText(for date: Date) -> String {
+    let components = Calendar.autoupdatingCurrent.dateComponents([.month, .day], from: date)
+    return [
+      twoDigitText(components.month ?? 0),
+      twoDigitText(components.day ?? 0),
+    ].joined(separator: "-")
+  }
+
+  private static func compactDateTimeText(for date: Date) -> String {
+    let components = Calendar.autoupdatingCurrent.dateComponents(
+      [.month, .day, .hour, .minute],
+      from: date
+    )
+    return [
+      compactDateText(for: date),
+      "\(twoDigitText(components.hour ?? 0)):\(twoDigitText(components.minute ?? 0))",
+    ].joined(separator: " ")
+  }
+
+  private static func twoDigitText(_ value: Int) -> String {
+    value < 10 ? "0\(value)" : "\(value)"
   }
 }

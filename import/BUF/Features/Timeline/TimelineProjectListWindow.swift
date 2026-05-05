@@ -556,19 +556,21 @@ struct TimelineProjectListContent: View {
   }
 
   private func taskTitleContent(_ task: TimelineProjectListWindowSnapshot.Task) -> some View {
-    VStack(alignment: .leading, spacing: 3) {
+    HStack(alignment: .firstTextBaseline, spacing: 8) {
       Text(task.title)
         .font(projectListBodyFont)
         .foregroundStyle(task.isCompleted ? Color.secondary : Color.primary)
         .strikethrough(task.isCompleted, color: Color.secondary.opacity(0.55))
         .lineLimit(3)
         .frame(maxWidth: .infinity, alignment: .leading)
+        .layoutPriority(1)
 
       if let dateText = task.dateText {
         Text(dateText)
           .font(projectListDateFont)
           .foregroundStyle(task.isOverdue ? Color.red : Color.secondary)
           .lineLimit(1)
+          .fixedSize(horizontal: true, vertical: false)
       }
     }
   }

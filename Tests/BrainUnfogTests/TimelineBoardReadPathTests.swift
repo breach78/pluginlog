@@ -773,6 +773,26 @@ final class TimelineBoardReadPathTests: XCTestCase {
     XCTAssertEqual(entry?.taskID, openFirstID)
   }
 
+  func testProjectListDateTextUsesCompactMonthDayFormat() {
+    let date = makeDate(year: 2026, month: 5, day: 19)
+    let entry = makeScheduleEntry(taskID: UUID(), title: "Task", dueDate: date, rowOrder: 0)
+
+    XCTAssertEqual(TimelineProjectListWindowSnapshotFactory.dateText(for: entry), "05-19")
+  }
+
+  func testProjectListDateTextKeepsExplicitTimeAfterCompactDate() {
+    let date = makeDate(year: 2026, month: 5, day: 19, hour: 13, minute: 45)
+    let entry = makeScheduleEntry(
+      taskID: UUID(),
+      title: "Task",
+      dueDate: date,
+      scheduleHasExplicitTime: true,
+      rowOrder: 0
+    )
+
+    XCTAssertEqual(TimelineProjectListWindowSnapshotFactory.dateText(for: entry), "05-19 13:45")
+  }
+
   func testScheduleSourceSignatureIgnoresNoteBodyWhenVisibleMetadataIsUnchanged() {
     let projectID = UUID()
     let taskID = UUID()
@@ -902,6 +922,8 @@ final class TimelineBoardReadPathTests: XCTestCase {
     title: String,
     isCompleted: Bool = false,
     isArchived: Bool = false,
+    dueDate: Date? = nil,
+    scheduleHasExplicitTime: Bool = false,
     rowOrder: Int,
     attachmentCount: Int = 0,
     hasReminderNoteContent: Bool = false,
@@ -913,8 +935,8 @@ final class TimelineBoardReadPathTests: XCTestCase {
       title: title,
       displayedDate: nil,
       startDate: nil,
-      dueDate: nil,
-      scheduleHasExplicitTime: false,
+      dueDate: dueDate,
+      scheduleHasExplicitTime: scheduleHasExplicitTime,
       scheduledDurationMinutes: nil,
       isCompleted: isCompleted,
       completionDate: isCompleted ? .distantPast : nil,
@@ -934,6 +956,18 @@ final class TimelineBoardReadPathTests: XCTestCase {
       localUpdatedAt: .distantPast,
       createdAt: .distantPast
     )
+  }
+
+  private func makeDate(
+    year: Int,
+    month: Int,
+    day: Int,
+    hour: Int = 12,
+    minute: Int = 0
+  ) -> Date {
+    Calendar.autoupdatingCurrent.date(
+      from: DateComponents(year: year, month: month, day: day, hour: hour, minute: minute)
+    )!
   }
 
   private func projectListTask(
