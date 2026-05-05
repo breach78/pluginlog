@@ -10,6 +10,7 @@ struct LinkedTextEditor: NSViewRepresentable {
   let vaultRootURL: URL?
   let allowsNewlines: Bool
   let lineHeightMultiple: CGFloat
+  var markdownPresentationMode: LinkedTextEditorMarkdownPresentationMode = .source
   var allowsMailMessageDrops = false
   var trailingInputReserveLineCount = 0
   var trailingInputReserveActivationHeight: CGFloat = 0
@@ -54,7 +55,10 @@ struct LinkedTextEditor: NSViewRepresentable {
   }
 
   func updateNSView(_ scrollView: NSScrollView, context: Context) {
+    let presentationChanged =
+      context.coordinator.markdownPresentationMode != markdownPresentationMode
     context.coordinator.parent = self
+    context.coordinator.markdownPresentationMode = markdownPresentationMode
     guard let textView = scrollView.documentView as? NSTextView else { return }
     let styleChanged = context.coordinator.updateFontIfNeeded(on: textView)
     context.coordinator.configureMailMessageDropRegistration(on: textView)
@@ -68,7 +72,7 @@ struct LinkedTextEditor: NSViewRepresentable {
       context.coordinator.scheduleMeasuredHeightUpdate()
       return
     }
-    if styleChanged {
+    if styleChanged || presentationChanged {
       context.coordinator.applyAttributes(to: textView)
       context.coordinator.scheduleMeasuredHeightUpdate()
     } else {
@@ -79,13 +83,16 @@ struct LinkedTextEditor: NSViewRepresentable {
   @MainActor
   final class Coordinator: NSObject, NSTextViewDelegate {
     var parent: LinkedTextEditor
+    var markdownPresentationMode: LinkedTextEditorMarkdownPresentationMode
     weak var textView: NSTextView?
     var isApplyingText = false
+    private var isApplyingAttributes = false
     private var attributeRefreshTask: Task<Void, Never>?
     private var heightMeasurementTask: Task<Void, Never>?
     private var lastMeasuredWidth: CGFloat = 0
     private var didConfigureMailMessageDrops = false
-    private var hasLinkAttributes = false
+    private var hasDecoratedAttributes = false
+    private var lastMarkdownPreviewActiveLineSignature = ""
     private var pendingTrailingInputReserveExpansion = false
     private var trailingInputReserveHeightFloor: CGFloat?
     private let linkDetector = try? NSDataDetector(
@@ -118,6 +125,7 @@ struct LinkedTextEditor: NSViewRepresentable {
 
     init(_ parent: LinkedTextEditor) {
       self.parent = parent
+      self.markdownPresentationMode = parent.markdownPresentationMode
     }
 
     deinit {
@@ -138,6 +146,8 @@ struct LinkedTextEditor: NSViewRepresentable {
       shouldChangeTextIn affectedCharRange: NSRange,
       replacementString: String?
     ) -> Bool {
+      guard !isApplyingText else { return true }
+
       if parent.allowsNewlines,
         parent.trailingInputReserveLineCount > 0,
         let replacementString
@@ -150,14 +160,49 @@ struct LinkedTextEditor: NSViewRepresentable {
         }
       }
 
+      if parent.allowsNewlines,
+        parent.markdownPresentationMode == .livePreview,
+        let replacementString,
+        let replacement = LinkedTextEditorMarkdownListInputPolicy.replacement(
+          in: textView.string,
+          affectedRange: affectedCharRange,
+          replacementString: replacementString
+        )
+      {
+        applyProgrammaticReplacement(
+          replacement.text,
+          replacementRange: replacement.range,
+          in: textView
+        )
+        return false
+      }
+
       guard !parent.allowsNewlines, let replacementString else { return true }
       guard replacementString.contains(where: \.isNewline) else { return true }
       let normalized = replacementString
         .replacingOccurrences(of: "\r\n", with: " ")
         .replacingOccurrences(of: "\n", with: " ")
         .replacingOccurrences(of: "\r", with: " ")
-      textView.insertText(normalized, replacementRange: affectedCharRange)
+      applyProgrammaticReplacement(
+        normalized,
+        replacementRange: affectedCharRange,
+        in: textView
+      )
       return false
+    }
+
+    private func applyProgrammaticReplacement(
+      _ replacement: String,
+      replacementRange: NSRange,
+      in textView: NSTextView
+    ) {
+      isApplyingText = true
+      textView.insertText(replacement, replacementRange: replacementRange)
+      isApplyingText = false
+      parent.text = textView.string
+      textView.typingAttributes = baseAttributes()
+      scheduleAttributeRefresh(for: textView)
+      refreshMeasuredHeightAfterUserEdit()
     }
 
     func textView(_ textView: NSTextView, clickedOnLink link: Any, at charIndex: Int) -> Bool {
@@ -166,6 +211,21 @@ struct LinkedTextEditor: NSViewRepresentable {
         return true
       }
       return false
+    }
+
+    func textViewDidChangeSelection(_ notification: Notification) {
+      guard !isApplyingText,
+        !isApplyingAttributes,
+        parent.markdownPresentationMode == .livePreview,
+        let textView = notification.object as? NSTextView,
+        hasMarkdownPresentationCandidates(in: textView.string)
+      else {
+        return
+      }
+
+      let signature = markdownPreviewActiveLineSignature(for: textView)
+      guard signature != lastMarkdownPreviewActiveLineSignature else { return }
+      applyAttributes(to: textView)
     }
 
     func configureMailMessageDropRegistration(on textView: NSTextView) {
@@ -224,9 +284,11 @@ struct LinkedTextEditor: NSViewRepresentable {
       attributeRefreshTask?.cancel()
       attributeRefreshTask = nil
       let selectedRanges = textView.selectedRanges
+      let activeLineRanges = markdownPreviewActiveLineRanges(for: textView)
       let fullRange = NSRange(location: 0, length: storage.length)
       let attributes = baseAttributes()
       textView.typingAttributes = attributes
+      isApplyingAttributes = true
       storage.beginEditing()
       if fullRange.length > 0 {
         storage.setAttributes(attributes, range: fullRange)
@@ -236,9 +298,17 @@ struct LinkedTextEditor: NSViewRepresentable {
         applyDetectedLinks(in: storage)
         applyMarkdownLinks(in: storage)
       }
-      hasLinkAttributes = hasLinkCandidates
+      let hasMarkdownPreviewCandidates =
+        parent.markdownPresentationMode == .livePreview
+        && hasMarkdownPresentationCandidates(in: storage.string)
+      if hasMarkdownPreviewCandidates {
+        applyMarkdownPreview(in: storage, activeLineRanges: activeLineRanges)
+      }
+      hasDecoratedAttributes = hasLinkCandidates || hasMarkdownPreviewCandidates
       storage.endEditing()
       textView.selectedRanges = selectedRanges
+      isApplyingAttributes = false
+      lastMarkdownPreviewActiveLineSignature = rangeSignature(activeLineRanges)
     }
 
     func updateMeasuredHeight() {
@@ -283,9 +353,13 @@ struct LinkedTextEditor: NSViewRepresentable {
     }
 
     func scheduleAttributeRefresh(for textView: NSTextView) {
+      let hasMarkdownPreviewCandidates =
+        parent.markdownPresentationMode == .livePreview
+        && hasMarkdownPresentationCandidates(in: textView.string)
       guard
         LinkedTextEditorLinkPolicy.hasLinkCandidates(in: textView.string)
-          || hasLinkAttributes
+          || hasMarkdownPreviewCandidates
+          || hasDecoratedAttributes
       else {
         attributeRefreshTask?.cancel()
         attributeRefreshTask = nil
@@ -330,13 +404,17 @@ struct LinkedTextEditor: NSViewRepresentable {
     }
 
     private func baseAttributes() -> [NSAttributedString.Key: Any] {
-      let paragraphStyle = NSMutableParagraphStyle()
-      paragraphStyle.lineHeightMultiple = parent.lineHeightMultiple
-      return [
+      [
         .font: parent.font,
         .foregroundColor: NSColor.labelColor,
-        .paragraphStyle: paragraphStyle,
+        .paragraphStyle: baseParagraphStyle(),
       ]
+    }
+
+    private func baseParagraphStyle() -> NSMutableParagraphStyle {
+      let paragraphStyle = NSMutableParagraphStyle()
+      paragraphStyle.lineHeightMultiple = parent.lineHeightMultiple
+      return paragraphStyle
     }
 
     private func reservedLineHeight(for textView: NSTextView) -> CGFloat {
@@ -372,7 +450,59 @@ struct LinkedTextEditor: NSViewRepresentable {
           linkAttributes(destination),
           range: match.range(at: 1)
         )
-        applyMailMessageMarkdownDisplay(in: storage, match: match, destination: destination)
+        if parent.markdownPresentationMode == .source {
+          applyMailMessageMarkdownDisplay(in: storage, match: match, destination: destination)
+        }
+      }
+    }
+
+    private func applyMarkdownPreview(
+      in storage: NSTextStorage,
+      activeLineRanges: [NSRange]
+    ) {
+      let decorations = LinkedTextEditorMarkdownPreviewPolicy.decorations(
+        in: storage.string,
+        activeLineRanges: activeLineRanges
+      )
+      applyMarkdownListParagraphStyles(in: storage)
+      for decoration in decorations {
+        switch decoration.kind {
+        case .hiddenSyntax:
+          continue
+        case .strong:
+          storage.addAttribute(.font, value: strongFont(), range: decoration.range)
+        case .emphasis:
+          storage.addAttribute(.font, value: emphasisFont(), range: decoration.range)
+        case .inlineCode:
+          storage.addAttributes(inlineCodeAttributes(), range: decoration.range)
+        case .strikethrough:
+          storage.addAttribute(
+            .strikethroughStyle,
+            value: NSUnderlineStyle.single.rawValue,
+            range: decoration.range
+          )
+        case .heading(let level):
+          storage.addAttribute(.font, value: headingFont(level: level), range: decoration.range)
+        }
+      }
+      for decoration in decorations where decoration.kind == .hiddenSyntax {
+        storage.removeAttribute(.link, range: decoration.range)
+        storage.removeAttribute(.underlineStyle, range: decoration.range)
+        storage.addAttributes(hiddenMarkdownSyntaxAttributes(), range: decoration.range)
+      }
+    }
+
+    private func applyMarkdownListParagraphStyles(in storage: NSTextStorage) {
+      for paragraph in LinkedTextEditorMarkdownPreviewPolicy.listParagraphs(in: storage.string) {
+        let paragraphStyle = baseParagraphStyle()
+        paragraphStyle.firstLineHeadIndent = 0
+        paragraphStyle.headIndent = markdownListPrefixWidth(paragraph.prefix)
+        storage.addAttribute(.paragraphStyle, value: paragraphStyle, range: paragraph.range)
+        storage.addAttribute(
+          .foregroundColor,
+          value: markdownListMarkerColor(),
+          range: paragraph.markerRange
+        )
       }
     }
 
@@ -383,6 +513,52 @@ struct LinkedTextEditor: NSViewRepresentable {
         .underlineStyle: NSUnderlineStyle.single.rawValue,
         .font: parent.font,
       ]
+    }
+
+    private func strongFont() -> NSFont {
+      NSFontManager.shared.convert(parent.font, toHaveTrait: .boldFontMask)
+    }
+
+    private func emphasisFont() -> NSFont {
+      NSFontManager.shared.convert(parent.font, toHaveTrait: .italicFontMask)
+    }
+
+    private func headingFont(level: Int) -> NSFont {
+      let scale: CGFloat
+      switch level {
+      case 1:
+        scale = 1.4
+      case 2:
+        scale = 1.3
+      case 3:
+        scale = 1.2
+      default:
+        scale = 1
+      }
+      return NSFontManager.shared.convert(
+        parent.font.withSize(parent.font.pointSize * scale),
+        toHaveTrait: .boldFontMask
+      )
+    }
+
+    private func inlineCodeAttributes() -> [NSAttributedString.Key: Any] {
+      [
+        .font: NSFont.monospacedSystemFont(ofSize: parent.font.pointSize, weight: .regular),
+        .backgroundColor: NSColor.textBackgroundColor.withAlphaComponent(0.55),
+      ]
+    }
+
+    private func markdownListMarkerColor() -> NSColor {
+      NSColor(white: 0.7, alpha: 1)
+    }
+
+    private func markdownListPrefixWidth(_ prefix: String) -> CGFloat {
+      ceil((prefix as NSString).size(withAttributes: [.font: parent.font]).width)
+    }
+
+    private func hasMarkdownPresentationCandidates(in text: String) -> Bool {
+      LinkedTextEditorMarkdownPreviewPolicy.hasPreviewCandidates(in: text)
+        || LinkedTextEditorMarkdownPreviewPolicy.hasListCandidates(in: text)
     }
 
     private func resolvedURL(from link: Any) -> URL? {
@@ -545,6 +721,10 @@ struct LinkedTextEditor: NSViewRepresentable {
     }
 
     private func hiddenMailMessageLinkSyntaxAttributes() -> [NSAttributedString.Key: Any] {
+      hiddenMarkdownSyntaxAttributes()
+    }
+
+    private func hiddenMarkdownSyntaxAttributes() -> [NSAttributedString.Key: Any] {
       [
         .foregroundColor: NSColor.clear,
         .font: NSFont.systemFont(ofSize: 0.1),
@@ -569,6 +749,24 @@ struct LinkedTextEditor: NSViewRepresentable {
     private func currentMeasuredWidth() -> CGFloat {
       let width = textView?.enclosingScrollView?.contentSize.width ?? textView?.bounds.width ?? 0
       return width.rounded()
+    }
+
+    private func markdownPreviewActiveLineRanges(for textView: NSTextView) -> [NSRange] {
+      guard parent.markdownPresentationMode == .livePreview else { return [] }
+      return LinkedTextEditorMarkdownPreviewPolicy.activeLineRanges(
+        in: textView.string,
+        selectedRanges: textView.selectedRanges.map { $0.rangeValue }
+      )
+    }
+
+    private func markdownPreviewActiveLineSignature(for textView: NSTextView) -> String {
+      rangeSignature(markdownPreviewActiveLineRanges(for: textView))
+    }
+
+    private func rangeSignature(_ ranges: [NSRange]) -> String {
+      ranges
+        .map { "\($0.location):\($0.length)" }
+        .joined(separator: "|")
     }
   }
 }

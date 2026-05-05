@@ -62,6 +62,7 @@
 		52B0E2A69CEB4E5E9C8847B1 /* AppOwnedRetainedProjectCommandService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 52B0E2A59CEB4E5E9C8847B1 /* AppOwnedRetainedProjectCommandService.swift */; };
 		52B0E2AC9CEB4E5E9C8847B1 /* AppOwnedWorkspaceStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 52B0E2AB9CEB4E5E9C8847B1 /* AppOwnedWorkspaceStore.swift */; };
 		52B0E2AE9CEB4E5E9C8847B1 /* AppOwnedWorkspaceStoreSQLite.swift in Sources */ = {isa = PBXBuildFile; fileRef = 52B0E2AD9CEB4E5E9C8847B1 /* AppOwnedWorkspaceStoreSQLite.swift */; };
+		52B0E2B49CEB4E5E9C8847B1 /* LinkedTextEditorMarkdownPreviewPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = 52B0E2B39CEB4E5E9C8847B1 /* LinkedTextEditorMarkdownPreviewPolicy.swift */; };
 		536768A33F9FD85991F0D0B7 /* OwnedScheduleCalendarSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = B9F3B749E26A6113BF3A7DFF /* OwnedScheduleCalendarSupport.swift */; };
 		58190F552DC4EC92D8D5FC38 /* ObsidianRetainedProjectionAdapter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5F1FB1976D603BD1C6DA44D3 /* ObsidianRetainedProjectionAdapter.swift */; };
 		582BA253688A70E45046D5AF /* StorageCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5C813D49A9E2F2F4CF9C837D /* StorageCoordinator.swift */; };
@@ -202,6 +203,7 @@
 		52B0E2AD9CEB4E5E9C8847B1 /* AppOwnedWorkspaceStoreSQLite.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppOwnedWorkspaceStoreSQLite.swift; sourceTree = "<group>"; };
 		52B0E2AF9CEB4E5E9C8847B1 /* RetainedTaskCommandMutationGate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RetainedTaskCommandMutationGate.swift; sourceTree = "<group>"; };
 		52B0E2B19CEB4E5E9C8847B1 /* TimelineProjectListSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimelineProjectListSession.swift; sourceTree = "<group>"; };
+		52B0E2B39CEB4E5E9C8847B1 /* LinkedTextEditorMarkdownPreviewPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LinkedTextEditorMarkdownPreviewPolicy.swift; sourceTree = "<group>"; };
 		548DFBDD3433AE83FF2F7A1F /* ProjectIdentityResolver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProjectIdentityResolver.swift; sourceTree = "<group>"; };
 		55F9F6FCA5E8411D7A3633D6 /* OwnershipTypes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OwnershipTypes.swift; sourceTree = "<group>"; };
 		574B3E6ABB66853539EE9014 /* AppCommand.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppCommand.swift; sourceTree = "<group>"; };
@@ -548,6 +550,7 @@
 			isa = PBXGroup;
 			children = (
 				A356D89520042E10A54E9637 /* LinkedTextEditor.swift */,
+				52B0E2B39CEB4E5E9C8847B1 /* LinkedTextEditorMarkdownPreviewPolicy.swift */,
 				C5663DE261C721DC5E127FB1 /* TimelineBoardActions.swift */,
 				8243433AEAD40BA2F2B4CC17 /* TimelineBoardOverlays.swift */,
 				3E928C30D43B12FDB70057E4 /* TimelineBoardRefresh.swift */,
@@ -704,6 +707,7 @@
 				AC537CAEAA24777A7D6CD0BE /* Enums.swift in Sources */,
 				46D2A6785BFCA3288CB60494 /* ExternalOwnerChangeCommand.swift in Sources */,
 				5B7ED6388B384FEC4599DFFF /* LinkedTextEditor.swift in Sources */,
+				52B0E2B49CEB4E5E9C8847B1 /* LinkedTextEditorMarkdownPreviewPolicy.swift in Sources */,
 				90FE80ACFCB640383A871E50 /* MainAppWindowPresenter.swift in Sources */,
 				4546402CDA16A8C3BF9AE13F /* MainWorkspaceActions.swift in Sources */,
 				DCA591DD00534F89F9E6ECD9 /* MainWorkspaceChrome.swift in Sources */,

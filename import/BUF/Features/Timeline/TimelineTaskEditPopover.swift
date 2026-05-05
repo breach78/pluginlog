@@ -288,6 +288,7 @@ struct TimelineTaskEditPopoverContent: View {
           vaultRootURL: vaultRootURL,
           allowsNewlines: true,
           lineHeightMultiple: 1.1,
+          markdownPresentationMode: .livePreview,
           allowsMailMessageDrops: true,
           trailingInputReserveLineCount: noteTrailingInputReserveLineCount,
           trailingInputReserveActivationHeight: TaskEditTypography.noteMinimumHeight
