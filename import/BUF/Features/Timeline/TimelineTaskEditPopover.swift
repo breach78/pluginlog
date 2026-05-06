@@ -880,7 +880,7 @@ enum TimelineTaskEditReloadPolicy {
   }
 }
 
-private enum TaskEditTypography {
+enum TaskEditTypography {
   static let scale: CGFloat = 1.3
   static let headerSize: CGFloat = 12 * scale
   static let panelTextSize: CGFloat = headerSize * 0.9
@@ -953,7 +953,7 @@ private enum TaskEditFieldStyle {
 
 }
 
-private extension View {
+extension View {
   func taskEditFieldBackground(
     cornerRadius: CGFloat,
     topPadding: CGFloat = 8,

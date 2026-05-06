@@ -35,6 +35,12 @@ struct ObsidianVaultLayout {
       .appendingPathComponent("projects", isDirectory: true)
   }
 
+  var rawJournalsRootURL: URL {
+    vaultRootURL
+      .appendingPathComponent("raw", isDirectory: true)
+      .appendingPathComponent("journals", isDirectory: true)
+  }
+
   var rawArchiveRootURL: URL {
     vaultRootURL
       .appendingPathComponent("raw", isDirectory: true)

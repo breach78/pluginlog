@@ -203,6 +203,10 @@ extension MainWorkspaceView {
     selectProjectContext(target.projectID)
   }
 
+  func openDailyJournalWindow() {
+    DailyJournalWindowPresenter.shared.present(vaultRootURL: appState.obsidianVaultRootURL)
+  }
+
   func suppressWorkspaceTaskEditorOpen(
     for duration: TimeInterval = TaskTapSuppressionPolicy.completionControlDuration
   ) {

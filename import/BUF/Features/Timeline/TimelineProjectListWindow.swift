@@ -1598,7 +1598,7 @@ private enum TimelineProjectNoteFieldStyle {
   )
 }
 
-private extension View {
+extension View {
   func timelineProjectNoteFieldBackground() -> some View {
     modifier(TimelineProjectNoteFieldBackground())
   }

@@ -27,6 +27,7 @@ extension MainWorkspaceView {
   @ViewBuilder
   var headerLeadingControls: some View {
     HStack(spacing: workspaceTitlebarControlSpacing) {
+      dailyJournalButton
       viewModeToggleButton
 
       workspaceQuickAddSection
@@ -96,6 +97,24 @@ extension MainWorkspaceView {
         }
       }
     }
+  }
+
+  var dailyJournalButton: some View {
+    Button {
+      openDailyJournalWindow()
+    } label: {
+      Image(systemName: "book.closed")
+        .font(.system(size: 13, weight: .semibold))
+        .foregroundStyle(.primary)
+        .frame(
+          width: workspaceTitlebarIconButtonSize,
+          height: workspaceTitlebarControlHeight
+        )
+        .contentShape(Rectangle())
+    }
+    .buttonStyle(.plain)
+    .help("저널 열기")
+    .accessibilityLabel("저널 열기")
   }
 
   var nextViewMode: ViewMode? {
