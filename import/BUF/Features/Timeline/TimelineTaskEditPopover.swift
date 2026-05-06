@@ -58,6 +58,7 @@ struct TimelineTaskEditPopoverContent: View {
   let onSyncEditingChanged: (Bool) -> Void
   let onSyncEditingActivity: () -> Void
   let bottomContent: AnyView?
+  let closeRequestID: Int
   let onCancel: () -> Void
 
   @State private var title: String
@@ -83,6 +84,7 @@ struct TimelineTaskEditPopoverContent: View {
   @State private var pendingAttachmentRename: PendingAttachmentRename?
   @State private var errorText: String?
   @State private var isSyncEditingActive = false
+  @State private var isClosing = false
   @State private var skipCleanReloadAfterLocalSaveUntil: Date?
 
   private let calendar = Calendar.autoupdatingCurrent
@@ -99,6 +101,7 @@ struct TimelineTaskEditPopoverContent: View {
     onSyncEditingChanged: @escaping (Bool) -> Void = { _ in },
     onSyncEditingActivity: @escaping () -> Void = {},
     bottomContent: AnyView? = nil,
+    closeRequestID: Int = 0,
     onCancel: @escaping () -> Void
   ) {
     let initialNoteText = TaskEditAttachmentService.noteTextByRemovingAttachmentLinks(
@@ -117,6 +120,7 @@ struct TimelineTaskEditPopoverContent: View {
     self.onSyncEditingChanged = onSyncEditingChanged
     self.onSyncEditingActivity = onSyncEditingActivity
     self.bottomContent = bottomContent
+    self.closeRequestID = closeRequestID
     self.onCancel = onCancel
     _title = State(initialValue: initialFields.title)
     _noteText = State(initialValue: initialNoteText)
@@ -197,6 +201,10 @@ struct TimelineTaskEditPopoverContent: View {
         scheduleAutoSave()
       }
       .onExitCommand {
+        closeEditor()
+      }
+      .onChange(of: closeRequestID) { _, requestID in
+        guard requestID > 0 else { return }
         closeEditor()
       }
       .task(id: reloadToken) {
@@ -681,8 +689,12 @@ struct TimelineTaskEditPopoverContent: View {
   }
 
   private func closeEditor() {
+    guard !isClosing else { return }
+    isClosing = true
     Task { @MainActor in
-      guard await flushPendingChanges() else { return }
+      let didFlush = await flushPendingChanges()
+      isClosing = false
+      guard didFlush else { return }
       onCancel()
     }
   }

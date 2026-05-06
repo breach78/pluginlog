@@ -302,6 +302,8 @@ struct TimelineProjectListContent: View {
   @State private var showsTaskNotes: Bool
   @State private var writeQueue = TimelineProjectListWriteQueue()
   @State private var expandedTaskID: UUID?
+  @State private var expandedTaskCloseRequestID = 0
+  @State private var pendingExpandedTaskIDAfterClose: UUID?
   @State private var projectNoteText: String
   @State private var projectNoteHeight: CGFloat = 0
   @State private var lastCommittedProjectNoteText: String
@@ -741,26 +743,56 @@ struct TimelineProjectListContent: View {
           configuration.onSyncEditingChanged(task.id, isEditing)
         },
         onSyncEditingActivity: configuration.onSyncEditingActivity,
+        closeRequestID: expandedTaskCloseRequestID,
         onCancel: {
-          if expandedTaskID == task.id {
-            expandedTaskID = nil
-          }
+          completeExpandedTaskEditorClose(for: task.id)
         }
       )
       .id(task.id)
       .padding(.leading, 32)
       .padding(.trailing, 12)
       .padding(.bottom, 10)
+      .background(
+        TimelineProjectListOutsideClickMonitor {
+          requestExpandedTaskEditorClose()
+        }
+      )
     }
   }
 
   private func openTask(_ task: TimelineProjectListWindowSnapshot.Task) {
     if inlineEditorConfiguration != nil {
       cancelDraftIfEmpty()
-      expandedTaskID = expandedTaskID == task.id ? nil : task.id
+      if expandedTaskID == nil {
+        expandedTaskID = task.id
+      } else if expandedTaskID == task.id {
+        requestExpandedTaskEditorClose()
+      } else {
+        requestExpandedTaskEditorClose(nextExpandedTaskID: task.id)
+      }
       return
     }
     actions.onEditTask(task.id)
+  }
+
+  private func requestExpandedTaskEditorClose(nextExpandedTaskID: UUID? = nil) {
+    guard expandedTaskID != nil else {
+      expandedTaskID = nextExpandedTaskID
+      return
+    }
+    pendingExpandedTaskIDAfterClose = nextExpandedTaskID
+    expandedTaskCloseRequestID &+= 1
+  }
+
+  private func completeExpandedTaskEditorClose(for taskID: UUID) {
+    guard expandedTaskID == taskID else { return }
+    let nextTaskID = pendingExpandedTaskIDAfterClose
+    pendingExpandedTaskIDAfterClose = nil
+    guard let nextTaskID, visibleTasks.contains(where: { $0.id == nextTaskID }) else {
+      expandedTaskID = nil
+      return
+    }
+    expandedTaskID = nextTaskID == taskID ? nil : nextTaskID
   }
 
   private func inlineTitleEditor(
@@ -1125,7 +1157,7 @@ struct TimelineProjectListContent: View {
 
   private func handleExitCommand() {
     if expandedTaskID != nil {
-      expandedTaskID = nil
+      requestExpandedTaskEditorClose()
       return
     }
     if session.editingTaskID != nil {
@@ -1385,6 +1417,98 @@ struct TimelineProjectListContent: View {
   fileprivate static let embeddedTextSize: CGFloat = 12 * 1.3 * 0.9
   private static let taskInsertionAnimation = Animation.easeOut(duration: 0.16)
   private static let projectNoteAutoSaveDelayNanoseconds: UInt64 = 650_000_000
+}
+
+private struct TimelineProjectListOutsideClickMonitor: NSViewRepresentable {
+  let onOutsideMouseDown: () -> Void
+
+  func makeCoordinator() -> Coordinator {
+    Coordinator(onOutsideMouseDown: onOutsideMouseDown)
+  }
+
+  func makeNSView(context: Context) -> NSView {
+    let view = MonitorView(frame: .zero)
+    view.coordinator = context.coordinator
+    context.coordinator.attach(to: view)
+    context.coordinator.updateFrame(from: view)
+    return view
+  }
+
+  func updateNSView(_ view: NSView, context: Context) {
+    context.coordinator.onOutsideMouseDown = onOutsideMouseDown
+    context.coordinator.attach(to: view)
+    context.coordinator.updateFrame(from: view)
+  }
+
+  static func dismantleNSView(_ view: NSView, coordinator: Coordinator) {
+    coordinator.detach()
+  }
+
+  final class MonitorView: NSView {
+    weak var coordinator: Coordinator?
+
+    override func viewDidMoveToWindow() {
+      super.viewDidMoveToWindow()
+      coordinator?.updateFrame(from: self)
+    }
+
+    override func layout() {
+      super.layout()
+      coordinator?.updateFrame(from: self)
+    }
+  }
+
+  final class Coordinator {
+    var onOutsideMouseDown: () -> Void
+    private weak var view: NSView?
+    private var monitor: Any?
+    private var windowNumber: Int?
+    private var frameInWindow: CGRect = .null
+
+    init(onOutsideMouseDown: @escaping () -> Void) {
+      self.onOutsideMouseDown = onOutsideMouseDown
+    }
+
+    func attach(to view: NSView) {
+      self.view = view
+      guard monitor == nil else { return }
+      monitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) {
+        [weak self] event in
+        self?.handle(event) ?? event
+      }
+    }
+
+    @MainActor
+    func updateFrame(from view: NSView) {
+      windowNumber = view.window?.windowNumber
+      frameInWindow = view.convert(view.bounds, to: nil)
+    }
+
+    func detach() {
+      if let monitor {
+        NSEvent.removeMonitor(monitor)
+      }
+      monitor = nil
+      view = nil
+      windowNumber = nil
+      frameInWindow = .null
+    }
+
+    private func handle(_ event: NSEvent) -> NSEvent {
+      guard let windowNumber, event.windowNumber == windowNumber else {
+        return event
+      }
+
+      if !frameInWindow.contains(event.locationInWindow) {
+        onOutsideMouseDown()
+      }
+      return event
+    }
+
+    deinit {
+      detach()
+    }
+  }
 }
 
 private struct TimelineProjectNoteFieldBackground: ViewModifier {
