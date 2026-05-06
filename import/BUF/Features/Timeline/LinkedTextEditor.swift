@@ -12,8 +12,6 @@ struct LinkedTextEditor: NSViewRepresentable {
   let lineHeightMultiple: CGFloat
   var markdownPresentationMode: LinkedTextEditorMarkdownPresentationMode = .source
   var allowsMailMessageDrops = false
-  var trailingInputReserveLineCount = 0
-  var trailingInputReserveActivationHeight: CGFloat = 0
   var onEscape: (() -> Void)?
 
   func makeCoordinator() -> Coordinator {
@@ -67,7 +65,6 @@ struct LinkedTextEditor: NSViewRepresentable {
       context.coordinator.isApplyingText = true
       textView.string = text
       context.coordinator.isApplyingText = false
-      context.coordinator.clearTrailingInputReserve()
       context.coordinator.cancelDeferredUpdates()
       context.coordinator.applyAttributes(to: textView)
       context.coordinator.scheduleMeasuredHeightUpdate()
@@ -94,8 +91,6 @@ struct LinkedTextEditor: NSViewRepresentable {
     private var didConfigureMailMessageDrops = false
     private var hasDecoratedAttributes = false
     private var lastMarkdownPreviewActiveLineSignature = ""
-    private var pendingTrailingInputReserveExpansion = false
-    private var trailingInputReserveHeightFloor: CGFloat?
     private let linkDetector = try? NSDataDetector(
       types: NSTextCheckingResult.CheckingType.link.rawValue
     )
@@ -139,7 +134,7 @@ struct LinkedTextEditor: NSViewRepresentable {
       parent.text = textView.string
       textView.typingAttributes = baseAttributes()
       scheduleAttributeRefresh(for: textView)
-      refreshMeasuredHeightAfterUserEdit()
+      updateMeasuredHeight()
     }
 
     func textDidBeginEditing(_ notification: Notification) {
@@ -158,18 +153,6 @@ struct LinkedTextEditor: NSViewRepresentable {
       replacementString: String?
     ) -> Bool {
       guard !isApplyingText else { return true }
-
-      if parent.allowsNewlines,
-        parent.trailingInputReserveLineCount > 0,
-        let replacementString
-      {
-        let isEditingAtEnd = affectedCharRange.upperBound >= textView.string.utf16.count
-        if !replacementString.isEmpty, isEditingAtEnd {
-          pendingTrailingInputReserveExpansion = true
-        } else if affectedCharRange.length > 0 || !isEditingAtEnd {
-          clearTrailingInputReserve()
-        }
-      }
 
       if parent.allowsNewlines,
         parent.markdownPresentationMode == .livePreview,
@@ -213,7 +196,7 @@ struct LinkedTextEditor: NSViewRepresentable {
       parent.text = textView.string
       textView.typingAttributes = baseAttributes()
       scheduleAttributeRefresh(for: textView)
-      refreshMeasuredHeightAfterUserEdit()
+      updateMeasuredHeight()
     }
 
     func textView(_ textView: NSTextView, clickedOnLink link: Any, at charIndex: Int) -> Bool {
@@ -288,7 +271,7 @@ struct LinkedTextEditor: NSViewRepresentable {
       parent.text = textView.string
       textView.typingAttributes = baseAttributes()
       scheduleAttributeRefresh(for: textView)
-      refreshMeasuredHeightAfterUserEdit()
+      updateMeasuredHeight()
       return true
     }
 
@@ -343,30 +326,8 @@ struct LinkedTextEditor: NSViewRepresentable {
       textView.layoutManager?.ensureLayout(for: textContainer)
       let usedRect = textView.layoutManager?.usedRect(for: textContainer) ?? .zero
       let contentHeight = ceil(usedRect.height + textView.textContainerInset.height * 2 + 6)
-      let lineHeight = reservedLineHeight(for: textView)
-      let currentVisibleHeight = max(
-        parent.measuredHeight,
-        parent.trailingInputReserveActivationHeight,
-        trailingInputReserveHeightFloor ?? 0
-      )
-      let expandsReserve = pendingTrailingInputReserveExpansion
-        && LinkedTextEditorHeightPolicy.shouldExpandReserve(
-          contentHeight: contentHeight,
-          currentVisibleHeight: currentVisibleHeight,
-          lineHeight: lineHeight
-        )
-      let heightPolicy = LinkedTextEditorHeightPolicy.resolvedHeight(
-        contentHeight: contentHeight,
-        reserveHeightFloor: trailingInputReserveHeightFloor,
-        expandsReserve: expandsReserve,
-        reserveLineCount: parent.trailingInputReserveLineCount,
-        lineHeight: lineHeight
-      )
-      trailingInputReserveHeightFloor = heightPolicy.reserveHeightFloor
-      pendingTrailingInputReserveExpansion = false
-      let height = heightPolicy.height
-      if abs(parent.measuredHeight - height) > 1 {
-        parent.measuredHeight = height
+      if abs(parent.measuredHeight - contentHeight) > 1 {
+        parent.measuredHeight = contentHeight
       }
     }
 
@@ -407,24 +368,11 @@ struct LinkedTextEditor: NSViewRepresentable {
       }
     }
 
-    func refreshMeasuredHeightAfterUserEdit() {
-      if parent.trailingInputReserveLineCount > 0 {
-        updateMeasuredHeight()
-      } else {
-        scheduleMeasuredHeightUpdate()
-      }
-    }
-
     func cancelDeferredUpdates() {
       attributeRefreshTask?.cancel()
       attributeRefreshTask = nil
       heightMeasurementTask?.cancel()
       heightMeasurementTask = nil
-    }
-
-    func clearTrailingInputReserve() {
-      pendingTrailingInputReserveExpansion = false
-      trailingInputReserveHeightFloor = nil
     }
 
     private func baseAttributes() -> [NSAttributedString.Key: Any] {
@@ -439,12 +387,6 @@ struct LinkedTextEditor: NSViewRepresentable {
       let paragraphStyle = NSMutableParagraphStyle()
       paragraphStyle.lineHeightMultiple = parent.lineHeightMultiple
       return paragraphStyle
-    }
-
-    private func reservedLineHeight(for textView: NSTextView) -> CGFloat {
-      let layoutHeight = textView.layoutManager?.defaultLineHeight(for: parent.font) ?? 0
-      let fontHeight = parent.font.ascender - parent.font.descender + parent.font.leading
-      return ceil(max(layoutHeight, fontHeight, parent.font.pointSize) * parent.lineHeightMultiple)
     }
 
     private func applyDetectedLinks(in storage: NSTextStorage) {
@@ -796,51 +738,6 @@ struct LinkedTextEditor: NSViewRepresentable {
   }
 }
 
-struct LinkedTextEditorHeightPolicyResult: Equatable {
-  let height: CGFloat
-  let reserveHeightFloor: CGFloat?
-}
-
-enum LinkedTextEditorHeightPolicy {
-  static func shouldExpandReserve(
-    contentHeight: CGFloat,
-    currentVisibleHeight: CGFloat,
-    lineHeight: CGFloat
-  ) -> Bool {
-    guard lineHeight > 0 else { return true }
-    return contentHeight >= currentVisibleHeight - lineHeight
-  }
-
-  static func resolvedHeight(
-    contentHeight: CGFloat,
-    reserveHeightFloor: CGFloat?,
-    expandsReserve: Bool,
-    reserveLineCount: Int,
-    lineHeight: CGFloat
-  ) -> LinkedTextEditorHeightPolicyResult {
-    let contentHeight = ceil(contentHeight)
-    guard reserveLineCount > 0, lineHeight > 0 else {
-      return LinkedTextEditorHeightPolicyResult(height: contentHeight, reserveHeightFloor: nil)
-    }
-
-    var reserveHeightFloor = reserveHeightFloor
-    if expandsReserve {
-      let reserveHeight = ceil(lineHeight * CGFloat(reserveLineCount))
-      reserveHeightFloor = max(reserveHeightFloor ?? 0, contentHeight + reserveHeight)
-    } else if let floor = reserveHeightFloor, contentHeight > floor {
-      reserveHeightFloor = nil
-    }
-
-    guard let floor = reserveHeightFloor else {
-      return LinkedTextEditorHeightPolicyResult(height: contentHeight, reserveHeightFloor: nil)
-    }
-    return LinkedTextEditorHeightPolicyResult(
-      height: max(contentHeight, floor),
-      reserveHeightFloor: floor
-    )
-  }
-}
-
 enum LinkedTextEditorLinkPolicy {
   static func hasLinkCandidates(in text: String) -> Bool {
     text.contains("://")
@@ -861,6 +758,11 @@ enum LinkedTextEditorKeyboardShortcutPolicy {
 
 private final class LinkedTextView: NSTextView {
   weak var linkedCoordinator: LinkedTextEditor.Coordinator?
+
+  override func mouseDown(with event: NSEvent) {
+    window?.makeFirstResponder(self)
+    super.mouseDown(with: event)
+  }
 
   override func keyDown(with event: NSEvent) {
     if LinkedTextEditorKeyboardShortcutPolicy.isSelectAllShortcut(

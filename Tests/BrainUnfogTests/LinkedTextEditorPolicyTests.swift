@@ -4,62 +4,6 @@ import XCTest
 @testable import BrainUnfog
 
 final class LinkedTextEditorPolicyTests: XCTestCase {
-  func testTrailingReserveExpandsMeasuredHeightInOneChunk() {
-    let result = LinkedTextEditorHeightPolicy.resolvedHeight(
-      contentHeight: 100,
-      reserveHeightFloor: nil,
-      expandsReserve: true,
-      reserveLineCount: 5,
-      lineHeight: 12
-    )
-
-    XCTAssertEqual(result.height, 160)
-    XCTAssertEqual(result.reserveHeightFloor, 160)
-  }
-
-  func testTrailingReserveWaitsUntilContentReachesVisibleBottom() {
-    XCTAssertFalse(
-      LinkedTextEditorHeightPolicy.shouldExpandReserve(
-        contentHeight: 80,
-        currentVisibleHeight: 150,
-        lineHeight: 16
-      )
-    )
-    XCTAssertTrue(
-      LinkedTextEditorHeightPolicy.shouldExpandReserve(
-        contentHeight: 136,
-        currentVisibleHeight: 150,
-        lineHeight: 16
-      )
-    )
-  }
-
-  func testTrailingReserveKeepsHeightStableWhileContentFits() {
-    let result = LinkedTextEditorHeightPolicy.resolvedHeight(
-      contentHeight: 124,
-      reserveHeightFloor: 160,
-      expandsReserve: false,
-      reserveLineCount: 5,
-      lineHeight: 12
-    )
-
-    XCTAssertEqual(result.height, 160)
-    XCTAssertEqual(result.reserveHeightFloor, 160)
-  }
-
-  func testTrailingReserveClearsWhenContentExceedsFloor() {
-    let result = LinkedTextEditorHeightPolicy.resolvedHeight(
-      contentHeight: 172,
-      reserveHeightFloor: 160,
-      expandsReserve: false,
-      reserveLineCount: 5,
-      lineHeight: 12
-    )
-
-    XCTAssertEqual(result.height, 172)
-    XCTAssertNil(result.reserveHeightFloor)
-  }
-
   func testLinkCandidatePolicySkipsPlainText() {
     XCTAssertFalse(
       LinkedTextEditorLinkPolicy.hasLinkCandidates(in: "평범한 노트 입력 중입니다.")
@@ -454,6 +398,33 @@ final class LinkedTextEditorPolicyTests: XCTestCase {
 
     XCTAssertTrue(handled)
     XCTAssertEqual(escapeCount, 1)
+  }
+
+  @MainActor
+  func testTextChangeRefreshesMeasuredHeightSynchronously() {
+    var editorText = "one"
+    var measuredHeight: CGFloat = 0
+    let editor = LinkedTextEditor(
+      text: Binding(get: { editorText }, set: { editorText = $0 }),
+      measuredHeight: Binding(get: { measuredHeight }, set: { measuredHeight = $0 }),
+      font: .systemFont(ofSize: 14),
+      vaultRootURL: nil,
+      allowsNewlines: true,
+      lineHeightMultiple: 1
+    )
+    let coordinator = LinkedTextEditor.Coordinator(editor)
+    let textView = NSTextView(frame: NSRect(x: 0, y: 0, width: 140, height: 24))
+    textView.textContainer?.widthTracksTextView = true
+    textView.textContainer?.heightTracksTextView = false
+    textView.textContainerInset = NSSize(width: 0, height: 2)
+    textView.font = .systemFont(ofSize: 14)
+    textView.string = "one\ntwo"
+    coordinator.textView = textView
+
+    coordinator.textDidChange(Notification(name: NSText.didChangeNotification, object: textView))
+
+    XCTAssertEqual(editorText, "one\ntwo")
+    XCTAssertGreaterThan(measuredHeight, 0)
   }
 
   func testMarkdownPreviewFindsListParagraphPrefixesForHangingIndent() {

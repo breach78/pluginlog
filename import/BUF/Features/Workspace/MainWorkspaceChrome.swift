@@ -103,8 +103,8 @@ extension MainWorkspaceView {
     Button {
       openDailyJournalWindow()
     } label: {
-      Image(systemName: "book.closed")
-        .font(.system(size: 13, weight: .semibold))
+      Image(systemName: "exclamationmark")
+        .font(.system(size: 15, weight: .semibold))
         .foregroundStyle(.primary)
         .frame(
           width: workspaceTitlebarIconButtonSize,

@@ -228,9 +228,7 @@ private struct DailyJournalDaySection: View {
         allowsNewlines: true,
         lineHeightMultiple: 1.1,
         markdownPresentationMode: .livePreview,
-        allowsMailMessageDrops: true,
-        trailingInputReserveLineCount: 3,
-        trailingInputReserveActivationHeight: minimumEditorHeight
+        allowsMailMessageDrops: true
       )
       .frame(minHeight: minimumEditorHeight)
       .frame(height: max(minimumEditorHeight, measuredHeight))

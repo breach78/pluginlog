@@ -11,6 +11,11 @@ enum WorkspaceTextResponderReleasePolicy {
     guard let responderView = firstResponder as? NSView, let mouseHitView else {
       return true
     }
+    if let scrollView = responderView.enclosingScrollView,
+      isView(mouseHitView, inside: scrollView)
+    {
+      return false
+    }
     return !isView(mouseHitView, inside: responderView)
   }
 

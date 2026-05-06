@@ -38,6 +38,20 @@ final class WorkspaceTextResponderReleasePolicyTests: XCTestCase {
     )
   }
 
+  func testDoesNotReleaseWhenClickStaysInsideTextResponderScrollView() {
+    let scrollView = NSScrollView()
+    let textView = NSTextView()
+    scrollView.documentView = textView
+
+    XCTAssertFalse(
+      WorkspaceTextResponderReleasePolicy.shouldReleaseTextResponder(
+        hasActiveEditPanel: true,
+        firstResponder: textView,
+        mouseHitView: scrollView.contentView
+      )
+    )
+  }
+
   func testReleasesWhenClickMovesOutsideTextResponder() {
     XCTAssertTrue(
       WorkspaceTextResponderReleasePolicy.shouldReleaseTextResponder(

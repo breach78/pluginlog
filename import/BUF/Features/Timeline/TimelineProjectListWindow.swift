@@ -511,9 +511,7 @@ struct TimelineProjectListContent: View {
           allowsNewlines: true,
           lineHeightMultiple: 1.08,
           markdownPresentationMode: .livePreview,
-          allowsMailMessageDrops: true,
-          trailingInputReserveLineCount: 2,
-          trailingInputReserveActivationHeight: projectNoteMinimumHeight
+          allowsMailMessageDrops: true
         )
         .frame(minHeight: projectNoteMinimumHeight)
         .frame(height: max(projectNoteMinimumHeight, projectNoteHeight))
