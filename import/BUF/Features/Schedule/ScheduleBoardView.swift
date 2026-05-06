@@ -667,6 +667,7 @@ struct ScheduleBoardView: View {
   @State var workspaceScheduleProjectSnapshots: [UUID: WorkspaceProjectRuntimeRecord] = [:]
   @State var workspaceScheduleSliceEntriesByProjectID: [UUID: [ScheduleSliceEntry]] = [:]
   @State var workspaceScheduleLoadGeneration = 0
+  @State var workspaceScheduleLastLoadSignature: Int?
   @State var workspaceLoadFallback: ScheduleWorkspaceLoadFallback?
   @State var scheduleTaskWriteNotice: ScheduleBoardRuntimeNotice?
   @State var selectedScheduleTaskID: UUID?

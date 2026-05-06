@@ -471,6 +471,108 @@ final class RetainedWorkspaceSurfaceProjectionTests: XCTestCase {
     XCTAssertTrue(blockedRead.projectSnapshots.isEmpty)
   }
 
+  func testPartialMergeReplacesOnlyRequestedProjects() {
+    let firstProjectID = UUID()
+    let secondProjectID = UUID()
+    let staleTaskID = UUID()
+    let freshTaskID = UUID()
+    let untouchedTaskID = UUID()
+    let existing = RetainedWorkspaceSurfaceProjection(
+      projectSnapshots: [
+        firstProjectID: makeWorkspaceProjectSnapshot(projectID: firstProjectID, title: "Old"),
+        secondProjectID: makeWorkspaceProjectSnapshot(projectID: secondProjectID, title: "Keep"),
+      ],
+      projectSummaries: [
+        firstProjectID: makeSummary(title: "Old"),
+        secondProjectID: makeSummary(title: "Keep"),
+      ],
+      scheduleEntriesByProjectID: [
+        firstProjectID: [makeEntry(taskID: staleTaskID, title: "Old task")],
+        secondProjectID: [makeEntry(taskID: untouchedTaskID, title: "Keep task")],
+      ],
+      calendarBridgeDecisionsByTaskID: [
+        staleTaskID: .noAction,
+        untouchedTaskID: .noAction,
+      ]
+    )
+    let loaded = RetainedWorkspaceSurfaceProjection(
+      projectSnapshots: [
+        firstProjectID: makeWorkspaceProjectSnapshot(projectID: firstProjectID, title: "New")
+      ],
+      projectSummaries: [
+        firstProjectID: makeSummary(title: "New")
+      ],
+      scheduleEntriesByProjectID: [
+        firstProjectID: [makeEntry(taskID: freshTaskID, title: "New task")]
+      ],
+      calendarBridgeDecisionsByTaskID: [
+        freshTaskID: .noAction
+      ]
+    )
+
+    let merged = RetainedWorkspaceSurfaceProjectionMergePolicy.merge(
+      existing: existing,
+      loaded: loaded,
+      replacingProjectIDs: [firstProjectID]
+    )
+
+    XCTAssertEqual(merged.projectSnapshots[firstProjectID]?.title, "New")
+    XCTAssertEqual(merged.projectSnapshots[secondProjectID]?.title, "Keep")
+    XCTAssertEqual(merged.scheduleEntriesByProjectID[firstProjectID]?.map(\.taskID), [freshTaskID])
+    XCTAssertEqual(merged.scheduleEntriesByProjectID[secondProjectID]?.map(\.taskID), [untouchedTaskID])
+    XCTAssertNil(merged.calendarBridgeDecisionsByTaskID[staleTaskID])
+    XCTAssertEqual(merged.calendarBridgeDecisionsByTaskID[freshTaskID], .noAction)
+    XCTAssertEqual(merged.calendarBridgeDecisionsByTaskID[untouchedTaskID], .noAction)
+  }
+
+  func testPartialMergeFiltersWriteMarkersForReplacedProjectTasks() {
+    let projectID = UUID()
+    let staleTaskID = UUID()
+    let freshTaskID = UUID()
+    let untouchedTaskID = UUID()
+    let existing = RetainedWorkspaceSurfaceProjection(
+      projectSnapshots: [projectID: makeWorkspaceProjectSnapshot(projectID: projectID)],
+      projectSummaries: [projectID: makeSummary(title: "Project")],
+      scheduleEntriesByProjectID: [projectID: [makeEntry(taskID: staleTaskID, title: "Old")]],
+      calendarBridgeDecisionsByTaskID: [staleTaskID: .noAction, untouchedTaskID: .noAction]
+    )
+    let loaded = RetainedWorkspaceSurfaceProjection(
+      projectSnapshots: [projectID: makeWorkspaceProjectSnapshot(projectID: projectID)],
+      projectSummaries: [projectID: makeSummary(title: "Project")],
+      scheduleEntriesByProjectID: [projectID: [makeEntry(taskID: freshTaskID, title: "New")]],
+      calendarBridgeDecisionsByTaskID: [freshTaskID: .noAction]
+    )
+    let markers = [
+      staleTaskID: RetainedCalendarBridgeWriteMarker(
+        taskID: staleTaskID,
+        operation: .upsertOwnedEvent,
+        externalIdentifier: nil,
+        title: "Old",
+        startDate: nil,
+        durationMinutes: nil
+      ),
+      untouchedTaskID: RetainedCalendarBridgeWriteMarker(
+        taskID: untouchedTaskID,
+        operation: .upsertOwnedEvent,
+        externalIdentifier: nil,
+        title: "Keep",
+        startDate: nil,
+        durationMinutes: nil
+      ),
+    ]
+
+    let filtered = RetainedWorkspaceSurfaceProjectionMergePolicy.filteredWriteMarkers(
+      existingMarkers: markers,
+      existing: existing,
+      loaded: loaded,
+      replacingProjectIDs: [projectID]
+    )
+
+    XCTAssertNil(filtered[staleTaskID])
+    XCTAssertNil(filtered[freshTaskID])
+    XCTAssertEqual(filtered[untouchedTaskID]?.taskID, untouchedTaskID)
+  }
+
   private static let calendar: Calendar = {
     var calendar = Calendar(identifier: .gregorian)
     calendar.timeZone = TimeZone(secondsFromGMT: 0)!
@@ -496,10 +598,13 @@ final class RetainedWorkspaceSurfaceProjectionTests: XCTestCase {
     )
   }
 
-  private func makeWorkspaceProjectSnapshot(projectID: UUID) -> WorkspaceProjectRuntimeRecord {
+  private func makeWorkspaceProjectSnapshot(
+    projectID: UUID,
+    title: String = "Project"
+  ) -> WorkspaceProjectRuntimeRecord {
     WorkspaceProjectRuntimeRecord(
       id: projectID,
-      title: "Project",
+      title: title,
       colorHex: nil,
       reminderListIdentifier: nil,
       reminderListExternalIdentifier: nil,
@@ -511,6 +616,54 @@ final class RetainedWorkspaceSurfaceProjectionTests: XCTestCase {
       createdAt: .distantPast,
       updatedAt: .distantPast,
       isArchived: false
+    )
+  }
+
+  private func makeSummary(title: String) -> ProjectSummaryRecord {
+    ProjectSummaryRecord(
+      openRootTaskCount: 0,
+      completedRootTaskCount: 0,
+      undatedOpenRootTaskCount: 0,
+      overdueOpenRootTaskCount: 0,
+      todayTaskCount: 0,
+      nextUpcomingDate: nil,
+      deadline: nil,
+      stageRaw: ProjectProgressStage.do.storageRawValue,
+      progress: 0,
+      latestTaskUpdatedAt: nil,
+      title: title,
+      colorHex: nil,
+      isArchived: false
+    )
+  }
+
+  private func makeEntry(taskID: UUID, title: String) -> ScheduleSliceEntry {
+    ScheduleSliceEntry(
+      taskID: taskID,
+      parentTaskID: nil,
+      title: title,
+      displayedDate: nil,
+      startDate: nil,
+      dueDate: nil,
+      scheduleHasExplicitTime: false,
+      scheduledDurationMinutes: nil,
+      isCompleted: false,
+      completionDate: nil,
+      recurrenceRuleRaw: nil,
+      isLocalCompletedRecurringOccurrence: false,
+      attachmentCount: 0,
+      hasReminderNoteContent: false,
+      reminderNoteText: "",
+      requiredWorkDays: 0,
+      completedWorkUnits: 0,
+      completedWorkUnitDates: [],
+      preparationScheduleOverridesRaw: "",
+      rowOrder: 0,
+      priority: 0,
+      isFlagged: false,
+      isArchived: false,
+      localUpdatedAt: .distantPast,
+      createdAt: .distantPast
     )
   }
 

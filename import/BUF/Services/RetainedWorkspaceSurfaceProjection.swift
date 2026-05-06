@@ -14,6 +14,89 @@ struct RetainedWorkspaceSurfaceProjection: Equatable {
   )
 }
 
+enum RetainedWorkspaceSurfaceProjectionMergePolicy {
+  static func merge(
+    existing: RetainedWorkspaceSurfaceProjection,
+    loaded: RetainedWorkspaceSurfaceProjection,
+    replacingProjectIDs: Set<UUID>
+  ) -> RetainedWorkspaceSurfaceProjection {
+    let staleTaskIDs = taskIDs(
+      in: existing.scheduleEntriesByProjectID,
+      projectIDs: replacingProjectIDs
+    )
+    var calendarBridgeDecisionsByTaskID = existing.calendarBridgeDecisionsByTaskID
+    for taskID in staleTaskIDs {
+      calendarBridgeDecisionsByTaskID.removeValue(forKey: taskID)
+    }
+    for (taskID, decision) in loaded.calendarBridgeDecisionsByTaskID {
+      calendarBridgeDecisionsByTaskID[taskID] = decision
+    }
+
+    return RetainedWorkspaceSurfaceProjection(
+      projectSnapshots: replacing(
+        existing.projectSnapshots,
+        with: loaded.projectSnapshots,
+        for: replacingProjectIDs
+      ),
+      projectSummaries: replacing(
+        existing.projectSummaries,
+        with: loaded.projectSummaries,
+        for: replacingProjectIDs
+      ),
+      scheduleEntriesByProjectID: replacing(
+        existing.scheduleEntriesByProjectID,
+        with: loaded.scheduleEntriesByProjectID,
+        for: replacingProjectIDs
+      ),
+      calendarBridgeDecisionsByTaskID: calendarBridgeDecisionsByTaskID
+    )
+  }
+
+  static func filteredWriteMarkers(
+    existingMarkers: [UUID: RetainedCalendarBridgeWriteMarker],
+    existing: RetainedWorkspaceSurfaceProjection,
+    loaded: RetainedWorkspaceSurfaceProjection,
+    replacingProjectIDs: Set<UUID>
+  ) -> [UUID: RetainedCalendarBridgeWriteMarker] {
+    let staleTaskIDs = taskIDs(
+      in: existing.scheduleEntriesByProjectID,
+      projectIDs: replacingProjectIDs
+    )
+    let mergedTaskIDs = Set(
+      merge(
+        existing: existing,
+        loaded: loaded,
+        replacingProjectIDs: replacingProjectIDs
+      ).calendarBridgeDecisionsByTaskID.keys
+    )
+    return existingMarkers.filter { taskID, _ in
+      !staleTaskIDs.contains(taskID) && mergedTaskIDs.contains(taskID)
+    }
+  }
+
+  private static func replacing<Value>(
+    _ existing: [UUID: Value],
+    with loaded: [UUID: Value],
+    for projectIDs: Set<UUID>
+  ) -> [UUID: Value] {
+    var result = existing
+    for projectID in projectIDs {
+      result.removeValue(forKey: projectID)
+    }
+    for (projectID, value) in loaded {
+      result[projectID] = value
+    }
+    return result
+  }
+
+  private static func taskIDs(
+    in scheduleEntriesByProjectID: [UUID: [ScheduleSliceEntry]],
+    projectIDs: Set<UUID>
+  ) -> Set<UUID> {
+    Set(projectIDs.flatMap { scheduleEntriesByProjectID[$0] ?? [] }.map(\.taskID))
+  }
+}
+
 enum RetainedWorkspaceSurfaceProjectionBlocker: Equatable {
   case identityFailure(RetainedProjectionBuilder.Error)
   case partialProjectCoverage(missingProjectIDs: [UUID])

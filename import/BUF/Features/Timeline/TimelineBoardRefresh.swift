@@ -462,18 +462,35 @@ enum TimelineBoardReadPath {
 
 extension TimelineBoardView {
   @MainActor
-  func reloadWorkspaceTimelineProjectDetails(for projectIDs: [UUID]) async {
+  func reloadWorkspaceTimelineProjectDetails(
+    for projectIDs: [UUID],
+    force: Bool = false
+  ) async {
+    let requestedProjectIDs = TimelineBoardReadPath.normalizedProjectIDs(projectIDs)
+    let loadSignature = TimelineBoardReadPath.workspaceLoadSignature(
+      projectIDs: requestedProjectIDs,
+      workspaceTreeRevision: appState.workspaceTreeRevision
+    )
+    guard force || workspaceTimelineLastLoadSignature != loadSignature else { return }
     workspaceTimelineLoadGeneration += 1
     let loadGeneration = workspaceTimelineLoadGeneration
-    let requestedProjectIDs = TimelineBoardReadPath.normalizedProjectIDs(projectIDs)
     guard !requestedProjectIDs.isEmpty else {
-      workspaceTimelineProjectSnapshots = [:]
-      workspaceTimelineProjectSummaries = [:]
-      workspaceTimelineScheduleEntriesByProjectID = [:]
-      retainedTimelineReadBlocker = nil
-      retainedTimelineCalendarBridgeDecisionsByTaskID = [:]
-      retainedTimelineCalendarBridgeWriteMarkersByTaskID = [:]
-      invalidateWorkspaceTimelineProjectionCaches()
+      let didChange = !workspaceTimelineProjectSnapshots.isEmpty
+        || !workspaceTimelineProjectSummaries.isEmpty
+        || !workspaceTimelineScheduleEntriesByProjectID.isEmpty
+        || retainedTimelineReadBlocker != nil
+        || !retainedTimelineCalendarBridgeDecisionsByTaskID.isEmpty
+        || !retainedTimelineCalendarBridgeWriteMarkersByTaskID.isEmpty
+      if didChange {
+        workspaceTimelineProjectSnapshots = [:]
+        workspaceTimelineProjectSummaries = [:]
+        workspaceTimelineScheduleEntriesByProjectID = [:]
+        retainedTimelineReadBlocker = nil
+        retainedTimelineCalendarBridgeDecisionsByTaskID = [:]
+        retainedTimelineCalendarBridgeWriteMarkersByTaskID = [:]
+        invalidateWorkspaceTimelineProjectionCaches()
+      }
+      workspaceTimelineLastLoadSignature = loadSignature
       return
     }
 
@@ -483,28 +500,96 @@ extension TimelineBoardView {
     )
     guard loadGeneration == workspaceTimelineLoadGeneration else { return }
     let resolvedRead = RetainedWorkspaceSurfaceProjectionBuilder.resolveRetainedOnly(retainedResult)
+    let nextReadBlocker: RetainedWorkspaceSurfaceProjectionBlocker?
     if case .blocked(let blocker) = resolvedRead.source {
-      retainedTimelineReadBlocker = blocker
+      nextReadBlocker = blocker
     } else {
-      retainedTimelineReadBlocker = nil
+      nextReadBlocker = nil
     }
-
-    workspaceTimelineProjectSnapshots = resolvedRead.projectSnapshots
-    workspaceTimelineProjectSummaries = resolvedRead.projectSummaries
-    workspaceTimelineScheduleEntriesByProjectID = resolvedRead.scheduleEntriesByProjectID
-    retainedTimelineCalendarBridgeDecisionsByTaskID =
-      resolvedRead.calendarBridgeDecisionsByTaskID
     let currentTaskIDs = Set(resolvedRead.calendarBridgeDecisionsByTaskID.keys)
-    retainedTimelineCalendarBridgeWriteMarkersByTaskID =
-      retainedTimelineCalendarBridgeWriteMarkersByTaskID.filter { currentTaskIDs.contains($0.key) }
-    if RetainedWorkspaceSurfaceProjectionBuilder.shouldInvalidateConsumerCaches(
-      for: resolvedRead.source
-    ) {
+    let nextWriteMarkers = retainedTimelineCalendarBridgeWriteMarkersByTaskID.filter {
+      currentTaskIDs.contains($0.key)
+    }
+    let didChange = workspaceTimelineProjectSnapshots != resolvedRead.projectSnapshots
+      || workspaceTimelineProjectSummaries != resolvedRead.projectSummaries
+      || workspaceTimelineScheduleEntriesByProjectID != resolvedRead.scheduleEntriesByProjectID
+      || retainedTimelineReadBlocker != nextReadBlocker
+      || retainedTimelineCalendarBridgeDecisionsByTaskID != resolvedRead.calendarBridgeDecisionsByTaskID
+      || retainedTimelineCalendarBridgeWriteMarkersByTaskID != nextWriteMarkers
+    if didChange {
+      retainedTimelineReadBlocker = nextReadBlocker
+      workspaceTimelineProjectSnapshots = resolvedRead.projectSnapshots
+      workspaceTimelineProjectSummaries = resolvedRead.projectSummaries
+      workspaceTimelineScheduleEntriesByProjectID = resolvedRead.scheduleEntriesByProjectID
+      retainedTimelineCalendarBridgeDecisionsByTaskID =
+        resolvedRead.calendarBridgeDecisionsByTaskID
+      retainedTimelineCalendarBridgeWriteMarkersByTaskID = nextWriteMarkers
       invalidateWorkspaceTimelineProjectionCaches()
     }
+    workspaceTimelineLastLoadSignature = loadSignature
     if case .blocked = resolvedRead.source {
       appState.errorMessage = resolvedRead.errorMessage
     }
+  }
+
+  @MainActor
+  func reloadChangedWorkspaceTimelineProjectDetails(for projectIDs: [UUID]) async {
+    let requestedProjectIDs = Set(TimelineBoardReadPath.normalizedProjectIDs(projectIDs))
+    guard !requestedProjectIDs.isEmpty else { return }
+    workspaceTimelineLoadGeneration += 1
+    let loadGeneration = workspaceTimelineLoadGeneration
+    workspaceTimelineLastLoadSignature = TimelineBoardReadPath.workspaceLoadSignature(
+      projectIDs: activeProjectIDs,
+      workspaceTreeRevision: appState.workspaceTreeRevision
+    )
+    let retainedResult = await RetainedWorkspaceSurfaceProjectionBuilder.load(
+      obsidianVaultRootURL: appState.obsidianVaultRootURL,
+      projectIDs: Array(requestedProjectIDs)
+    )
+    guard loadGeneration == workspaceTimelineLoadGeneration else { return }
+
+    guard case .loaded(let loadedProjection) = retainedResult else {
+      await reloadWorkspaceTimelineProjectDetails(for: activeProjectIDs, force: true)
+      return
+    }
+
+    let existingProjection = RetainedWorkspaceSurfaceProjection(
+      projectSnapshots: workspaceTimelineProjectSnapshots,
+      projectSummaries: workspaceTimelineProjectSummaries,
+      scheduleEntriesByProjectID: workspaceTimelineScheduleEntriesByProjectID,
+      calendarBridgeDecisionsByTaskID: retainedTimelineCalendarBridgeDecisionsByTaskID
+    )
+    let mergedProjection = RetainedWorkspaceSurfaceProjectionMergePolicy.merge(
+      existing: existingProjection,
+      loaded: loadedProjection,
+      replacingProjectIDs: requestedProjectIDs
+    )
+    let nextWriteMarkers = RetainedWorkspaceSurfaceProjectionMergePolicy.filteredWriteMarkers(
+      existingMarkers: retainedTimelineCalendarBridgeWriteMarkersByTaskID,
+      existing: existingProjection,
+      loaded: loadedProjection,
+      replacingProjectIDs: requestedProjectIDs
+    )
+    let didChange = workspaceTimelineProjectSnapshots != mergedProjection.projectSnapshots
+      || workspaceTimelineProjectSummaries != mergedProjection.projectSummaries
+      || workspaceTimelineScheduleEntriesByProjectID != mergedProjection.scheduleEntriesByProjectID
+      || retainedTimelineReadBlocker != nil
+      || retainedTimelineCalendarBridgeDecisionsByTaskID != mergedProjection.calendarBridgeDecisionsByTaskID
+      || retainedTimelineCalendarBridgeWriteMarkersByTaskID != nextWriteMarkers
+    if didChange {
+      retainedTimelineReadBlocker = nil
+      workspaceTimelineProjectSnapshots = mergedProjection.projectSnapshots
+      workspaceTimelineProjectSummaries = mergedProjection.projectSummaries
+      workspaceTimelineScheduleEntriesByProjectID = mergedProjection.scheduleEntriesByProjectID
+      retainedTimelineCalendarBridgeDecisionsByTaskID =
+        mergedProjection.calendarBridgeDecisionsByTaskID
+      retainedTimelineCalendarBridgeWriteMarkersByTaskID = nextWriteMarkers
+      invalidateWorkspaceTimelineProjectionCaches()
+    }
+    workspaceTimelineLastLoadSignature = TimelineBoardReadPath.workspaceLoadSignature(
+      projectIDs: activeProjectIDs,
+      workspaceTreeRevision: appState.workspaceTreeRevision
+    )
   }
 
   func invalidateWorkspaceTimelineProjectionCaches() {

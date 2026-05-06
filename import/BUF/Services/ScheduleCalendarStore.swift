@@ -1522,6 +1522,17 @@ final class ScheduleCalendarStore: ObservableObject, ScheduleCalendarServicing,
   }
 
   private func applyProjectionStateSnapshot(_ snapshot: ScheduleCalendarProjectionStateSnapshot) {
+    guard calendars != snapshot.calendars
+      || events != snapshot.events
+      || visibleEvents != snapshot.visibleEvents
+      || calendarsSignature != snapshot.calendarsSignature
+      || visibleEventsSignature != snapshot.visibleEventsSignature
+      || accessDenied != snapshot.accessDenied
+      || overlayProjection != snapshot.overlayProjection
+    else {
+      return
+    }
+
     calendars = snapshot.calendars
     events = snapshot.events
     visibleEvents = snapshot.visibleEvents

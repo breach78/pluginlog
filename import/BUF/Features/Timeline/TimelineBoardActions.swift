@@ -177,10 +177,10 @@ extension TimelineBoardView {
         calendar: calendar,
         reminderProjectProvider: appState.reminderProjectProvider
       )
+      appState.bumpWorkspaceTreeRevision()
       await refreshTimelineProjectState(including: [projectID])
       retainedTimelineCalendarBridgeDecisionsByTaskID[result.taskID] = result.calendarBridgeDecision
       retainedTimelineCalendarBridgeWriteMarkersByTaskID[result.taskID] = result.calendarWriteMarker
-      appState.bumpWorkspaceTreeRevision()
       if registerUndo {
         appState.registerUndo(with: undoManager, actionName: "할일 추가") {
           Task { @MainActor in
@@ -228,10 +228,10 @@ extension TimelineBoardView {
         calendar: calendar,
         reminderProjectProvider: appState.reminderProjectProvider
       )
+      appState.bumpWorkspaceTreeRevision()
       await refreshTimelineProjectState(including: [projectID])
       retainedTimelineCalendarBridgeDecisionsByTaskID[taskID] = result.calendarBridgeDecision
       retainedTimelineCalendarBridgeWriteMarkersByTaskID[taskID] = result.calendarWriteMarker
-      appState.bumpWorkspaceTreeRevision()
       let previousTitle = undoTitle ?? entry.title
       if registerUndo, previousTitle != title {
         appState.registerUndo(with: undoManager, actionName: "할일 이름 변경") {
@@ -293,6 +293,7 @@ extension TimelineBoardView {
         taskID: taskID,
         reminderProjectProvider: appState.reminderProjectProvider
       )
+      appState.bumpWorkspaceTreeRevision()
       await refreshTimelineProjectState(including: [projectID])
       retainedTimelineCalendarBridgeDecisionsByTaskID.removeValue(forKey: taskID)
       retainedTimelineCalendarBridgeWriteMarkersByTaskID.removeValue(forKey: taskID)
@@ -300,7 +301,6 @@ extension TimelineBoardView {
         activeTimelineTaskEditTarget = nil
       }
       onTaskDeleted(projectID, taskID)
-      appState.bumpWorkspaceTreeRevision()
       if registerUndo, let undoSnapshot {
         appState.registerUndo(with: undoManager, actionName: "할일 삭제") {
           Task { @MainActor in
@@ -386,9 +386,9 @@ extension TimelineBoardView {
           registerUndo: false
         )
       } else {
+        appState.bumpWorkspaceTreeRevision()
         await refreshTimelineProjectState(including: [projectID])
       }
-      appState.bumpWorkspaceTreeRevision()
       if registerUndo {
         appState.registerUndo(with: undoManager, actionName: "할일 삭제 취소") {
           Task { @MainActor in
@@ -1087,10 +1087,17 @@ extension TimelineBoardView {
     excluding excludedProjectIDs: [UUID] = []
   ) async {
     let excluded = Set(excludedProjectIDs)
-    let requestedProjectIDs = TimelineBoardReadPath.normalizedProjectIDs(
-      (activeProjectIDs + additionalProjectIDs).filter { !excluded.contains($0) }
+    let changedProjectIDs = TimelineBoardReadPath.normalizedProjectIDs(
+      additionalProjectIDs.filter { !excluded.contains($0) }
     )
-    await reloadWorkspaceTimelineProjectDetails(for: requestedProjectIDs)
+    if changedProjectIDs.isEmpty {
+      let requestedProjectIDs = TimelineBoardReadPath.normalizedProjectIDs(
+        activeProjectIDs.filter { !excluded.contains($0) }
+      )
+      await reloadWorkspaceTimelineProjectDetails(for: requestedProjectIDs)
+    } else {
+      await reloadChangedWorkspaceTimelineProjectDetails(for: changedProjectIDs)
+    }
   }
 
   private func timelineTaskCompletionState(

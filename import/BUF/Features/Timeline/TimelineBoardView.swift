@@ -122,6 +122,7 @@ struct TimelineBoardView: View {
   @State var activeTimelineTaskEditTarget: TimelineTaskEditTarget?
   @State var timelineProjectManualOrder = TimelineProjectManualOrderStore.load()
   @State var workspaceTimelineLoadGeneration = 0
+  @State var workspaceTimelineLastLoadSignature: Int?
   @State var midnightRefreshTimer: Timer?
   @State var isHoveringPinnedLeftColumn = false
   @State var overlayMetricsCache = TimelineOverlayMetricsCache()

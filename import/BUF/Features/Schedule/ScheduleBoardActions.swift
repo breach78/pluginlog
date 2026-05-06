@@ -209,22 +209,37 @@ extension ScheduleBoardView {
     workspaceTreeRevision: Int
   ) -> Int {
     var hasher = Hasher()
-    hasher.combine(projectIDs)
+    hasher.combine(projectIDs.map(\.uuidString).sorted())
     hasher.combine(workspaceTreeRevision)
     return hasher.finalize()
   }
 
-  func reloadWorkspaceScheduleProjectDetails(for projectIDs: [UUID]) async {
+  func reloadWorkspaceScheduleProjectDetails(
+    for projectIDs: [UUID],
+    force: Bool = false
+  ) async {
+    let requestedProjectIDs = Array(Set(projectIDs))
+    let loadSignature = scheduleWorkspaceLoadSignature(
+      projectIDs: requestedProjectIDs,
+      workspaceTreeRevision: appState.workspaceTreeRevision
+    )
+    guard force || workspaceScheduleLastLoadSignature != loadSignature else { return }
     workspaceScheduleLoadGeneration += 1
     let loadGeneration = workspaceScheduleLoadGeneration
-    let requestedProjectIDs = Array(Set(projectIDs))
     guard !requestedProjectIDs.isEmpty else {
       await MainActor.run {
-        workspaceScheduleProjectSnapshots = [:]
-        workspaceScheduleSliceEntriesByProjectID = [:]
-        retainedScheduleCalendarBridgeDecisionsByTaskID = [:]
-        retainedScheduleCalendarBridgeWriteMarkersByTaskID = [:]
-        invalidateWorkspaceScheduleProjectionCaches()
+        let didChange = !workspaceScheduleProjectSnapshots.isEmpty
+          || !workspaceScheduleSliceEntriesByProjectID.isEmpty
+          || !retainedScheduleCalendarBridgeDecisionsByTaskID.isEmpty
+          || !retainedScheduleCalendarBridgeWriteMarkersByTaskID.isEmpty
+        if didChange {
+          workspaceScheduleProjectSnapshots = [:]
+          workspaceScheduleSliceEntriesByProjectID = [:]
+          retainedScheduleCalendarBridgeDecisionsByTaskID = [:]
+          retainedScheduleCalendarBridgeWriteMarkersByTaskID = [:]
+          invalidateWorkspaceScheduleProjectionCaches()
+        }
+        workspaceScheduleLastLoadSignature = loadSignature
         recordWorkspaceLoadFallback(nil)
       }
       return
@@ -239,18 +254,23 @@ extension ScheduleBoardView {
     await MainActor.run {
       guard loadGeneration == workspaceScheduleLoadGeneration else { return }
       let resolvedRead = RetainedWorkspaceSurfaceProjectionBuilder.resolveRetainedOnly(retainedResult)
-      workspaceScheduleProjectSnapshots = resolvedRead.projectSnapshots
-      workspaceScheduleSliceEntriesByProjectID = resolvedRead.scheduleEntriesByProjectID
-      retainedScheduleCalendarBridgeDecisionsByTaskID =
-        resolvedRead.calendarBridgeDecisionsByTaskID
       let currentTaskIDs = Set(resolvedRead.calendarBridgeDecisionsByTaskID.keys)
-      retainedScheduleCalendarBridgeWriteMarkersByTaskID =
-        retainedScheduleCalendarBridgeWriteMarkersByTaskID.filter { currentTaskIDs.contains($0.key) }
-      if RetainedWorkspaceSurfaceProjectionBuilder.shouldInvalidateConsumerCaches(
-        for: resolvedRead.source
-      ) {
+      let nextWriteMarkers = retainedScheduleCalendarBridgeWriteMarkersByTaskID.filter {
+        currentTaskIDs.contains($0.key)
+      }
+      let didChange = workspaceScheduleProjectSnapshots != resolvedRead.projectSnapshots
+        || workspaceScheduleSliceEntriesByProjectID != resolvedRead.scheduleEntriesByProjectID
+        || retainedScheduleCalendarBridgeDecisionsByTaskID != resolvedRead.calendarBridgeDecisionsByTaskID
+        || retainedScheduleCalendarBridgeWriteMarkersByTaskID != nextWriteMarkers
+      if didChange {
+        workspaceScheduleProjectSnapshots = resolvedRead.projectSnapshots
+        workspaceScheduleSliceEntriesByProjectID = resolvedRead.scheduleEntriesByProjectID
+        retainedScheduleCalendarBridgeDecisionsByTaskID =
+          resolvedRead.calendarBridgeDecisionsByTaskID
+        retainedScheduleCalendarBridgeWriteMarkersByTaskID = nextWriteMarkers
         invalidateWorkspaceScheduleProjectionCaches()
       }
+      workspaceScheduleLastLoadSignature = loadSignature
 
       committedTaskDrop = nil
       switch resolvedRead.source {
@@ -260,6 +280,67 @@ extension ScheduleBoardView {
         appState.errorMessage = resolvedRead.errorMessage
         recordWorkspaceLoadFallback(nil)
       }
+    }
+  }
+
+  func reloadChangedWorkspaceScheduleProjectDetails(for projectIDs: [UUID]) async {
+    let requestedProjectIDs = Set(projectIDs)
+    guard !requestedProjectIDs.isEmpty else { return }
+    workspaceScheduleLoadGeneration += 1
+    let loadGeneration = workspaceScheduleLoadGeneration
+    workspaceScheduleLastLoadSignature = scheduleWorkspaceLoadSignature(
+      projectIDs: activeProjectIDs,
+      workspaceTreeRevision: appState.workspaceTreeRevision
+    )
+    let obsidianVaultRootURL = await MainActor.run { appState.obsidianVaultRootURL }
+    let retainedResult = await RetainedWorkspaceSurfaceProjectionBuilder.load(
+      obsidianVaultRootURL: obsidianVaultRootURL,
+      projectIDs: Array(requestedProjectIDs)
+    )
+
+    guard case .loaded(let loadedProjection) = retainedResult else {
+      let activeIDs = await MainActor.run { self.activeProjectIDs }
+      await reloadWorkspaceScheduleProjectDetails(for: activeIDs, force: true)
+      return
+    }
+
+    await MainActor.run {
+      guard loadGeneration == workspaceScheduleLoadGeneration else { return }
+      let existingProjection = RetainedWorkspaceSurfaceProjection(
+        projectSnapshots: workspaceScheduleProjectSnapshots,
+        projectSummaries: [:],
+        scheduleEntriesByProjectID: workspaceScheduleSliceEntriesByProjectID,
+        calendarBridgeDecisionsByTaskID: retainedScheduleCalendarBridgeDecisionsByTaskID
+      )
+      let mergedProjection = RetainedWorkspaceSurfaceProjectionMergePolicy.merge(
+        existing: existingProjection,
+        loaded: loadedProjection,
+        replacingProjectIDs: requestedProjectIDs
+      )
+      let nextWriteMarkers = RetainedWorkspaceSurfaceProjectionMergePolicy.filteredWriteMarkers(
+        existingMarkers: retainedScheduleCalendarBridgeWriteMarkersByTaskID,
+        existing: existingProjection,
+        loaded: loadedProjection,
+        replacingProjectIDs: requestedProjectIDs
+      )
+      let didChange = workspaceScheduleProjectSnapshots != mergedProjection.projectSnapshots
+        || workspaceScheduleSliceEntriesByProjectID != mergedProjection.scheduleEntriesByProjectID
+        || retainedScheduleCalendarBridgeDecisionsByTaskID != mergedProjection.calendarBridgeDecisionsByTaskID
+        || retainedScheduleCalendarBridgeWriteMarkersByTaskID != nextWriteMarkers
+      if didChange {
+        workspaceScheduleProjectSnapshots = mergedProjection.projectSnapshots
+        workspaceScheduleSliceEntriesByProjectID = mergedProjection.scheduleEntriesByProjectID
+        retainedScheduleCalendarBridgeDecisionsByTaskID =
+          mergedProjection.calendarBridgeDecisionsByTaskID
+        retainedScheduleCalendarBridgeWriteMarkersByTaskID = nextWriteMarkers
+        invalidateWorkspaceScheduleProjectionCaches()
+      }
+      workspaceScheduleLastLoadSignature = scheduleWorkspaceLoadSignature(
+        projectIDs: activeProjectIDs,
+        workspaceTreeRevision: appState.workspaceTreeRevision
+      )
+      committedTaskDrop = nil
+      recordWorkspaceLoadFallback(nil)
     }
   }
 
@@ -1149,7 +1230,7 @@ extension ScheduleBoardView {
           reminderProjectProvider: appState.reminderProjectProvider
         )
         appState.bumpWorkspaceTreeRevision()
-        await reloadWorkspaceScheduleProjectDetails(for: activeProjectIDs)
+        await reloadChangedWorkspaceScheduleProjectDetails(for: [taskDescriptor.projectID])
         retainedScheduleCalendarBridgeDecisionsByTaskID.removeValue(forKey: taskID)
         retainedScheduleCalendarBridgeWriteMarkersByTaskID.removeValue(forKey: taskID)
         refreshCalendarOverlay(force: true)
@@ -1321,7 +1402,7 @@ extension ScheduleBoardView {
           calendar: calendar,
           reminderProjectProvider: appState.reminderProjectProvider
         )
-        await reloadWorkspaceScheduleProjectDetails(for: activeProjectIDs)
+        await reloadChangedWorkspaceScheduleProjectDetails(for: [projectID])
         retainedScheduleCalendarBridgeDecisionsByTaskID[taskID] = result.calendarBridgeDecision
         retainedScheduleCalendarBridgeWriteMarkersByTaskID[taskID] = nil
         refreshCalendarOverlayIfChanged(by: result)
@@ -1503,10 +1584,10 @@ extension ScheduleBoardView {
           reminderProjectProvider: appState.reminderProjectProvider
         )
         selectedScheduleTaskID = result.taskID
-        await reloadWorkspaceScheduleProjectDetails(for: activeProjectIDs)
+        appState.bumpWorkspaceTreeRevision()
+        await reloadChangedWorkspaceScheduleProjectDetails(for: [projectID])
         retainedScheduleCalendarBridgeDecisionsByTaskID[result.taskID] = result.calendarBridgeDecision
         retainedScheduleCalendarBridgeWriteMarkersByTaskID[result.taskID] = result.calendarWriteMarker
-        appState.bumpWorkspaceTreeRevision()
         refreshCalendarOverlayIfChanged(by: result)
         guard registerUndo else { return }
         appState.registerUndo(with: undoManager, actionName: "할일 추가") {
@@ -1553,10 +1634,10 @@ extension ScheduleBoardView {
         )
       }
       selectedScheduleTaskID = result.taskID
-      await reloadWorkspaceScheduleProjectDetails(for: activeProjectIDs)
+      appState.bumpWorkspaceTreeRevision()
+      await reloadChangedWorkspaceScheduleProjectDetails(for: [projectID])
       retainedScheduleCalendarBridgeDecisionsByTaskID[result.taskID] = result.calendarBridgeDecision
       retainedScheduleCalendarBridgeWriteMarkersByTaskID[result.taskID] = result.calendarWriteMarker
-      appState.bumpWorkspaceTreeRevision()
       refreshCalendarOverlayIfChanged(by: result)
       if registerUndo {
         appState.registerUndo(with: undoManager, actionName: "할일 삭제 취소") {
@@ -1690,10 +1771,10 @@ extension ScheduleBoardView {
           )
         }
         guard let result else {
-          await reloadWorkspaceScheduleProjectDetails(for: activeProjectIDs)
+          await reloadChangedWorkspaceScheduleProjectDetails(for: [projectID])
           return
         }
-        await reloadWorkspaceScheduleProjectDetails(for: activeProjectIDs)
+        await reloadChangedWorkspaceScheduleProjectDetails(for: [projectID])
         retainedScheduleCalendarBridgeDecisionsByTaskID[taskID] = result.calendarBridgeDecision
         retainedScheduleCalendarBridgeWriteMarkersByTaskID[taskID] = result.calendarWriteMarker
 
