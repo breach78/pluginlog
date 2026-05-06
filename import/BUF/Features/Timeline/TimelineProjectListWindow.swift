@@ -354,60 +354,7 @@ struct TimelineProjectListContent: View {
 
       Divider()
 
-      projectNoteSection
-
-      Divider()
-
-      if visibleTasks.isEmpty && session.draftAnchor == nil {
-        Text("할일 없음")
-          .font(projectListEmptyStateFont)
-          .foregroundStyle(.secondary)
-          .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
-      } else {
-        ScrollView {
-          LazyVStack(alignment: .leading, spacing: 0) {
-            if session.draftAnchor == .beginning {
-              draftRow(anchor: .beginning)
-            }
-
-            ForEach(visibleTasks) { task in
-              dropLine(for: task, placement: .before)
-              taskRow(task)
-                .opacity(session.draggingTaskID == task.id || movingTaskIDs.contains(task.id) ? 0.42 : 1)
-                .onDrag {
-                  updateSession { session in
-                    session.beginDragging(taskID: task.id)
-                  }
-                  return TaskDragPayload.itemProvider(for: task.id)
-                } preview: {
-                  TimelineProjectListHiddenDragPreview()
-                }
-                .onDrop(
-                  of: [UTType.text.identifier],
-                  delegate: TimelineProjectListTaskDropDelegate(
-                    targetTaskID: task.id,
-                    draggingTaskID: draggingTaskIDBinding,
-                    dropIndicator: dropIndicatorBinding,
-                    onPreviewDrop: previewTaskDrop,
-                    onPerformDrop: commitTaskDrop
-                  )
-                )
-              if expandedTaskID == task.id {
-                inlineTaskEditor(for: task)
-              }
-              dropLine(for: task, placement: .after)
-              if session.draftAnchor == .after(task.id) {
-                draftRow(anchor: .after(task.id))
-              }
-              if task.id != visibleTasks.last?.id {
-                Divider()
-                  .padding(.leading, 32)
-              }
-            }
-          }
-          .padding(.vertical, 6)
-        }
-      }
+      scrollContent
     }
     .frame(
       minWidth: presentation == .window ? 360 : 0,
@@ -553,6 +500,70 @@ struct TimelineProjectListContent: View {
     }
     .padding(.horizontal, 18)
     .padding(.vertical, 10)
+  }
+
+  private var scrollContent: some View {
+    ScrollView {
+      VStack(alignment: .leading, spacing: 0) {
+        projectNoteSection
+
+        Divider()
+
+        taskListSection
+      }
+    }
+  }
+
+  @ViewBuilder
+  private var taskListSection: some View {
+    if visibleTasks.isEmpty && session.draftAnchor == nil {
+      Text("할일 없음")
+        .font(projectListEmptyStateFont)
+        .foregroundStyle(.secondary)
+        .frame(maxWidth: .infinity, minHeight: 180, alignment: .center)
+    } else {
+      LazyVStack(alignment: .leading, spacing: 0) {
+        if session.draftAnchor == .beginning {
+          draftRow(anchor: .beginning)
+        }
+
+        ForEach(visibleTasks) { task in
+          dropLine(for: task, placement: .before)
+          taskRow(task)
+            .opacity(session.draggingTaskID == task.id || movingTaskIDs.contains(task.id) ? 0.42 : 1)
+            .onDrag {
+              updateSession { session in
+                session.beginDragging(taskID: task.id)
+              }
+              return TaskDragPayload.itemProvider(for: task.id)
+            } preview: {
+              TimelineProjectListHiddenDragPreview()
+            }
+            .onDrop(
+              of: [UTType.text.identifier],
+              delegate: TimelineProjectListTaskDropDelegate(
+                targetTaskID: task.id,
+                draggingTaskID: draggingTaskIDBinding,
+                dropIndicator: dropIndicatorBinding,
+                onPreviewDrop: previewTaskDrop,
+                onPerformDrop: commitTaskDrop
+              )
+            )
+          if expandedTaskID == task.id {
+            inlineTaskEditor(for: task)
+          }
+          dropLine(for: task, placement: .after)
+          if session.draftAnchor == .after(task.id) {
+            draftRow(anchor: .after(task.id))
+          }
+          if task.id != visibleTasks.last?.id {
+            Divider()
+              .padding(.leading, 32)
+          }
+        }
+      }
+      .padding(.vertical, 6)
+    }
   }
 
   @ViewBuilder
