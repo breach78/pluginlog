@@ -537,28 +537,37 @@ struct TimelineProjectListContent: View {
         ForEach(visibleTaskRows) { row in
           let task = row.task
           dropLine(for: task, placement: .before)
-          taskRow(task)
-            .opacity(session.draggingTaskID == task.id || movingTaskIDs.contains(task.id) ? 0.42 : 1)
-            .onDrag {
-              updateSession { session in
-                session.beginDragging(taskID: task.id)
+          VStack(alignment: .leading, spacing: 0) {
+            taskRow(task)
+              .opacity(session.draggingTaskID == task.id || movingTaskIDs.contains(task.id) ? 0.42 : 1)
+              .onDrag {
+                updateSession { session in
+                  session.beginDragging(taskID: task.id)
+                }
+                return TaskDragPayload.itemProvider(for: task.id)
+              } preview: {
+                TimelineProjectListHiddenDragPreview()
               }
-              return TaskDragPayload.itemProvider(for: task.id)
-            } preview: {
-              TimelineProjectListHiddenDragPreview()
-            }
-            .onDrop(
-              of: [UTType.text.identifier],
-              delegate: TimelineProjectListTaskDropDelegate(
-                targetTaskID: task.id,
-                draggingTaskID: draggingTaskIDBinding,
-                dropIndicator: dropIndicatorBinding,
-                onPreviewDrop: previewTaskDrop,
-                onPerformDrop: commitTaskDrop
+              .onDrop(
+                of: [UTType.text.identifier],
+                delegate: TimelineProjectListTaskDropDelegate(
+                  targetTaskID: task.id,
+                  draggingTaskID: draggingTaskIDBinding,
+                  dropIndicator: dropIndicatorBinding,
+                  onPreviewDrop: previewTaskDrop,
+                  onPerformDrop: commitTaskDrop
+                )
               )
-            )
-          if expandedTaskID == task.id {
-            inlineTaskEditor(for: task)
+            if expandedTaskID == task.id {
+              inlineTaskEditor(for: task)
+            }
+          }
+          .background {
+            if expandedTaskID == task.id {
+              TimelineProjectListOutsideClickMonitor {
+                requestExpandedTaskEditorClose()
+              }
+            }
           }
           dropLine(for: task, placement: .after)
           if session.draftAnchor == .after(task.id) {
@@ -752,11 +761,6 @@ struct TimelineProjectListContent: View {
       .padding(.leading, 32)
       .padding(.trailing, 12)
       .padding(.bottom, 10)
-      .background(
-        TimelineProjectListOutsideClickMonitor {
-          requestExpandedTaskEditorClose()
-        }
-      )
     }
   }
 
@@ -766,7 +770,7 @@ struct TimelineProjectListContent: View {
       if expandedTaskID == nil {
         expandedTaskID = task.id
       } else if expandedTaskID == task.id {
-        requestExpandedTaskEditorClose()
+        return
       } else {
         requestExpandedTaskEditorClose(nextExpandedTaskID: task.id)
       }
