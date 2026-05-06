@@ -78,6 +78,27 @@ final class LinkedTextEditorPolicyTests: XCTestCase {
     )
   }
 
+  func testKeyboardShortcutPolicyRecognizesCommandAOnly() {
+    XCTAssertTrue(
+      LinkedTextEditorKeyboardShortcutPolicy.isSelectAllShortcut(
+        keyCode: 0,
+        modifiers: .command
+      )
+    )
+    XCTAssertFalse(
+      LinkedTextEditorKeyboardShortcutPolicy.isSelectAllShortcut(
+        keyCode: 0,
+        modifiers: [.command, .shift]
+      )
+    )
+    XCTAssertFalse(
+      LinkedTextEditorKeyboardShortcutPolicy.isSelectAllShortcut(
+        keyCode: 1,
+        modifiers: .command
+      )
+    )
+  }
+
   func testMarkdownPreviewKeepsActiveLineInSourceMode() {
     let text = "# Heading\n**Bold** and [Mail](message://abc)"
     let activeLines = LinkedTextEditorMarkdownPreviewPolicy.activeLineRanges(

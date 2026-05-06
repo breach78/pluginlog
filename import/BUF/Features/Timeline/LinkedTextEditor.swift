@@ -852,10 +852,24 @@ enum LinkedTextEditorLinkPolicy {
   }
 }
 
+enum LinkedTextEditorKeyboardShortcutPolicy {
+  static func isSelectAllShortcut(keyCode: UInt16, modifiers: NSEvent.ModifierFlags) -> Bool {
+    let shortcutModifiers = modifiers.intersection([.command, .shift, .option, .control])
+    return keyCode == 0 && shortcutModifiers == .command
+  }
+}
+
 private final class LinkedTextView: NSTextView {
   weak var linkedCoordinator: LinkedTextEditor.Coordinator?
 
   override func keyDown(with event: NSEvent) {
+    if LinkedTextEditorKeyboardShortcutPolicy.isSelectAllShortcut(
+      keyCode: event.keyCode,
+      modifiers: event.modifierFlags
+    ) {
+      selectAll(nil)
+      return
+    }
     if event.keyCode == 53, linkedCoordinator?.handleEscapeCommand() == true {
       return
     }
