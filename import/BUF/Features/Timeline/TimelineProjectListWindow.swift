@@ -43,6 +43,10 @@ private struct TimelineProjectListTaskRow: Identifiable {
   let task: TimelineProjectListWindowSnapshot.Task
 }
 
+private enum TimelineProjectListScrollTarget: Hashable {
+  case draft(TimelineProjectListDraftAnchor)
+}
+
 struct TimelineProjectMoveOption: Identifiable, Equatable {
   let id: UUID
   let title: String
@@ -328,6 +332,7 @@ struct TimelineProjectListContent: View {
   @State private var isSavingProjectNote = false
   @State private var saveProjectNoteAgainAfterCurrent = false
   @State private var projectNoteErrorText: String?
+  @State private var draftScrollRequestID = 0
 
   init(
     snapshot: TimelineProjectListWindowSnapshot,
@@ -527,13 +532,22 @@ struct TimelineProjectListContent: View {
   }
 
   private var scrollContent: some View {
-    ScrollView {
-      VStack(alignment: .leading, spacing: 0) {
-        projectNoteSection
+    ScrollViewReader { proxy in
+      ScrollView {
+        VStack(alignment: .leading, spacing: 0) {
+          projectNoteSection
 
-        Divider()
+          Divider()
 
-        taskListSection
+          taskListSection
+
+          Color.clear
+            .frame(height: Self.taskListBottomScrollReserve)
+            .accessibilityHidden(true)
+        }
+      }
+      .onChange(of: session.focusedDraftAnchor) { _, anchor in
+        scrollFocusedDraftIntoView(anchor, with: proxy)
       }
     }
   }
@@ -858,6 +872,7 @@ struct TimelineProjectListContent: View {
     }
     .padding(.horizontal, 18)
     .padding(.vertical, 9)
+    .id(TimelineProjectListScrollTarget.draft(anchor))
     .onExitCommand {
       cancelDraftIfEmpty()
     }
@@ -1238,6 +1253,27 @@ struct TimelineProjectListContent: View {
     }
   }
 
+  private func scrollFocusedDraftIntoView(
+    _ anchor: TimelineProjectListDraftAnchor?,
+    with proxy: ScrollViewProxy
+  ) {
+    guard let anchor else { return }
+    draftScrollRequestID &+= 1
+    let requestID = draftScrollRequestID
+
+    DispatchQueue.main.async {
+      guard draftScrollRequestID == requestID else { return }
+      var transaction = Transaction()
+      transaction.disablesAnimations = true
+      withTransaction(transaction) {
+        proxy.scrollTo(
+          TimelineProjectListScrollTarget.draft(anchor),
+          anchor: Self.focusedDraftScrollAnchor
+        )
+      }
+    }
+  }
+
   private func replaceTask(_ task: TimelineProjectListWindowSnapshot.Task) {
     updateSession { session in
       session.replaceTask(task)
@@ -1437,6 +1473,8 @@ struct TimelineProjectListContent: View {
 
   fileprivate static let embeddedTextSize: CGFloat = 12 * 1.3 * 0.9
   private static let taskInsertionAnimation = Animation.easeOut(duration: 0.16)
+  private static let taskListBottomScrollReserve: CGFloat = 72
+  private static let focusedDraftScrollAnchor = UnitPoint(x: 0.5, y: 0.88)
   private static let projectNoteAutoSaveDelayNanoseconds: UInt64 = 650_000_000
 }
 
