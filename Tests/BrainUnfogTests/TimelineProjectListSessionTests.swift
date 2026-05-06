@@ -101,6 +101,72 @@ final class TimelineProjectListSessionTests: XCTestCase {
     XCTAssertFalse(session.isPendingCreate(temporaryID))
     XCTAssertEqual(session.draftAnchor, .after(createdID))
     XCTAssertEqual(session.focusedDraftAnchor, .after(createdID))
+    XCTAssertEqual(session.viewID(for: createdID), temporaryID)
+  }
+
+  func testOptimisticCreateResolutionRetargetsLaterPendingAnchors() {
+    let projectID = UUID()
+    let firstID = UUID()
+    let firstTemporaryID = UUID()
+    let secondTemporaryID = UUID()
+    let firstCreatedID = UUID()
+    var session = TimelineProjectListSession(
+      snapshot: snapshot(projectID: projectID, tasks: [
+        task(id: firstID, title: "First")
+      ])
+    )
+    session.startDraft(after: firstID)
+    session.updateDraftTitle("First create")
+    _ = session.submitDraftOptimistically(temporaryID: firstTemporaryID)
+    session.updateDraftTitle("Second create")
+    _ = session.submitDraftOptimistically(temporaryID: secondTemporaryID)
+
+    session.resolveOptimisticCreate(
+      temporaryID: firstTemporaryID,
+      createdTask: task(id: firstCreatedID, title: "First create")
+    )
+
+    XCTAssertEqual(session.draftAnchor, .after(secondTemporaryID))
+    XCTAssertEqual(session.focusedDraftAnchor, .after(secondTemporaryID))
+
+    session.failOptimisticCreate(temporaryID: secondTemporaryID)
+
+    XCTAssertEqual(session.tasks.map(\.id), [firstID, firstCreatedID])
+    XCTAssertEqual(session.draftAnchor, .after(firstCreatedID))
+    XCTAssertEqual(session.draftTitle, "Second create")
+    XCTAssertEqual(session.focusedDraftAnchor, .after(firstCreatedID))
+  }
+
+  func testOptimisticCreateResolutionDeduplicatesSnapshotCreatedTask() {
+    let projectID = UUID()
+    let firstID = UUID()
+    let temporaryID = UUID()
+    let createdID = UUID()
+    var session = TimelineProjectListSession(
+      snapshot: snapshot(projectID: projectID, tasks: [
+        task(id: firstID, title: "First")
+      ])
+    )
+    session.startDraft(after: firstID)
+    session.updateDraftTitle("Created")
+    _ = session.submitDraftOptimistically(temporaryID: temporaryID)
+
+    session.applySnapshot(
+      snapshot(projectID: projectID, tasks: [
+        task(id: firstID, title: "First"),
+        task(id: createdID, title: "Created"),
+      ])
+    )
+    XCTAssertEqual(session.tasks.map(\.id), [firstID, temporaryID, createdID])
+
+    session.resolveOptimisticCreate(
+      temporaryID: temporaryID,
+      createdTask: task(id: createdID, title: "Created")
+    )
+
+    XCTAssertEqual(session.tasks.map(\.id), [firstID, createdID])
+    XCTAssertEqual(session.persistableOpenTaskIDs, [firstID, createdID])
+    XCTAssertEqual(session.viewID(for: createdID), temporaryID)
   }
 
   func testPersistableOpenTaskIDsExcludePendingCreate() {

@@ -24,7 +24,7 @@ struct TimelineProjectListSession {
   typealias Task = TimelineProjectListWindowSnapshot.Task
 
   private struct PendingCreate {
-    let anchor: TimelineProjectListDraftAnchor
+    var anchor: TimelineProjectListDraftAnchor
     let title: String
   }
 
@@ -42,6 +42,7 @@ struct TimelineProjectListSession {
   private var pendingCreates: [UUID: PendingCreate] = [:]
   private var pendingRenames: [UUID: Task] = [:]
   private var pendingOpenTaskOrder: [UUID]?
+  private var taskViewIDs: [UUID: UUID] = [:]
 
   init(snapshot: TimelineProjectListWindowSnapshot) {
     self.projectID = snapshot.projectID
@@ -260,6 +261,10 @@ struct TimelineProjectListSession {
     openTaskIDs.filter { !isPendingCreate($0) }
   }
 
+  func viewID(for taskID: UUID) -> UUID {
+    taskViewIDs[taskID] ?? taskID
+  }
+
   func visibleTasks(showsCompletedTasks: Bool) -> [Task] {
     showsCompletedTasks ? tasks : tasks.filter { !$0.isCompleted }
   }
@@ -276,6 +281,9 @@ struct TimelineProjectListSession {
   }
 
   private mutating func replaceTaskID(_ oldID: UUID, with task: Task) {
+    let stableViewID = taskViewIDs.removeValue(forKey: oldID) ?? oldID
+    taskViewIDs[task.id] = stableViewID
+    tasks.removeAll { $0.id == task.id && $0.id != oldID }
     guard let index = tasks.firstIndex(where: { $0.id == oldID }) else {
       replaceTask(task)
       return
@@ -289,6 +297,12 @@ struct TimelineProjectListSession {
     }
     if focusedDraftAnchor == .after(oldID) {
       focusedDraftAnchor = .after(newID)
+    }
+    let retargetedTemporaryIDs = pendingCreates.keys.filter {
+      pendingCreates[$0]?.anchor == .after(oldID)
+    }
+    for temporaryID in retargetedTemporaryIDs {
+      pendingCreates[temporaryID]?.anchor = .after(newID)
     }
   }
 
@@ -336,6 +350,7 @@ struct TimelineProjectListSession {
       focusedDraftAnchor = nil
     }
     pendingRenames = pendingRenames.filter { taskIDs.contains($0.key) }
+    taskViewIDs = taskViewIDs.filter { taskIDs.contains($0.key) }
   }
 
   private func reorderedTasksPreservingPendingOpenOrder(

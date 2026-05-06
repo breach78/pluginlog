@@ -187,6 +187,7 @@ struct EscapeAwareTextField: NSViewRepresentable {
   @Binding var text: String
   @Binding var isFocused: Bool
   let placeholder: String
+  var focusRingType: NSFocusRingType = .default
   let onSubmit: () -> Void
   let onEscape: () -> Void
 
@@ -357,7 +358,7 @@ struct EscapeAwareTextField: NSViewRepresentable {
     field.isBordered = true
     field.isBezeled = true
     field.drawsBackground = true
-    field.focusRingType = .default
+    field.focusRingType = focusRingType
     field.isEditable = true
     field.isSelectable = true
     field.font = AppInputTypography.nsFont(size: AppInputTypography.defaultPointSize)
@@ -393,6 +394,10 @@ struct EscapeAwareTextField: NSViewRepresentable {
 
     if field.placeholderString != placeholder {
       field.placeholderString = placeholder
+    }
+
+    if field.focusRingType != focusRingType {
+      field.focusRingType = focusRingType
     }
 
     if isFocused {

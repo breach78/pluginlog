@@ -38,6 +38,11 @@ struct TimelineProjectListWindowSnapshot: Equatable {
   }
 }
 
+private struct TimelineProjectListTaskRow: Identifiable {
+  let id: UUID
+  let task: TimelineProjectListWindowSnapshot.Task
+}
+
 struct TimelineProjectMoveOption: Identifiable, Equatable {
   let id: UUID
   let title: String
@@ -288,7 +293,7 @@ struct TimelineProjectListContent: View {
   let inlineEditorConfiguration: TimelineProjectListInlineEditorConfiguration?
 
   @ObservedObject private var sessionStore: TimelineProjectListSessionStore
-  @State private var isCreatingTask = false
+  @State private var pendingCreateCount = 0
   @State private var isRenamingTask = false
   @State private var completingTaskIDs: Set<UUID> = []
   @State private var deletingTaskIDs: Set<UUID> = []
@@ -527,7 +532,8 @@ struct TimelineProjectListContent: View {
           draftRow(anchor: .beginning)
         }
 
-        ForEach(visibleTasks) { task in
+        ForEach(visibleTaskRows) { row in
+          let task = row.task
           dropLine(for: task, placement: .before)
           taskRow(task)
             .opacity(session.draggingTaskID == task.id || movingTaskIDs.contains(task.id) ? 0.42 : 1)
@@ -556,7 +562,7 @@ struct TimelineProjectListContent: View {
           if session.draftAnchor == .after(task.id) {
             draftRow(anchor: .after(task.id))
           }
-          if task.id != visibleTasks.last?.id {
+          if task.id != visibleTaskRows.last?.task.id {
             Divider()
               .padding(.leading, 32)
           }
@@ -789,13 +795,13 @@ struct TimelineProjectListContent: View {
         text: draftTitleBinding,
         isFocused: draftFocusBinding(for: anchor),
         placeholder: "새 할일",
+        focusRingType: .none,
         onSubmit: {
           submitInlineDraft(anchor: anchor)
         },
         onEscape: cancelDraftIfEmpty
       )
       .frame(height: 22)
-      .disabled(isCreatingTask)
     }
     .padding(.horizontal, 18)
     .padding(.vertical, 9)
@@ -1142,15 +1148,15 @@ struct TimelineProjectListContent: View {
     submitInlineTitle(for: task, createDraftBelow: false)
   }
 
-  private func submitInlineDraft(anchor: TimelineProjectListDraftAnchor) {
+  private func submitInlineDraft(anchor _: TimelineProjectListDraftAnchor) {
     let title = session.draftTitle.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard !title.isEmpty, !isCreatingTask else { return }
+    guard !title.isEmpty, !isRenamingTask else { return }
     let temporaryID = UUID()
     guard submitDraftOptimistically(temporaryID: temporaryID) != nil else { return }
-    isCreatingTask = true
+    pendingCreateCount += 1
 
     writeQueue.enqueue {
-      defer { isCreatingTask = false }
+      defer { pendingCreateCount = max(0, pendingCreateCount - 1) }
       guard let createdTask = await actions.onCreateTask(snapshot.projectID, title) else {
         updateSession { session in
           session.failOptimisticCreate(temporaryID: temporaryID)
@@ -1158,22 +1164,20 @@ struct TimelineProjectListContent: View {
         return
       }
 
-      updateSession { session in
-        session.resolveOptimisticCreate(temporaryID: temporaryID, createdTask: createdTask)
+      MotionTransaction.withoutAnimation {
+        updateSession { session in
+          session.resolveOptimisticCreate(temporaryID: temporaryID, createdTask: createdTask)
+        }
       }
       enqueueTaskOrderSave(registerUndo: false)
-      focusDraft(.after(createdTask.id))
     }
   }
 
   private func focusDraft(_ anchor: TimelineProjectListDraftAnchor) {
     DispatchQueue.main.async {
-      updateSession { session in
-        session.focusedDraftAnchor = anchor
-      }
-    }
-    DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(16)) {
-      if session.draftAnchor == anchor {
+      var transaction = Transaction()
+      transaction.disablesAnimations = true
+      withTransaction(transaction) {
         updateSession { session in
           session.focusedDraftAnchor = anchor
         }
@@ -1203,8 +1207,10 @@ struct TimelineProjectListContent: View {
     -> TimelineProjectListWindowSnapshot.Task?
   {
     var createdTask: TimelineProjectListWindowSnapshot.Task?
-    updateSession { session in
-      createdTask = session.submitDraftOptimistically(temporaryID: temporaryID)
+    withAnimation(Self.taskInsertionAnimation) {
+      updateSession { session in
+        createdTask = session.submitDraftOptimistically(temporaryID: temporaryID)
+      }
     }
     return createdTask
   }
@@ -1362,11 +1368,22 @@ struct TimelineProjectListContent: View {
     session.visibleTasks(showsCompletedTasks: showsCompletedTasks)
   }
 
+  private var visibleTaskRows: [TimelineProjectListTaskRow] {
+    visibleTasks.map { task in
+      TimelineProjectListTaskRow(id: session.viewID(for: task.id), task: task)
+    }
+  }
+
+  private var isCreatingTask: Bool {
+    pendingCreateCount > 0
+  }
+
   private var openTaskIDs: [UUID] {
     session.openTaskIDs
   }
 
   fileprivate static let embeddedTextSize: CGFloat = 12 * 1.3 * 0.9
+  private static let taskInsertionAnimation = Animation.easeOut(duration: 0.16)
   private static let projectNoteAutoSaveDelayNanoseconds: UInt64 = 650_000_000
 }
 
