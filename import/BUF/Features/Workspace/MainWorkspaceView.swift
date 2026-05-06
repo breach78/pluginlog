@@ -479,6 +479,7 @@ struct MainWorkspaceView: View {
   @State var pendingRenameProject: PendingProjectRename?
   @State var isRenamingProject = false
   @State var isRollingOverdueTasksToToday = false
+  @State var activeWorkspaceProjectListPanelProjectID: UUID?
   @State var activeWorkspaceTaskEditPanelTarget: WorkspaceTaskEditPanelTarget?
   @State var activeWorkspaceCalendarEventEditPanelTarget: WorkspaceCalendarEventEditPanelTarget?
   @State var hiddenTimelineProjectIDs = TimelineHiddenProjectStore.load()
@@ -1041,9 +1042,13 @@ struct MainWorkspaceView: View {
         await reloadWorkspaceSidebarProjects()
       }
       .onChange(of: snapshot.filteredSidebarProjectIDs) { _, projectIDs in
-        guard let inspectorSelection else { return }
-        if !projectIDs.contains(inspectorSelection) {
+        if let inspectorSelection, !projectIDs.contains(inspectorSelection) {
           dismissInspectorSelection()
+        }
+        if let projectID = activeWorkspaceProjectListPanelProjectID,
+          !projectIDs.contains(projectID)
+        {
+          dismissWorkspaceProjectListPanel()
         }
       }
       .onChange(of: showArchive) { _, isShowingArchive in

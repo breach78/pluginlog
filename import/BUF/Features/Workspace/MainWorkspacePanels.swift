@@ -73,6 +73,9 @@ extension MainWorkspaceView {
         onToggleProjectSelection: { projectID in
           presentInspector(for: projectID)
         },
+        onOpenProjectListPanel: { projectID in
+          showTimelineProjectListPanel(projectID: projectID)
+        },
         onEditTask: { target in
           showTimelineTaskEditor(target)
         },
@@ -190,7 +193,8 @@ extension MainWorkspaceView {
     workspaceInspectorReservation(
       selection: inspectorSelection,
       taskEditTarget: activeWorkspaceTaskEditPanelTarget,
-      calendarEventEditTarget: activeWorkspaceCalendarEventEditPanelTarget
+      calendarEventEditTarget: activeWorkspaceCalendarEventEditPanelTarget,
+      projectListPanelProjectID: activeWorkspaceProjectListPanelProjectID
     )
   }
 
@@ -198,7 +202,8 @@ extension MainWorkspaceView {
     workspaceInspectorOverlayHost(
       selection: inspectorSelection,
       taskEditTarget: activeWorkspaceTaskEditPanelTarget,
-      calendarEventEditTarget: activeWorkspaceCalendarEventEditPanelTarget
+      calendarEventEditTarget: activeWorkspaceCalendarEventEditPanelTarget,
+      projectListPanelProjectID: activeWorkspaceProjectListPanelProjectID
     )
   }
 }

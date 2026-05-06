@@ -97,6 +97,26 @@ final class LinkedTextEditorPolicyTests: XCTestCase {
     XCTAssertTrue(hiddenFragments.contains("](message://abc)"))
   }
 
+  func testMarkdownPreviewHasNoActiveLineWhenEditorIsInactive() {
+    let text = "# Heading\n**Bold** and [Mail](message://abc)"
+    let activeLines = LinkedTextEditorMarkdownPreviewPolicy.activeLineRanges(
+      in: text,
+      selectedRanges: [NSRange(location: 0, length: 0)],
+      isEditorActive: false
+    )
+
+    let decorations = LinkedTextEditorMarkdownPreviewPolicy.decorations(
+      in: text,
+      activeLineRanges: activeLines
+    )
+    let hiddenFragments = hiddenFragments(in: text, decorations: decorations)
+
+    XCTAssertTrue(hiddenFragments.contains("# "))
+    XCTAssertTrue(hiddenFragments.contains("**"))
+    XCTAssertTrue(hiddenFragments.contains("["))
+    XCTAssertTrue(hiddenFragments.contains("](message://abc)"))
+  }
+
   func testMarkdownPreviewDecoratesInactiveLineOnly() {
     let text = "# Heading\n**Bold** and [Mail](message://abc)"
     let activeLines = LinkedTextEditorMarkdownPreviewPolicy.activeLineRanges(

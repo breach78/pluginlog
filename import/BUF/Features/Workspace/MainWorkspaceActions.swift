@@ -194,11 +194,23 @@ extension MainWorkspaceView {
   func showTimelineTaskEditor(_ target: WorkspaceTaskEditPanelTarget) {
     showArchive = false
     inspectorSelection = nil
+    activeWorkspaceProjectListPanelProjectID = nil
     activeWorkspaceCalendarEventEditPanelTarget = nil
     appState.isHoveringTimelineTaskBadgeOverlay = false
     appState.isHoveringTimelineDayHeaderOverlay = false
     activeWorkspaceTaskEditPanelTarget = target
     selectProjectContext(target.projectID)
+  }
+
+  func showTimelineProjectListPanel(projectID: UUID) {
+    showArchive = false
+    inspectorSelection = nil
+    activeWorkspaceTaskEditPanelTarget = nil
+    activeWorkspaceCalendarEventEditPanelTarget = nil
+    appState.isHoveringTimelineTaskBadgeOverlay = false
+    appState.isHoveringTimelineDayHeaderOverlay = false
+    activeWorkspaceProjectListPanelProjectID = projectID
+    selectProjectContext(projectID)
   }
 
   func openWorkspaceTaskProjectListWindow(for target: WorkspaceTaskEditPanelTarget) {
@@ -317,6 +329,12 @@ extension MainWorkspaceView {
 
   func dismissTimelineTaskEditor() {
     activeWorkspaceTaskEditPanelTarget = nil
+    appState.isHoveringTimelineTaskBadgeOverlay = false
+    appState.isHoveringTimelineDayHeaderOverlay = false
+  }
+
+  func dismissWorkspaceProjectListPanel() {
+    activeWorkspaceProjectListPanelProjectID = nil
     appState.isHoveringTimelineTaskBadgeOverlay = false
     appState.isHoveringTimelineDayHeaderOverlay = false
   }
@@ -726,6 +744,7 @@ extension MainWorkspaceView {
     showArchive = false
     inspectorSelection = nil
     activeWorkspaceTaskEditPanelTarget = nil
+    activeWorkspaceProjectListPanelProjectID = nil
     appState.isHoveringTimelineTaskBadgeOverlay = false
     appState.isHoveringTimelineDayHeaderOverlay = false
     activeWorkspaceCalendarEventEditPanelTarget = WorkspaceCalendarEventEditPanelTarget(
@@ -1172,7 +1191,9 @@ extension MainWorkspaceView {
   }
 
   private var hasActiveWorkspaceEditPanel: Bool {
-    activeWorkspaceTaskEditPanelTarget != nil || activeWorkspaceCalendarEventEditPanelTarget != nil
+    activeWorkspaceTaskEditPanelTarget != nil
+      || activeWorkspaceCalendarEventEditPanelTarget != nil
+      || activeWorkspaceProjectListPanelProjectID != nil
   }
 
   @discardableResult
@@ -1185,20 +1206,22 @@ extension MainWorkspaceView {
       dismissCalendarEventEditor()
       return true
     }
+    if activeWorkspaceProjectListPanelProjectID != nil {
+      dismissWorkspaceProjectListPanel()
+      return true
+    }
     return false
   }
 
   @discardableResult
   private func releaseActiveEditPanelTextResponder(for event: NSEvent? = nil) -> Bool {
-    let hasActiveEditPanel =
-      activeWorkspaceTaskEditPanelTarget != nil || activeWorkspaceCalendarEventEditPanelTarget != nil
     let window = event?.window ?? NSApp.keyWindow ?? NSApp.mainWindow
     guard let window else { return false }
     guard window.identifier != .timelineProjectListWindow else { return false }
     let hitView = event.flatMap { mouseHitView(for: $0, in: window) }
     guard
       WorkspaceTextResponderReleasePolicy.shouldReleaseTextResponder(
-        hasActiveEditPanel: hasActiveEditPanel,
+        hasActiveEditPanel: hasActiveWorkspaceEditPanel,
         firstResponder: window.firstResponder,
         mouseHitView: hitView
       )

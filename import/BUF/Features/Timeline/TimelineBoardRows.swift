@@ -431,7 +431,7 @@ extension TimelineBoardView {
     .simultaneousGesture(
       TapGesture(count: 2)
         .onEnded {
-          openTimelineProjectTopTaskPanel(for: bar)
+          openTimelineProjectListPanel(for: bar)
         }
     )
     .overlay(alignment: .top) {

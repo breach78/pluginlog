@@ -352,6 +352,15 @@ enum LinkedTextEditorMarkdownPreviewPolicy {
     return activeLines
   }
 
+  static func activeLineRanges(
+    in text: String,
+    selectedRanges: [NSRange],
+    isEditorActive: Bool
+  ) -> [NSRange] {
+    guard isEditorActive else { return [] }
+    return activeLineRanges(in: text, selectedRanges: selectedRanges)
+  }
+
   static func decorations(
     in text: String,
     activeLineRanges: [NSRange]

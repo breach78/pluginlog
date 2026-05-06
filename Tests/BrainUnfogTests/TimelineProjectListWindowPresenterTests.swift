@@ -14,6 +14,13 @@ final class TimelineProjectListWindowPresenterTests: XCTestCase {
     XCTAssertTrue(window.hidesOnDeactivate)
   }
 
+  func testInitialFocusPolicyTargetsTextResponders() {
+    XCTAssertTrue(TimelineProjectListWindowPresenter.shouldClearInitialFocus(NSTextView()))
+    XCTAssertTrue(TimelineProjectListWindowPresenter.shouldClearInitialFocus(NSTextField()))
+    XCTAssertFalse(TimelineProjectListWindowPresenter.shouldClearInitialFocus(NSView()))
+    XCTAssertFalse(TimelineProjectListWindowPresenter.shouldClearInitialFocus(nil))
+  }
+
   func testPresentCreatesSeparateWindowsForDifferentProjects() {
     let presenter = TimelineProjectListWindowPresenter.shared
     presenter.closeAllWindows()

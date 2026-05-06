@@ -6,9 +6,11 @@ extension MainWorkspaceView {
   func workspaceInspectorReservation(
     selection: UUID?,
     taskEditTarget: WorkspaceTaskEditPanelTarget?,
-    calendarEventEditTarget: WorkspaceCalendarEventEditPanelTarget?
+    calendarEventEditTarget: WorkspaceCalendarEventEditPanelTarget?,
+    projectListPanelProjectID: UUID?
   ) -> some View {
-    let isEditPanelVisible = taskEditTarget != nil || calendarEventEditTarget != nil
+    let isEditPanelVisible =
+      taskEditTarget != nil || calendarEventEditTarget != nil || projectListPanelProjectID != nil
     let isVisible = (selection != nil && !showArchive) || isEditPanelVisible
     let reservedWidth = isEditPanelVisible ? workspaceTaskEditPanelWidth : inspectorFixedWidth
 
@@ -25,9 +27,11 @@ extension MainWorkspaceView {
   func workspaceInspectorOverlayHost(
     selection: UUID?,
     taskEditTarget: WorkspaceTaskEditPanelTarget?,
-    calendarEventEditTarget: WorkspaceCalendarEventEditPanelTarget?
+    calendarEventEditTarget: WorkspaceCalendarEventEditPanelTarget?,
+    projectListPanelProjectID: UUID?
   ) -> some View {
-    let isEditPanelVisible = taskEditTarget != nil || calendarEventEditTarget != nil
+    let isEditPanelVisible =
+      taskEditTarget != nil || calendarEventEditTarget != nil || projectListPanelProjectID != nil
     let isVisible = (selection != nil && !showArchive) || isEditPanelVisible
 
     GeometryReader { _ in
@@ -38,6 +42,10 @@ extension MainWorkspaceView {
             .transition(.move(edge: .trailing).combined(with: .opacity))
         } else if let calendarEventEditTarget {
           workspaceCalendarEventEditPanel(calendarEventEditTarget)
+            .zIndex(2)
+            .transition(.move(edge: .trailing).combined(with: .opacity))
+        } else if let projectListPanelProjectID {
+          workspaceProjectListPanel(projectID: projectListPanelProjectID)
             .zIndex(2)
             .transition(.move(edge: .trailing).combined(with: .opacity))
         } else if let selection, !showArchive {
@@ -54,6 +62,34 @@ extension MainWorkspaceView {
       .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
     }
     .animation(workspacePanelTransitionAnimation, value: isVisible)
+  }
+
+  func workspaceProjectListPanel(projectID: UUID) -> some View {
+    WorkspaceTaskEditProjectListHost(
+      projectID: projectID,
+      workspaceTreeRevision: appState.workspaceTreeRevision,
+      deferReload: false,
+      loadSnapshot: { projectID in
+        await workspaceProjectListWindowSnapshot(projectID: projectID)
+      },
+      actions: workspaceProjectListActions(projectID: projectID),
+      inlineEditorConfiguration: nil,
+      onClosePanel: {
+        dismissWorkspaceProjectListPanel()
+      },
+      onOpenProjectWindow: {
+        openWorkspaceProjectListWindow(projectID: projectID)
+      }
+    )
+    .id(projectID.uuidString)
+    .frame(width: workspaceTaskEditPanelWidth, alignment: .topLeading)
+    .frame(maxHeight: .infinity, alignment: .topLeading)
+    .background(Color(nsColor: NSColor(calibratedWhite: 1, alpha: 1)))
+    .overlay(alignment: .leading) {
+      Rectangle()
+        .fill(Color(nsColor: .separatorColor))
+        .frame(width: 1)
+    }
   }
 
   func workspaceCalendarEventEditPanel(

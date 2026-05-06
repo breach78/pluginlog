@@ -142,6 +142,16 @@ struct LinkedTextEditor: NSViewRepresentable {
       refreshMeasuredHeightAfterUserEdit()
     }
 
+    func textDidBeginEditing(_ notification: Notification) {
+      guard let textView = notification.object as? NSTextView else { return }
+      applyAttributes(to: textView)
+    }
+
+    func textDidEndEditing(_ notification: Notification) {
+      guard let textView = notification.object as? NSTextView else { return }
+      applyAttributes(to: textView)
+    }
+
     func textView(
       _ textView: NSTextView,
       shouldChangeTextIn affectedCharRange: NSRange,
@@ -769,7 +779,8 @@ struct LinkedTextEditor: NSViewRepresentable {
       guard parent.markdownPresentationMode == .livePreview else { return [] }
       return LinkedTextEditorMarkdownPreviewPolicy.activeLineRanges(
         in: textView.string,
-        selectedRanges: textView.selectedRanges.map { $0.rangeValue }
+        selectedRanges: textView.selectedRanges.map { $0.rangeValue },
+        isEditorActive: textView.window?.firstResponder === textView
       )
     }
 

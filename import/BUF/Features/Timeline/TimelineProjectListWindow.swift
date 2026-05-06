@@ -140,6 +140,18 @@ final class TimelineProjectListWindowPresenter {
     }
   }
 
+  @discardableResult
+  static func clearInitialTextFocus(in window: NSWindow) -> Bool {
+    guard shouldClearInitialFocus(window.firstResponder) else {
+      return false
+    }
+    return window.makeFirstResponder(nil)
+  }
+
+  static func shouldClearInitialFocus(_ responder: NSResponder?) -> Bool {
+    responder is NSTextView || responder is NSTextField
+  }
+
   func present(
     snapshot: TimelineProjectListWindowSnapshot,
     onToggleTaskCompletion: @escaping (UUID, Bool) async -> Bool,
@@ -201,6 +213,11 @@ final class TimelineProjectListWindowPresenter {
 
     NSApp.activate(ignoringOtherApps: true)
     window.makeKeyAndOrderFront(nil)
+    Self.clearInitialTextFocus(in: window)
+    DispatchQueue.main.async { [weak window] in
+      guard let window else { return }
+      Self.clearInitialTextFocus(in: window)
+    }
   }
 
   @discardableResult

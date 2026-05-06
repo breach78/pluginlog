@@ -134,28 +134,13 @@ extension TimelineBoardView {
     )
   }
 
-  func openTimelineProjectTopTaskPanel(for bar: TimelineProjectBar) {
+  func openTimelineProjectListPanel(for bar: TimelineProjectBar) {
     selectTimelineProject(bar.projectID, commitDelay: .zero)
     activeTimelineProjectListPopoverProjectID = nil
     cancelTimelineTaskBadgeOverlay()
     cancelTimelineDayHeaderOverlay()
 
-    guard
-      let entry = TimelineProjectListWindowSnapshotFactory.defaultEditableEntry(
-        projectID: bar.projectID,
-        entries: workspaceTimelineScheduleEntriesByProjectID[bar.projectID] ?? []
-      )
-    else {
-      return
-    }
-
-    onEditTask(
-      WorkspaceTaskEditPanelTarget(
-        projectID: bar.projectID,
-        taskID: entry.taskID,
-        initialFields: timelineTaskEditFields(for: entry)
-      )
-    )
+    onOpenProjectListPanel(bar.projectID)
   }
 
   func createTimelineProjectListWindowTask(
