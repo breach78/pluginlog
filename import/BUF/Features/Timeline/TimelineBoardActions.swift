@@ -407,13 +407,36 @@ extension TimelineBoardView {
     }) else {
       return
     }
-    onEditTask(
+    openTimelineTaskEditor(
       WorkspaceTaskEditPanelTarget(
         projectID: projectID,
         taskID: taskID,
         initialFields: timelineTaskEditFields(for: entry)
       )
     )
+  }
+
+  func suppressTimelineTaskTap(
+    for duration: TimeInterval = TaskTapSuppressionPolicy.completionControlDuration
+  ) {
+    suppressedTimelineTaskTapUntil = TaskTapSuppressionPolicy.suppressedUntil(
+      now: Date(),
+      duration: duration
+    )
+  }
+
+  func shouldHandleTimelineTaskTap() -> Bool {
+    TaskTapSuppressionPolicy.shouldHandleTaskTap(
+      now: Date(),
+      suppressedUntil: suppressedTimelineTaskTapUntil
+    )
+  }
+
+  func openTimelineTaskEditor(_ target: WorkspaceTaskEditPanelTarget) {
+    DispatchQueue.main.async {
+      guard shouldHandleTimelineTaskTap() else { return }
+      onEditTask(target)
+    }
   }
 
   func timelineProjectListWindowSnapshot(

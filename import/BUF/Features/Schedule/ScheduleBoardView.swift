@@ -581,10 +581,22 @@ enum ScheduleBoardHostingInvalidationPolicy {
   }
 }
 
-enum ScheduleTaskTapSuppressionPolicy {
+enum TaskTapSuppressionPolicy {
+  static let completionControlDuration: TimeInterval = 0.2
+
+  static func suppressedUntil(now: Date, duration: TimeInterval) -> Date {
+    now.addingTimeInterval(duration)
+  }
+
   static func shouldHandleTaskTap(now: Date, suppressedUntil: Date) -> Bool {
     now >= suppressedUntil
   }
+}
+
+@MainActor
+func taskCompletionPressGesture(onPress: @escaping () -> Void) -> some Gesture {
+  DragGesture(minimumDistance: 0)
+    .onChanged { _ in onPress() }
 }
 
 struct ScheduleBoardView: View {

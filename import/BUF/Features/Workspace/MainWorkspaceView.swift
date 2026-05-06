@@ -482,6 +482,7 @@ struct MainWorkspaceView: View {
   @State var activeWorkspaceProjectListPanelProjectID: UUID?
   @State var activeWorkspaceTaskEditPanelTarget: WorkspaceTaskEditPanelTarget?
   @State var activeWorkspaceCalendarEventEditPanelTarget: WorkspaceCalendarEventEditPanelTarget?
+  @State var suppressedWorkspaceTaskEditorOpenUntil: Date = .distantPast
   @State var hiddenTimelineProjectIDs = TimelineHiddenProjectStore.load()
 
   struct ProjectSortOrderUndoSnapshot {

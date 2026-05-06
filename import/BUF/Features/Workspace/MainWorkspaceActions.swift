@@ -192,6 +192,7 @@ extension MainWorkspaceView {
   }
 
   func showTimelineTaskEditor(_ target: WorkspaceTaskEditPanelTarget) {
+    guard shouldOpenWorkspaceTaskEditor() else { return }
     showArchive = false
     inspectorSelection = nil
     activeWorkspaceProjectListPanelProjectID = nil
@@ -200,6 +201,22 @@ extension MainWorkspaceView {
     appState.isHoveringTimelineDayHeaderOverlay = false
     activeWorkspaceTaskEditPanelTarget = target
     selectProjectContext(target.projectID)
+  }
+
+  func suppressWorkspaceTaskEditorOpen(
+    for duration: TimeInterval = TaskTapSuppressionPolicy.completionControlDuration
+  ) {
+    suppressedWorkspaceTaskEditorOpenUntil = TaskTapSuppressionPolicy.suppressedUntil(
+      now: Date(),
+      duration: duration
+    )
+  }
+
+  func shouldOpenWorkspaceTaskEditor() -> Bool {
+    TaskTapSuppressionPolicy.shouldHandleTaskTap(
+      now: Date(),
+      suppressedUntil: suppressedWorkspaceTaskEditorOpenUntil
+    )
   }
 
   func showTimelineProjectListPanel(projectID: UUID) {

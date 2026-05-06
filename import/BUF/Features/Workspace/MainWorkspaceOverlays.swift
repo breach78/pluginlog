@@ -264,6 +264,7 @@ extension MainWorkspaceView {
             ForEach(presentation.strongTasks) { task in
               HStack(spacing: 8) {
                 Button {
+                  suppressWorkspaceTaskEditorOpen()
                   toggleTimelineTaskCompletion(
                     task.taskID,
                     projectID: presentation.projectReference.id,
@@ -276,6 +277,11 @@ extension MainWorkspaceView {
                   )
                 }
                 .buttonStyle(.plain)
+                .simultaneousGesture(
+                  taskCompletionPressGesture {
+                    suppressWorkspaceTaskEditorOpen()
+                  }
+                )
 
                 Button {
                   showTimelineTaskEditor(
@@ -317,6 +323,7 @@ extension MainWorkspaceView {
             ForEach(presentation.lightTasks) { task in
               HStack(spacing: 8) {
                 Button {
+                  suppressWorkspaceTaskEditorOpen()
                   completeTimelinePlannedWork(
                     taskID: task.taskID,
                     projectID: presentation.projectReference.id,
@@ -330,6 +337,11 @@ extension MainWorkspaceView {
                   )
                 }
                 .buttonStyle(.plain)
+                .simultaneousGesture(
+                  taskCompletionPressGesture {
+                    suppressWorkspaceTaskEditorOpen()
+                  }
+                )
 
                 Button {
                   showTimelineTaskEditor(
@@ -371,6 +383,7 @@ extension MainWorkspaceView {
             ForEach(presentation.completedTasks) { task in
               HStack(spacing: 8) {
                 Button {
+                  suppressWorkspaceTaskEditorOpen()
                   toggleTimelineTaskCompletion(
                     task.taskID,
                     projectID: presentation.projectReference.id,
@@ -380,6 +393,11 @@ extension MainWorkspaceView {
                   timelineDayHeaderCompletedMarker(color: projectColor)
                 }
                 .buttonStyle(.plain)
+                .simultaneousGesture(
+                  taskCompletionPressGesture {
+                    suppressWorkspaceTaskEditorOpen()
+                  }
+                )
 
                 Button {
                   showTimelineTaskEditor(
@@ -458,6 +476,7 @@ extension MainWorkspaceView {
             if task.isCompleted {
               HStack(spacing: 8) {
                 Button {
+                  suppressWorkspaceTaskEditorOpen()
                   toggleTimelineTaskCompletion(
                     task.taskID,
                     projectID: task.projectReference.id,
@@ -467,6 +486,11 @@ extension MainWorkspaceView {
                   timelineDayHeaderCompletedMarker(color: sectionColor)
                 }
                 .buttonStyle(.plain)
+                .simultaneousGesture(
+                  taskCompletionPressGesture {
+                    suppressWorkspaceTaskEditorOpen()
+                  }
+                )
 
                 Button {
                   showTimelineTaskEditor(
@@ -495,6 +519,7 @@ extension MainWorkspaceView {
             } else {
               HStack(spacing: 8) {
                 Button {
+                  suppressWorkspaceTaskEditorOpen()
                   toggleTimelineTaskCompletion(
                     task.taskID,
                     projectID: task.projectReference.id,
@@ -507,6 +532,11 @@ extension MainWorkspaceView {
                   )
                 }
                 .buttonStyle(.plain)
+                .simultaneousGesture(
+                  taskCompletionPressGesture {
+                    suppressWorkspaceTaskEditorOpen()
+                  }
+                )
 
                 Button {
                   showTimelineTaskEditor(

@@ -1918,7 +1918,7 @@ extension ScheduleBoardView {
   ) -> some View {
     let taskRow = taskDescriptor.taskRow
     return Button {
-      suppressTaskTap(for: 0.2)
+      suppressTaskTap(for: TaskTapSuppressionPolicy.completionControlDuration)
       if let targetCompletedWorkUnits {
         updateSchedulePlannedWorkProgress(
           taskID: taskRow.id,
@@ -1949,6 +1949,11 @@ extension ScheduleBoardView {
       .contentShape(Rectangle())
     }
     .buttonStyle(.plain)
+    .simultaneousGesture(
+      taskCompletionPressGesture {
+        suppressTaskTap(for: TaskTapSuppressionPolicy.completionControlDuration)
+      }
+    )
     .allowsHitTesting(!taskRow.isLocalCompletedRecurringOccurrence)
     .help(
       targetCompletedWorkUnits == nil

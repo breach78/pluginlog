@@ -1321,11 +1321,14 @@ extension ScheduleBoardView {
   }
 
   func suppressTaskTap(for duration: TimeInterval = 0.35) {
-    suppressedTaskTapUntil = Date().addingTimeInterval(duration)
+    suppressedTaskTapUntil = TaskTapSuppressionPolicy.suppressedUntil(
+      now: Date(),
+      duration: duration
+    )
   }
 
   func shouldHandleTaskTap() -> Bool {
-    ScheduleTaskTapSuppressionPolicy.shouldHandleTaskTap(
+    TaskTapSuppressionPolicy.shouldHandleTaskTap(
       now: Date(),
       suppressedUntil: suppressedTaskTapUntil
     )

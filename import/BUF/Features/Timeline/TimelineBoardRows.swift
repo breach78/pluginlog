@@ -515,6 +515,7 @@ extension TimelineBoardView {
 
     return HStack(alignment: .top, spacing: 8) {
       Button {
+        suppressTimelineTaskTap()
         toggleTimelineTaskCompletion(
           entry.taskID,
           projectID: projectID,
@@ -532,9 +533,14 @@ extension TimelineBoardView {
         }
       }
       .buttonStyle(.plain)
+      .simultaneousGesture(
+        taskCompletionPressGesture {
+          suppressTimelineTaskTap()
+        }
+      )
 
       Button {
-        onEditTask(
+        openTimelineTaskEditor(
           WorkspaceTaskEditPanelTarget(
             projectID: projectID,
             taskID: entry.taskID,

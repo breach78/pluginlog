@@ -76,6 +76,7 @@ extension TimelineBoardView {
             ForEach(strongPreview.tasks, id: \.id) { task in
               HStack(spacing: 8) {
                 Button {
+                  suppressTimelineTaskTap()
                   toggleTimelineTaskCompletion(
                     task.taskID,
                     projectID: projectID,
@@ -85,10 +86,15 @@ extension TimelineBoardView {
                   timelineTaskToggleMarker(isOverdue: task.isOverdue)
                 }
                 .buttonStyle(.plain)
+                .simultaneousGesture(
+                  taskCompletionPressGesture {
+                    suppressTimelineTaskTap()
+                  }
+                )
                 .disabled(!canInteractWithProject)
 
                 Button {
-                  onEditTask(
+                  openTimelineTaskEditor(
                     timelineTaskEditPanelTarget(
                       taskID: task.taskID,
                       projectID: projectID,
@@ -131,6 +137,7 @@ extension TimelineBoardView {
             ForEach(lightPreview.tasks, id: \.id) { task in
               HStack(spacing: 8) {
                 Button {
+                  suppressTimelineTaskTap()
                   completeTimelinePlannedWork(
                     taskID: task.taskID,
                     projectID: projectID,
@@ -141,10 +148,15 @@ extension TimelineBoardView {
                   timelineTaskToggleMarker(isOverdue: false, opacity: 0.75)
                 }
                 .buttonStyle(.plain)
+                .simultaneousGesture(
+                  taskCompletionPressGesture {
+                    suppressTimelineTaskTap()
+                  }
+                )
                 .disabled(!canInteractWithProject)
 
                 Button {
-                  onEditTask(
+                  openTimelineTaskEditor(
                     timelineTaskEditPanelTarget(
                       taskID: task.taskID,
                       projectID: projectID,
@@ -190,6 +202,7 @@ extension TimelineBoardView {
             ForEach(completedPreview.tasks, id: \.id) { task in
               HStack(spacing: 8) {
                 Button {
+                  suppressTimelineTaskTap()
                   toggleTimelineTaskCompletion(
                     task.taskID,
                     projectID: projectID,
@@ -201,10 +214,15 @@ extension TimelineBoardView {
                     .foregroundStyle(completedMarkerColor.opacity(0.9))
                 }
                 .buttonStyle(.plain)
+                .simultaneousGesture(
+                  taskCompletionPressGesture {
+                    suppressTimelineTaskTap()
+                  }
+                )
                 .disabled(!canInteractWithProject)
 
                 Button {
-                  onEditTask(
+                  openTimelineTaskEditor(
                     timelineTaskEditPanelTarget(
                       taskID: task.taskID,
                       projectID: projectID,

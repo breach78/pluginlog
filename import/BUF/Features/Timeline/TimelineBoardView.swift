@@ -132,6 +132,7 @@ struct TimelineBoardView: View {
   @State var didPrewarmTimelineScrollMode = false
   @State var immediateSelectedProjectID: UUID?
   @State var selectionCommitTask: Task<Void, Never>?
+  @State var suppressedTimelineTaskTapUntil: Date = .distantPast
 
   let titleColumnWidth: CGFloat = 200
   let timelineTitleColumnHorizontalPadding: CGFloat = 12
