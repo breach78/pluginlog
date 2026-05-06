@@ -124,6 +124,12 @@ extension TimelineBoardView {
       },
       onRenameProject: { projectID, title in
         self.requestRename(projectID: projectID, title: title)
+      },
+      onSaveProjectNote: { projectID, noteText in
+        await self.saveTimelineProjectListWindowProjectNote(
+          noteText,
+          projectID: projectID
+        )
       }
     )
   }
@@ -432,9 +438,30 @@ extension TimelineBoardView {
       projectID: bar.projectID,
       title: bar.title,
       colorHex: bar.colorHex,
+      projectNoteText: workspaceTimelineProjectSnapshots[bar.projectID]?.projectNoteMarkdown ?? "",
       entries: workspaceTimelineScheduleEntriesByProjectID[bar.projectID] ?? [],
       calendar: calendar
     )
+  }
+
+  func saveTimelineProjectListWindowProjectNote(
+    _ noteText: String,
+    projectID: UUID
+  ) async -> String? {
+    do {
+      let savedNote = try await ObsidianRetainedProjectCommandService.setProjectNote(
+        vaultRootURL: appState.obsidianVaultRootURL,
+        projectID: projectID,
+        noteText: noteText,
+        reminderProjectProvider: appState.reminderProjectProvider
+      )
+      appState.bumpWorkspaceTreeRevision()
+      await refreshTimelineProjectState(including: [projectID])
+      return savedNote
+    } catch {
+      appState.reportError(error, logMessage: "saveTimelineProjectListWindowProjectNote failed")
+      return nil
+    }
   }
 
   func refreshOpenTimelineProjectListWindow(using bars: [TimelineProjectBar]) {

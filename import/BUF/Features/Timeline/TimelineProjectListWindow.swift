@@ -20,7 +20,22 @@ struct TimelineProjectListWindowSnapshot: Equatable {
   let projectID: UUID
   let title: String
   let colorHex: String?
+  let projectNoteText: String
   let tasks: [Task]
+
+  init(
+    projectID: UUID,
+    title: String,
+    colorHex: String?,
+    projectNoteText: String = "",
+    tasks: [Task]
+  ) {
+    self.projectID = projectID
+    self.title = title
+    self.colorHex = colorHex
+    self.projectNoteText = projectNoteText
+    self.tasks = tasks
+  }
 }
 
 struct TimelineProjectMoveOption: Identifiable, Equatable {
@@ -41,6 +56,7 @@ struct TimelineProjectListActions {
   let onRenameTask: (UUID, UUID, String) async -> TimelineProjectListWindowSnapshot.Task?
   let onDeleteTask: (UUID, UUID) async -> Bool
   let onRenameProject: (UUID, String) -> Void
+  let onSaveProjectNote: (UUID, String) async -> String?
   let moveOptions: () -> [TimelineProjectMoveOption]
   let onMoveTask: (UUID, UUID, UUID) async -> Bool
 
@@ -52,6 +68,7 @@ struct TimelineProjectListActions {
     onRenameTask: @escaping (UUID, UUID, String) async -> TimelineProjectListWindowSnapshot.Task?,
     onDeleteTask: @escaping (UUID, UUID) async -> Bool,
     onRenameProject: @escaping (UUID, String) -> Void,
+    onSaveProjectNote: @escaping (UUID, String) async -> String? = { _, _ in nil },
     moveOptions: @escaping () -> [TimelineProjectMoveOption] = { [] },
     onMoveTask: @escaping (UUID, UUID, UUID) async -> Bool = { _, _, _ in false }
   ) {
@@ -62,6 +79,7 @@ struct TimelineProjectListActions {
     self.onRenameTask = onRenameTask
     self.onDeleteTask = onDeleteTask
     self.onRenameProject = onRenameProject
+    self.onSaveProjectNote = onSaveProjectNote
     self.moveOptions = moveOptions
     self.onMoveTask = onMoveTask
   }
@@ -125,7 +143,8 @@ final class TimelineProjectListWindowPresenter {
     onCreateTask: @escaping (UUID, String) async -> TimelineProjectListWindowSnapshot.Task?,
     onRenameTask: @escaping (UUID, UUID, String) async -> TimelineProjectListWindowSnapshot.Task?,
     onDeleteTask: @escaping (UUID, UUID) async -> Bool,
-    onRenameProject: @escaping (UUID, String) -> Void
+    onRenameProject: @escaping (UUID, String) -> Void,
+    onSaveProjectNote: @escaping (UUID, String) async -> String? = { _, _ in nil }
   ) {
     present(
       snapshot: snapshot,
@@ -136,7 +155,8 @@ final class TimelineProjectListWindowPresenter {
         onCreateTask: onCreateTask,
         onRenameTask: onRenameTask,
         onDeleteTask: onDeleteTask,
-        onRenameProject: onRenameProject
+        onRenameProject: onRenameProject,
+        onSaveProjectNote: onSaveProjectNote
       )
     )
   }
@@ -277,6 +297,13 @@ struct TimelineProjectListContent: View {
   @State private var showsTaskNotes: Bool
   @State private var writeQueue = TimelineProjectListWriteQueue()
   @State private var expandedTaskID: UUID?
+  @State private var projectNoteText: String
+  @State private var projectNoteHeight: CGFloat = 0
+  @State private var lastCommittedProjectNoteText: String
+  @State private var projectNoteAutoSaveTask: Task<Void, Never>?
+  @State private var isSavingProjectNote = false
+  @State private var saveProjectNoteAgainAfterCurrent = false
+  @State private var projectNoteErrorText: String?
 
   init(
     snapshot: TimelineProjectListWindowSnapshot,
@@ -302,6 +329,10 @@ struct TimelineProjectListContent: View {
     _showsCompletedTasks = State(initialValue: displayPreferences.showsCompletedTasks)
     _showsTaskNotes = State(initialValue: displayPreferences.showsTaskNotes)
     _expandedTaskID = State(initialValue: inlineEditorConfiguration?.initialExpandedTaskID)
+    _projectNoteText = State(initialValue: snapshot.projectNoteText)
+    _lastCommittedProjectNoteText = State(
+      initialValue: TimelineProjectNoteAutoSavePolicy.normalized(snapshot.projectNoteText)
+    )
   }
 
   func replacing(snapshot: TimelineProjectListWindowSnapshot) -> TimelineProjectListContent {
@@ -320,6 +351,10 @@ struct TimelineProjectListContent: View {
   var body: some View {
     VStack(alignment: .leading, spacing: 0) {
       header
+
+      Divider()
+
+      projectNoteSection
 
       Divider()
 
@@ -387,10 +422,17 @@ struct TimelineProjectListContent: View {
     }
     .onChange(of: snapshot) { _, nextSnapshot in
       sessionStore.applySnapshot(nextSnapshot)
+      applyProjectNoteTextFromSnapshot(nextSnapshot.projectNoteText)
       guard let expandedTaskID else { return }
       if !nextSnapshot.tasks.contains(where: { $0.id == expandedTaskID }) {
         self.expandedTaskID = nil
       }
+    }
+    .onChange(of: projectNoteText) { _, _ in
+      scheduleProjectNoteAutoSave()
+    }
+    .onDisappear {
+      flushProjectNoteOnDisappear()
     }
   }
 
@@ -480,6 +522,37 @@ struct TimelineProjectListContent: View {
     }
     .padding(.horizontal, 18)
     .padding(.vertical, 14)
+  }
+
+  private var projectNoteSection: some View {
+    VStack(alignment: .leading, spacing: 0) {
+      ZStack(alignment: .topTrailing) {
+        LinkedTextEditor(
+          text: $projectNoteText,
+          measuredHeight: $projectNoteHeight,
+          font: projectNoteNSFont,
+          vaultRootURL: inlineEditorConfiguration?.vaultRootURL,
+          allowsNewlines: true,
+          lineHeightMultiple: 1.08,
+          markdownPresentationMode: .livePreview,
+          allowsMailMessageDrops: true,
+          trailingInputReserveLineCount: 2,
+          trailingInputReserveActivationHeight: projectNoteMinimumHeight
+        )
+        .frame(minHeight: projectNoteMinimumHeight)
+        .frame(height: max(projectNoteMinimumHeight, projectNoteHeight))
+        .timelineProjectNoteFieldBackground()
+
+        if projectNoteErrorText != nil {
+          Image(systemName: "exclamationmark.circle")
+            .font(.system(size: 12, weight: .medium))
+            .foregroundStyle(.red)
+            .padding(8)
+        }
+      }
+    }
+    .padding(.horizontal, 18)
+    .padding(.vertical, 10)
   }
 
   @ViewBuilder
@@ -861,6 +934,99 @@ struct TimelineProjectListContent: View {
     actions.onRenameProject(snapshot.projectID, snapshot.title)
   }
 
+  private func applyProjectNoteTextFromSnapshot(_ nextText: String) {
+    guard !TimelineProjectNoteAutoSavePolicy.isDirty(
+      currentText: projectNoteText,
+      committedText: lastCommittedProjectNoteText
+    ) else { return }
+    let normalizedNextText = TimelineProjectNoteAutoSavePolicy.normalized(nextText)
+    projectNoteAutoSaveTask?.cancel()
+    projectNoteAutoSaveTask = nil
+    projectNoteText = normalizedNextText
+    lastCommittedProjectNoteText = normalizedNextText
+    projectNoteErrorText = nil
+  }
+
+  @MainActor
+  private func scheduleProjectNoteAutoSave() {
+    guard TimelineProjectNoteAutoSavePolicy.isDirty(
+      currentText: projectNoteText,
+      committedText: lastCommittedProjectNoteText
+    ) else {
+      projectNoteAutoSaveTask?.cancel()
+      projectNoteAutoSaveTask = nil
+      projectNoteErrorText = nil
+      return
+    }
+    projectNoteAutoSaveTask?.cancel()
+    projectNoteAutoSaveTask = Task { @MainActor in
+      do {
+        try await Task.sleep(nanoseconds: Self.projectNoteAutoSaveDelayNanoseconds)
+      } catch {
+        return
+      }
+      projectNoteAutoSaveTask = nil
+      _ = await savePendingProjectNote()
+    }
+  }
+
+  private func flushProjectNoteOnDisappear() {
+    guard isSavingProjectNote || TimelineProjectNoteAutoSavePolicy.isDirty(
+      currentText: projectNoteText,
+      committedText: lastCommittedProjectNoteText
+    ) else { return }
+    projectNoteAutoSaveTask?.cancel()
+    projectNoteAutoSaveTask = nil
+    Task { @MainActor in
+      _ = await savePendingProjectNote(afterCurrent: true)
+    }
+  }
+
+  @MainActor
+  private func savePendingProjectNote(afterCurrent: Bool = false) async -> Bool {
+    guard !isSavingProjectNote else {
+      if afterCurrent {
+        saveProjectNoteAgainAfterCurrent = true
+      } else {
+        scheduleProjectNoteAutoSave()
+      }
+      return true
+    }
+    let noteText = TimelineProjectNoteAutoSavePolicy.normalized(projectNoteText)
+    guard TimelineProjectNoteAutoSavePolicy.isDirty(
+      currentText: noteText,
+      committedText: lastCommittedProjectNoteText
+    ) else {
+      projectNoteErrorText = nil
+      return true
+    }
+    isSavingProjectNote = true
+    projectNoteErrorText = nil
+    guard let savedNoteText = await actions.onSaveProjectNote(snapshot.projectID, noteText) else {
+      isSavingProjectNote = false
+      saveProjectNoteAgainAfterCurrent = false
+      projectNoteErrorText = "저장 실패"
+      return false
+    }
+    let committedText = TimelineProjectNoteAutoSavePolicy.normalized(savedNoteText)
+    lastCommittedProjectNoteText = committedText
+    if TimelineProjectNoteAutoSavePolicy.normalized(projectNoteText) == committedText {
+      projectNoteText = committedText
+    }
+    isSavingProjectNote = false
+    let shouldSaveAgain = saveProjectNoteAgainAfterCurrent
+    saveProjectNoteAgainAfterCurrent = false
+    if TimelineProjectNoteAutoSavePolicy.isDirty(
+      currentText: projectNoteText,
+      committedText: committedText
+    ) {
+      scheduleProjectNoteAutoSave()
+    } else if shouldSaveAgain {
+      return await savePendingProjectNote(afterCurrent: true)
+    }
+    return true
+  }
+
   private func startEditing(_ task: TimelineProjectListWindowSnapshot.Task) {
     guard !isRenamingTask, !isCreatingTask else { return }
     updateSession { session in
@@ -1163,6 +1329,24 @@ struct TimelineProjectListContent: View {
     }
   }
 
+  private var projectNoteNSFont: NSFont {
+    switch presentation {
+    case .window:
+      return .systemFont(ofSize: 12)
+    case .embedded:
+      return AppInputTypography.nsFont(size: max(Self.embeddedTextSize - 1, 10))
+    }
+  }
+
+  private var projectNoteMinimumHeight: CGFloat {
+    switch presentation {
+    case .window:
+      return 78
+    case .embedded:
+      return 68
+    }
+  }
+
   private var visibleTasks: [TimelineProjectListWindowSnapshot.Task] {
     session.visibleTasks(showsCompletedTasks: showsCompletedTasks)
   }
@@ -1172,6 +1356,41 @@ struct TimelineProjectListContent: View {
   }
 
   fileprivate static let embeddedTextSize: CGFloat = 12 * 1.3 * 0.9
+  private static let projectNoteAutoSaveDelayNanoseconds: UInt64 = 650_000_000
+}
+
+private struct TimelineProjectNoteFieldBackground: ViewModifier {
+  func body(content: Content) -> some View {
+    content
+      .padding(.horizontal, 12)
+      .padding(.vertical, 8)
+      .background(
+        RoundedRectangle(cornerRadius: 4, style: .continuous)
+          .fill(TimelineProjectNoteFieldStyle.backgroundColor)
+      )
+  }
+}
+
+enum TimelineProjectNoteAutoSavePolicy {
+  static func normalized(_ text: String) -> String {
+    ReminderNoteSourceCodec.normalize(text)
+  }
+
+  static func isDirty(currentText: String, committedText: String) -> Bool {
+    normalized(currentText) != normalized(committedText)
+  }
+}
+
+private enum TimelineProjectNoteFieldStyle {
+  static let backgroundColor = Color(
+    nsColor: NSColor(calibratedWhite: 0.975, alpha: 1)
+  )
+}
+
+private extension View {
+  func timelineProjectNoteFieldBackground() -> some View {
+    modifier(TimelineProjectNoteFieldBackground())
+  }
 }
 
 private struct TimelineProjectListHiddenDragPreview: View {

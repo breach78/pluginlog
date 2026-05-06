@@ -44,6 +44,7 @@ actor AppOwnedWorkspaceStore {
     let hasExplicitTime: Bool
     let durationMinutes: Int?
     let recurrenceRuleRaw: String?
+    let priority: Int
   }
 
   struct ProjectSupplement: Equatable, Sendable {
@@ -318,11 +319,12 @@ actor AppOwnedWorkspaceStore {
     try migrate(db)
 
     let requestedProjectIDs = Set(projectIDs)
-    let allProjects = try loadProjects(db)
-    let selectedProjects = requestedProjectIDs.isEmpty
-      ? allProjects
-      : allProjects.filter { requestedProjectIDs.contains($0.projectID) }
-    let tasksByProjectID = try loadTasksByProjectID(db)
+    let selectedProjects = try loadProjects(db, projectIDs: requestedProjectIDs)
+    let tasksByProjectID = try loadTasksByProjectID(db, projectIDs: requestedProjectIDs)
+    let projectNotesByProjectID = try loadProjectNoteMarkdownByProjectID(
+      db,
+      projectIDs: requestedProjectIDs
+    )
 
     return RetainedWorkspaceSnapshot(
       projects: selectedProjects.map { project in
@@ -333,7 +335,7 @@ actor AppOwnedWorkspaceStore {
           ),
           fileURL: sqliteURL,
           title: project.title,
-          noteMarkdown: project.noteMarkdown,
+          noteMarkdown: projectNotesByProjectID[project.projectID] ?? project.noteMarkdown,
           tasks: tasksByProjectID[project.projectID] ?? [],
           usesProjectTag: true,
           isBUFOwned: true,
@@ -383,7 +385,7 @@ actor AppOwnedWorkspaceStore {
       """
       SELECT reminder_identifier, reminder_external_identifier, title, note_text, is_completed,
         completion_date, due_date, schedule_has_explicit_time, scheduled_duration_minutes,
-        recurrence_rule_raw
+        recurrence_rule_raw, priority
       FROM app_tasks WHERE project_id = '\(projectID.uuidString)' AND id = '\(taskID.uuidString)';
       """
     ) { statement in
@@ -399,13 +401,36 @@ actor AppOwnedWorkspaceStore {
         dueDate: columnDouble(statement, 6).map(Date.init(timeIntervalSinceReferenceDate:)),
         hasExplicitTime: columnInt(statement, 7) == 1,
         durationMinutes: columnInt(statement, 8).flatMap { $0 > 0 ? $0 : nil },
-        recurrenceRuleRaw: columnText(statement, 9)
+        recurrenceRuleRaw: columnText(statement, 9),
+        priority: columnInt(statement, 10) ?? 0
       )
     }
     guard let reference = rows.first, !reference.reminderIdentifier.isEmpty else {
       throw RetainedTaskCommandError.taskNotFound(taskID)
     }
     return reference
+  }
+
+  func projectNoteTaskReference(projectID: UUID) throws -> TaskReference? {
+    let db = try openDatabase()
+    defer { sqlite3_close(db) }
+    try migrate(db)
+    let rows = try query(
+      db,
+      """
+      SELECT id
+      FROM app_tasks
+      WHERE project_id = \(sqlStringLiteral(projectID.uuidString))
+        AND title = \(sqlStringLiteral(ProjectNoteReminderPolicy.title))
+        AND priority = \(ProjectNoteReminderPolicy.lowPriority)
+      ORDER BY row_order, modified_at DESC
+      LIMIT 1;
+      """
+    ) { statement in
+      UUID(uuidString: columnText(statement, 0) ?? "")
+    }
+    guard let taskID = rows.compactMap({ $0 }).first else { return nil }
+    return try taskReference(projectID: projectID, taskID: taskID)
   }
 
   func upsertTask(
@@ -421,6 +446,7 @@ actor AppOwnedWorkspaceStore {
     hasExplicitTime: Bool,
     durationMinutes: Int?,
     recurrenceRuleRaw: String? = nil,
+    priority: Int = 0,
     modifiedAt: Date,
     appendIfMissing: Bool = true
   ) throws {
@@ -444,7 +470,7 @@ actor AppOwnedWorkspaceStore {
         title, note_text, is_completed, completion_date, start_date, due_date,
         schedule_has_explicit_time, scheduled_duration_minutes, priority, recurrence_rule_raw,
         is_flagged, required_work_days, attachment_count, created_at, modified_at, row_order
-      ) VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?, NULL, ?, ?, ?, 0, ?, 0, 0, 0, ?, ?, ?);
+      ) VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, 0, 0, 0, ?, ?, ?);
       """,
       bindings: [
         .text(taskID.uuidString),
@@ -458,6 +484,7 @@ actor AppOwnedWorkspaceStore {
         .optionalDouble(dueDate?.timeIntervalSinceReferenceDate),
         .int(hasExplicitTime ? 1 : 0),
         .optionalInt(durationMinutes),
+        .int(priority),
         .optionalText(normalized(recurrenceRuleRaw)),
         .double(modifiedAt.timeIntervalSinceReferenceDate),
         .double(modifiedAt.timeIntervalSinceReferenceDate),
@@ -494,6 +521,7 @@ actor AppOwnedWorkspaceStore {
       hasExplicitTime: sourceTask.hasExplicitTime,
       durationMinutes: sourceTask.durationMinutes,
       recurrenceRuleRaw: nil,
+      priority: sourceTask.priority,
       modifiedAt: modifiedAt,
       appendIfMissing: true
     )
@@ -985,13 +1013,18 @@ actor AppOwnedWorkspaceStore {
     ) > 0
   }
 
-  private func loadProjects(_ db: OpaquePointer) throws -> [StoredProject] {
+  private func loadProjects(
+    _ db: OpaquePointer,
+    projectIDs: Set<UUID> = []
+  ) throws -> [StoredProject] {
     try query(
       db,
       """
       SELECT id, reminder_list_external_identifier, title, color_hex, note_markdown,
         progress_stage, start_date, deadline, is_archived, updated_at
-      FROM app_projects ORDER BY title COLLATE NOCASE;
+      FROM app_projects
+      \(projectFilterClause(column: "id", projectIDs: projectIDs))
+      ORDER BY title COLLATE NOCASE;
       """
     ) { statement in
       guard let projectID = UUID(uuidString: columnText(statement, 0) ?? "") else {
@@ -1012,14 +1045,19 @@ actor AppOwnedWorkspaceStore {
     }
   }
 
-  private func loadTasksByProjectID(_ db: OpaquePointer) throws -> [UUID: [RetainedTask]] {
+  private func loadTasksByProjectID(
+    _ db: OpaquePointer,
+    projectIDs: Set<UUID> = []
+  ) throws -> [UUID: [RetainedTask]] {
     var result: [UUID: [RetainedTask]] = [:]
     let rows = try query(
       db,
       """
       SELECT project_id, id, reminder_external_identifier, title, note_text, is_completed,
-        due_date, start_date, schedule_has_explicit_time, scheduled_duration_minutes, recurrence_rule_raw
+        due_date, start_date, schedule_has_explicit_time, scheduled_duration_minutes,
+        recurrence_rule_raw, priority
       FROM app_tasks
+      \(projectFilterClause(column: "project_id", projectIDs: projectIDs))
       ORDER BY project_id, row_order, title COLLATE NOCASE;
       """
     ) { statement -> (UUID, RetainedTask) in
@@ -1034,6 +1072,7 @@ actor AppOwnedWorkspaceStore {
       let hasExplicitTime = columnInt(statement, 8) == 1
       let durationMinutes = columnInt(statement, 9).flatMap { $0 > 0 ? $0 : nil }
       let recurrenceRuleRaw = columnText(statement, 10)
+      let priority = columnInt(statement, 11) ?? 0
       let rawDate = ReminderScheduleMetadataCodec.encodeDate(
         scheduleDate,
         hasExplicitTime: hasExplicitTime
@@ -1058,14 +1097,68 @@ actor AppOwnedWorkspaceStore {
             rawRepeatRule: recurrenceRuleRaw,
             canonicalRepeatRule: recurrenceRuleRaw
           ),
-          isManagedTask: true
+          isManagedTask: true,
+          priority: priority
         )
       )
     }
     for (projectID, task) in rows {
       result[projectID, default: []].append(task)
     }
-    return result.mapValues(tasksHidingShadowedCompletedRecurringOccurrences(_:))
+    return result.mapValues { tasks in
+      ProjectNoteReminderPolicy.visibleTasks(
+        tasksHidingShadowedCompletedRecurringOccurrences(tasks)
+      )
+    }
+  }
+
+  private func loadProjectNoteMarkdownByProjectID(
+    _ db: OpaquePointer,
+    projectIDs: Set<UUID> = []
+  ) throws -> [UUID: String] {
+    let rows = try query(
+      db,
+      """
+      SELECT project_id, note_text
+      FROM app_tasks
+      WHERE title = \(sqlStringLiteral(ProjectNoteReminderPolicy.title))
+        AND priority = \(ProjectNoteReminderPolicy.lowPriority)
+        \(projectFilterClausePrefix(column: "project_id", projectIDs: projectIDs, conjunction: "AND"))
+      ORDER BY project_id, row_order, modified_at DESC;
+      """
+    ) { statement -> (UUID, String)? in
+      guard let projectID = UUID(uuidString: columnText(statement, 0) ?? "") else {
+        return nil
+      }
+      return (projectID, columnText(statement, 1) ?? "")
+    }
+    var result: [UUID: String] = [:]
+    for row in rows.compactMap({ $0 }) where result[row.0] == nil {
+      result[row.0] = row.1
+    }
+    return result
+  }
+
+  private func projectFilterClause(column: String, projectIDs: Set<UUID>) -> String {
+    guard !projectIDs.isEmpty else { return "" }
+    let quotedProjectIDs = projectIDs
+      .map { sqlStringLiteral($0.uuidString) }
+      .sorted()
+      .joined(separator: ", ")
+    return "WHERE \(column) IN (\(quotedProjectIDs))"
+  }
+
+  private func projectFilterClausePrefix(
+    column: String,
+    projectIDs: Set<UUID>,
+    conjunction: String
+  ) -> String {
+    guard !projectIDs.isEmpty else { return "" }
+    let quotedProjectIDs = projectIDs
+      .map { sqlStringLiteral($0.uuidString) }
+      .sorted()
+      .joined(separator: ", ")
+    return "\(conjunction) \(column) IN (\(quotedProjectIDs))"
   }
 
   static func isLocalCompletedRecurringExternalIdentifier(_ externalIdentifier: String?) -> Bool {

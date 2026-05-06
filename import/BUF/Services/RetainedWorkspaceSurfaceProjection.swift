@@ -141,10 +141,16 @@ enum RetainedWorkspaceSurfaceProjectionBuilder {
 
     for project in selectedProjects {
       let projectID = project.identity.projectID
-      let projectSnapshot = workspaceProjectSnapshot(for: project)
+      let projectTasks = ProjectNoteReminderPolicy.visibleTasks(project.tasks)
+      let projectNoteMarkdown = ProjectNoteReminderPolicy.projectNoteText(in: project.tasks)
+        ?? project.noteMarkdown
+      let projectSnapshot = workspaceProjectSnapshot(
+        for: project,
+        projectNoteMarkdown: projectNoteMarkdown
+      )
       var scheduleEntries: [ScheduleSliceEntry] = []
 
-      for (index, task) in project.tasks.enumerated() {
+      for (index, task) in projectTasks.enumerated() {
         guard let taskID = task.identity.taskID else {
           continue
         }
@@ -283,7 +289,8 @@ enum RetainedWorkspaceSurfaceProjectionBuilder {
   }
 
   private static func workspaceProjectSnapshot(
-    for project: RetainedProject
+    for project: RetainedProject,
+    projectNoteMarkdown: String
   ) -> WorkspaceProjectRuntimeRecord {
     WorkspaceProjectRuntimeRecord(
       id: project.identity.projectID,
@@ -291,7 +298,7 @@ enum RetainedWorkspaceSurfaceProjectionBuilder {
       colorHex: project.colorHex,
       reminderListIdentifier: nil,
       reminderListExternalIdentifier: project.identity.reminderListExternalIdentifier,
-      projectNoteMarkdown: project.noteMarkdown,
+      projectNoteMarkdown: projectNoteMarkdown,
       localStartDate: project.localStartDate,
       localDeadline: project.localDeadline,
       progressStageRaw: project.progressStage.storageRawValue,
@@ -331,7 +338,7 @@ enum RetainedWorkspaceSurfaceProjectionBuilder {
       completedWorkUnitDates: [],
       preparationScheduleOverridesRaw: "",
       rowOrder: rowOrder,
-      priority: 0,
+      priority: task.priority,
       isFlagged: false,
       isArchived: projectSnapshot.isArchived,
       localUpdatedAt: .distantPast,

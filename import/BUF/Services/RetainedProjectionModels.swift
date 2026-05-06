@@ -72,6 +72,25 @@ struct RetainedTask: Equatable, Sendable {
   let isCompleted: Bool
   let schedule: RetainedTaskSchedule
   let isManagedTask: Bool
+  let priority: Int
+
+  init(
+    identity: RetainedTaskIdentity,
+    title: String,
+    noteText: String,
+    isCompleted: Bool,
+    schedule: RetainedTaskSchedule,
+    isManagedTask: Bool,
+    priority: Int = 0
+  ) {
+    self.identity = identity
+    self.title = title
+    self.noteText = noteText
+    self.isCompleted = isCompleted
+    self.schedule = schedule
+    self.isManagedTask = isManagedTask
+    self.priority = priority
+  }
 }
 
 struct RetainedTaskIdentity: Equatable, Sendable {

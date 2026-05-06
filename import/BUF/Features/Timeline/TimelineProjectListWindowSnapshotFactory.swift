@@ -5,6 +5,7 @@ enum TimelineProjectListWindowSnapshotFactory {
     projectID: UUID,
     title: String,
     colorHex: String?,
+    projectNoteText: String,
     entries: [ScheduleSliceEntry],
     calendar: Calendar = .autoupdatingCurrent
   ) -> TimelineProjectListWindowSnapshot {
@@ -12,6 +13,7 @@ enum TimelineProjectListWindowSnapshotFactory {
       projectID: projectID,
       title: TimelineBoardReadPath.timelinePreviewTitle(for: title),
       colorHex: colorHex,
+      projectNoteText: projectNoteText,
       tasks: orderedEntries(projectID: projectID, entries: entries).map { entry in
         taskSnapshot(for: entry, calendar: calendar)
       }

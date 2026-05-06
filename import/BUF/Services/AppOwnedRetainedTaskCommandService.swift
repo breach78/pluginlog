@@ -53,6 +53,7 @@ enum AppOwnedRetainedTaskCommandService {
         dueDate: dueDate,
         hasExplicitTime: hasExplicitTime,
         durationMinutes: durationMinutes,
+        priority: 0,
         modifiedAt: metadata.modifiedAt
       )
     } catch {
@@ -157,6 +158,7 @@ enum AppOwnedRetainedTaskCommandService {
       hasExplicitTime: hasExplicitTime,
       durationMinutes: hasExplicitTime ? rawFields.durationMinutes : nil,
       recurrenceRuleRaw: task.recurrenceRuleRaw,
+      priority: task.priority,
       modifiedAt: modifiedAt,
       appendIfMissing: false
     )
@@ -232,6 +234,7 @@ enum AppOwnedRetainedTaskCommandService {
         hasExplicitTime: remoteSnapshot.hasExplicitTime,
         durationMinutes: remoteSnapshot.hasExplicitTime ? task.durationMinutes : nil,
         recurrenceRuleRaw: remoteSnapshot.recurrenceRuleRaw,
+        priority: remoteSnapshot.priority,
         modifiedAt: remoteSnapshot.modifiedAt,
         appendIfMissing: false
       )
@@ -249,7 +252,8 @@ enum AppOwnedRetainedTaskCommandService {
           dueDate: task.dueDate,
           hasExplicitTime: task.hasExplicitTime,
           durationMinutes: task.durationMinutes,
-          recurrenceRuleRaw: task.recurrenceRuleRaw
+          recurrenceRuleRaw: task.recurrenceRuleRaw,
+          priority: task.priority
         ),
         completionDate: resolvedCompletionDate,
         modifiedAt: remoteSnapshot.modifiedAt
@@ -345,6 +349,7 @@ enum AppOwnedRetainedTaskCommandService {
       hasExplicitTime: hasExplicitTime,
       durationMinutes: durationMinutes,
       recurrenceRuleRaw: task.recurrenceRuleRaw,
+      priority: task.priority,
       modifiedAt: metadata.modifiedAt,
       appendIfMissing: false
     )
@@ -423,6 +428,7 @@ enum AppOwnedRetainedTaskCommandService {
         hasExplicitTime: storedHasExplicitTime,
         durationMinutes: storedHasExplicitTime ? durationMinutes : nil,
         recurrenceRuleRaw: recurrenceRuleRaw,
+        priority: remoteSnapshot?.priority ?? task.priority,
         modifiedAt: storedModifiedAt,
         appendIfMissing: false
       )

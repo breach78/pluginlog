@@ -118,6 +118,71 @@ final class AppOwnedRetainedTaskCommandServiceTests: XCTestCase {
   }
 
   @MainActor
+  func testProjectNoteCreatesLowPriorityReminderAndStoresNote() async throws {
+    let fixture = try await makeEnabledStoreFixture()
+    let provider = FakeAppOwnedReminderProjectProvider()
+    provider.createdTaskMetadata = ReminderTaskRemoteMetadata(
+      identifier: "note-identifier",
+      externalIdentifier: "note-external",
+      modifiedAt: Date(timeIntervalSinceReferenceDate: 720)
+    )
+
+    let savedNote = try await ObsidianRetainedProjectCommandService.setProjectNote(
+      vaultRootURL: fixture.vaultRoot,
+      projectID: fixture.projectID,
+      noteText: "목록 핵심",
+      reminderProjectProvider: provider
+    )
+    let snapshot = try await fixture.store.loadRetainedWorkspaceSnapshot(projectIDs: [fixture.projectID])
+    let project = try XCTUnwrap(snapshot.projects.first)
+
+    XCTAssertEqual(savedNote, "목록 핵심")
+    XCTAssertEqual(provider.createdProjectIdentifier, "list-1")
+    XCTAssertEqual(provider.createdTaskTitle, "프로젝트 노트")
+    XCTAssertEqual(provider.presentationUpdates, ["note-external": 9])
+    XCTAssertEqual(project.noteMarkdown, "목록 핵심")
+    XCTAssertTrue(project.tasks.isEmpty)
+  }
+
+  @MainActor
+  func testProjectNoteUpdateTreatsRenamedReminderAsBrokenAndCreatesNewNoteReminder() async throws {
+    let fixture = try await makeEnabledStoreFixture(
+      taskExternalIdentifier: "note-old",
+      taskTitle: "프로젝트 노트",
+      taskNoteText: "old",
+      taskPriority: 9
+    )
+    let provider = FakeAppOwnedReminderProjectProvider()
+    provider.remoteTaskSnapshot = ReminderTaskRemoteSnapshot(
+      identifier: "old-identifier",
+      externalIdentifier: "note-old",
+      calendarIdentifier: "list-1",
+      title: "Renamed",
+      noteText: "old",
+      dueDate: nil,
+      hasExplicitTime: false,
+      priority: 9,
+      modifiedAt: Date(timeIntervalSinceReferenceDate: 730)
+    )
+    provider.createdTaskMetadata = ReminderTaskRemoteMetadata(
+      identifier: "note-new-identifier",
+      externalIdentifier: "note-new",
+      modifiedAt: Date(timeIntervalSinceReferenceDate: 731)
+    )
+
+    _ = try await ObsidianRetainedProjectCommandService.setProjectNote(
+      vaultRootURL: fixture.vaultRoot,
+      projectID: fixture.projectID,
+      noteText: "new",
+      reminderProjectProvider: provider
+    )
+
+    XCTAssertNil(provider.updatedNoteText)
+    XCTAssertEqual(provider.createdTaskTitle, "프로젝트 노트")
+    XCTAssertEqual(provider.presentationUpdates["note-new"], 9)
+  }
+
+  @MainActor
   func testAppOwnedScheduleClampsOutOfRangeTimeMinutes() async throws {
     let fixture = try await makeEnabledStoreFixture(taskExternalIdentifier: "task-1")
     let provider = FakeAppOwnedReminderProjectProvider()
@@ -239,7 +304,8 @@ final class AppOwnedRetainedTaskCommandServiceTests: XCTestCase {
         dueDate: originalDueDate,
         hasExplicitTime: true,
         durationMinutes: 45,
-        recurrenceRuleRaw: sourceTask.recurrenceRuleRaw
+        recurrenceRuleRaw: sourceTask.recurrenceRuleRaw,
+        priority: sourceTask.priority
       ),
       completionDate: originalDueDate,
       modifiedAt: Date(timeIntervalSinceReferenceDate: 850)
@@ -291,6 +357,8 @@ final class AppOwnedRetainedTaskCommandServiceTests: XCTestCase {
   private func makeEnabledStoreFixture(
     taskExternalIdentifier: String? = nil,
     taskTitle: String = "Task",
+    taskNoteText: String = "",
+    taskPriority: Int = 0,
     dueDate: Date? = nil,
     scheduleHasExplicitTime: Bool = false,
     scheduledDurationMinutes: Int? = nil,
@@ -312,7 +380,7 @@ final class AppOwnedRetainedTaskCommandServiceTests: XCTestCase {
           sourceListIdentifier: "list-1",
           sourceListTitle: "Project",
           title: taskTitle,
-          notes: "",
+          notes: taskNoteText,
           attachmentCount: 0,
 	          isCompleted: false,
 	          completionDate: nil,
@@ -320,7 +388,7 @@ final class AppOwnedRetainedTaskCommandServiceTests: XCTestCase {
 	          dueDate: dueDate,
 	          scheduleHasExplicitTime: scheduleHasExplicitTime,
 	          scheduledDurationMinutes: scheduledDurationMinutes,
-	          priority: 0,
+	          priority: taskPriority,
 	          recurrenceRuleRaw: recurrenceRuleRaw,
           isFlagged: false,
           requiredWorkDays: 0,
@@ -382,6 +450,7 @@ private final class FakeAppOwnedReminderProjectProvider: ReminderProjectProvider
   var recurrenceUpdate: (String?, String?)?
   var removedTaskExternalIdentifiers: [String?] = []
   var remoteTaskSnapshot: ReminderTaskRemoteSnapshot?
+  var presentationUpdates: [String: Int] = [:]
 
   var defaultCalendarIdentifierForNewReminders: String? { "list-1" }
 
@@ -492,7 +561,10 @@ private final class FakeAppOwnedReminderProjectProvider: ReminderProjectProvider
     for task: ReminderTaskReference,
     priority: Int
   ) throws -> ReminderTaskRemoteMetadata? {
-    updateMetadata
+    if let externalIdentifier = task.reminderExternalIdentifier {
+      presentationUpdates[externalIdentifier] = priority
+    }
+    return updateMetadata
   }
 
   func moveTaskReminder(

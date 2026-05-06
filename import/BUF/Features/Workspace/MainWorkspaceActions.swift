@@ -240,6 +240,12 @@ extension MainWorkspaceView {
       onRenameProject: { projectID, title in
         self.pendingRenameProject = .init(id: projectID, title: title)
       },
+      onSaveProjectNote: { projectID, noteText in
+        await self.saveWorkspaceProjectListWindowProjectNote(
+          noteText,
+          projectID: projectID
+        )
+      },
       moveOptions: {
         self.activeQuickAddProjects.map {
           TimelineProjectMoveOption(id: $0.id, title: $0.title)
@@ -313,6 +319,26 @@ extension MainWorkspaceView {
     activeWorkspaceTaskEditPanelTarget = nil
     appState.isHoveringTimelineTaskBadgeOverlay = false
     appState.isHoveringTimelineDayHeaderOverlay = false
+  }
+
+  func saveWorkspaceProjectListWindowProjectNote(
+    _ noteText: String,
+    projectID: UUID
+  ) async -> String? {
+    do {
+      let savedNote = try await ObsidianRetainedProjectCommandService.setProjectNote(
+        vaultRootURL: appState.obsidianVaultRootURL,
+        projectID: projectID,
+        noteText: noteText,
+        reminderProjectProvider: appState.reminderProjectProvider
+      )
+      appState.bumpWorkspaceTreeRevision()
+      await refreshWorkspaceProjectListWindow(projectID: projectID)
+      return savedNote
+    } catch {
+      appState.reportError(error, logMessage: "saveWorkspaceProjectListWindowProjectNote failed")
+      return nil
+    }
   }
 
   func createWorkspaceProjectListWindowTask(
@@ -852,10 +878,12 @@ extension MainWorkspaceView {
     let project = resolvedRead.projectSnapshots[projectID]
     let title = project?.title ?? descriptor?.title ?? "프로젝트"
     let colorHex = project?.colorHex ?? descriptor?.colorHex
+    let projectNoteText = project?.projectNoteMarkdown ?? ""
     return TimelineProjectListWindowSnapshotFactory.snapshot(
       projectID: projectID,
       title: title,
       colorHex: colorHex,
+      projectNoteText: projectNoteText,
       entries: resolvedRead.scheduleEntriesByProjectID[projectID] ?? []
     )
   }

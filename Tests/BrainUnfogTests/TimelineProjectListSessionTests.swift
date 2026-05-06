@@ -250,6 +250,24 @@ final class TimelineProjectListSessionTests: XCTestCase {
     XCTAssertEqual(values, [1, 2])
   }
 
+  func testProjectNoteDirtyPolicyIgnoresTrailingNewlines() {
+    XCTAssertFalse(
+      TimelineProjectNoteAutoSavePolicy.isDirty(
+        currentText: "저장하라고.\n\n",
+        committedText: "저장하라고."
+      )
+    )
+  }
+
+  func testProjectNoteDirtyPolicyDetectsContentChanges() {
+    XCTAssertTrue(
+      TimelineProjectNoteAutoSavePolicy.isDirty(
+        currentText: "새 내용",
+        committedText: "이전 내용"
+      )
+    )
+  }
+
   private func snapshot(
     projectID: UUID,
     tasks: [TimelineProjectListWindowSnapshot.Task]

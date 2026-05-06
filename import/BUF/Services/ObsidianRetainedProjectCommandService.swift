@@ -53,6 +53,26 @@ enum ObsidianRetainedProjectCommandService {
     }
   }
 
+  static func setProjectNote(
+    vaultRootURL: URL?,
+    projectID: UUID,
+    noteText: String,
+    reminderProjectProvider: ReminderProjectProvider
+  ) async throws -> String {
+    if let appOwnedStore = try await AppOwnedRetainedTaskCommandService.enabledStore(vaultRootURL: vaultRootURL) {
+      return try await AppOwnedRetainedProjectCommandService.setProjectNote(
+        vaultRootURL: vaultRootURL,
+        store: appOwnedStore,
+        projectID: projectID,
+        noteText: noteText,
+        reminderProjectProvider: reminderProjectProvider
+      )
+    }
+    throw RetainedTaskCommandError.retainedProjectionFailed(
+      "project note reminders require app-owned workspace storage"
+    )
+  }
+
   static func setProjectColor(
     vaultRootURL: URL?,
     projectID: UUID,
