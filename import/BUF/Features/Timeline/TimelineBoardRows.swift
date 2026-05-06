@@ -308,9 +308,7 @@ extension TimelineBoardView {
     .modifier(TimelineProjectDragModifier(bar: bar, draggingProjectID: $draggingProjectID))
     .simultaneousGesture(
       TapGesture()
-        .onEnded {
-          selectTimelineProject(bar.projectID)
-        }
+        .onEnded {}
     )
     .simultaneousGesture(
       TapGesture(count: 2)
@@ -428,9 +426,7 @@ extension TimelineBoardView {
     .modifier(TimelineProjectDragModifier(bar: bar, draggingProjectID: $draggingProjectID))
     .simultaneousGesture(
       TapGesture()
-        .onEnded {
-          selectTimelineProject(bar.projectID)
-        }
+        .onEnded {}
     )
     .simultaneousGesture(
       TapGesture(count: 2)
