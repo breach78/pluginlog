@@ -150,6 +150,7 @@ struct ScheduleTimedEntry: Identifiable {
   let taskDescriptor: WorkspaceScheduleTaskDescriptor?
   let event: ScheduleCalendarEvent?
   let isBackgroundCalendar: Bool
+  let contentTopOffset: CGFloat
 }
 
 struct ScheduleTimedBlockLayout: Identifiable {
@@ -158,6 +159,92 @@ struct ScheduleTimedBlockLayout: Identifiable {
   let column: Int
   let columnCount: Int
   let columnSpan: Int
+
+  func withContentTopOffset(_ offset: CGFloat) -> ScheduleTimedBlockLayout {
+    ScheduleTimedBlockLayout(
+      id: id,
+      entry: ScheduleTimedEntry(
+        id: entry.id,
+        dayIndex: entry.dayIndex,
+        startMinute: entry.startMinute,
+        durationMinutes: entry.durationMinutes,
+        endMinute: entry.endMinute,
+        title: entry.title,
+        subtitle: entry.subtitle,
+        color: entry.color,
+        isTask: entry.isTask,
+        isPreparationSlot: entry.isPreparationSlot,
+        targetCompletedWorkUnits: entry.targetCompletedWorkUnits,
+        taskDescriptor: entry.taskDescriptor,
+        event: entry.event,
+        isBackgroundCalendar: entry.isBackgroundCalendar,
+        contentTopOffset: offset
+      ),
+      column: column,
+      columnCount: columnCount,
+      columnSpan: columnSpan
+    )
+  }
+}
+
+struct ScheduleBackgroundLabelAvoidanceBlock: Hashable {
+  let dayIndex: Int
+  let startMinute: Int
+  let endMinute: Int
+}
+
+enum ScheduleBackgroundLabelAvoidancePolicy {
+  static let estimatedLabelHeight: CGFloat = 44
+  static let labelGap: CGFloat = 6
+
+  static func topOffset(
+    for background: ScheduleBackgroundLabelAvoidanceBlock,
+    foregroundBlocks: [ScheduleBackgroundLabelAvoidanceBlock],
+    hourHeight: CGFloat,
+    labelHeight: CGFloat = estimatedLabelHeight,
+    gap: CGFloat = labelGap
+  ) -> CGFloat {
+    guard hourHeight > 0, labelHeight > 0 else { return 0 }
+
+    let backgroundStart = min(max(0, background.startMinute), 24 * 60)
+    let backgroundEnd = min(max(backgroundStart, background.endMinute), 24 * 60)
+    guard backgroundEnd > backgroundStart else { return 0 }
+
+    let labelDurationMinutes = max(1, Int(ceil(labelHeight / hourHeight * 60)))
+    let gapMinutes = max(0, Int(ceil(gap / hourHeight * 60)))
+    let latestLabelStart = max(backgroundStart, backgroundEnd - labelDurationMinutes)
+    guard latestLabelStart > backgroundStart else { return 0 }
+
+    var candidateStart = backgroundStart
+    let obstacles = foregroundBlocks
+      .filter { block in
+        block.dayIndex == background.dayIndex
+          && block.startMinute < backgroundEnd
+          && block.endMinute > backgroundStart
+      }
+      .sorted { lhs, rhs in
+        if lhs.startMinute != rhs.startMinute {
+          return lhs.startMinute < rhs.startMinute
+        }
+        return lhs.endMinute < rhs.endMinute
+      }
+
+    for obstacle in obstacles {
+      if candidateStart + labelDurationMinutes <= obstacle.startMinute {
+        break
+      }
+      if candidateStart < obstacle.endMinute {
+        candidateStart = obstacle.endMinute + gapMinutes
+      }
+      if candidateStart > latestLabelStart {
+        candidateStart = latestLabelStart
+        break
+      }
+    }
+
+    guard candidateStart > backgroundStart else { return 0 }
+    return CGFloat(candidateStart - backgroundStart) / 60 * hourHeight
+  }
 }
 
 enum ScheduleTimedBlockHitPriorityPolicy {
@@ -495,6 +582,7 @@ extension ScheduleBoardView {
               startMinute: layout.entry.startMinute,
               durationMinutes: layout.entry.durationMinutes,
               viewportFrame: viewportFrame,
+              contentTopOffset: layout.entry.contentTopOffset,
               isBackgroundCalendar: true
             )
           } else if event.canEditTiming {
@@ -652,6 +740,7 @@ extension ScheduleBoardView {
     startMinute _: Int,
     durationMinutes: Int,
     viewportFrame: CGRect,
+    contentTopOffset: CGFloat = 0,
     isBackgroundCalendar: Bool = false
   ) -> some View {
     let density = timedBlockDensity(for: blockHeight)
@@ -665,7 +754,8 @@ extension ScheduleBoardView {
         blockHeight: blockHeight,
         density: density,
         durationMinutes: durationMinutes,
-        isBackgroundCalendar: isBackgroundCalendar
+        isBackgroundCalendar: isBackgroundCalendar,
+        contentTopOffset: contentTopOffset
       )
     }
     .clipped()
@@ -867,7 +957,8 @@ extension ScheduleBoardView {
     blockHeight: CGFloat,
     density: ScheduleTimedBlockDensity,
     durationMinutes: Int,
-    isBackgroundCalendar: Bool
+    isBackgroundCalendar: Bool,
+    contentTopOffset: CGFloat = 0
   ) -> some View {
     let titleColor: Color = isBackgroundCalendar ? .secondary.opacity(0.78) : .primary
     let subtitleColor = scheduleEventSecondaryTextColor(isBackgroundCalendar: isBackgroundCalendar)
@@ -888,7 +979,8 @@ extension ScheduleBoardView {
       .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
       .padding(.leading, 10)
       .padding(.trailing, 8)
-      .padding(.vertical, 5)
+      .padding(.top, 5 + contentTopOffset)
+      .padding(.bottom, 5)
 
     case .standard:
       VStack(alignment: .leading, spacing: 2) {
@@ -910,7 +1002,8 @@ extension ScheduleBoardView {
       .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
       .padding(.leading, 10)
       .padding(.trailing, 8)
-      .padding(.vertical, 6)
+      .padding(.top, 6 + contentTopOffset)
+      .padding(.bottom, 6)
 
     case .expanded:
       VStack(alignment: .leading, spacing: 3) {
@@ -939,7 +1032,8 @@ extension ScheduleBoardView {
       .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
       .padding(.leading, 10)
       .padding(.trailing, 8)
-      .padding(.vertical, 7)
+      .padding(.top, 7 + contentTopOffset)
+      .padding(.bottom, 7)
     }
   }
 
@@ -1463,7 +1557,8 @@ extension ScheduleBoardView {
               targetCompletedWorkUnits: eventModel.targetCompletedWorkUnits,
               taskDescriptor: task,
               event: nil,
-              isBackgroundCalendar: false
+              isBackgroundCalendar: false,
+              contentTopOffset: 0
             ),
             column: placement.column,
             columnCount: placement.columnCount,
@@ -1487,7 +1582,8 @@ extension ScheduleBoardView {
               targetCompletedWorkUnits: nil,
               taskDescriptor: nil,
               event: event,
-              isBackgroundCalendar: isBackgroundCalendar
+              isBackgroundCalendar: isBackgroundCalendar,
+              contentTopOffset: 0
             ),
             column: placement.column,
             columnCount: placement.columnCount,
@@ -1565,12 +1661,32 @@ extension ScheduleBoardView {
       calendar: calendar,
       metrics: ScheduleDayTimelineLayoutMetrics(minimumTimedDurationMinutes: timedMinimumDuration)
     )
-    let backgroundTimedEntries = timedLayouts(
+    let rawBackgroundTimedEntries = timedLayouts(
       from: backgroundLayout,
       eventModelsByID: backgroundEventModelsByID,
       eventByID: backgroundEventByID,
       isBackgroundCalendar: true
     )
+    let foregroundBlocks = timedEntries.map { layout in
+      ScheduleBackgroundLabelAvoidanceBlock(
+        dayIndex: layout.entry.dayIndex,
+        startMinute: layout.entry.startMinute,
+        endMinute: layout.entry.endMinute
+      )
+    }
+    let backgroundTimedEntries = rawBackgroundTimedEntries.map { layout in
+      let block = ScheduleBackgroundLabelAvoidanceBlock(
+        dayIndex: layout.entry.dayIndex,
+        startMinute: layout.entry.startMinute,
+        endMinute: layout.entry.endMinute
+      )
+      let offset = ScheduleBackgroundLabelAvoidancePolicy.topOffset(
+        for: block,
+        foregroundBlocks: foregroundBlocks,
+        hourHeight: hourHeight
+      )
+      return layout.withContentTopOffset(offset)
+    }
     let backgroundAllDayEntries = allDayLayouts(
       from: backgroundLayout,
       eventModelsByID: backgroundEventModelsByID,
