@@ -776,14 +776,7 @@ extension TimelineBoardView {
     registerUndo: Bool
   ) async -> Bool {
     do {
-      let shouldRestoreSchedule = RecurringCompletionUndoScheduleRestorePolicy.shouldRestore(
-        previousIsCompleted: previousState.isCompleted,
-        nextIsCompleted: nextState.isCompleted,
-        isRecurring: nextState.isRecurring,
-        previousFields: previousState.editFields,
-        fields: nextState.editFields
-      )
-      let shouldWriteCompletion = RecurringCompletionUndoScheduleRestorePolicy.shouldWriteCompletion(
+      let mutationPlan = RecurringCompletionUndoScheduleRestorePolicy.mutationPlan(
         previousIsCompleted: previousState.isCompleted,
         nextIsCompleted: nextState.isCompleted,
         isRecurring: nextState.isRecurring,
@@ -791,7 +784,7 @@ extension TimelineBoardView {
         fields: nextState.editFields
       )
       var result: RetainedTaskCommandResult?
-      if shouldWriteCompletion {
+      if mutationPlan.writesCompletion {
         result = try await ObsidianRetainedTaskCommandService.setTaskCompletion(
           vaultRootURL: appState.obsidianVaultRootURL,
           projectID: projectID,
@@ -803,7 +796,7 @@ extension TimelineBoardView {
           reminderProjectProvider: appState.reminderProjectProvider
         )
       }
-      if shouldRestoreSchedule {
+      if mutationPlan.restoresSchedule {
         result = try await ObsidianRetainedTaskCommandService.setTaskSchedule(
           vaultRootURL: appState.obsidianVaultRootURL,
           projectID: projectID,
@@ -815,6 +808,9 @@ extension TimelineBoardView {
           reminderProjectProvider: appState.reminderProjectProvider,
           resetRecurringAnchor: nextState.isRecurring
         )
+      }
+      if RetainedTaskCompletionWorkspaceInvalidationPolicy.shouldBumpWorkspaceRevision(after: mutationPlan) {
+        appState.bumpWorkspaceTreeRevision()
       }
       guard let result else {
         await refreshTimelineProjectState(including: [projectID])

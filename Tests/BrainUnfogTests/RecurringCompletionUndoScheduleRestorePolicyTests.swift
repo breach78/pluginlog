@@ -157,4 +157,25 @@ final class RecurringCompletionUndoScheduleRestorePolicyTests: XCTestCase {
       )
     )
   }
+
+  func testCompletionMutationWithWorkBumpsWorkspaceRevision() {
+    XCTAssertTrue(
+      RetainedTaskCompletionWorkspaceInvalidationPolicy.shouldBumpWorkspaceRevision(
+        after: RetainedTaskCompletionMutationPlan(writesCompletion: true, restoresSchedule: false)
+      )
+    )
+    XCTAssertTrue(
+      RetainedTaskCompletionWorkspaceInvalidationPolicy.shouldBumpWorkspaceRevision(
+        after: RetainedTaskCompletionMutationPlan(writesCompletion: false, restoresSchedule: true)
+      )
+    )
+  }
+
+  func testNoOpCompletionMutationDoesNotBumpWorkspaceRevision() {
+    XCTAssertFalse(
+      RetainedTaskCompletionWorkspaceInvalidationPolicy.shouldBumpWorkspaceRevision(
+        after: RetainedTaskCompletionMutationPlan(writesCompletion: false, restoresSchedule: false)
+      )
+    )
+  }
 }

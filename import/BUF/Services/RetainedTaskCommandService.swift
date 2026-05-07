@@ -30,6 +30,12 @@ struct RetainedTaskCompletionMutationPlan: Equatable, Sendable {
   }
 }
 
+enum RetainedTaskCompletionWorkspaceInvalidationPolicy {
+  static func shouldBumpWorkspaceRevision(after plan: RetainedTaskCompletionMutationPlan) -> Bool {
+    plan.hasWork
+  }
+}
+
 enum RecurringCompletionUndoScheduleRestorePolicy {
   // Repeating Reminders are safer to undo by moving the advanced next
   // occurrence back to its prior schedule than by marking the completed

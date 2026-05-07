@@ -1733,14 +1733,7 @@ extension ScheduleBoardView {
         return
       }
       do {
-        let shouldRestoreSchedule = RecurringCompletionUndoScheduleRestorePolicy.shouldRestore(
-          previousIsCompleted: previousState.isCompleted,
-          nextIsCompleted: nextState.isCompleted,
-          isRecurring: nextState.isRecurring,
-          previousFields: previousState.editFields,
-          fields: nextState.editFields
-        )
-        let shouldWriteCompletion = RecurringCompletionUndoScheduleRestorePolicy.shouldWriteCompletion(
+        let mutationPlan = RecurringCompletionUndoScheduleRestorePolicy.mutationPlan(
           previousIsCompleted: previousState.isCompleted,
           nextIsCompleted: nextState.isCompleted,
           isRecurring: nextState.isRecurring,
@@ -1748,7 +1741,7 @@ extension ScheduleBoardView {
           fields: nextState.editFields
         )
         var result: RetainedTaskCommandResult?
-        if shouldWriteCompletion {
+        if mutationPlan.writesCompletion {
           result = try await ObsidianRetainedTaskCommandService.setTaskCompletion(
             vaultRootURL: appState.obsidianVaultRootURL,
             projectID: projectID,
@@ -1760,7 +1753,7 @@ extension ScheduleBoardView {
             reminderProjectProvider: appState.reminderProjectProvider
           )
         }
-        if shouldRestoreSchedule {
+        if mutationPlan.restoresSchedule {
           result = try await ObsidianRetainedTaskCommandService.setTaskSchedule(
             vaultRootURL: appState.obsidianVaultRootURL,
             projectID: projectID,
@@ -1772,6 +1765,9 @@ extension ScheduleBoardView {
             reminderProjectProvider: appState.reminderProjectProvider,
             resetRecurringAnchor: nextState.isRecurring
           )
+        }
+        if RetainedTaskCompletionWorkspaceInvalidationPolicy.shouldBumpWorkspaceRevision(after: mutationPlan) {
+          appState.bumpWorkspaceTreeRevision()
         }
         guard let result else {
           await reloadChangedWorkspaceScheduleProjectDetails(for: [projectID])
