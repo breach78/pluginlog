@@ -160,6 +160,37 @@ struct ScheduleTimedBlockLayout: Identifiable {
   let columnSpan: Int
 }
 
+enum ScheduleTimedBlockHitPriorityPolicy {
+  private static let backgroundCalendarPriority = 1.0
+  private static let calendarPriority = 2.0
+  private static let taskPriority = 3.0
+  private static let selectedTaskPriority = 4.0
+
+  static func zIndex(
+    isTask: Bool,
+    taskID: UUID?,
+    selectedTaskID: UUID?,
+    startMinute: Int,
+    isBackgroundCalendar: Bool
+  ) -> Double {
+    if isBackgroundCalendar {
+      return backgroundCalendarPriority
+    }
+    if isTask {
+      if let taskID, taskID == selectedTaskID {
+        return selectedTaskPriority + earlierStartTieBreaker(startMinute)
+      }
+      return taskPriority + earlierStartTieBreaker(startMinute)
+    }
+    return calendarPriority + earlierStartTieBreaker(startMinute)
+  }
+
+  private static func earlierStartTieBreaker(_ startMinute: Int) -> Double {
+    let boundedStartMinute = min(max(0, startMinute), 24 * 60)
+    return Double((24 * 60) - boundedStartMinute) / 10_000
+  }
+}
+
 struct ScheduleLayoutCache {
   let timedEntries: [ScheduleTimedBlockLayout]
   let allDayEntries: [ScheduleAllDayLayout]
@@ -418,7 +449,15 @@ extension ScheduleBoardView {
             targetCompletedWorkUnits: layout.entry.targetCompletedWorkUnits
           )
         )
-        .zIndex(3)
+        .zIndex(
+          ScheduleTimedBlockHitPriorityPolicy.zIndex(
+            isTask: true,
+            taskID: taskRow.id,
+            selectedTaskID: selectedScheduleTaskID,
+            startMinute: layout.entry.startMinute,
+            isBackgroundCalendar: false
+          )
+        )
       } else if let event {
         Group {
           if layout.entry.isBackgroundCalendar {
@@ -479,7 +518,15 @@ extension ScheduleBoardView {
         .frame(width: frame.width, height: frame.height, alignment: .topLeading)
         .offset(x: frame.minX, y: frame.minY)
         .opacity(isEventResizing ? 0 : (isEventDragging ? dragSourcePlaceholderOpacity : 1))
-        .zIndex(layout.entry.isBackgroundCalendar ? 1 : 2)
+        .zIndex(
+          ScheduleTimedBlockHitPriorityPolicy.zIndex(
+            isTask: false,
+            taskID: nil,
+            selectedTaskID: selectedScheduleTaskID,
+            startMinute: layout.entry.startMinute,
+            isBackgroundCalendar: layout.entry.isBackgroundCalendar
+          )
+        )
       }
     }
   }
