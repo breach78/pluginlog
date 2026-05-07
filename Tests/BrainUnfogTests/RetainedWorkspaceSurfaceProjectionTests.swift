@@ -103,6 +103,63 @@ final class RetainedWorkspaceSurfaceProjectionTests: XCTestCase {
     XCTAssertEqual(defaultDurationItem.endDate.timeIntervalSince(defaultDurationItem.startDate), 30 * 60)
   }
 
+  func testOpenRecurringTasksKeepStoredAnchorDateInsteadOfExpandedCalendarOccurrence() throws {
+    let projectID = UUID()
+    let taskID = UUID()
+    let storedDueDate = try XCTUnwrap(
+      Self.calendar.date(from: DateComponents(year: 2026, month: 5, day: 6))
+    )
+    let currentDay = try XCTUnwrap(
+      Self.calendar.date(from: DateComponents(year: 2026, month: 5, day: 7, hour: 10))
+    )
+    let snapshot = RetainedWorkspaceSnapshot(
+      projects: [
+        makeProject(
+          projectID: projectID,
+          tasks: [
+            makeTask(
+              taskID: taskID,
+              title: "Daily",
+              parsedDate: storedDueDate,
+              rawRepeatRule: "daily|1",
+              canonicalRepeatRule: "daily|1"
+            )
+          ]
+        )
+      ]
+    )
+
+    let result = RetainedWorkspaceSurfaceProjectionBuilder.build(
+      snapshot: snapshot,
+      projectIDs: [projectID],
+      calendar: Self.calendar,
+      now: currentDay
+    )
+    let surface = try XCTUnwrap(result.loadedProjection)
+    let entry = try XCTUnwrap(surface.scheduleEntriesByProjectID[projectID]?.first)
+
+    XCTAssertEqual(entry.dueDate, storedDueDate)
+    XCTAssertEqual(entry.displayedDate, storedDueDate)
+    XCTAssertEqual(surface.projectSummaries[projectID]?.todayTaskCount, 0)
+    XCTAssertEqual(surface.projectSummaries[projectID]?.overdueOpenRootTaskCount, 1)
+    let descriptor = try XCTUnwrap(
+      ScheduleProjectionService.taskDescriptors(
+        projectIDs: [projectID],
+        projectSnapshots: surface.projectSnapshots,
+        scheduleEntriesByProjectID: surface.scheduleEntriesByProjectID
+      ).first
+    )
+    XCTAssertEqual(descriptor.taskRow.reminderDate, storedDueDate)
+    XCTAssertEqual(
+      ReminderTaskDateCanonicalizer.unifiedDate(
+        dueDate: entry.dueDate,
+        startDate: entry.startDate,
+        displayedDate: entry.displayedDate
+      ),
+      storedDueDate
+    )
+  }
+
   func testTimelineRuntimeBarsKeepAllDatedTaskPreviewItems() throws {
     let projectID = UUID()
     let scheduledDay = try XCTUnwrap(

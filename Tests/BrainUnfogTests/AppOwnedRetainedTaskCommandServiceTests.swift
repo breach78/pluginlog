@@ -207,6 +207,78 @@ final class AppOwnedRetainedTaskCommandServiceTests: XCTestCase {
   }
 
   @MainActor
+  func testAppOwnedDurationOnlyScheduleEditStaysLocalAcrossReminderImport() async throws {
+    let start = try XCTUnwrap(
+      Self.calendar.date(from: DateComponents(year: 2026, month: 5, day: 2, hour: 9, minute: 30))
+    )
+    let fixture = try await makeEnabledStoreFixture(
+      taskExternalIdentifier: "task-1",
+      dueDate: start,
+      scheduleHasExplicitTime: true,
+      scheduledDurationMinutes: 30
+    )
+    let provider = FakeAppOwnedReminderProjectProvider()
+    let taskID = ReminderProjectionIdentity.taskID(for: "task-1")
+    let day = Self.calendar.startOfDay(for: start)
+
+    _ = try await ObsidianRetainedTaskCommandService.setTaskSchedule(
+      vaultRootURL: fixture.vaultRoot,
+      projectID: fixture.projectID,
+      taskID: taskID,
+      day: day,
+      timeMinutes: 9 * 60 + 30,
+      durationMinutes: 90,
+      calendar: Self.calendar,
+      reminderProjectProvider: provider
+    )
+
+    XCTAssertNil(provider.scheduleUpdate)
+
+    let reimportedItem = ReminderItemImportSnapshot(
+      identifier: "task-identifier",
+      externalIdentifier: "task-1",
+      parentExternalIdentifier: nil,
+      sourceListIdentifier: "list-1",
+      sourceListTitle: "Project",
+      title: "Task",
+      notes: "",
+      attachmentCount: 0,
+      isCompleted: false,
+      completionDate: nil,
+      startDate: nil,
+      dueDate: start,
+      scheduleHasExplicitTime: true,
+      scheduledDurationMinutes: nil,
+      priority: 0,
+      recurrenceRuleRaw: nil,
+      isFlagged: false,
+      requiredWorkDays: 0,
+      createdAt: Date(timeIntervalSinceReferenceDate: 401),
+      modifiedAt: Date(timeIntervalSinceReferenceDate: 401)
+    )
+    try await fixture.store.replaceReminderSnapshot(
+      ReminderImportSnapshotBatch(
+        lists: [
+          ReminderListImportSnapshot(
+            identifier: "list-1",
+            externalIdentifier: "list-1",
+            title: "Project",
+            colorHex: nil
+          )
+        ],
+        itemsByListIdentifier: ["list-1": [reimportedItem]]
+      ),
+      importedAt: Date(timeIntervalSinceReferenceDate: 401)
+    )
+    let snapshot = try await fixture.store.loadRetainedWorkspaceSnapshot(projectIDs: [fixture.projectID])
+    let task = try XCTUnwrap(snapshot.projects.first?.tasks.first)
+
+    XCTAssertEqual(task.schedule.parsedDate, start)
+    XCTAssertTrue(task.schedule.hasExplicitTime)
+    XCTAssertEqual(task.schedule.durationMinutes, 90)
+  }
+
+  @MainActor
   func testAppOwnedRecurringCompletionUsesAdvancedReminderSnapshotAndClearsTime() async throws {
     let dueDate = try XCTUnwrap(Self.calendar.date(from: DateComponents(year: 2026, month: 5, day: 2, hour: 2)))
     let nextDueDate = try XCTUnwrap(Self.calendar.date(from: DateComponents(year: 2026, month: 5, day: 9, hour: 2)))

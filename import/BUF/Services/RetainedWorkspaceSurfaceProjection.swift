@@ -157,7 +157,8 @@ enum RetainedWorkspaceSurfaceProjectionBuilder {
   static func load(
     obsidianVaultRootURL: URL?,
     projectIDs: [UUID],
-    calendar: Calendar = .autoupdatingCurrent
+    calendar: Calendar = .autoupdatingCurrent,
+    now: Date = .now
   ) async -> RetainedWorkspaceSurfaceProjectionLoadResult {
     guard let obsidianVaultRootURL else {
       return .blocked(.obsidianVaultNotConfigured)
@@ -169,7 +170,7 @@ enum RetainedWorkspaceSurfaceProjectionBuilder {
         try await appStore.hasImportedWorkspace()
       {
         let snapshot = try await appStore.loadRetainedWorkspaceSnapshot(projectIDs: projectIDs)
-        return build(snapshot: snapshot, projectIDs: projectIDs, calendar: calendar)
+        return build(snapshot: snapshot, projectIDs: projectIDs, calendar: calendar, now: now)
       }
     } catch {
       return .blocked(.loadFailed("App-owned store load failed: \(error.localizedDescription)"))
@@ -186,7 +187,7 @@ enum RetainedWorkspaceSurfaceProjectionBuilder {
         snapshots: snapshots,
         calendar: calendar
       )
-      return build(snapshot: snapshot, projectIDs: projectIDs, calendar: calendar)
+      return build(snapshot: snapshot, projectIDs: projectIDs, calendar: calendar, now: now)
     } catch let error as RetainedProjectionBuilder.Error {
       return .blocked(.identityFailure(error))
     } catch {
@@ -197,7 +198,8 @@ enum RetainedWorkspaceSurfaceProjectionBuilder {
   static func build(
     snapshot: RetainedWorkspaceSnapshot,
     projectIDs: [UUID],
-    calendar: Calendar = .autoupdatingCurrent
+    calendar: Calendar = .autoupdatingCurrent,
+    now: Date = .now
   ) -> RetainedWorkspaceSurfaceProjectionLoadResult {
     if let blocker = validateSnapshotIdentities(snapshot) {
       return .blocked(blocker)
@@ -254,7 +256,8 @@ enum RetainedWorkspaceSurfaceProjectionBuilder {
       projectSummaries[projectID] = projectSummary(
         from: scheduleEntries,
         projectSnapshot: projectSnapshot,
-        calendar: calendar
+        calendar: calendar,
+        now: now
       )
     }
 
@@ -399,7 +402,7 @@ enum RetainedWorkspaceSurfaceProjectionBuilder {
     rowOrder: Int,
     projectSnapshot: WorkspaceProjectRuntimeRecord
   ) -> ScheduleSliceEntry {
-    ScheduleSliceEntry(
+    return ScheduleSliceEntry(
       taskID: taskID,
       parentTaskID: nil,
       title: task.title,
@@ -438,9 +441,10 @@ enum RetainedWorkspaceSurfaceProjectionBuilder {
   private static func projectSummary(
     from scheduleEntries: [ScheduleSliceEntry],
     projectSnapshot: WorkspaceProjectRuntimeRecord,
-    calendar: Calendar
+    calendar: Calendar,
+    now: Date
   ) -> ProjectSummaryRecord {
-    let today = calendar.startOfDay(for: .now)
+    let today = calendar.startOfDay(for: now)
     var openRootTaskCount = 0
     var completedRootTaskCount = 0
     var undatedOpenRootTaskCount = 0

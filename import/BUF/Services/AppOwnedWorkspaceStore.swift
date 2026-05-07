@@ -780,6 +780,7 @@ actor AppOwnedWorkspaceStore {
   }
 
   private struct TaskIdentityResolver {
+    let idsByIdentifier: [String: UUID]
     let idsByExternalIdentifier: [String: UUID]
     let recurringIDsBySignature: [RecurringTaskSignature: UUID]
 
@@ -790,6 +791,11 @@ actor AppOwnedWorkspaceStore {
     ) -> UUID {
       if let externalIdentifier = normalizedValue(item.externalIdentifier),
         let existingID = idsByExternalIdentifier[externalIdentifier]
+      {
+        return existingID
+      }
+      if let identifier = normalizedValue(item.identifier),
+        let existingID = idsByIdentifier[identifier]
       {
         return existingID
       }
@@ -837,37 +843,42 @@ actor AppOwnedWorkspaceStore {
     let rows = try query(
       db,
       """
-      SELECT id, project_id, reminder_external_identifier, title, note_text, is_completed,
+      SELECT id, project_id, reminder_identifier, reminder_external_identifier, title, note_text, is_completed,
         recurrence_rule_raw
       FROM app_tasks
       ORDER BY is_completed ASC, modified_at DESC;
       """
-    ) { statement -> (UUID, UUID, String?, RecurringTaskSignature?) in
+    ) { statement -> (UUID, UUID, String?, String?, RecurringTaskSignature?) in
       guard let taskID = UUID(uuidString: columnText(statement, 0) ?? ""),
         let projectID = UUID(uuidString: columnText(statement, 1) ?? "")
       else {
         throw AppOwnedWorkspaceStoreError.invalidSQLiteValue("invalid task id")
       }
-      let externalIdentifier = normalized(columnText(statement, 2))
-      let recurrenceRuleRaw = normalized(columnText(statement, 6))
+      let identifier = normalized(columnText(statement, 2))
+      let externalIdentifier = normalized(columnText(statement, 3))
+      let recurrenceRuleRaw = normalized(columnText(statement, 7))
       let signature = recurrenceRuleRaw.map { _ in
         RecurringTaskSignature(
           projectID: projectID,
-          title: columnText(statement, 3) ?? "",
-          noteText: columnText(statement, 4) ?? ""
+          title: columnText(statement, 4) ?? "",
+          noteText: columnText(statement, 5) ?? ""
         )
       }
-      return (taskID, projectID, externalIdentifier, signature)
+      return (taskID, projectID, identifier, externalIdentifier, signature)
     }
 
+    var idsByIdentifier: [String: UUID] = [:]
     var idsByExternalIdentifier: [String: UUID] = [:]
     var recurringIDsBySignature: [RecurringTaskSignature: UUID] = [:]
     var ambiguousRecurringSignatures = Set<RecurringTaskSignature>()
     for row in rows {
-      if let externalIdentifier = row.2, idsByExternalIdentifier[externalIdentifier] == nil {
+      if let identifier = row.2, idsByIdentifier[identifier] == nil {
+        idsByIdentifier[identifier] = row.0
+      }
+      if let externalIdentifier = row.3, idsByExternalIdentifier[externalIdentifier] == nil {
         idsByExternalIdentifier[externalIdentifier] = row.0
       }
-      guard let signature = row.3,
+      guard let signature = row.4,
         !ambiguousRecurringSignatures.contains(signature)
       else {
         continue
@@ -880,6 +891,7 @@ actor AppOwnedWorkspaceStore {
       }
     }
     return TaskIdentityResolver(
+      idsByIdentifier: idsByIdentifier,
       idsByExternalIdentifier: idsByExternalIdentifier,
       recurringIDsBySignature: recurringIDsBySignature
     )

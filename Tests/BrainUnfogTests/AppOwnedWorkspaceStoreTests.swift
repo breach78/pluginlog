@@ -383,6 +383,77 @@ final class AppOwnedWorkspaceStoreTests: XCTestCase {
     XCTAssertEqual(task.schedule.durationMinutes, 45)
   }
 
+  func testReplaceReminderSnapshotKeepsTaskDurationWhenExternalIdentifierChanges() async throws {
+    let store = AppOwnedWorkspaceStore(containerRootURL: try makeTemporaryDirectory())
+    let createdAt = Date(timeIntervalSinceReferenceDate: 310)
+    let firstDueDate = try XCTUnwrap(
+      Self.calendar.date(from: DateComponents(year: 2026, month: 5, day: 2, hour: 9))
+    )
+    let first = ReminderItemImportSnapshot(
+      identifier: "task-identifier",
+      externalIdentifier: "old-external",
+      parentExternalIdentifier: nil,
+      sourceListIdentifier: "list-1",
+      sourceListTitle: "Project",
+      title: "Task",
+      notes: "",
+      attachmentCount: 0,
+      isCompleted: false,
+      completionDate: nil,
+      startDate: nil,
+      dueDate: firstDueDate,
+      scheduleHasExplicitTime: true,
+      scheduledDurationMinutes: nil,
+      priority: 0,
+      recurrenceRuleRaw: nil,
+      isFlagged: false,
+      requiredWorkDays: 0,
+      createdAt: createdAt,
+      modifiedAt: createdAt
+    )
+    let changed = ReminderItemImportSnapshot(
+      identifier: "task-identifier",
+      externalIdentifier: "new-external",
+      parentExternalIdentifier: nil,
+      sourceListIdentifier: "list-1",
+      sourceListTitle: "Project",
+      title: "Task",
+      notes: "",
+      attachmentCount: 0,
+      isCompleted: false,
+      completionDate: nil,
+      startDate: nil,
+      dueDate: firstDueDate,
+      scheduleHasExplicitTime: true,
+      scheduledDurationMinutes: nil,
+      priority: 0,
+      recurrenceRuleRaw: nil,
+      isFlagged: false,
+      requiredWorkDays: 0,
+      createdAt: createdAt,
+      modifiedAt: createdAt.addingTimeInterval(10)
+    )
+    let originalTaskID = ReminderProjectionIdentity.taskID(for: "old-external")
+
+    try await store.replaceReminderSnapshot(
+      Self.batch(items: [first], createdAt: createdAt),
+      importedAt: createdAt
+    )
+    try await store.mergeTaskSupplements([
+      AppOwnedWorkspaceStore.TaskSupplement(taskID: originalTaskID, durationMinutes: 75)
+    ])
+    try await store.replaceReminderSnapshot(
+      Self.batch(items: [changed], createdAt: createdAt.addingTimeInterval(10)),
+      importedAt: createdAt.addingTimeInterval(10)
+    )
+    let snapshot = try await store.loadRetainedWorkspaceSnapshot(projectIDs: [])
+    let task = try XCTUnwrap(snapshot.tasks.first)
+
+    XCTAssertEqual(task.identity.taskID, originalTaskID)
+    XCTAssertEqual(task.identity.reminderExternalIdentifier, "new-external")
+    XCTAssertEqual(task.schedule.durationMinutes, 75)
+  }
+
   func testRetainedSnapshotHidesCompletedRecurringOccurrenceWhenActiveOccurrenceIsRestored() async throws {
     let store = AppOwnedWorkspaceStore(containerRootURL: try makeTemporaryDirectory())
     let dueDate = try XCTUnwrap(Self.calendar.date(from: DateComponents(year: 2026, month: 5, day: 2, hour: 11)))

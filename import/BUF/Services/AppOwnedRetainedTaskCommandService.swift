@@ -329,12 +329,28 @@ enum AppOwnedRetainedTaskCommandService {
         reminderProjectProvider: reminderProjectProvider
       )
     }
-    guard let metadata = try reminderProjectProvider.setTaskSchedule(
-      for: reminderReference(task),
-      dueDate: dueDate,
-      hasExplicitTime: hasExplicitTime
-    ) else {
-      throw RetainedTaskCommandError.reminderOwnerUnresolved(taskID)
+    let scheduleDateChanged = !matchesScheduleDate(task, dueDate: dueDate, hasExplicitTime: hasExplicitTime)
+    let modifiedAt: Date
+    if scheduleDateChanged {
+      guard let metadata = try reminderProjectProvider.setTaskSchedule(
+        for: reminderReference(task),
+        dueDate: dueDate,
+        hasExplicitTime: hasExplicitTime
+      ) else {
+        throw RetainedTaskCommandError.reminderOwnerUnresolved(taskID)
+      }
+      modifiedAt = metadata.modifiedAt
+      updateBaseline(
+        reminderExternalIdentifier: task.reminderExternalIdentifier,
+        title: task.title,
+        isCompleted: task.isCompleted,
+        noteText: task.noteText,
+        dueDate: dueDate,
+        hasExplicitTime: hasExplicitTime,
+        remoteModifiedAt: metadata.modifiedAt
+      )
+    } else {
+      modifiedAt = .now
     }
     try await store.upsertTask(
       projectID: projectID,
@@ -350,17 +366,8 @@ enum AppOwnedRetainedTaskCommandService {
       durationMinutes: durationMinutes,
       recurrenceRuleRaw: task.recurrenceRuleRaw,
       priority: task.priority,
-      modifiedAt: metadata.modifiedAt,
+      modifiedAt: modifiedAt,
       appendIfMissing: false
-    )
-    updateBaseline(
-      reminderExternalIdentifier: task.reminderExternalIdentifier,
-      title: task.title,
-      isCompleted: task.isCompleted,
-      noteText: task.noteText,
-      dueDate: dueDate,
-      hasExplicitTime: hasExplicitTime,
-      remoteModifiedAt: metadata.modifiedAt
     )
     return commandResult(projectID: projectID, taskID: taskID)
   }
@@ -552,6 +559,20 @@ enum AppOwnedRetainedTaskCommandService {
         noteText: noteText
       ),
       remoteModifiedAt: remoteModifiedAt
+    )
+  }
+
+  private static func matchesScheduleDate(
+    _ task: AppOwnedWorkspaceStore.TaskReference,
+    dueDate: Date?,
+    hasExplicitTime: Bool
+  ) -> Bool {
+    ReminderScheduleMetadataCodec.encodeDate(
+      task.dueDate,
+      hasExplicitTime: task.hasExplicitTime
+    ) == ReminderScheduleMetadataCodec.encodeDate(
+      dueDate,
+      hasExplicitTime: hasExplicitTime
     )
   }
 
