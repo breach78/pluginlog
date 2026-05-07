@@ -191,6 +191,21 @@ enum ScheduleTimedBlockHitPriorityPolicy {
   }
 }
 
+enum ScheduleResizePreviewStylePolicy {
+  static let targetBlockOpacity = 0.96
+
+  static func sourceBlockOpacity(
+    isResizing: Bool,
+    isDragging: Bool,
+    dragPlaceholderOpacity: Double = 0.34
+  ) -> Double {
+    if isResizing {
+      return 0
+    }
+    return isDragging ? dragPlaceholderOpacity : 1
+  }
+}
+
 struct ScheduleLayoutCache {
   let timedEntries: [ScheduleTimedBlockLayout]
   let allDayEntries: [ScheduleAllDayLayout]
@@ -435,7 +450,13 @@ extension ScheduleBoardView {
         )
         .frame(width: frame.width, height: blockHeight, alignment: .topLeading)
         .offset(x: frame.minX, y: frame.minY)
-        .opacity(isResizing ? 0 : (isDragging ? dragSourcePlaceholderOpacity : 1))
+        .opacity(
+          ScheduleResizePreviewStylePolicy.sourceBlockOpacity(
+            isResizing: isResizing,
+            isDragging: isDragging,
+            dragPlaceholderOpacity: dragSourcePlaceholderOpacity
+          )
+        )
         .simultaneousGesture(
           taskDragGesture(
             for: taskDescriptor,
@@ -517,7 +538,13 @@ extension ScheduleBoardView {
         }
         .frame(width: frame.width, height: frame.height, alignment: .topLeading)
         .offset(x: frame.minX, y: frame.minY)
-        .opacity(isEventResizing ? 0 : (isEventDragging ? dragSourcePlaceholderOpacity : 1))
+        .opacity(
+          ScheduleResizePreviewStylePolicy.sourceBlockOpacity(
+            isResizing: isEventResizing,
+            isDragging: isEventDragging,
+            dragPlaceholderOpacity: dragSourcePlaceholderOpacity
+          )
+        )
         .zIndex(
           ScheduleTimedBlockHitPriorityPolicy.zIndex(
             isTask: false,
@@ -1218,94 +1245,87 @@ extension ScheduleBoardView {
       .zIndex(1997)
   }
 
-  func resizePreviewComparison(
-    originalFrame: CGRect,
-    targetFrame: CGRect,
+  func resizePreviewTaskBlock(
+    taskDescriptor: WorkspaceScheduleTaskDescriptor,
+    day: Date,
     color: Color,
     timeLabel: String?,
-    cornerRadius: CGFloat
+    frame: CGRect,
+    isPreparationSlot: Bool,
+    targetCompletedWorkUnits: Int?
   ) -> some View {
-    let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-    let highlightFrames = resizeHighlightFrames(originalFrame: originalFrame, targetFrame: targetFrame)
+    let taskRow = taskDescriptor.taskRow
+    let density = timedBlockDensity(for: frame.height)
 
-    return ZStack(alignment: .topLeading) {
-      shape
-        .fill(color.opacity(0.12))
-        .overlay {
-          ScheduleRoundedRectangleStrokeOverlay(
-            cornerRadius: cornerRadius,
-            color: color.opacity(0.26),
-            lineWidth: 1
-          )
-        }
-        .frame(width: originalFrame.width, height: originalFrame.height, alignment: .topLeading)
-        .offset(x: originalFrame.minX, y: originalFrame.minY)
-
-      ForEach(highlightFrames.indices, id: \.self) { index in
-        let frame = highlightFrames[index]
-        shape
-          .fill(color.opacity(0.68))
-          .frame(width: frame.width, height: frame.height, alignment: .topLeading)
-          .offset(x: frame.minX, y: frame.minY)
-      }
-
-      ScheduleRoundedRectangleStrokeOverlay(
-        cornerRadius: cornerRadius,
-        color: color.opacity(0.86),
-        lineWidth: 1.35,
-        lineCap: .round,
-        dash: [5, 4]
+    return ScheduleTaskBlockSurface(
+      color: color,
+      isSelected: true,
+      isCompleted: taskRow.isCompleted,
+      isPreparationSlot: isPreparationSlot,
+      selectionHighlightColor: selectionHighlightColor
+    ) {
+      scheduleTaskBlockContent(
+        taskDescriptor: taskDescriptor,
+        title: taskRow.title,
+        subtitle: taskDescriptor.projectTitle,
+        color: color,
+        isSelected: true,
+        blockHeight: frame.height,
+        recordedAt: day,
+        isPreparationSlot: isPreparationSlot,
+        targetCompletedWorkUnits: targetCompletedWorkUnits,
+        timeLabel: timeLabel,
+        density: density,
+        postponeAction: nil
       )
-        .frame(width: targetFrame.width, height: targetFrame.height, alignment: .topLeading)
-        .offset(x: targetFrame.minX, y: targetFrame.minY)
-
-      if let timeLabel {
-        Text(timeLabel)
-          .font(.system(size: 10, weight: .semibold, design: .monospaced))
-          .foregroundStyle(color.opacity(0.95))
-          .lineLimit(1)
-          .padding(.horizontal, 6)
-          .padding(.vertical, 4)
-          .background(Color(nsColor: .windowBackgroundColor).opacity(0.82))
-          .clipShape(RoundedRectangle(cornerRadius: 5, style: .continuous))
-          .offset(x: targetFrame.minX + 7, y: targetFrame.minY + 6)
-      }
     }
+    .frame(width: frame.width, height: frame.height, alignment: .topLeading)
+    .offset(x: frame.minX, y: frame.minY)
+    .opacity(ScheduleResizePreviewStylePolicy.targetBlockOpacity)
+    .shadow(color: Color.black.opacity(0.12), radius: 6, x: 0, y: 2)
     .allowsHitTesting(false)
   }
 
-  func resizeHighlightFrames(originalFrame: CGRect, targetFrame: CGRect) -> [CGRect] {
-    let tolerance: CGFloat = 0.5
-    let sameHorizontalTrack = abs(originalFrame.minX - targetFrame.minX) <= tolerance
-      && abs(originalFrame.width - targetFrame.width) <= tolerance
-    guard sameHorizontalTrack else { return [targetFrame] }
+  func resizePreviewEventBlock(
+    event: ScheduleCalendarEvent,
+    color: Color,
+    timeLabel: String?,
+    durationMinutes: Int,
+    frame: CGRect
+  ) -> some View {
+    let density = timedBlockDensity(for: frame.height)
 
-    let targetInsideOriginal = targetFrame.minY >= originalFrame.minY - tolerance
-      && targetFrame.maxY <= originalFrame.maxY + tolerance
-    guard !targetInsideOriginal else { return [targetFrame] }
-
-    var frames: [CGRect] = []
-    if targetFrame.minY < originalFrame.minY - tolerance {
-      frames.append(
-        CGRect(
-          x: targetFrame.minX,
-          y: targetFrame.minY,
-          width: targetFrame.width,
-          height: originalFrame.minY - targetFrame.minY
-        )
+    return ScheduleEventBlockSurface(color: color) {
+      scheduleEventBlockContent(
+        event: event,
+        title: event.title,
+        subtitle: event.calendarTitle,
+        timeLabel: timeLabel,
+        blockHeight: frame.height,
+        density: density,
+        durationMinutes: durationMinutes,
+        isBackgroundCalendar: false
       )
     }
-    if targetFrame.maxY > originalFrame.maxY + tolerance {
-      frames.append(
-        CGRect(
-          x: targetFrame.minX,
-          y: originalFrame.maxY,
-          width: targetFrame.width,
-          height: targetFrame.maxY - originalFrame.maxY
-        )
+    .overlay(alignment: .topTrailing) {
+      if event.isRecurring {
+        recurrenceIndicator(fontSize: 9.5)
+          .padding(.top, 6)
+          .padding(.trailing, 8)
+      }
+    }
+    .frame(width: frame.width, height: frame.height, alignment: .topLeading)
+    .offset(x: frame.minX, y: frame.minY)
+    .opacity(ScheduleResizePreviewStylePolicy.targetBlockOpacity)
+    .overlay {
+      ScheduleRoundedRectangleStrokeOverlay(
+        cornerRadius: 6,
+        color: color.opacity(0.72),
+        lineWidth: 1
       )
     }
-    return frames.isEmpty ? [targetFrame] : frames
+    .shadow(color: Color.black.opacity(0.1), radius: 5, x: 0, y: 2)
+    .allowsHitTesting(false)
   }
 
   func recurrenceIndicator(fontSize: CGFloat) -> some View {
@@ -1749,12 +1769,14 @@ extension ScheduleBoardView {
           let frame = resizePreviewViewportFrame(for: resizeState, preview: preview)
           let color = scheduleColor(for: taskDescriptor.projectColorHex)
 
-          resizePreviewComparison(
-            originalFrame: resizeState.originalViewportFrame,
-            targetFrame: frame,
+          resizePreviewTaskBlock(
+            taskDescriptor: taskDescriptor,
+            day: preview.day ?? resizeState.originalDay,
             color: color,
             timeLabel: scheduleDragPreviewLabel(for: preview),
-            cornerRadius: 6
+            frame: frame,
+            isPreparationSlot: resizeState.isPreparationSlot,
+            targetCompletedWorkUnits: resizeState.targetCompletedWorkUnits
           )
           .zIndex(2001)
         }
@@ -1766,12 +1788,12 @@ extension ScheduleBoardView {
           let frame = resizePreviewViewportFrame(for: resizeState, preview: preview)
           let color = scheduleColor(for: event.calendarColorHex, fallback: .secondary)
 
-          resizePreviewComparison(
-            originalFrame: resizeState.originalViewportFrame,
-            targetFrame: frame,
+          resizePreviewEventBlock(
+            event: event,
             color: color,
             timeLabel: scheduleDragPreviewLabel(for: preview),
-            cornerRadius: 6
+            durationMinutes: preview.durationMinutes ?? timedMinimumDuration,
+            frame: frame
           )
           .zIndex(2002)
         }

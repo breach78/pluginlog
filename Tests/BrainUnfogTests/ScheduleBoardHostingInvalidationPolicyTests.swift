@@ -3,7 +3,7 @@ import XCTest
 @testable import BrainUnfog
 
 final class ScheduleBoardHostingInvalidationPolicyTests: XCTestCase {
-  func testHostedContentVersionIgnoresTransientInteractionSignature() {
+  func testBoardContentVersionTracksTransientInteractionLifecycle() {
     let selectedTaskID = UUID()
     let firstBoardVersion = ScheduleBoardHostingInvalidationPolicy.boardContentVersion(
       today: Date(timeIntervalSinceReferenceDate: 1_234),
@@ -20,8 +20,11 @@ final class ScheduleBoardHostingInvalidationPolicyTests: XCTestCase {
       transientInteractionSignature: 99
     )
 
-    XCTAssertEqual(firstBoardVersion, secondBoardVersion)
+    XCTAssertNotEqual(firstBoardVersion, secondBoardVersion)
+  }
 
+  func testPinnedTopVersionIgnoresTransientInteractionSignature() {
+    let selectedTaskID = UUID()
     let firstPinnedTopVersion = ScheduleBoardHostingInvalidationPolicy.pinnedTopVersion(
       today: Date(timeIntervalSinceReferenceDate: 1_234),
       dayRange: -2...30,

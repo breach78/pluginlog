@@ -551,7 +551,7 @@ enum ScheduleBoardHostingInvalidationPolicy {
     dayRange: ClosedRange<Int>,
     layoutSourceSignature: Int,
     selectedScheduleTaskID: UUID?,
-    transientInteractionSignature _: Int
+    transientInteractionSignature: Int
   ) -> Int {
     var hasher = Hasher()
     hasher.combine(today.timeIntervalSinceReferenceDate)
@@ -559,6 +559,7 @@ enum ScheduleBoardHostingInvalidationPolicy {
     hasher.combine(dayRange.upperBound)
     hasher.combine(layoutSourceSignature)
     hasher.combine(selectedScheduleTaskID)
+    hasher.combine(transientInteractionSignature)
     return hasher.finalize()
   }
 
