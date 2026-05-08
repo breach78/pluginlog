@@ -7,10 +7,16 @@ struct TimelineTaskEditTarget: Equatable, Sendable {
   let taskID: UUID
 }
 
+enum TimelineTaskEditInitialFocus: Equatable, Sendable {
+  case none
+  case note
+}
+
 struct WorkspaceTaskEditPanelTarget: Equatable, Sendable {
   let projectID: UUID
   let taskID: UUID
   let initialFields: RetainedTaskEditFields
+  var initialFocus: TimelineTaskEditInitialFocus = .none
 }
 
 enum TaskEditReloadToken {
@@ -59,6 +65,7 @@ struct TimelineTaskEditPopoverContent: View {
   let onSyncEditingActivity: () -> Void
   let bottomContent: AnyView?
   let closeRequestID: Int
+  let initialFocus: TimelineTaskEditInitialFocus
   let onCancel: () -> Void
 
   @State private var title: String
@@ -102,6 +109,7 @@ struct TimelineTaskEditPopoverContent: View {
     onSyncEditingActivity: @escaping () -> Void = {},
     bottomContent: AnyView? = nil,
     closeRequestID: Int = 0,
+    initialFocus: TimelineTaskEditInitialFocus = .none,
     onCancel: @escaping () -> Void
   ) {
     let initialNoteText = TaskEditAttachmentService.noteTextByRemovingAttachmentLinks(
@@ -121,6 +129,7 @@ struct TimelineTaskEditPopoverContent: View {
     self.onSyncEditingActivity = onSyncEditingActivity
     self.bottomContent = bottomContent
     self.closeRequestID = closeRequestID
+    self.initialFocus = initialFocus
     self.onCancel = onCancel
     _title = State(initialValue: initialFields.title)
     _noteText = State(initialValue: initialNoteText)
@@ -301,6 +310,7 @@ struct TimelineTaskEditPopoverContent: View {
           allowsNewlines: true,
           lineHeightMultiple: 1.1,
           markdownPresentationMode: .livePreview,
+          focusRequestID: initialFocus == .note ? 1 : 0,
           allowsMailMessageDrops: true,
           onEscape: closeEditor
         )

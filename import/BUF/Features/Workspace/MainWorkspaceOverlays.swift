@@ -130,6 +130,7 @@ extension MainWorkspaceView {
   func workspaceTaskEditPanel(_ target: WorkspaceTaskEditPanelTarget) -> some View {
     let inlineEditorConfiguration = TimelineProjectListInlineEditorConfiguration(
       initialExpandedTaskID: target.taskID,
+      initialFocus: target.initialFocus,
       workspaceTreeRevision: appState.workspaceTreeRevision,
       vaultRootURL: appState.obsidianVaultRootURL,
       initialFields: { task in

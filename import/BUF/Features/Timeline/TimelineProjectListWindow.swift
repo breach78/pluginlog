@@ -44,6 +44,7 @@ private struct TimelineProjectListTaskRow: Identifiable {
 }
 
 private enum TimelineProjectListScrollTarget: Hashable {
+  case task(UUID)
   case draft(TimelineProjectListDraftAnchor)
 }
 
@@ -96,6 +97,7 @@ struct TimelineProjectListActions {
 
 struct TimelineProjectListInlineEditorConfiguration {
   let initialExpandedTaskID: UUID?
+  let initialFocus: TimelineTaskEditInitialFocus
   let workspaceTreeRevision: Int
   let vaultRootURL: URL?
   let initialFields: (TimelineProjectListWindowSnapshot.Task) -> RetainedTaskEditFields
@@ -544,6 +546,9 @@ struct TimelineProjectListContent: View {
             .accessibilityHidden(true)
         }
       }
+      .onAppear {
+        scrollInitialFocusedTaskIntoView(with: proxy)
+      }
       .onChange(of: session.focusedDraftAnchor) { _, anchor in
         scrollFocusedDraftIntoView(anchor, with: proxy)
       }
@@ -591,6 +596,7 @@ struct TimelineProjectListContent: View {
               inlineTaskEditor(for: task)
             }
           }
+          .id(TimelineProjectListScrollTarget.task(task.id))
           .background {
             if expandedTaskID == task.id {
               TimelineProjectListOutsideClickMonitor {
@@ -782,6 +788,9 @@ struct TimelineProjectListContent: View {
         },
         onSyncEditingActivity: configuration.onSyncEditingActivity,
         closeRequestID: expandedTaskCloseRequestID,
+        initialFocus: configuration.initialExpandedTaskID == task.id
+          ? configuration.initialFocus
+          : .none,
         onCancel: {
           completeExpandedTaskEditorClose(for: task.id)
         }
@@ -1272,6 +1281,25 @@ struct TimelineProjectListContent: View {
     }
   }
 
+  private func scrollInitialFocusedTaskIntoView(with proxy: ScrollViewProxy) {
+    guard inlineEditorConfiguration?.initialFocus == .note,
+      let taskID = inlineEditorConfiguration?.initialExpandedTaskID
+    else {
+      return
+    }
+
+    DispatchQueue.main.async {
+      var transaction = Transaction()
+      transaction.disablesAnimations = true
+      withTransaction(transaction) {
+        proxy.scrollTo(
+          TimelineProjectListScrollTarget.task(taskID),
+          anchor: Self.focusedTaskScrollAnchor
+        )
+      }
+    }
+  }
+
   private func replaceTask(_ task: TimelineProjectListWindowSnapshot.Task) {
     updateSession { session in
       session.replaceTask(task)
@@ -1472,6 +1500,7 @@ struct TimelineProjectListContent: View {
   fileprivate static let embeddedTextSize: CGFloat = 12 * 1.3 * 0.9
   private static let taskInsertionAnimation = Animation.easeOut(duration: 0.16)
   private static let taskListBottomScrollReserve: CGFloat = 72
+  private static let focusedTaskScrollAnchor = UnitPoint(x: 0.5, y: 0.18)
   private static let focusedDraftScrollAnchor = UnitPoint(x: 0.5, y: 0.88)
   private static let projectNoteAutoSaveDelayNanoseconds: UInt64 = 650_000_000
 }
@@ -1509,15 +1538,21 @@ private struct TimelineProjectListOutsideClickMonitor: NSViewRepresentable {
       coordinator?.updateFrame(from: self)
     }
 
+    override func viewDidMoveToSuperview() {
+      super.viewDidMoveToSuperview()
+      coordinator?.updateFrame(from: self)
+    }
+
     override func layout() {
       super.layout()
       coordinator?.updateFrame(from: self)
     }
   }
 
-  final class Coordinator {
+  final class Coordinator: NSObject {
     var onOutsideMouseDown: () -> Void
     private weak var view: NSView?
+    private weak var observedClipView: NSClipView?
     private var monitor: Any?
     private var windowNumber: Int?
     private var frameInWindow: CGRect = .null
@@ -1539,16 +1574,53 @@ private struct TimelineProjectListOutsideClickMonitor: NSViewRepresentable {
     func updateFrame(from view: NSView) {
       windowNumber = view.window?.windowNumber
       frameInWindow = view.convert(view.bounds, to: nil)
+      updateScrollBoundsObserver(from: view)
     }
 
     func detach() {
       if let monitor {
         NSEvent.removeMonitor(monitor)
       }
+      if let observedClipView {
+        NotificationCenter.default.removeObserver(
+          self,
+          name: NSView.boundsDidChangeNotification,
+          object: observedClipView
+        )
+      }
       monitor = nil
       view = nil
+      observedClipView = nil
       windowNumber = nil
       frameInWindow = .null
+    }
+
+    @MainActor
+    private func updateScrollBoundsObserver(from view: NSView) {
+      guard let clipView = view.enclosingScrollView?.contentView else { return }
+      guard observedClipView !== clipView else { return }
+      if let observedClipView {
+        NotificationCenter.default.removeObserver(
+          self,
+          name: NSView.boundsDidChangeNotification,
+          object: observedClipView
+        )
+      }
+      observedClipView = clipView
+      clipView.postsBoundsChangedNotifications = true
+      NotificationCenter.default.addObserver(
+        self,
+        selector: #selector(scrollBoundsDidChange(_:)),
+        name: NSView.boundsDidChangeNotification,
+        object: clipView
+      )
+    }
+
+    @objc
+    @MainActor
+    private func scrollBoundsDidChange(_: Notification) {
+      guard let view else { return }
+      updateFrame(from: view)
     }
 
     private func handle(_ event: NSEvent) -> NSEvent {

@@ -2008,7 +2008,7 @@ extension ScheduleBoardView {
   ) -> some View {
     let frameSize: CGFloat = compact ? 14 : 16
     let strokeWidth: CGFloat = compact ? 1.55 : 1.75
-    let arrowFontSize: CGFloat = compact ? 9 : 10
+    let arrowFontSize: CGFloat = CGFloat(compact ? 9 : 10) * 0.9215
     let glyphColor: Color = isSelected ? .white : color
 
     return ZStack {
@@ -2027,7 +2027,6 @@ extension ScheduleBoardView {
           Image(systemName: "arrow.triangle.2.circlepath")
             .font(.system(size: arrowFontSize, weight: .bold))
             .foregroundStyle(glyphColor)
-            .offset(x: 0.3, y: -0.5)
         }
       }
     }

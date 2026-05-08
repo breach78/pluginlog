@@ -645,7 +645,8 @@ extension MainWorkspaceView {
         activeWorkspaceTaskEditPanelTarget = WorkspaceTaskEditPanelTarget(
           projectID: targetProjectID,
           taskID: taskID,
-          initialFields: activeTarget.initialFields
+          initialFields: activeTarget.initialFields,
+          initialFocus: activeTarget.initialFocus
         )
       }
       appState.bumpWorkspaceTreeRevision()

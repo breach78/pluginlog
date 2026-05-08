@@ -1124,7 +1124,8 @@ extension ScheduleBoardView {
             day: nil,
             timeMinutes: nil,
             durationMinutes: nil
-          )
+          ),
+          initialFocus: .note
         )
       )
       return
@@ -1157,7 +1158,8 @@ extension ScheduleBoardView {
       WorkspaceTaskEditPanelTarget(
         projectID: taskDescriptor.projectID,
         taskID: taskRow.id,
-        initialFields: scheduleTaskEditFields(for: taskRow)
+        initialFields: scheduleTaskEditFields(for: taskRow),
+        initialFocus: .note
       )
     )
   }

@@ -11,6 +11,7 @@ struct LinkedTextEditor: NSViewRepresentable {
   let allowsNewlines: Bool
   let lineHeightMultiple: CGFloat
   var markdownPresentationMode: LinkedTextEditorMarkdownPresentationMode = .source
+  var focusRequestID = 0
   var allowsMailMessageDrops = false
   var onEscape: (() -> Void)?
 
@@ -68,6 +69,7 @@ struct LinkedTextEditor: NSViewRepresentable {
       context.coordinator.cancelDeferredUpdates()
       context.coordinator.applyAttributes(to: textView)
       context.coordinator.scheduleMeasuredHeightUpdate()
+      context.coordinator.applyFocusRequestIfNeeded(on: textView)
       return
     }
     if styleChanged || presentationChanged {
@@ -76,6 +78,7 @@ struct LinkedTextEditor: NSViewRepresentable {
     } else {
       context.coordinator.updateMeasuredHeightIfWidthChanged()
     }
+    context.coordinator.applyFocusRequestIfNeeded(on: textView)
   }
 
   @MainActor
@@ -89,6 +92,7 @@ struct LinkedTextEditor: NSViewRepresentable {
     private var heightMeasurementTask: Task<Void, Never>?
     private var lastMeasuredWidth: CGFloat = 0
     private var didConfigureMailMessageDrops = false
+    private var appliedFocusRequestID = 0
     private var hasDecoratedAttributes = false
     private var lastMarkdownPreviewActiveLineSignature = ""
     private let linkDetector = try? NSDataDetector(
@@ -244,6 +248,23 @@ struct LinkedTextEditor: NSViewRepresentable {
       didConfigureMailMessageDrops = true
       guard !additionalTypes.isEmpty else { return }
       textView.registerForDraggedTypes(existingTypes + additionalTypes)
+    }
+
+    func applyFocusRequestIfNeeded(on textView: NSTextView) {
+      let requestID = parent.focusRequestID
+      guard requestID > 0, appliedFocusRequestID != requestID else { return }
+      guard let window = textView.window else { return }
+
+      appliedFocusRequestID = requestID
+      window.makeFirstResponder(textView)
+      let endLocation = (textView.string as NSString).length
+      textView.setSelectedRange(NSRange(location: endLocation, length: 0))
+      textView.scrollRangeToVisible(NSRange(location: endLocation, length: 0))
+      applyAttributes(to: textView)
+    }
+
+    func textViewDidMoveToWindow(_ textView: NSTextView) {
+      applyFocusRequestIfNeeded(on: textView)
     }
 
     func canHandleMailMessageDrop(_ draggingInfo: any NSDraggingInfo) -> Bool {
@@ -758,6 +779,11 @@ enum LinkedTextEditorKeyboardShortcutPolicy {
 
 private final class LinkedTextView: NSTextView {
   weak var linkedCoordinator: LinkedTextEditor.Coordinator?
+
+  override func viewDidMoveToWindow() {
+    super.viewDidMoveToWindow()
+    linkedCoordinator?.textViewDidMoveToWindow(self)
+  }
 
   override func mouseDown(with event: NSEvent) {
     window?.makeFirstResponder(self)
