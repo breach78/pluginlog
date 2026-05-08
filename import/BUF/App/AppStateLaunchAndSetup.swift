@@ -65,6 +65,7 @@ extension AppState {
     let previousContainerRootURL = containerRootURL
       let previousContainerPreferenceSnapshot = ContainerPreferenceSnapshot.capture()
     do {
+      didAutoBootstrapSync = false
       reminderSourceObserver?.stop()
       reminderSourceObserver = nil
       stopObsidianProjectDirectoryWatcher()
@@ -83,6 +84,7 @@ extension AppState {
       guard await performReminderSourceRefresh(reason: .bootstrap) else {
         throw ObsidianVaultSetupError.bootstrapFailed(syncStatus)
       }
+      didAutoBootstrapSync = true
       if activateWhenReady {
         await prepareWorkspaceIfSetupComplete(shouldRefreshHealth: true, startStartupSync: false)
       }
@@ -144,6 +146,8 @@ extension AppState {
       syncStatus = "Refresh paused"
       return
     }
+    guard !didAutoBootstrapSync else { return }
+    didAutoBootstrapSync = true
     refreshReminderSourceNow(reason: .bootstrap)
   }
 
@@ -172,6 +176,7 @@ extension AppState {
     scheduleCalendarOverlayProjection = .empty
     isInitialSyncRunning = false
     syncStarted = false
+    didAutoBootstrapSync = false
     boardsLoaded = false
     syncStatus = isObsidianVaultConfigured
       ? "Container not opened"

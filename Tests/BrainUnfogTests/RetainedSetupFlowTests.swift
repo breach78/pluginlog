@@ -78,6 +78,7 @@ final class RetainedSetupFlowTests: XCTestCase {
     XCTAssertNil(appState.obsidianProjectDirectoryWatcher)
     XCTAssertTrue(appState.hasCompletedInitialSetup)
     XCTAssertTrue(appState.syncStarted)
+    XCTAssertTrue(appState.didAutoBootstrapSync)
     XCTAssertEqual(calendarService.requestAccessCallCount, 1)
     XCTAssertEqual(gateway.writeCallCount, 0)
     XCTAssertEqual(UserDefaults.standard.string(forKey: AppState.obsidianVaultRootPathKey), vaultRoot.path)
@@ -404,14 +405,59 @@ final class RetainedSetupFlowTests: XCTestCase {
     let vaultRoot = try makeVaultRoot()
     let appState = makeAppState()
 
-    await appState.configureObsidianVault(at: vaultRoot, activateWhenReady: true)
+    await appState.configureObsidianVault(at: vaultRoot, activateWhenReady: false)
     appState.syncStatus = "Ready"
     appState.syncStarted = false
+    appState.didAutoBootstrapSync = false
 
     appState.requestStartupSyncIfNeeded()
     try await Task.sleep(nanoseconds: 120_000_000)
 
     XCTAssertTrue(appState.syncStarted)
+    XCTAssertTrue(appState.didAutoBootstrapSync)
+    XCTAssertEqual(appState.syncStatus, "Refreshed (\(SyncReason.bootstrap.rawValue))")
+  }
+
+  func testStartupSyncRequestsAfterConfigureDoNotRepeatBootstrapReconciliation() async throws {
+    let vaultRoot = try makeVaultRoot()
+    let gateway = SetupReminderGateway()
+    let appState = makeAppState(reminderGateway: gateway)
+
+    await appState.configureObsidianVault(at: vaultRoot, activateWhenReady: false)
+    gateway.resetReadCallCounts()
+    appState.syncStatus = "Ready"
+
+    appState.requestStartupSyncIfNeeded()
+    appState.requestStartupSyncIfNeeded()
+    try await Task.sleep(nanoseconds: 120_000_000)
+
+    XCTAssertTrue(appState.didAutoBootstrapSync)
+    XCTAssertEqual(gateway.fetchAllCalendarsCallCount, 0)
+    XCTAssertEqual(gateway.fetchRemindersBatchCallCount, 0)
+    XCTAssertEqual(appState.syncStatus, "Ready")
+  }
+
+  func testRepeatedStartupSyncRequestsScheduleOnlyOneBootstrapReconciliation() async throws {
+    let vaultRoot = try makeVaultRoot()
+    let gateway = SetupReminderGateway()
+    let appState = makeAppState(reminderGateway: gateway)
+
+    await appState.configureObsidianVault(at: vaultRoot, activateWhenReady: false)
+    gateway.resetReadCallCounts()
+    appState.syncStatus = "Ready"
+    appState.syncStarted = false
+    appState.didAutoBootstrapSync = false
+
+    appState.requestStartupSyncIfNeeded()
+    appState.requestStartupSyncIfNeeded()
+    appState.requestStartupSyncIfNeeded()
+    try await Task.sleep(nanoseconds: 200_000_000)
+
+    XCTAssertTrue(appState.syncStarted)
+    XCTAssertTrue(appState.didAutoBootstrapSync)
+    XCTAssertEqual(gateway.fetchAllCalendarsCallCount, 1)
+    XCTAssertEqual(gateway.fetchRemindersBatchCallCount, 1)
+    XCTAssertNil(appState.pendingReminderSourceRefreshReason)
     XCTAssertEqual(appState.syncStatus, "Refreshed (\(SyncReason.bootstrap.rawValue))")
   }
 
@@ -558,6 +604,9 @@ private final class SetupReminderGateway: ReminderGateway {
   private let accessGranted: Bool
   private let allowsProjectRemoval: Bool
   private(set) var writeCallCount = 0
+  private(set) var fetchAllCalendarsCallCount = 0
+  private(set) var fetchRemindersCalendarCallCount = 0
+  private(set) var fetchRemindersBatchCallCount = 0
 
   init(accessGranted: Bool = true, allowsProjectRemoval: Bool = false) {
     self.accessGranted = accessGranted
@@ -571,14 +620,25 @@ private final class SetupReminderGateway: ReminderGateway {
     reminder.notes = "note line"
   }
 
+  func resetReadCallCounts() {
+    fetchAllCalendarsCallCount = 0
+    fetchRemindersCalendarCallCount = 0
+    fetchRemindersBatchCallCount = 0
+  }
+
   func requestAccess() async throws -> Bool { accessGranted }
-  func fetchAllCalendars() async throws -> [EKCalendar] { [calendar] }
+  func fetchAllCalendars() async throws -> [EKCalendar] {
+    fetchAllCalendarsCallCount += 1
+    return [calendar]
+  }
   func fetchReminders(in calendar: EKCalendar, scope: ReminderFetchScope) async throws -> [EKReminder] {
     _ = scope
+    fetchRemindersCalendarCallCount += 1
     return calendar.calendarIdentifier == self.calendar.calendarIdentifier ? [reminder] : []
   }
   func fetchReminders(in calendars: [EKCalendar], scope: ReminderFetchScope) async throws -> [EKReminder] {
     _ = scope
+    fetchRemindersBatchCallCount += 1
     return calendars.contains { $0.calendarIdentifier == calendar.calendarIdentifier } ? [reminder] : []
   }
   func defaultCalendarIdentifierForNewReminders() -> String? { calendar.calendarIdentifier }

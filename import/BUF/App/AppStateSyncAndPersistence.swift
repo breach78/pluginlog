@@ -168,6 +168,7 @@ extension AppState {
 
   func acceptInitialSyncConsentAndStart() {
     setInitialSyncConsentPreference(granted: true)
+    didAutoBootstrapSync = true
     refreshReminderSourceNow(reason: .bootstrap)
   }
 
