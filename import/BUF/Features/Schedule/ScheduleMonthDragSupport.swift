@@ -7,9 +7,21 @@ enum ScheduleMonthDragItem: Equatable, Sendable {
 }
 
 struct ScheduleMonthDragFeedback: Equatable {
-  let item: ScheduleMonthItem
+  let source: ScheduleMonthItemSource
+  let colorHex: String?
+  let isCompleted: Bool
+  let isAllDay: Bool
   let weekStart: Date
   let location: CGPoint
+
+  init(item: ScheduleMonthItem, weekStart: Date, location: CGPoint) {
+    source = item.source
+    colorHex = item.colorHex
+    isCompleted = item.isCompleted
+    isAllDay = item.isAllDay
+    self.weekStart = weekStart
+    self.location = location
+  }
 }
 
 enum ScheduleMonthDragSupport {

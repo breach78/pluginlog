@@ -255,15 +255,9 @@ struct TimelineBoardView: View {
         workspaceProjectSummaries: workspaceTimelineProjectSummaries,
         scheduleEntriesByProjectID: workspaceTimelineScheduleEntriesByProjectID
       )
-    let hasCachedBars = !cachedTimelineBars.isEmpty
-    let shouldUseCachedBars =
-      !isActive
-      ? hasCachedBars
-      : isMotionSuppressed
-      ? hasCachedBars
-      : (cachedTimelineBarsSourceSignature == watchedSourceSignature && hasCachedBars)
+    let hasCachedSnapshot = cachedTimelineBarsSourceSignature != nil
     let bars =
-      shouldUseCachedBars
+      hasCachedSnapshot
       ? cachedTimelineBars
       : computedLiveBars(
         projectIDs: activeProjectIDs,
@@ -272,7 +266,7 @@ struct TimelineBoardView: View {
         scheduleEntriesByProjectID: workspaceTimelineScheduleEntriesByProjectID
       )
     let rowLayouts =
-      shouldUseCachedBars && !cachedTimelineRowLayouts.isEmpty
+      hasCachedSnapshot
       ? cachedTimelineRowLayouts
       : buildRowLayouts(for: bars)
 
@@ -281,7 +275,7 @@ struct TimelineBoardView: View {
       watchedSourceSignature: watchedSourceSignature,
       rowLayouts: rowLayouts,
       barsPresentationSignature:
-        shouldUseCachedBars
+        hasCachedSnapshot
         ? (cachedTimelineBarsPresentationSignature ?? timelineSignature(for: bars))
         : timelineSignature(for: bars)
     )

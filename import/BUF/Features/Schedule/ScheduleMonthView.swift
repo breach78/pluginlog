@@ -16,8 +16,6 @@ struct ScheduleMonthView: View {
   @Environment(\.displayScale) private var displayScale
   @Binding var anchorDate: Date
   @State private var layoutCache = ScheduleMonthLayoutCache()
-  @State private var activeDragDate: Date?
-  @State private var activeDragFeedback: ScheduleMonthDragFeedback?
 
   let today: Date
   let items: [ScheduleMonthItem]
@@ -154,8 +152,6 @@ struct ScheduleMonthView: View {
               today: today,
               visibleItemLimit: visibleItemLimit,
               selectedDate: selectedDate,
-              activeDragDate: $activeDragDate,
-              activeDragFeedback: $activeDragFeedback,
               calendar: calendar,
               gridLineColor: gridLineColor,
               gridLineWidth: gridLineWidth,
@@ -164,7 +160,6 @@ struct ScheduleMonthView: View {
             )
             .id(weekLayout.weekStart)
             .frame(height: cellHeight)
-            .zIndex(activeDragFeedback?.weekStart == weekLayout.weekStart ? 1 : 0)
           }
         }
       }
@@ -219,8 +214,8 @@ private struct ScheduleMonthWeekRow: View {
   let today: Date
   let visibleItemLimit: Int
   let selectedDate: Date?
-  @Binding var activeDragDate: Date?
-  @Binding var activeDragFeedback: ScheduleMonthDragFeedback?
+  @State private var activeDragDate: Date?
+  @State private var activeDragFeedback: ScheduleMonthDragFeedback?
   let calendar: Calendar
   let gridLineColor: Color
   let gridLineWidth: CGFloat
@@ -312,13 +307,14 @@ private struct ScheduleMonthWeekRow: View {
         .allowsHitTesting(false)
 
         if let feedback = activeDragFeedback, feedback.weekStart == layout.weekStart {
-          ScheduleMonthDragFeedbackMarker(item: feedback.item)
+          ScheduleMonthDragFeedbackMarker(feedback: feedback)
             .position(x: feedback.location.x, y: feedback.location.y)
             .allowsHitTesting(false)
         }
       }
       .coordinateSpace(name: rowCoordinateSpaceName)
     }
+    .zIndex(activeDragFeedback == nil ? 0 : 1)
   }
 
   private func inlineVisibleItemLimit(on dayIndex: Int) -> Int {
@@ -648,7 +644,7 @@ private struct ScheduleMonthCompactItemRow: View {
 }
 
 private struct ScheduleMonthDragFeedbackMarker: View {
-  let item: ScheduleMonthItem
+  let feedback: ScheduleMonthDragFeedback
 
   var body: some View {
     ZStack {
@@ -667,9 +663,9 @@ private struct ScheduleMonthDragFeedbackMarker: View {
 
   @ViewBuilder
   private var marker: some View {
-    switch item.source {
+    switch feedback.source {
     case .workspaceTask:
-      if item.isCompleted {
+      if feedback.isCompleted {
         Image(systemName: "checkmark.circle.fill")
           .font(.system(size: 13, weight: .semibold))
           .foregroundStyle(itemColor)
@@ -679,7 +675,7 @@ private struct ScheduleMonthDragFeedbackMarker: View {
           .frame(width: 12, height: 12)
       }
     case .calendarEvent:
-      if item.isAllDay {
+      if feedback.isAllDay {
         Image(systemName: "calendar")
           .font(.system(size: 10, weight: .semibold))
           .foregroundStyle(itemColor)
@@ -692,7 +688,7 @@ private struct ScheduleMonthDragFeedbackMarker: View {
   }
 
   private var itemColor: Color {
-    ColorHexCodec.color(from: item.colorHex) ?? .accentColor
+    ColorHexCodec.color(from: feedback.colorHex) ?? .accentColor
   }
 }
 
