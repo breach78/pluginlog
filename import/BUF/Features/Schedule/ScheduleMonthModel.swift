@@ -80,6 +80,204 @@ struct ScheduleMonthAllDaySpanSegment: Identifiable, Hashable, Sendable {
   }
 }
 
+struct ScheduleMonthLayout: Sendable {
+  let visibleDays: [Date]
+  let itemsByDay: [Date: [ScheduleMonthItem]]
+  let weeks: [ScheduleMonthWeekLayout]
+}
+
+struct ScheduleMonthWeekLayout: Identifiable, Sendable {
+  let weekStart: Date
+  let weekDays: [Date]
+  let monthStart: Date
+  let days: [ScheduleMonthDayLayout]
+  let allDaySegments: [ScheduleMonthAllDaySpanSegment]
+
+  var id: Date {
+    weekStart
+  }
+}
+
+struct ScheduleMonthDayLayout: Identifiable, Sendable {
+  let day: Date
+  let normalizedDay: Date
+  let allItems: [ScheduleMonthItem]
+  let inlineItems: [ScheduleMonthItem]
+
+  var id: Date {
+    normalizedDay
+  }
+}
+
+enum ScheduleMonthLayoutBuilder {
+  static func build(
+    containing anchorDate: Date,
+    items: [ScheduleMonthItem],
+    calendar: Calendar
+  ) -> ScheduleMonthLayout {
+    let visibleDays = ScheduleMonthContinuousWindow.visibleDays(
+      containing: anchorDate,
+      calendar: calendar
+    )
+    let itemsByDay = ScheduleMonthCalendar.itemsByDay(
+      items: items,
+      visibleDays: visibleDays,
+      calendar: calendar
+    )
+    let weeks = stride(from: 0, to: visibleDays.count, by: 7).map { offset in
+      let weekDays = Array(visibleDays[offset..<min(offset + 7, visibleDays.count)])
+      let days = weekDays.map { day in
+        let normalizedDay = calendar.startOfDay(for: day)
+        let allItems = itemsByDay[normalizedDay] ?? []
+        return ScheduleMonthDayLayout(
+          day: day,
+          normalizedDay: normalizedDay,
+          allItems: allItems,
+          inlineItems: ScheduleMonthSpanLayout.inlineItems(from: allItems)
+        )
+      }
+      let weekItems = uniqueItems(in: days)
+      return ScheduleMonthWeekLayout(
+        weekStart: weekDays.first ?? calendar.startOfDay(for: anchorDate),
+        weekDays: weekDays,
+        monthStart: displayMonthStart(for: weekDays, fallback: anchorDate, calendar: calendar),
+        days: days,
+        allDaySegments: ScheduleMonthSpanLayout.allDayCalendarSegments(
+          for: weekDays,
+          items: weekItems,
+          calendar: calendar
+        )
+      )
+    }
+
+    return ScheduleMonthLayout(
+      visibleDays: visibleDays,
+      itemsByDay: itemsByDay,
+      weeks: weeks
+    )
+  }
+
+  private static func uniqueItems(in days: [ScheduleMonthDayLayout]) -> [ScheduleMonthItem] {
+    var seen: Set<String> = []
+    var result: [ScheduleMonthItem] = []
+    for day in days {
+      for item in day.allItems where seen.insert(item.id).inserted {
+        result.append(item)
+      }
+    }
+    return result
+  }
+
+  private static func displayMonthStart(
+    for weekDays: [Date],
+    fallback: Date,
+    calendar: Calendar
+  ) -> Date {
+    let weekStart = weekDays.first ?? fallback
+    let middleOfWeek = calendar.date(byAdding: .day, value: 3, to: weekStart) ?? weekStart
+    return ScheduleMonthCalendar.monthStart(containing: middleOfWeek, calendar: calendar)
+  }
+}
+
+struct ScheduleMonthItemCacheKey: Equatable {
+  let taskSignature: Int
+  let visibleEventsSignature: Int
+  let calendarIdentifier: Calendar.Identifier
+  let timeZoneIdentifier: String
+}
+
+@MainActor
+final class ScheduleMonthItemCache {
+  private var cachedKey: ScheduleMonthItemCacheKey?
+  private var cachedItems: [ScheduleMonthItem] = []
+
+  static func signature(
+    taskSignature: Int,
+    visibleEventsSignature: Int,
+    calendar: Calendar
+  ) -> Int {
+    var hasher = Hasher()
+    hasher.combine(taskSignature)
+    hasher.combine(visibleEventsSignature)
+    hasher.combine(calendar.identifier)
+    hasher.combine(calendar.timeZone.identifier)
+    return hasher.finalize()
+  }
+
+  func items(
+    taskSnapshot: ScheduleTaskSnapshotCache,
+    projection: ScheduleCalendarOverlayProjection,
+    calendar: Calendar
+  ) -> [ScheduleMonthItem] {
+    let key = ScheduleMonthItemCacheKey(
+      taskSignature: taskSnapshot.signature,
+      visibleEventsSignature: projection.visibleEventsSignature,
+      calendarIdentifier: calendar.identifier,
+      timeZoneIdentifier: calendar.timeZone.identifier
+    )
+    if cachedKey == key {
+      return cachedItems
+    }
+
+    let items = ScheduleMonthItemFactory.items(
+      workspaceTasks: taskSnapshot.taskDescriptors,
+      foregroundEvents: projection.foregroundEvents,
+      backgroundEvents: projection.backgroundEvents,
+      calendar: calendar
+    )
+    cachedKey = key
+    cachedItems = items
+    return items
+  }
+}
+
+struct ScheduleMonthLayoutCacheKey: Equatable {
+  let visibleRangeLowerBound: Date
+  let visibleRangeUpperBound: Date
+  let itemsSignature: Int
+  let calendarIdentifier: Calendar.Identifier
+  let firstWeekday: Int
+  let timeZoneIdentifier: String
+}
+
+@MainActor
+final class ScheduleMonthLayoutCache {
+  private var cachedKey: ScheduleMonthLayoutCacheKey?
+  private var cachedLayout: ScheduleMonthLayout?
+
+  func layout(
+    containing anchorDate: Date,
+    items: [ScheduleMonthItem],
+    itemsSignature: Int,
+    calendar: Calendar
+  ) -> ScheduleMonthLayout {
+    let visibleRange = ScheduleMonthContinuousWindow.visibleDateRange(
+      containing: anchorDate,
+      calendar: calendar
+    )
+    let key = ScheduleMonthLayoutCacheKey(
+      visibleRangeLowerBound: visibleRange.lowerBound,
+      visibleRangeUpperBound: visibleRange.upperBound,
+      itemsSignature: itemsSignature,
+      calendarIdentifier: calendar.identifier,
+      firstWeekday: calendar.firstWeekday,
+      timeZoneIdentifier: calendar.timeZone.identifier
+    )
+    if cachedKey == key, let cachedLayout {
+      return cachedLayout
+    }
+
+    let layout = ScheduleMonthLayoutBuilder.build(
+      containing: anchorDate,
+      items: items,
+      calendar: calendar
+    )
+    cachedKey = key
+    cachedLayout = layout
+    return layout
+  }
+}
+
 enum ScheduleMonthSpanLayout {
   static func inlineItems(from items: [ScheduleMonthItem]) -> [ScheduleMonthItem] {
     items

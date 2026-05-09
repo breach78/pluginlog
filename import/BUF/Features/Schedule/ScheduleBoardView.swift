@@ -675,6 +675,7 @@ struct ScheduleBoardView: View {
   @State var cachedAllDayEntries: [ScheduleAllDayLayout] = []
   @State var cachedBackgroundTimedEntries: [ScheduleTimedBlockLayout] = []
   @State var cachedBackgroundAllDayEntries: [ScheduleAllDayLayout] = []
+  @State var scheduleMonthItemCache = ScheduleMonthItemCache()
   @State var retainedScheduleCalendarBridgeDecisionsByTaskID:
     [UUID: RetainedCalendarBridgeDecision] = [:]
   @State var retainedScheduleCalendarBridgeWriteMarkersByTaskID:
@@ -1128,10 +1129,14 @@ struct ScheduleBoardView: View {
       preferCached: appState.isEditorMotionSuppressed || !isActive
     )
     let projection = appState.resolvedScheduleCalendarOverlayProjection()
-    let monthItems = ScheduleMonthItemFactory.items(
-      workspaceTasks: taskSnapshot.taskDescriptors,
-      foregroundEvents: projection.foregroundEvents,
-      backgroundEvents: projection.backgroundEvents,
+    let monthItemsSignature = ScheduleMonthItemCache.signature(
+      taskSignature: taskSnapshot.signature,
+      visibleEventsSignature: projection.visibleEventsSignature,
+      calendar: calendar
+    )
+    let monthItems = scheduleMonthItemCache.items(
+      taskSnapshot: taskSnapshot,
+      projection: projection,
       calendar: calendar
     )
 
@@ -1139,6 +1144,7 @@ struct ScheduleBoardView: View {
       anchorDate: monthAnchorDateBinding,
       today: today,
       items: monthItems,
+      itemsSignature: monthItemsSignature,
       selectedDate: selectedScheduleMonthDate,
       calendar: calendar,
       onSelectDay: { day, items in

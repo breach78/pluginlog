@@ -15,9 +15,11 @@ private enum ScheduleMonthLayoutMetrics {
 struct ScheduleMonthView: View {
   @Environment(\.displayScale) private var displayScale
   @Binding var anchorDate: Date
+  @State private var layoutCache = ScheduleMonthLayoutCache()
 
   let today: Date
   let items: [ScheduleMonthItem]
+  let itemsSignature: Int
   let selectedDate: Date?
   let calendar: Calendar
   let onSelectDay: (Date, [ScheduleMonthItem]) -> Void
@@ -31,30 +33,22 @@ struct ScheduleMonthView: View {
     1 / max(displayScale, 1)
   }
 
-  var visibleDays: [Date] {
-    ScheduleMonthContinuousWindow.visibleDays(containing: anchorDate, calendar: calendar)
-  }
-
   var monthStart: Date {
     ScheduleMonthCalendar.monthStart(containing: anchorDate, calendar: calendar)
   }
 
-  var itemsByDay: [Date: [ScheduleMonthItem]] {
-    ScheduleMonthCalendar.itemsByDay(
+  var monthLayout: ScheduleMonthLayout {
+    layoutCache.layout(
+      containing: anchorDate,
       items: items,
-      visibleDays: visibleDays,
+      itemsSignature: itemsSignature,
       calendar: calendar
     )
   }
 
-  var weekStartDates: [Date] {
-    stride(from: 0, to: visibleDays.count, by: 7).map { offset in
-      visibleDays[offset]
-    }
-  }
-
   var body: some View {
     GeometryReader { proxy in
+      let layout = monthLayout
       let availableGridHeight = max(
         cellMinHeight * 6,
         proxy.size.height - monthHeaderHeight - weekdayHeaderHeight
@@ -72,7 +66,11 @@ struct ScheduleMonthView: View {
         weekdayHeader
           .frame(height: weekdayHeaderHeight)
 
-        monthWeekScroller(cellHeight: cellHeight, visibleItemLimit: visibleItemLimit)
+        monthWeekScroller(
+          layout: layout,
+          cellHeight: cellHeight,
+          visibleItemLimit: visibleItemLimit
+        )
           .frame(height: gridHeight)
           .clipped()
       }
@@ -140,27 +138,25 @@ struct ScheduleMonthView: View {
   }
 
   private func monthWeekScroller(
+    layout: ScheduleMonthLayout,
     cellHeight: CGFloat,
     visibleItemLimit: Int
   ) -> some View {
     ScrollViewReader { proxy in
       ScrollView(.vertical) {
         LazyVStack(spacing: 0) {
-          ForEach(weekStartDates, id: \.self) { weekStart in
-            let weekDays = weekDays(startingAt: weekStart)
+          ForEach(layout.weeks) { weekLayout in
             ScheduleMonthWeekRow(
-              weekDays: weekDays,
-              monthStart: displayMonthStart(for: weekStart),
+              layout: weekLayout,
               today: today,
-              itemsByDay: itemsByDay,
               visibleItemLimit: visibleItemLimit,
               selectedDate: selectedDate,
               calendar: calendar,
               gridLineColor: gridLineColor,
               gridLineWidth: gridLineWidth,
-              onSelectDay: select(day:)
+              onSelectDay: onSelectDay
             )
-            .id(weekStart)
+            .id(weekLayout.weekStart)
             .frame(height: cellHeight)
           }
         }
@@ -175,14 +171,6 @@ struct ScheduleMonthView: View {
     }
   }
 
-  private func itemsByDay(for visibleDays: [Date]) -> [Date: [ScheduleMonthItem]] {
-    ScheduleMonthCalendar.itemsByDay(
-      items: items,
-      visibleDays: visibleDays,
-      calendar: calendar
-    )
-  }
-
   private var weekdaySymbols: [String] {
     let formatter = DateFormatter()
     formatter.locale = Locale(identifier: "ko_KR")
@@ -191,27 +179,10 @@ struct ScheduleMonthView: View {
     return Array(symbols[first..<symbols.count] + symbols[0..<first])
   }
 
-  private func select(day: Date) {
-    let normalizedDay = calendar.startOfDay(for: day)
-    let dayItems = itemsByDay(for: [normalizedDay])[normalizedDay] ?? []
-    onSelectDay(normalizedDay, dayItems)
-  }
-
   private func moveMonth(by value: Int) {
     if let next = calendar.date(byAdding: .month, value: value, to: anchorDate) {
       anchorDate = next
     }
-  }
-
-  private func weekDays(startingAt weekStart: Date) -> [Date] {
-    (0..<7).compactMap { offset in
-      calendar.date(byAdding: .day, value: offset, to: weekStart)
-    }
-  }
-
-  private func displayMonthStart(for weekStart: Date) -> Date {
-    let middleOfWeek = calendar.date(byAdding: .day, value: 3, to: weekStart) ?? weekStart
-    return ScheduleMonthCalendar.monthStart(containing: middleOfWeek, calendar: calendar)
   }
 
   private func scrollToAnchorWeek(using proxy: ScrollViewProxy, animated: Bool) {
@@ -237,65 +208,41 @@ struct ScheduleMonthView: View {
 }
 
 private struct ScheduleMonthWeekRow: View {
-  let weekDays: [Date]
-  let monthStart: Date
+  let layout: ScheduleMonthWeekLayout
   let today: Date
-  let itemsByDay: [Date: [ScheduleMonthItem]]
   let visibleItemLimit: Int
   let selectedDate: Date?
   let calendar: Calendar
   let gridLineColor: Color
   let gridLineWidth: CGFloat
-  let onSelectDay: (Date) -> Void
-
-  private var allDaySegments: [ScheduleMonthAllDaySpanSegment] {
-    ScheduleMonthSpanLayout.allDayCalendarSegments(
-      for: weekDays,
-      items: weekItems,
-      calendar: calendar
-    )
-  }
+  let onSelectDay: (Date, [ScheduleMonthItem]) -> Void
 
   private var visibleAllDaySegments: [ScheduleMonthAllDaySpanSegment] {
-    allDaySegments.filter { $0.rowIndex < visibleAllDayRowLimit }
+    layout.allDaySegments.filter { $0.rowIndex < visibleAllDayRowLimit }
   }
 
   private var visibleAllDayRowLimit: Int {
     max(0, visibleItemLimit)
   }
 
-  private var weekItems: [ScheduleMonthItem] {
-    var seen: Set<String> = []
-    var result: [ScheduleMonthItem] = []
-    for day in weekDays {
-      let normalized = calendar.startOfDay(for: day)
-      for item in itemsByDay[normalized] ?? [] where seen.insert(item.id).inserted {
-        result.append(item)
-      }
-    }
-    return result
-  }
-
   var body: some View {
     ZStack(alignment: .topLeading) {
       HStack(spacing: 0) {
-        ForEach(0..<7, id: \.self) { dayIndex in
-          let day = weekDays[dayIndex]
-          let normalizedDay = calendar.startOfDay(for: day)
-          let dayItems = itemsByDay[normalizedDay] ?? []
+        ForEach(0..<layout.days.count, id: \.self) { dayIndex in
+          let dayLayout = layout.days[dayIndex]
 
           ScheduleMonthDayCell(
-            day: day,
-            monthStart: monthStart,
+            day: dayLayout.day,
+            monthStart: layout.monthStart,
             today: today,
-            items: ScheduleMonthSpanLayout.inlineItems(from: dayItems),
+            items: dayLayout.inlineItems,
             visibleItemLimit: inlineVisibleItemLimit(on: dayIndex),
             hiddenAllDayItemCount: hiddenAllDayItemCount(on: dayIndex),
             reservedAllDayRowCount: visibleAllDayRowCount(on: dayIndex),
-            isSelected: selectedDate.map { calendar.isDate($0, inSameDayAs: day) } ?? false,
+            isSelected: selectedDate.map { calendar.isDate($0, inSameDayAs: dayLayout.day) } ?? false,
             calendar: calendar,
             onSelect: {
-              onSelectDay(day)
+              onSelectDay(dayLayout.normalizedDay, dayLayout.allItems)
             }
           )
           .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -334,7 +281,7 @@ private struct ScheduleMonthWeekRow: View {
   private func visibleAllDayRowCount(on dayIndex: Int) -> Int {
     ScheduleMonthSpanLayout.visibleAllDayRowCount(
       on: dayIndex,
-      segments: allDaySegments,
+      segments: layout.allDaySegments,
       visibleRowLimit: visibleAllDayRowLimit
     )
   }
@@ -342,7 +289,7 @@ private struct ScheduleMonthWeekRow: View {
   private func hiddenAllDayItemCount(on dayIndex: Int) -> Int {
     ScheduleMonthSpanLayout.hiddenAllDayItemCount(
       on: dayIndex,
-      segments: allDaySegments,
+      segments: layout.allDaySegments,
       visibleRowLimit: visibleAllDayRowLimit
     )
   }
@@ -554,6 +501,12 @@ private struct ScheduleMonthCompactItemRow: View {
   let item: ScheduleMonthItem
   let isPastCompletedTask: Bool
 
+  private static let timeFormatStyle = Date.FormatStyle(
+    date: .omitted,
+    time: .shortened
+  )
+  .locale(Locale(identifier: "ko_KR"))
+
   private var rowOpacity: Double {
     if isPastCompletedTask { return 0.384 }
     if item.isBackgroundCalendar { return 0.48 }
@@ -620,9 +573,6 @@ private struct ScheduleMonthCompactItemRow: View {
     guard case .calendarEvent = item.source, !item.isAllDay else {
       return nil
     }
-    let formatter = DateFormatter()
-    formatter.locale = Locale(identifier: "ko_KR")
-    formatter.dateFormat = "a h:mm"
-    return formatter.string(from: item.startDate)
+    return item.startDate.formatted(Self.timeFormatStyle)
   }
 }
