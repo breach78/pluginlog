@@ -1512,6 +1512,57 @@ extension ScheduleBoardView {
     )
   }
 
+  func moveScheduleMonthItem(_ item: ScheduleMonthDragItem, to targetDay: Date) {
+    let normalizedTargetDay = calendar.startOfDay(for: targetDay)
+    releaseActiveTextResponderForUndo()
+    suppressTaskTap(for: 0.2)
+
+    switch item {
+    case .task(let taskID):
+      guard let taskDescriptor = scheduleTaskDescriptor(for: taskID) else { return }
+      guard !taskDescriptor.taskRow.isLocalCompletedRecurringOccurrence else { return }
+
+      let timeMinutes = WorkspaceTaskScheduleEventStore.scheduledTimeMinutes(
+        for: taskDescriptor.taskRow,
+        calendar: calendar
+      )
+      let durationMinutes = timeMinutes == nil
+        ? nil
+        : (
+          WorkspaceTaskScheduleEventStore.normalizedScheduledDurationMinutes(
+            for: taskDescriptor.taskRow
+          ) ?? WorkspaceTaskScheduleEventStore.defaultScheduledDurationMinutes
+        )
+
+      applyScheduleState(
+        taskID: taskID,
+        projectID: taskDescriptor.projectID,
+        day: normalizedTargetDay,
+        timeMinutes: timeMinutes,
+        durationMinutes: durationMinutes,
+        registerUndo: true,
+        actionName: "월간 일정 이동"
+      )
+
+    case .calendarEvent(let eventID):
+      guard let event = appState.resolvedScheduleCalendarEvent(eventID: eventID),
+        event.canEditTiming
+      else {
+        return
+      }
+
+      commitCalendarPreview(
+        ScheduleInteractionPreview(
+          day: normalizedTargetDay,
+          timeMinutes: event.isAllDay ? nil : timeMinutes(for: event.startDate),
+          durationMinutes: event.isAllDay ? nil : durationMinutes(for: event)
+        ),
+        for: event,
+        actionName: "월간 일정 이동"
+      )
+    }
+  }
+
   func applyPreparationScheduleState(
     taskID: UUID,
     projectID: UUID,

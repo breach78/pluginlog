@@ -16,6 +16,8 @@ struct ScheduleMonthView: View {
   @Environment(\.displayScale) private var displayScale
   @Binding var anchorDate: Date
   @State private var layoutCache = ScheduleMonthLayoutCache()
+  @State private var activeDragDate: Date?
+  @State private var activeDragFeedback: ScheduleMonthDragFeedback?
 
   let today: Date
   let items: [ScheduleMonthItem]
@@ -23,6 +25,7 @@ struct ScheduleMonthView: View {
   let selectedDate: Date?
   let calendar: Calendar
   let onSelectDay: (Date, [ScheduleMonthItem]) -> Void
+  let onMoveItem: (ScheduleMonthDragItem, Date) -> Void
 
   private let weekdayHeaderHeight: CGFloat = 28
   private let monthHeaderHeight: CGFloat = 58
@@ -151,13 +154,17 @@ struct ScheduleMonthView: View {
               today: today,
               visibleItemLimit: visibleItemLimit,
               selectedDate: selectedDate,
+              activeDragDate: $activeDragDate,
+              activeDragFeedback: $activeDragFeedback,
               calendar: calendar,
               gridLineColor: gridLineColor,
               gridLineWidth: gridLineWidth,
-              onSelectDay: onSelectDay
+              onSelectDay: onSelectDay,
+              onMoveItem: onMoveItem
             )
             .id(weekLayout.weekStart)
             .frame(height: cellHeight)
+            .zIndex(activeDragFeedback?.weekStart == weekLayout.weekStart ? 1 : 0)
           }
         }
       }
@@ -212,10 +219,13 @@ private struct ScheduleMonthWeekRow: View {
   let today: Date
   let visibleItemLimit: Int
   let selectedDate: Date?
+  @Binding var activeDragDate: Date?
+  @Binding var activeDragFeedback: ScheduleMonthDragFeedback?
   let calendar: Calendar
   let gridLineColor: Color
   let gridLineWidth: CGFloat
   let onSelectDay: (Date, [ScheduleMonthItem]) -> Void
+  let onMoveItem: (ScheduleMonthDragItem, Date) -> Void
 
   private var visibleAllDaySegments: [ScheduleMonthAllDaySpanSegment] {
     layout.allDaySegments.filter { $0.rowIndex < visibleAllDayRowLimit }
@@ -225,53 +235,90 @@ private struct ScheduleMonthWeekRow: View {
     max(0, visibleItemLimit)
   }
 
+  private var rowCoordinateSpaceName: String {
+    "schedule-month-week-\(layout.weekStart.timeIntervalSinceReferenceDate)"
+  }
+
   var body: some View {
-    ZStack(alignment: .topLeading) {
-      HStack(spacing: 0) {
-        ForEach(0..<layout.days.count, id: \.self) { dayIndex in
-          let dayLayout = layout.days[dayIndex]
+    GeometryReader { rowProxy in
+      let rowSize = rowProxy.size
+      ZStack(alignment: .topLeading) {
+        HStack(spacing: 0) {
+          ForEach(0..<layout.days.count, id: \.self) { dayIndex in
+            let dayLayout = layout.days[dayIndex]
 
-          ScheduleMonthDayCell(
-            day: dayLayout.day,
-            monthStart: layout.monthStart,
-            today: today,
-            items: dayLayout.inlineItems,
-            visibleItemLimit: inlineVisibleItemLimit(on: dayIndex),
-            hiddenAllDayItemCount: hiddenAllDayItemCount(on: dayIndex),
-            reservedAllDayRowCount: visibleAllDayRowCount(on: dayIndex),
-            isSelected: selectedDate.map { calendar.isDate($0, inSameDayAs: dayLayout.day) } ?? false,
-            calendar: calendar,
-            onSelect: {
-              onSelectDay(dayLayout.normalizedDay, dayLayout.allItems)
-            }
-          )
-          .frame(maxWidth: .infinity, maxHeight: .infinity)
+            ScheduleMonthDayCell(
+              day: dayLayout.day,
+              monthStart: layout.monthStart,
+              today: today,
+              items: dayLayout.inlineItems,
+              visibleItemLimit: inlineVisibleItemLimit(on: dayIndex),
+              hiddenAllDayItemCount: hiddenAllDayItemCount(on: dayIndex),
+              reservedAllDayRowCount: visibleAllDayRowCount(on: dayIndex),
+              isSelected: selectedDate.map { calendar.isDate($0, inSameDayAs: dayLayout.day) } ?? false,
+              isDragTarget: activeDragDate.map { calendar.isDate($0, inSameDayAs: dayLayout.day) } ?? false,
+              weekStart: layout.weekStart,
+              rowSize: rowSize,
+              rowCoordinateSpaceName: rowCoordinateSpaceName,
+              activeDragDate: $activeDragDate,
+              activeDragFeedback: $activeDragFeedback,
+              calendar: calendar,
+              onSelect: {
+                onSelectDay(dayLayout.normalizedDay, dayLayout.allItems)
+              },
+              onMoveItem: onMoveItem
+            )
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+          }
         }
-      }
 
-      GeometryReader { proxy in
-        let columnWidth = proxy.size.width / 7
+        let columnWidth = rowSize.width / 7
         ForEach(visibleAllDaySegments) { segment in
-          let width = max(0, columnWidth * CGFloat(segment.daySpanCount) - 4)
-          let x = columnWidth * CGFloat(segment.startDayIndex) + width / 2 + 2
-          let y = ScheduleMonthLayoutMetrics.allDaySpanTopOffset
-            + CGFloat(segment.rowIndex) * ScheduleMonthLayoutMetrics.allDaySpanRowHeight
-            + ScheduleMonthLayoutMetrics.allDaySpanHeight / 2
+          if segment.startDayIndex < layout.days.count {
+            let segmentDay = layout.days[segment.startDayIndex]
+            let width = max(0, columnWidth * CGFloat(segment.daySpanCount) - 4)
+            let x = columnWidth * CGFloat(segment.startDayIndex) + width / 2 + 2
+            let y = ScheduleMonthLayoutMetrics.allDaySpanTopOffset
+              + CGFloat(segment.rowIndex) * ScheduleMonthLayoutMetrics.allDaySpanRowHeight
+              + ScheduleMonthLayoutMetrics.allDaySpanHeight / 2
 
-          ScheduleMonthAllDaySpanRow(segment: segment)
-            .frame(width: width, height: ScheduleMonthLayoutMetrics.allDaySpanHeight)
-            .position(x: x, y: y)
+            ScheduleMonthAllDaySpanRow(segment: segment)
+              .modifier(
+                ScheduleMonthLocalDragModifier(
+                  item: segment.item,
+                  weekStart: layout.weekStart,
+                  rowSize: rowSize,
+                  rowCoordinateSpaceName: rowCoordinateSpaceName,
+                  activeDragDate: $activeDragDate,
+                  activeDragFeedback: $activeDragFeedback,
+                  calendar: calendar,
+                  onMoveItem: onMoveItem
+                )
+              )
+              .simultaneousGesture(
+                TapGesture().onEnded {
+                  onSelectDay(segmentDay.normalizedDay, segmentDay.allItems)
+                }
+              )
+              .frame(width: width, height: ScheduleMonthLayoutMetrics.allDaySpanHeight)
+              .position(x: x, y: y)
+          }
+        }
+
+        ScheduleMonthWeekGridLines(
+          color: gridLineColor,
+          lineWidth: gridLineWidth
+        )
+        .allowsHitTesting(false)
+
+        if let feedback = activeDragFeedback, feedback.weekStart == layout.weekStart {
+          ScheduleMonthDragFeedbackMarker(item: feedback.item)
+            .position(x: feedback.location.x, y: feedback.location.y)
+            .allowsHitTesting(false)
         }
       }
-      .allowsHitTesting(false)
-
-      ScheduleMonthWeekGridLines(
-        color: gridLineColor,
-        lineWidth: gridLineWidth
-      )
-      .allowsHitTesting(false)
+      .coordinateSpace(name: rowCoordinateSpaceName)
     }
-    .clipped()
   }
 
   private func inlineVisibleItemLimit(on dayIndex: Int) -> Int {
@@ -348,8 +395,15 @@ private struct ScheduleMonthDayCell: View {
   let hiddenAllDayItemCount: Int
   let reservedAllDayRowCount: Int
   let isSelected: Bool
+  let isDragTarget: Bool
+  let weekStart: Date
+  let rowSize: CGSize
+  let rowCoordinateSpaceName: String
+  @Binding var activeDragDate: Date?
+  @Binding var activeDragFeedback: ScheduleMonthDragFeedback?
   let calendar: Calendar
   let onSelect: () -> Void
+  let onMoveItem: (ScheduleMonthDragItem, Date) -> Void
 
   private var visibleRowCapacity: Int {
     max(0, visibleItemLimit)
@@ -376,14 +430,12 @@ private struct ScheduleMonthDayCell: View {
       cellBackground
         .frame(maxWidth: .infinity, maxHeight: .infinity)
 
-      Button(action: onSelect) {
-        cellContent
-          .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-          .contentShape(Rectangle())
-      }
-      .buttonStyle(.plain)
+      cellContent
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    .contentShape(Rectangle())
+    .onTapGesture(perform: onSelect)
     .clipped()
   }
 
@@ -402,6 +454,21 @@ private struct ScheduleMonthDayCell: View {
         ScheduleMonthCompactItemRow(
           item: item,
           isPastCompletedTask: isPastCompletedTask(item)
+        )
+        .modifier(
+          ScheduleMonthLocalDragModifier(
+            item: item,
+            weekStart: weekStart,
+            rowSize: rowSize,
+            rowCoordinateSpaceName: rowCoordinateSpaceName,
+            activeDragDate: $activeDragDate,
+            activeDragFeedback: $activeDragFeedback,
+            calendar: calendar,
+            onMoveItem: onMoveItem
+          )
+        )
+        .simultaneousGesture(
+          TapGesture().onEnded(onSelect)
         )
       }
 
@@ -452,7 +519,10 @@ private struct ScheduleMonthDayCell: View {
 
   @ViewBuilder
   private var cellBackground: some View {
-    if isSelected {
+    if isDragTarget {
+      Rectangle()
+        .fill(Color.accentColor.opacity(0.09))
+    } else if isSelected {
       Rectangle()
         .fill(Color.accentColor.opacity(0.066))
     } else if calendar.isDate(day, inSameDayAs: today) {
@@ -574,5 +644,135 @@ private struct ScheduleMonthCompactItemRow: View {
       return nil
     }
     return item.startDate.formatted(Self.timeFormatStyle)
+  }
+}
+
+private struct ScheduleMonthDragFeedbackMarker: View {
+  let item: ScheduleMonthItem
+
+  var body: some View {
+    ZStack {
+      Circle()
+        .fill(Color(nsColor: .windowBackgroundColor))
+        .overlay {
+          Circle()
+            .strokeBorder(itemColor.opacity(0.75), lineWidth: 1.2)
+        }
+        .shadow(color: Color.black.opacity(0.12), radius: 5, x: 0, y: 2)
+
+      marker
+    }
+    .frame(width: 24, height: 24)
+  }
+
+  @ViewBuilder
+  private var marker: some View {
+    switch item.source {
+    case .workspaceTask:
+      if item.isCompleted {
+        Image(systemName: "checkmark.circle.fill")
+          .font(.system(size: 13, weight: .semibold))
+          .foregroundStyle(itemColor)
+      } else {
+        Circle()
+          .strokeBorder(itemColor, lineWidth: 1.8)
+          .frame(width: 12, height: 12)
+      }
+    case .calendarEvent:
+      if item.isAllDay {
+        Image(systemName: "calendar")
+          .font(.system(size: 10, weight: .semibold))
+          .foregroundStyle(itemColor)
+      } else {
+        RoundedRectangle(cornerRadius: 2, style: .continuous)
+          .fill(itemColor)
+          .frame(width: 4, height: 14)
+      }
+    }
+  }
+
+  private var itemColor: Color {
+    ColorHexCodec.color(from: item.colorHex) ?? .accentColor
+  }
+}
+
+private struct ScheduleMonthLocalDragModifier: ViewModifier {
+  let item: ScheduleMonthItem
+  let weekStart: Date
+  let rowSize: CGSize
+  let rowCoordinateSpaceName: String
+  @Binding var activeDragDate: Date?
+  @Binding var activeDragFeedback: ScheduleMonthDragFeedback?
+  let calendar: Calendar
+  let onMoveItem: (ScheduleMonthDragItem, Date) -> Void
+
+  @State private var startPointerDay: Date?
+  @State private var pendingTargetStartDay: Date?
+
+  func body(content: Content) -> some View {
+    if let dragItem = ScheduleMonthDragSupport.dragItem(for: item) {
+      content
+        .contentShape(Rectangle())
+        .highPriorityGesture(
+          DragGesture(minimumDistance: 6, coordinateSpace: .named(rowCoordinateSpaceName))
+            .onChanged { value in
+              updateDrag(value, dragItem: dragItem)
+            }
+            .onEnded { value in
+              finishDrag(value, dragItem: dragItem)
+            }
+        )
+    } else {
+      content
+    }
+  }
+
+  private func updateDrag(_ value: DragGesture.Value, dragItem _: ScheduleMonthDragItem) {
+    let originalStartDay = calendar.startOfDay(for: item.startDate)
+    let resolvedStartPointerDay =
+      startPointerDay
+      ?? ScheduleMonthDragGeometry.day(
+        at: value.startLocation,
+        weekStart: weekStart,
+        rowSize: rowSize,
+        calendar: calendar
+      )
+    guard let resolvedStartPointerDay,
+      let currentPointerDay = ScheduleMonthDragGeometry.day(
+        at: value.location,
+        weekStart: weekStart,
+        rowSize: rowSize,
+        calendar: calendar
+      )
+    else {
+      return
+    }
+
+    startPointerDay = resolvedStartPointerDay
+    activeDragDate = currentPointerDay
+    activeDragFeedback = ScheduleMonthDragFeedback(
+      item: item,
+      weekStart: weekStart,
+      location: value.location
+    )
+    pendingTargetStartDay = ScheduleMonthDragGeometry.movedStartDay(
+      originalStartDay: originalStartDay,
+      startPointerDay: resolvedStartPointerDay,
+      currentPointerDay: currentPointerDay,
+      calendar: calendar
+    )
+  }
+
+  private func finishDrag(_ value: DragGesture.Value, dragItem: ScheduleMonthDragItem) {
+    updateDrag(value, dragItem: dragItem)
+    let targetStartDay = pendingTargetStartDay
+
+    startPointerDay = nil
+    pendingTargetStartDay = nil
+    activeDragDate = nil
+    activeDragFeedback = nil
+
+    guard let targetStartDay else { return }
+    onMoveItem(dragItem, targetStartDay)
   }
 }

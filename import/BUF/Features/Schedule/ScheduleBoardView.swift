@@ -1150,6 +1150,9 @@ struct ScheduleBoardView: View {
       onSelectDay: { day, items in
         selectedScheduleMonthDate = day
         onShowMonthDetail(ScheduleMonthDetailPanelTarget(date: day, items: items))
+      },
+      onMoveItem: { item, targetDay in
+        moveScheduleMonthItem(item, to: targetDay)
       }
     )
     .onAppear {

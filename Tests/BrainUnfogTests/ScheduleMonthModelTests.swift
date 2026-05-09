@@ -48,6 +48,40 @@ final class ScheduleMonthModelTests: XCTestCase {
     XCTAssertNil(grouped[may10])
   }
 
+  func testAllDayEventLateEndDateStillUsesExclusiveEndDayForGroupingDays() throws {
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+    calendar.firstWeekday = 1
+    let may7 = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 5, day: 7)))
+    let lateMay8 = try XCTUnwrap(
+      calendar.date(from: DateComponents(year: 2026, month: 5, day: 8, hour: 23, minute: 59))
+    )
+    let item = ScheduleMonthItem(
+      id: "calendar-late-end",
+      source: .calendarEvent(eventID: "late-end"),
+      title: "종일 일정",
+      subtitle: nil,
+      startDate: may7,
+      endDate: lateMay8,
+      isAllDay: true,
+      colorHex: nil,
+      isCompleted: false,
+      isPreparationSlot: false,
+      isBackgroundCalendar: false,
+      calendarEvent: nil
+    )
+
+    let grouped = ScheduleMonthCalendar.itemsByDay(
+      items: [item],
+      visibleDays: ScheduleMonthCalendar.visibleDays(containing: may7, calendar: calendar),
+      calendar: calendar
+    )
+
+    XCTAssertEqual(grouped[may7]?.map(\.id), ["calendar-late-end"])
+    let may8 = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 5, day: 8)))
+    XCTAssertNil(grouped[may8])
+  }
+
   func testOverflowLimitShrinksAsCellHeightShrinks() {
     XCTAssertEqual(ScheduleMonthOverflowPolicy.visibleItemLimit(cellHeight: 150), 6)
     XCTAssertEqual(ScheduleMonthOverflowPolicy.visibleItemLimit(cellHeight: 92), 3)
@@ -221,6 +255,53 @@ final class ScheduleMonthModelTests: XCTestCase {
     XCTAssertEqual(Set(days).count, days.count)
     XCTAssertTrue(days.contains(ScheduleMonthContinuousWindow.weekStart(containing: anchor, calendar: calendar)))
     XCTAssertTrue(days.contains(anchor))
+  }
+
+  func testMonthDragGeometryMapsPointerLocationToWeekGridDay() throws {
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+    calendar.firstWeekday = 1
+    let weekStart = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 5, day: 3)))
+    let rowSize = CGSize(width: 700, height: 100)
+
+    let sameWeekDay = try XCTUnwrap(
+      ScheduleMonthDragGeometry.day(
+        at: CGPoint(x: 350, y: 50),
+        weekStart: weekStart,
+        rowSize: rowSize,
+        calendar: calendar
+      )
+    )
+    let nextWeekDay = try XCTUnwrap(
+      ScheduleMonthDragGeometry.day(
+        at: CGPoint(x: 350, y: 150),
+        weekStart: weekStart,
+        rowSize: rowSize,
+        calendar: calendar
+      )
+    )
+
+    XCTAssertEqual(calendar.component(.day, from: sameWeekDay), 6)
+    XCTAssertEqual(calendar.component(.day, from: nextWeekDay), 13)
+  }
+
+  func testMonthDragGeometryPreservesClickedOffsetWithinMultiDayItem() throws {
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+    let originalStart = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 5, day: 7)))
+    let clickedDay = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 5, day: 9)))
+    let currentPointerDay = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 5, day: 16)))
+
+    let movedStart = try XCTUnwrap(
+      ScheduleMonthDragGeometry.movedStartDay(
+        originalStartDay: originalStart,
+        startPointerDay: clickedDay,
+        currentPointerDay: currentPointerDay,
+        calendar: calendar
+      )
+    )
+
+    XCTAssertEqual(calendar.component(.day, from: movedStart), 14)
   }
 
   private func makeMonthItem(

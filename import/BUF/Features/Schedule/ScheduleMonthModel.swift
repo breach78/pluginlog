@@ -322,7 +322,9 @@ enum ScheduleMonthSpanLayout {
       guard isAllDayCalendarSpanItem(item) else { return nil }
 
       let itemStartDay = calendar.startOfDay(for: item.startDate)
-      let itemEndDay = calendar.startOfDay(for: ScheduleMonthCalendar.effectiveInclusiveEndDate(for: item))
+      let itemEndDay = calendar.startOfDay(
+        for: ScheduleMonthCalendar.effectiveInclusiveEndDate(for: item, calendar: calendar)
+      )
       guard itemStartDay <= lastDay, itemEndDay >= firstDay else { return nil }
 
       let segmentStartDay = maxDate(itemStartDay, firstDay)
@@ -461,7 +463,7 @@ enum ScheduleMonthCalendar {
 
     for item in items {
       let startDay = calendar.startOfDay(for: item.startDate)
-      let effectiveEndDate = effectiveInclusiveEndDate(for: item)
+      let effectiveEndDate = effectiveInclusiveEndDate(for: item, calendar: calendar)
       let endDay = calendar.startOfDay(for: effectiveEndDate)
       let dayCount = max(0, calendar.dateComponents([.day], from: startDay, to: endDay).day ?? 0)
 
@@ -475,11 +477,15 @@ enum ScheduleMonthCalendar {
     return grouped.mapValues { $0.sorted(by: itemSort) }
   }
 
-  static func effectiveInclusiveEndDate(for item: ScheduleMonthItem) -> Date {
+  static func effectiveInclusiveEndDate(
+    for item: ScheduleMonthItem,
+    calendar: Calendar = .autoupdatingCurrent
+  ) -> Date {
     guard item.isAllDay, item.endDate > item.startDate else {
       return max(item.endDate, item.startDate)
     }
-    return item.endDate.addingTimeInterval(-1)
+    let endDay = calendar.startOfDay(for: item.endDate)
+    return calendar.date(byAdding: .day, value: -1, to: endDay) ?? item.startDate
   }
 
   private static func itemSort(_ lhs: ScheduleMonthItem, _ rhs: ScheduleMonthItem) -> Bool {
