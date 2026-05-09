@@ -13,6 +13,7 @@ private enum ScheduleMonthLayoutMetrics {
 }
 
 struct ScheduleMonthView: View {
+  @Environment(\.displayScale) private var displayScale
   @Binding var anchorDate: Date
 
   let today: Date
@@ -25,6 +26,10 @@ struct ScheduleMonthView: View {
   private let monthHeaderHeight: CGFloat = 58
   private let cellMinHeight: CGFloat = 72
   private let gridLineColor = Color.primary.opacity(0.10)
+
+  private var gridLineWidth: CGFloat {
+    1 / max(displayScale, 1)
+  }
 
   var visibleDays: [Date] {
     ScheduleMonthContinuousWindow.visibleDays(containing: anchorDate, calendar: calendar)
@@ -54,7 +59,8 @@ struct ScheduleMonthView: View {
         cellMinHeight * 6,
         proxy.size.height - monthHeaderHeight - weekdayHeaderHeight
       )
-      let cellHeight = availableGridHeight / 6
+      let cellHeight = pixelFloored(availableGridHeight / 6)
+      let gridHeight = cellHeight * 6
       let visibleItemLimit = ScheduleMonthOverflowPolicy.visibleItemLimit(
         cellHeight: cellHeight
       )
@@ -67,7 +73,7 @@ struct ScheduleMonthView: View {
           .frame(height: weekdayHeaderHeight)
 
         monthWeekScroller(cellHeight: cellHeight, visibleItemLimit: visibleItemLimit)
-          .frame(height: availableGridHeight)
+          .frame(height: gridHeight)
           .clipped()
       }
       .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
@@ -126,9 +132,10 @@ struct ScheduleMonthView: View {
       }
     }
     .overlay(alignment: .bottom) {
-      Rectangle()
-        .fill(gridLineColor)
-        .frame(height: 1)
+      ScheduleMonthHorizontalGridLine(
+        color: gridLineColor,
+        lineWidth: gridLineWidth
+      )
     }
   }
 
@@ -150,15 +157,11 @@ struct ScheduleMonthView: View {
               selectedDate: selectedDate,
               calendar: calendar,
               gridLineColor: gridLineColor,
+              gridLineWidth: gridLineWidth,
               onSelectDay: select(day:)
             )
             .id(weekStart)
             .frame(height: cellHeight)
-            .overlay(alignment: .bottom) {
-              Rectangle()
-                .fill(gridLineColor)
-                .frame(height: 1)
-            }
           }
         }
       }
@@ -227,6 +230,10 @@ struct ScheduleMonthView: View {
     let components = calendar.dateComponents([.year, .month], from: date)
     return "\(components.year ?? 0)년 \(components.month ?? 1)월"
   }
+
+  private func pixelFloored(_ value: CGFloat) -> CGFloat {
+    floor(value * max(displayScale, 1)) / max(displayScale, 1)
+  }
 }
 
 private struct ScheduleMonthWeekRow: View {
@@ -238,6 +245,7 @@ private struct ScheduleMonthWeekRow: View {
   let selectedDate: Date?
   let calendar: Calendar
   let gridLineColor: Color
+  let gridLineWidth: CGFloat
   let onSelectDay: (Date) -> Void
 
   private var allDaySegments: [ScheduleMonthAllDaySpanSegment] {
@@ -291,11 +299,6 @@ private struct ScheduleMonthWeekRow: View {
             }
           )
           .frame(maxWidth: .infinity, maxHeight: .infinity)
-          .overlay(alignment: .trailing) {
-            Rectangle()
-              .fill(dayIndex == 6 ? Color.clear : gridLineColor)
-              .frame(width: 1)
-          }
         }
       }
 
@@ -314,7 +317,14 @@ private struct ScheduleMonthWeekRow: View {
         }
       }
       .allowsHitTesting(false)
+
+      ScheduleMonthWeekGridLines(
+        color: gridLineColor,
+        lineWidth: gridLineWidth
+      )
+      .allowsHitTesting(false)
     }
+    .clipped()
   }
 
   private func inlineVisibleItemLimit(on dayIndex: Int) -> Int {
@@ -338,6 +348,50 @@ private struct ScheduleMonthWeekRow: View {
   }
 }
 
+private struct ScheduleMonthHorizontalGridLine: View {
+  let color: Color
+  let lineWidth: CGFloat
+
+  var body: some View {
+    ZStack {
+      Rectangle()
+        .fill(Color(nsColor: .windowBackgroundColor))
+      Rectangle()
+        .fill(color)
+    }
+    .frame(height: lineWidth)
+  }
+}
+
+private struct ScheduleMonthWeekGridLines: View {
+  let color: Color
+  let lineWidth: CGFloat
+
+  var body: some View {
+    Canvas { context, size in
+      let y = lineWidth / 2
+      let columnWidth = size.width / 7
+      var path = Path()
+
+      for columnIndex in 1..<7 {
+        let x = columnWidth * CGFloat(columnIndex)
+        path.move(to: CGPoint(x: x, y: 0))
+        path.addLine(to: CGPoint(x: x, y: size.height))
+      }
+
+      path.move(to: CGPoint(x: 0, y: y))
+      path.addLine(to: CGPoint(x: size.width, y: y))
+
+      context.stroke(
+        path,
+        with: .color(Color(nsColor: .windowBackgroundColor)),
+        lineWidth: lineWidth
+      )
+      context.stroke(path, with: .color(color), lineWidth: lineWidth)
+    }
+  }
+}
+
 private struct ScheduleMonthDayCell: View {
   let day: Date
   let monthStart: Date
@@ -350,51 +404,73 @@ private struct ScheduleMonthDayCell: View {
   let calendar: Calendar
   let onSelect: () -> Void
 
+  private var visibleRowCapacity: Int {
+    max(0, visibleItemLimit)
+  }
+
+  private var shouldShowOverflowRow: Bool {
+    visibleRowCapacity > 0 && (hiddenAllDayItemCount > 0 || items.count > visibleRowCapacity)
+  }
+
   var visibleItems: [ScheduleMonthItem] {
-    guard visibleItemLimit > 0 else { return [] }
-    return Array(items.prefix(visibleItemLimit))
+    let itemLimit = shouldShowOverflowRow
+      ? max(0, visibleRowCapacity - 1)
+      : visibleRowCapacity
+    return Array(items.prefix(itemLimit))
   }
 
   var hiddenItemCount: Int {
-    hiddenAllDayItemCount + max(0, items.count - visibleItems.count)
+    guard shouldShowOverflowRow else { return 0 }
+    return hiddenAllDayItemCount + max(0, items.count - visibleItems.count)
   }
 
   var body: some View {
-    Button(action: onSelect) {
-      VStack(alignment: .leading, spacing: 3) {
-        dayNumber
-          .frame(height: ScheduleMonthLayoutMetrics.dayNumberHeight)
-          .frame(maxWidth: .infinity, alignment: .trailing)
+    ZStack(alignment: .topLeading) {
+      cellBackground
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
 
-        if reservedAllDayRowCount > 0 {
-          Color.clear
-            .frame(height: CGFloat(reservedAllDayRowCount) * ScheduleMonthLayoutMetrics.allDaySpanRowHeight)
-        }
-
-        ForEach(visibleItems) { item in
-          ScheduleMonthCompactItemRow(
-            item: item,
-            isPastCompletedTask: isPastCompletedTask(item)
-          )
-        }
-
-        if hiddenItemCount > 0 {
-          Text("+\(hiddenItemCount)개")
-            .font(.system(size: 12, weight: .medium))
-            .foregroundStyle(.secondary)
-            .lineLimit(1)
-            .padding(.leading, 5)
-        }
-
-        Spacer(minLength: 0)
+      Button(action: onSelect) {
+        cellContent
+          .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+          .contentShape(Rectangle())
       }
-      .padding(.horizontal, ScheduleMonthLayoutMetrics.dayCellHorizontalPadding)
-      .padding(.vertical, ScheduleMonthLayoutMetrics.dayCellTopPadding)
-      .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-      .contentShape(Rectangle())
-      .background(cellBackground)
+      .buttonStyle(.plain)
     }
-    .buttonStyle(.plain)
+    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    .clipped()
+  }
+
+  private var cellContent: some View {
+    VStack(alignment: .leading, spacing: 3) {
+      dayNumber
+        .frame(height: ScheduleMonthLayoutMetrics.dayNumberHeight)
+        .frame(maxWidth: .infinity, alignment: .trailing)
+
+      if reservedAllDayRowCount > 0 {
+        Color.clear
+          .frame(height: CGFloat(reservedAllDayRowCount) * ScheduleMonthLayoutMetrics.allDaySpanRowHeight)
+      }
+
+      ForEach(visibleItems) { item in
+        ScheduleMonthCompactItemRow(
+          item: item,
+          isPastCompletedTask: isPastCompletedTask(item)
+        )
+      }
+
+      if hiddenItemCount > 0 {
+        Text("+\(hiddenItemCount)개")
+          .font(.system(size: 12, weight: .medium))
+          .foregroundStyle(.secondary)
+          .lineLimit(1)
+          .padding(.leading, 5)
+          .frame(height: ScheduleMonthLayoutMetrics.itemRowHeight, alignment: .leading)
+      }
+
+      Spacer(minLength: 0)
+    }
+    .padding(.horizontal, ScheduleMonthLayoutMetrics.dayCellHorizontalPadding)
+    .padding(.vertical, ScheduleMonthLayoutMetrics.dayCellTopPadding)
   }
 
   @ViewBuilder
@@ -429,16 +505,12 @@ private struct ScheduleMonthDayCell: View {
 
   @ViewBuilder
   private var cellBackground: some View {
-    ZStack {
-      if calendar.isDate(day, inSameDayAs: today) {
-        Rectangle()
-          .fill(Color.accentColor.opacity(0.055))
-      }
-      if isSelected {
-        RoundedRectangle(cornerRadius: 6, style: .continuous)
-          .fill(Color.orange.opacity(0.16))
-          .padding(2)
-      }
+    if isSelected {
+      Rectangle()
+        .fill(Color.accentColor.opacity(0.066))
+    } else if calendar.isDate(day, inSameDayAs: today) {
+      Rectangle()
+        .fill(Color.accentColor.opacity(0.055))
     }
   }
 }
@@ -482,6 +554,12 @@ private struct ScheduleMonthCompactItemRow: View {
   let item: ScheduleMonthItem
   let isPastCompletedTask: Bool
 
+  private var rowOpacity: Double {
+    if isPastCompletedTask { return 0.384 }
+    if item.isBackgroundCalendar { return 0.48 }
+    return 1
+  }
+
   var body: some View {
     HStack(spacing: 4) {
       marker
@@ -501,7 +579,7 @@ private struct ScheduleMonthCompactItemRow: View {
       }
     }
     .frame(height: ScheduleMonthLayoutMetrics.itemRowHeight)
-    .opacity(isPastCompletedTask || item.isBackgroundCalendar ? 0.48 : 1)
+    .opacity(rowOpacity)
   }
 
   @ViewBuilder

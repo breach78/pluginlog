@@ -340,8 +340,8 @@ enum ScheduleMonthContinuousWindow {
 }
 
 enum ScheduleMonthOverflowPolicy {
-  static let titleAndPaddingHeight: CGFloat = 34
-  static let rowHeight: CGFloat = 20
+  static let titleAndPaddingHeight: CGFloat = 37
+  static let rowHeight: CGFloat = 21
 
   static func visibleItemLimit(cellHeight: CGFloat) -> Int {
     let available = max(0, cellHeight - titleAndPaddingHeight)
