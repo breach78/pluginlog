@@ -197,6 +197,7 @@ extension MainWorkspaceView {
     inspectorSelection = nil
     activeWorkspaceProjectListPanelProjectID = nil
     activeWorkspaceCalendarEventEditPanelTarget = nil
+    activeWorkspaceScheduleMonthDetailTarget = nil
     appState.isHoveringTimelineTaskBadgeOverlay = false
     appState.isHoveringTimelineDayHeaderOverlay = false
     activeWorkspaceTaskEditPanelTarget = target
@@ -228,6 +229,7 @@ extension MainWorkspaceView {
     inspectorSelection = nil
     activeWorkspaceTaskEditPanelTarget = nil
     activeWorkspaceCalendarEventEditPanelTarget = nil
+    activeWorkspaceScheduleMonthDetailTarget = nil
     appState.isHoveringTimelineTaskBadgeOverlay = false
     appState.isHoveringTimelineDayHeaderOverlay = false
     activeWorkspaceProjectListPanelProjectID = projectID
@@ -767,6 +769,7 @@ extension MainWorkspaceView {
     inspectorSelection = nil
     activeWorkspaceTaskEditPanelTarget = nil
     activeWorkspaceProjectListPanelProjectID = nil
+    activeWorkspaceScheduleMonthDetailTarget = nil
     appState.isHoveringTimelineTaskBadgeOverlay = false
     appState.isHoveringTimelineDayHeaderOverlay = false
     activeWorkspaceCalendarEventEditPanelTarget = WorkspaceCalendarEventEditPanelTarget(
@@ -778,6 +781,38 @@ extension MainWorkspaceView {
 
   func dismissCalendarEventEditor() {
     activeWorkspaceCalendarEventEditPanelTarget = nil
+  }
+
+  func showScheduleMonthDetail(_ target: ScheduleMonthDetailPanelTarget) {
+    showArchive = false
+    inspectorSelection = nil
+    activeWorkspaceTaskEditPanelTarget = nil
+    activeWorkspaceCalendarEventEditPanelTarget = nil
+    activeWorkspaceProjectListPanelProjectID = nil
+    appState.isHoveringTimelineTaskBadgeOverlay = false
+    appState.isHoveringTimelineDayHeaderOverlay = false
+    activeWorkspaceScheduleMonthDetailTarget = target
+  }
+
+  func dismissScheduleMonthDetail() {
+    activeWorkspaceScheduleMonthDetailTarget = nil
+  }
+
+  func openScheduleMonthDetailItem(_ item: ScheduleMonthItem) {
+    switch item.source {
+    case .workspaceTask(let taskID, let projectID):
+      showTimelineTaskEditor(
+        taskID: taskID,
+        projectID: projectID,
+        title: item.title,
+        date: item.startDate,
+        hasExplicitTime: item.hasExplicitTime,
+        durationMinutes: item.durationMinutes
+      )
+    case .calendarEvent:
+      guard let event = item.calendarEvent else { return }
+      showCalendarEventEditor(event)
+    }
   }
 
   func loadCalendarEventEditFields(
@@ -1216,6 +1251,7 @@ extension MainWorkspaceView {
     activeWorkspaceTaskEditPanelTarget != nil
       || activeWorkspaceCalendarEventEditPanelTarget != nil
       || activeWorkspaceProjectListPanelProjectID != nil
+      || activeWorkspaceScheduleMonthDetailTarget != nil
   }
 
   @discardableResult
@@ -1230,6 +1266,10 @@ extension MainWorkspaceView {
     }
     if activeWorkspaceProjectListPanelProjectID != nil {
       dismissWorkspaceProjectListPanel()
+      return true
+    }
+    if activeWorkspaceScheduleMonthDetailTarget != nil {
+      dismissScheduleMonthDetail()
       return true
     }
     return false

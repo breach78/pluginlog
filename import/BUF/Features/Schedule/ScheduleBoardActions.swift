@@ -359,6 +359,12 @@ extension ScheduleBoardView {
   }
 
   func calendarDisplayRange() -> ClosedRange<Date> {
+    if displayMode == .month {
+      return ScheduleMonthCalendar.visibleDateRange(
+        containing: monthAnchorDate,
+        calendar: calendar
+      )
+    }
     let lowerDay = calendar.date(byAdding: .day, value: -pastDayBuffer, to: today) ?? today
     let upperDay = calendar.date(byAdding: .day, value: futureDayWindow + 1, to: today) ?? today
     return lowerDay...upperDay

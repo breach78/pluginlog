@@ -29,6 +29,7 @@ extension MainWorkspaceView {
     HStack(spacing: workspaceTitlebarControlSpacing) {
       dailyJournalButton
       viewModeToggleButton
+      scheduleDisplayModeToggle
 
       workspaceQuickAddSection
       overdueRolloverButton
@@ -115,6 +116,21 @@ extension MainWorkspaceView {
     .buttonStyle(.plain)
     .help("저널 열기")
     .accessibilityLabel("저널 열기")
+  }
+
+  @ViewBuilder
+  var scheduleDisplayModeToggle: some View {
+    if appState.viewMode == .schedule {
+      Picker("", selection: scheduleDisplayModeBinding) {
+        ForEach(ScheduleBoardDisplayMode.allCases) { mode in
+          Text(mode.title).tag(mode)
+        }
+      }
+      .pickerStyle(.segmented)
+      .labelsHidden()
+      .frame(width: 78, height: workspaceTitlebarControlHeight)
+      .help("스케줄 주/월 보기 전환")
+    }
   }
 
   var nextViewMode: ViewMode? {

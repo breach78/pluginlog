@@ -625,6 +625,7 @@ struct ScheduleBoardView: View {
   @EnvironmentObject var appState: AppState
   @Environment(\.undoManager) var undoManager
 
+  @Binding var displayMode: ScheduleBoardDisplayMode
   let projectIDs: [UUID]
   let quickAddProjectIDs: [UUID]?
   let selectedProjectID: UUID?
@@ -637,6 +638,7 @@ struct ScheduleBoardView: View {
   let isActive: Bool
   let onEditTask: (WorkspaceTaskEditPanelTarget) -> Void
   let onEditCalendarEvent: (ScheduleCalendarEvent) -> Void
+  let onShowMonthDetail: (ScheduleMonthDetailPanelTarget) -> Void
 
   @AppStorage("BrainUnfog.ScheduleBoard.allDayVisibleRowCount")
   var storedAllDayVisibleRowCount: Int = 4
@@ -689,6 +691,8 @@ struct ScheduleBoardView: View {
   @State var viewportSyncDiagnostic: ScheduleViewportSyncDiagnostic?
   @State var hoveredScheduleDayHeaderDate: Date?
   @State var activeScheduleDayHeaderDate: Date?
+  @State var scheduleMonthAnchorDate: Date?
+  @State var selectedScheduleMonthDate: Date?
   @State var scheduleDayHeaderShowWorkItem: DispatchWorkItem?
   @State var scheduleDayHeaderDetachWorkItem: DispatchWorkItem?
   @State var isCalendarPickerShown = false
@@ -755,6 +759,7 @@ struct ScheduleBoardView: View {
   }
 
   init(
+    displayMode: Binding<ScheduleBoardDisplayMode> = .constant(.week),
     projectIDs: [UUID] = [],
     quickAddProjectIDs: [UUID]? = nil,
     selectedProjectID: UUID? = nil,
@@ -766,8 +771,10 @@ struct ScheduleBoardView: View {
     onTapEmptyArea: @escaping () -> Void,
     isActive: Bool,
     onEditTask: @escaping (WorkspaceTaskEditPanelTarget) -> Void = { _ in },
-    onEditCalendarEvent: @escaping (ScheduleCalendarEvent) -> Void = { _ in }
+    onEditCalendarEvent: @escaping (ScheduleCalendarEvent) -> Void = { _ in },
+    onShowMonthDetail: @escaping (ScheduleMonthDetailPanelTarget) -> Void = { _ in }
   ) {
+    _displayMode = displayMode
     self.projectIDs = projectIDs
     self.quickAddProjectIDs = quickAddProjectIDs
     self.selectedProjectID = selectedProjectID
@@ -780,6 +787,7 @@ struct ScheduleBoardView: View {
     self.isActive = isActive
     self.onEditTask = onEditTask
     self.onEditCalendarEvent = onEditCalendarEvent
+    self.onShowMonthDetail = onShowMonthDetail
   }
 
   var allDayDropZoneFrame: CGRect {
@@ -833,6 +841,15 @@ struct ScheduleBoardView: View {
     Array(dayRange).compactMap { offset in
       calendar.date(byAdding: .day, value: offset, to: today)
     }
+  }
+  var monthAnchorDate: Date {
+    scheduleMonthAnchorDate ?? today
+  }
+  var monthAnchorDateBinding: Binding<Date> {
+    Binding(
+      get: { monthAnchorDate },
+      set: { scheduleMonthAnchorDate = calendar.startOfDay(for: $0) }
+    )
   }
   var dayIndexByDate: [Date: Int] {
     Dictionary(uniqueKeysWithValues: days.enumerated().map { index, day in (day, index) })
@@ -1098,7 +1115,95 @@ struct ScheduleBoardView: View {
   }
 
   var body: some View {
-    scheduleBoardRoot
+    switch displayMode {
+    case .week:
+      scheduleBoardRoot
+    case .month:
+      scheduleMonthRoot
+    }
+  }
+
+  var scheduleMonthRoot: some View {
+    let taskSnapshot = resolvedScheduleTaskSnapshot(
+      preferCached: appState.isEditorMotionSuppressed || !isActive
+    )
+    let projection = appState.resolvedScheduleCalendarOverlayProjection()
+    let monthItems = ScheduleMonthItemFactory.items(
+      workspaceTasks: taskSnapshot.taskDescriptors,
+      foregroundEvents: projection.foregroundEvents,
+      backgroundEvents: projection.backgroundEvents,
+      calendar: calendar
+    )
+
+    return ScheduleMonthView(
+      anchorDate: monthAnchorDateBinding,
+      today: today,
+      items: monthItems,
+      selectedDate: selectedScheduleMonthDate,
+      calendar: calendar,
+      onSelectDay: { day, items in
+        selectedScheduleMonthDate = day
+        onShowMonthDetail(ScheduleMonthDetailPanelTarget(date: day, items: items))
+      }
+    )
+    .onAppear {
+      if scheduleMonthAnchorDate == nil {
+        scheduleMonthAnchorDate = today
+      }
+      if isActive {
+        refreshScheduledTaskSnapshotIfNeeded(force: true, snapshot: taskSnapshot)
+        refreshCalendarOverlay(force: projection.accessDenied)
+      }
+    }
+    .task(
+      id: scheduleWorkspaceLoadSignature(
+        projectIDs: activeProjectIDs,
+        workspaceTreeRevision: appState.workspaceTreeRevision
+      )
+    ) {
+      guard isActive else { return }
+      await reloadWorkspaceScheduleProjectDetails(for: activeProjectIDs)
+    }
+    .onChange(of: monthAnchorDate) { _, _ in
+      guard isActive, displayMode == .month else { return }
+      refreshCalendarOverlay(force: true)
+    }
+    .onChange(of: appState.scheduleJumpToTodayToken) { _, _ in
+      guard displayMode == .month else { return }
+      scheduleMonthAnchorDate = today
+    }
+    .onChange(of: appState.scheduleJumpToDateToken) { _, _ in
+      guard displayMode == .month else { return }
+      scheduleMonthAnchorDate = appState.scheduleJumpTargetDate ?? today
+    }
+    .onChange(of: monthTaskSourceSignature) { _, _ in
+      guard isActive, displayMode == .month, !appState.isEditorMotionSuppressed else { return }
+      refreshScheduledTaskSnapshotIfNeeded(force: false, snapshot: taskSnapshot)
+    }
+    .onChange(of: appState.currentDayChangeToken) { _, _ in
+      guard isActive, displayMode == .month else { return }
+      refreshCalendarOverlay(force: true)
+    }
+    .onChange(of: isActive) { _, active in
+      if active {
+        Task {
+          await reloadWorkspaceScheduleProjectDetails(for: activeProjectIDs)
+        }
+        refreshScheduledTaskSnapshotIfNeeded(force: false, snapshot: taskSnapshot)
+        refreshCalendarOverlay(force: true)
+      } else {
+        calendarOverlayRefreshTask?.cancel()
+        calendarOverlayRefreshTask = nil
+      }
+    }
+    .onDisappear {
+      calendarOverlayRefreshTask?.cancel()
+      calendarOverlayRefreshTask = nil
+    }
+  }
+
+  var monthTaskSourceSignature: Int {
+    scheduleTaskSourceSignature
   }
 
   var scheduleBoardRoot: some View {

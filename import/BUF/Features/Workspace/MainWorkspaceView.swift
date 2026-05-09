@@ -450,6 +450,7 @@ enum WorkspaceUserDefaultsKey {
   static let timelineProjectListSortModeReminderOrderMigration =
     "workspace.timelineProjectListSortModeReminderOrderMigration"
   static let timelineShowsHiddenProjectLists = "workspace.timelineShowsHiddenProjectLists"
+  static let scheduleDisplayMode = "workspace.scheduleDisplayMode"
 }
 
 struct MainWorkspaceView: View {
@@ -457,6 +458,8 @@ struct MainWorkspaceView: View {
   var projectListSortModeRaw = ProjectListSortMode.manual.rawValue
   @AppStorage(WorkspaceUserDefaultsKey.timelineProjectListSortMode)
   var timelineProjectListSortModeRaw = ProjectListSortMode.manual.rawValue
+  @AppStorage(WorkspaceUserDefaultsKey.scheduleDisplayMode)
+  var scheduleDisplayModeRaw = ScheduleBoardDisplayMode.week.rawValue
   @AppStorage(WorkspaceUserDefaultsKey.timelineShowsHiddenProjectLists)
   var timelineShowsHiddenProjectLists = false
   @AppStorage(ProjectProgressStage.boardOrderRevisionStorageKey)
@@ -482,6 +485,7 @@ struct MainWorkspaceView: View {
   @State var activeWorkspaceProjectListPanelProjectID: UUID?
   @State var activeWorkspaceTaskEditPanelTarget: WorkspaceTaskEditPanelTarget?
   @State var activeWorkspaceCalendarEventEditPanelTarget: WorkspaceCalendarEventEditPanelTarget?
+  @State var activeWorkspaceScheduleMonthDetailTarget: ScheduleMonthDetailPanelTarget?
   @State var suppressedWorkspaceTaskEditorOpenUntil: Date = .distantPast
   @State var hiddenTimelineProjectIDs = TimelineHiddenProjectStore.load()
 
@@ -803,6 +807,22 @@ struct MainWorkspaceView: View {
     return activeQuickAddProjects.first?.id
   }
 
+  var scheduleDisplayMode: ScheduleBoardDisplayMode {
+    get {
+      ScheduleBoardDisplayMode.resolved(rawValue: scheduleDisplayModeRaw)
+    }
+    nonmutating set {
+      scheduleDisplayModeRaw = newValue.rawValue
+    }
+  }
+
+  var scheduleDisplayModeBinding: Binding<ScheduleBoardDisplayMode> {
+    Binding(
+      get: { scheduleDisplayMode },
+      set: { scheduleDisplayMode = $0 }
+    )
+  }
+
   var workspaceSearchResults: [WorkspaceSearchResult] {
     WorkspaceSearchService.sorted(results: workspaceOnlySearchResults)
   }
@@ -1101,6 +1121,9 @@ struct MainWorkspaceView: View {
         chromeState.syncBoardLoadingState(isLoaded: isLoaded, currentMode: appState.viewMode)
       }
       .onChange(of: appState.viewMode) { _, newMode in
+        if newMode != .schedule {
+          dismissScheduleMonthDetail()
+        }
         guard appState.boardsLoaded else { return }
         chromeState.syncBoardLoadingState(isLoaded: true, currentMode: newMode)
       }

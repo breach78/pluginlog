@@ -85,6 +85,7 @@ extension MainWorkspaceView {
       )
     case .schedule:
       ScheduleBoardView(
+        displayMode: scheduleDisplayModeBinding,
         projectIDs: timelineSelectionProjectIDs,
         quickAddProjectIDs: scheduleQuickAddProjectIDs,
         selectedProjectID: appState.selectedProjectID,
@@ -100,6 +101,9 @@ extension MainWorkspaceView {
         },
         onEditCalendarEvent: { event in
           showCalendarEventEditor(event)
+        },
+        onShowMonthDetail: { target in
+          showScheduleMonthDetail(target)
         }
       )
       .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -194,7 +198,8 @@ extension MainWorkspaceView {
       selection: inspectorSelection,
       taskEditTarget: activeWorkspaceTaskEditPanelTarget,
       calendarEventEditTarget: activeWorkspaceCalendarEventEditPanelTarget,
-      projectListPanelProjectID: activeWorkspaceProjectListPanelProjectID
+      projectListPanelProjectID: activeWorkspaceProjectListPanelProjectID,
+      scheduleMonthDetailTarget: activeWorkspaceScheduleMonthDetailTarget
     )
   }
 
@@ -203,7 +208,8 @@ extension MainWorkspaceView {
       selection: inspectorSelection,
       taskEditTarget: activeWorkspaceTaskEditPanelTarget,
       calendarEventEditTarget: activeWorkspaceCalendarEventEditPanelTarget,
-      projectListPanelProjectID: activeWorkspaceProjectListPanelProjectID
+      projectListPanelProjectID: activeWorkspaceProjectListPanelProjectID,
+      scheduleMonthDetailTarget: activeWorkspaceScheduleMonthDetailTarget
     )
   }
 }

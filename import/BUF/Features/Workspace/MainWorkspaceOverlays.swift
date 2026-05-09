@@ -7,10 +7,12 @@ extension MainWorkspaceView {
     selection: UUID?,
     taskEditTarget: WorkspaceTaskEditPanelTarget?,
     calendarEventEditTarget: WorkspaceCalendarEventEditPanelTarget?,
-    projectListPanelProjectID: UUID?
+    projectListPanelProjectID: UUID?,
+    scheduleMonthDetailTarget: ScheduleMonthDetailPanelTarget?
   ) -> some View {
     let isEditPanelVisible =
       taskEditTarget != nil || calendarEventEditTarget != nil || projectListPanelProjectID != nil
+        || scheduleMonthDetailTarget != nil
     let isVisible = (selection != nil && !showArchive) || isEditPanelVisible
     let reservedWidth = isEditPanelVisible ? workspaceTaskEditPanelWidth : inspectorFixedWidth
 
@@ -28,10 +30,12 @@ extension MainWorkspaceView {
     selection: UUID?,
     taskEditTarget: WorkspaceTaskEditPanelTarget?,
     calendarEventEditTarget: WorkspaceCalendarEventEditPanelTarget?,
-    projectListPanelProjectID: UUID?
+    projectListPanelProjectID: UUID?,
+    scheduleMonthDetailTarget: ScheduleMonthDetailPanelTarget?
   ) -> some View {
     let isEditPanelVisible =
       taskEditTarget != nil || calendarEventEditTarget != nil || projectListPanelProjectID != nil
+        || scheduleMonthDetailTarget != nil
     let isVisible = (selection != nil && !showArchive) || isEditPanelVisible
 
     GeometryReader { _ in
@@ -46,6 +50,10 @@ extension MainWorkspaceView {
             .transition(.move(edge: .trailing).combined(with: .opacity))
         } else if let projectListPanelProjectID {
           workspaceProjectListPanel(projectID: projectListPanelProjectID)
+            .zIndex(2)
+            .transition(.move(edge: .trailing).combined(with: .opacity))
+        } else if let scheduleMonthDetailTarget {
+          workspaceScheduleMonthDetailPanel(scheduleMonthDetailTarget)
             .zIndex(2)
             .transition(.move(edge: .trailing).combined(with: .opacity))
         } else if let selection, !showArchive {
@@ -82,6 +90,30 @@ extension MainWorkspaceView {
       }
     )
     .id(projectID.uuidString)
+    .frame(width: workspaceTaskEditPanelWidth, alignment: .topLeading)
+    .frame(maxHeight: .infinity, alignment: .topLeading)
+    .background(Color(nsColor: NSColor(calibratedWhite: 1, alpha: 1)))
+    .overlay(alignment: .leading) {
+      Rectangle()
+        .fill(Color(nsColor: .separatorColor))
+        .frame(width: 1)
+    }
+  }
+
+  func workspaceScheduleMonthDetailPanel(
+    _ target: ScheduleMonthDetailPanelTarget
+  ) -> some View {
+    ScheduleMonthDetailPanelContent(
+      target: target,
+      calendar: .autoupdatingCurrent,
+      onOpenItem: { item in
+        openScheduleMonthDetailItem(item)
+      },
+      onClose: {
+        dismissScheduleMonthDetail()
+      }
+    )
+    .id(target.id)
     .frame(width: workspaceTaskEditPanelWidth, alignment: .topLeading)
     .frame(maxHeight: .infinity, alignment: .topLeading)
     .background(Color(nsColor: NSColor(calibratedWhite: 1, alpha: 1)))
