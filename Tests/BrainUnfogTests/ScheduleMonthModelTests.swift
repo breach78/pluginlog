@@ -49,8 +49,8 @@ final class ScheduleMonthModelTests: XCTestCase {
   }
 
   func testOverflowLimitShrinksAsCellHeightShrinks() {
-    XCTAssertEqual(ScheduleMonthOverflowPolicy.visibleItemLimit(cellHeight: 150), 5)
-    XCTAssertEqual(ScheduleMonthOverflowPolicy.visibleItemLimit(cellHeight: 92), 2)
+    XCTAssertEqual(ScheduleMonthOverflowPolicy.visibleItemLimit(cellHeight: 150), 6)
+    XCTAssertEqual(ScheduleMonthOverflowPolicy.visibleItemLimit(cellHeight: 92), 3)
     XCTAssertEqual(ScheduleMonthOverflowPolicy.visibleItemLimit(cellHeight: 48), 1)
   }
 

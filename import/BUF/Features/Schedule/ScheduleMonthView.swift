@@ -6,7 +6,7 @@ private enum ScheduleMonthLayoutMetrics {
   static let dayCellTopPadding: CGFloat = 5
   static let dayCellHorizontalPadding: CGFloat = 6
   static let itemRowHeight: CGFloat = 18
-  static let itemRowSpacing: CGFloat = 3
+  static let itemRowSpacing: CGFloat = 1
   static let allDaySpanHeight: CGFloat = 18
   static let allDaySpanRowHeight: CGFloat = 20
   static let allDaySpanTopOffset: CGFloat = dayCellTopPadding + dayNumberHeight + itemRowSpacing
@@ -441,7 +441,7 @@ private struct ScheduleMonthDayCell: View {
   }
 
   private var cellContent: some View {
-    VStack(alignment: .leading, spacing: 3) {
+    VStack(alignment: .leading, spacing: ScheduleMonthLayoutMetrics.itemRowSpacing) {
       dayNumber
         .frame(height: ScheduleMonthLayoutMetrics.dayNumberHeight)
         .frame(maxWidth: .infinity, alignment: .trailing)
@@ -460,7 +460,7 @@ private struct ScheduleMonthDayCell: View {
 
       if hiddenItemCount > 0 {
         Text("+\(hiddenItemCount)개")
-          .font(.system(size: 12, weight: .medium))
+          .font(.system(size: 13, weight: .medium))
           .foregroundStyle(.secondary)
           .lineLimit(1)
           .padding(.leading, 5)
@@ -529,7 +529,7 @@ private struct ScheduleMonthAllDaySpanRow: View {
         .foregroundStyle(itemColor)
 
       Text(item.title)
-        .font(.system(size: 12, weight: .medium))
+        .font(.system(size: 13, weight: .medium))
         .foregroundStyle(.primary)
         .lineLimit(1)
         .truncationMode(.tail)
@@ -565,7 +565,7 @@ private struct ScheduleMonthCompactItemRow: View {
       marker
 
       Text(item.title)
-        .font(.system(size: 12, weight: .regular))
+        .font(.system(size: 13, weight: .regular))
         .foregroundStyle(textColor)
         .lineLimit(1)
         .truncationMode(.tail)
@@ -573,7 +573,7 @@ private struct ScheduleMonthCompactItemRow: View {
       if let timeText {
         Spacer(minLength: 2)
         Text(timeText)
-          .font(.system(size: 10))
+          .font(.system(size: 10.5))
           .foregroundStyle(.secondary)
           .lineLimit(1)
       }
