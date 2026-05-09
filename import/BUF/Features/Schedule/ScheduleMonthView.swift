@@ -27,7 +27,7 @@ struct ScheduleMonthView: View {
   private let gridLineColor = Color.primary.opacity(0.10)
 
   var visibleDays: [Date] {
-    ScheduleMonthCalendar.visibleDays(containing: anchorDate, calendar: calendar)
+    ScheduleMonthContinuousWindow.visibleDays(containing: anchorDate, calendar: calendar)
   }
 
   var monthStart: Date {
@@ -40,6 +40,12 @@ struct ScheduleMonthView: View {
       visibleDays: visibleDays,
       calendar: calendar
     )
+  }
+
+  var weekStartDates: [Date] {
+    stride(from: 0, to: visibleDays.count, by: 7).map { offset in
+      visibleDays[offset]
+    }
   }
 
   var body: some View {
@@ -60,16 +66,12 @@ struct ScheduleMonthView: View {
         weekdayHeader
           .frame(height: weekdayHeaderHeight)
 
-        monthGrid(cellHeight: cellHeight, visibleItemLimit: visibleItemLimit)
+        monthWeekScroller(cellHeight: cellHeight, visibleItemLimit: visibleItemLimit)
           .frame(height: availableGridHeight)
+          .clipped()
       }
       .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
       .background(Color(nsColor: .windowBackgroundColor))
-      .background {
-        ScheduleMonthScrollEventMonitor { monthDelta in
-          moveMonth(by: monthDelta)
-        }
-      }
     }
   }
 
@@ -130,29 +132,52 @@ struct ScheduleMonthView: View {
     }
   }
 
-  private func monthGrid(cellHeight: CGFloat, visibleItemLimit: Int) -> some View {
-    VStack(spacing: 0) {
-      ForEach(0..<6, id: \.self) { weekIndex in
-        let weekDays = (0..<7).map { visibleDays[weekIndex * 7 + $0] }
-        ScheduleMonthWeekRow(
-          weekDays: weekDays,
-          monthStart: monthStart,
-          today: today,
-          itemsByDay: itemsByDay,
-          visibleItemLimit: visibleItemLimit,
-          selectedDate: selectedDate,
-          calendar: calendar,
-          gridLineColor: gridLineColor,
-          onSelectDay: select(day:)
-        )
-        .frame(height: cellHeight)
-        .overlay(alignment: .bottom) {
-          Rectangle()
-            .fill(weekIndex == 5 ? Color.clear : gridLineColor)
-            .frame(height: 1)
+  private func monthWeekScroller(
+    cellHeight: CGFloat,
+    visibleItemLimit: Int
+  ) -> some View {
+    ScrollViewReader { proxy in
+      ScrollView(.vertical) {
+        LazyVStack(spacing: 0) {
+          ForEach(weekStartDates, id: \.self) { weekStart in
+            let weekDays = weekDays(startingAt: weekStart)
+            ScheduleMonthWeekRow(
+              weekDays: weekDays,
+              monthStart: displayMonthStart(for: weekStart),
+              today: today,
+              itemsByDay: itemsByDay,
+              visibleItemLimit: visibleItemLimit,
+              selectedDate: selectedDate,
+              calendar: calendar,
+              gridLineColor: gridLineColor,
+              onSelectDay: select(day:)
+            )
+            .id(weekStart)
+            .frame(height: cellHeight)
+            .overlay(alignment: .bottom) {
+              Rectangle()
+                .fill(gridLineColor)
+                .frame(height: 1)
+            }
+          }
         }
       }
+      .scrollIndicators(.never)
+      .onAppear {
+        scrollToAnchorWeek(using: proxy, animated: false)
+      }
+      .onChange(of: anchorDate) { _, _ in
+        scrollToAnchorWeek(using: proxy, animated: true)
+      }
     }
+  }
+
+  private func itemsByDay(for visibleDays: [Date]) -> [Date: [ScheduleMonthItem]] {
+    ScheduleMonthCalendar.itemsByDay(
+      items: items,
+      visibleDays: visibleDays,
+      calendar: calendar
+    )
   }
 
   private var weekdaySymbols: [String] {
@@ -165,12 +190,36 @@ struct ScheduleMonthView: View {
 
   private func select(day: Date) {
     let normalizedDay = calendar.startOfDay(for: day)
-    onSelectDay(normalizedDay, itemsByDay[normalizedDay] ?? [])
+    let dayItems = itemsByDay(for: [normalizedDay])[normalizedDay] ?? []
+    onSelectDay(normalizedDay, dayItems)
   }
 
   private func moveMonth(by value: Int) {
     if let next = calendar.date(byAdding: .month, value: value, to: anchorDate) {
       anchorDate = next
+    }
+  }
+
+  private func weekDays(startingAt weekStart: Date) -> [Date] {
+    (0..<7).compactMap { offset in
+      calendar.date(byAdding: .day, value: offset, to: weekStart)
+    }
+  }
+
+  private func displayMonthStart(for weekStart: Date) -> Date {
+    let middleOfWeek = calendar.date(byAdding: .day, value: 3, to: weekStart) ?? weekStart
+    return ScheduleMonthCalendar.monthStart(containing: middleOfWeek, calendar: calendar)
+  }
+
+  private func scrollToAnchorWeek(using proxy: ScrollViewProxy, animated: Bool) {
+    let target = ScheduleMonthContinuousWindow.weekStart(containing: anchorDate, calendar: calendar)
+    let action = {
+      proxy.scrollTo(target, anchor: .top)
+    }
+    if animated {
+      withAnimation(.easeOut(duration: 0.18), action)
+    } else {
+      action()
     }
   }
 
@@ -289,85 +338,6 @@ private struct ScheduleMonthWeekRow: View {
   }
 }
 
-private struct ScheduleMonthScrollEventMonitor: NSViewRepresentable {
-  let onMonthScroll: (Int) -> Void
-
-  func makeNSView(context: Context) -> ScheduleMonthScrollMonitorNSView {
-    let view = ScheduleMonthScrollMonitorNSView()
-    view.onMonthScroll = onMonthScroll
-    return view
-  }
-
-  func updateNSView(_ nsView: ScheduleMonthScrollMonitorNSView, context: Context) {
-    nsView.onMonthScroll = onMonthScroll
-  }
-}
-
-private final class ScheduleMonthScrollMonitorNSView: NSView {
-  var onMonthScroll: ((Int) -> Void)?
-
-  private var eventMonitor: Any?
-  private var accumulatedVerticalDelta: CGFloat = 0
-  private var lastNavigationTimestamp: TimeInterval = 0
-
-  override var isOpaque: Bool { false }
-
-  override func viewDidMoveToWindow() {
-    super.viewDidMoveToWindow()
-    refreshEventMonitor()
-  }
-
-  private func refreshEventMonitor() {
-    removeEventMonitor()
-    guard window != nil else { return }
-    eventMonitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { [weak self] event in
-      self?.handleScrollEvent(event) ?? event
-    }
-  }
-
-  private func removeEventMonitor() {
-    if let eventMonitor {
-      NSEvent.removeMonitor(eventMonitor)
-      self.eventMonitor = nil
-    }
-  }
-
-  private func handleScrollEvent(_ event: NSEvent) -> NSEvent? {
-    guard let window, event.window === window else { return event }
-    guard bounds.contains(convert(event.locationInWindow, from: nil)) else { return event }
-
-    let horizontalMagnitude = abs(event.scrollingDeltaX)
-    let verticalMagnitude = abs(event.scrollingDeltaY)
-    guard verticalMagnitude > horizontalMagnitude, verticalMagnitude > 0.2 else {
-      return event
-    }
-
-    if event.phase.contains(.began) {
-      accumulatedVerticalDelta = 0
-    }
-
-    accumulatedVerticalDelta += event.scrollingDeltaY
-    let threshold: CGFloat = event.hasPreciseScrollingDeltas ? 80 : 3
-    let now = event.timestamp
-
-    if abs(accumulatedVerticalDelta) >= threshold,
-       now - lastNavigationTimestamp > 0.18 {
-      onMonthScroll?(accumulatedVerticalDelta < 0 ? 1 : -1)
-      accumulatedVerticalDelta = 0
-      lastNavigationTimestamp = now
-    }
-
-    let gestureEnded = event.phase.contains(.ended) || event.phase.contains(.cancelled)
-    let momentumEnded =
-      event.momentumPhase.contains(.ended) || event.momentumPhase.contains(.cancelled)
-    if gestureEnded || momentumEnded {
-      accumulatedVerticalDelta = 0
-    }
-
-    return nil
-  }
-}
-
 private struct ScheduleMonthDayCell: View {
   let day: Date
   let monthStart: Date
@@ -402,7 +372,10 @@ private struct ScheduleMonthDayCell: View {
         }
 
         ForEach(visibleItems) { item in
-          ScheduleMonthCompactItemRow(item: item)
+          ScheduleMonthCompactItemRow(
+            item: item,
+            isPastCompletedTask: isPastCompletedTask(item)
+          )
         }
 
         if hiddenItemCount > 0 {
@@ -419,7 +392,7 @@ private struct ScheduleMonthDayCell: View {
       .padding(.vertical, ScheduleMonthLayoutMetrics.dayCellTopPadding)
       .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
       .contentShape(Rectangle())
-      .background(selectionBackground)
+      .background(cellBackground)
     }
     .buttonStyle(.plain)
   }
@@ -448,12 +421,24 @@ private struct ScheduleMonthDayCell: View {
       : .secondary.opacity(0.55)
   }
 
+  private func isPastCompletedTask(_ item: ScheduleMonthItem) -> Bool {
+    guard item.isCompleted else { return false }
+    guard case .workspaceTask = item.source else { return false }
+    return calendar.startOfDay(for: item.startDate) < calendar.startOfDay(for: today)
+  }
+
   @ViewBuilder
-  private var selectionBackground: some View {
-    if isSelected {
-      RoundedRectangle(cornerRadius: 6, style: .continuous)
-        .fill(Color.accentColor.opacity(0.08))
-        .padding(2)
+  private var cellBackground: some View {
+    ZStack {
+      if calendar.isDate(day, inSameDayAs: today) {
+        Rectangle()
+          .fill(Color.accentColor.opacity(0.055))
+      }
+      if isSelected {
+        RoundedRectangle(cornerRadius: 6, style: .continuous)
+          .fill(Color.orange.opacity(0.16))
+          .padding(2)
+      }
     }
   }
 }
@@ -495,6 +480,7 @@ private struct ScheduleMonthAllDaySpanRow: View {
 
 private struct ScheduleMonthCompactItemRow: View {
   let item: ScheduleMonthItem
+  let isPastCompletedTask: Bool
 
   var body: some View {
     HStack(spacing: 4) {
@@ -515,16 +501,22 @@ private struct ScheduleMonthCompactItemRow: View {
       }
     }
     .frame(height: ScheduleMonthLayoutMetrics.itemRowHeight)
-    .opacity(item.isCompleted || item.isBackgroundCalendar ? 0.48 : 1)
+    .opacity(isPastCompletedTask || item.isBackgroundCalendar ? 0.48 : 1)
   }
 
   @ViewBuilder
   private var marker: some View {
     switch item.source {
     case .workspaceTask:
-      Circle()
-        .strokeBorder(itemColor, lineWidth: 1.4)
-        .frame(width: 10, height: 10)
+      if isPastCompletedTask {
+        Image(systemName: "checkmark.circle.fill")
+          .font(.system(size: 10, weight: .semibold))
+          .foregroundStyle(itemColor)
+      } else {
+        Circle()
+          .strokeBorder(itemColor, lineWidth: 1.4)
+          .frame(width: 10, height: 10)
+      }
     case .calendarEvent:
       if item.isAllDay {
         Image(systemName: "calendar")
@@ -543,7 +535,7 @@ private struct ScheduleMonthCompactItemRow: View {
   }
 
   private var textColor: Color {
-    item.isCompleted ? .secondary : .primary
+    isPastCompletedTask ? .secondary : .primary
   }
 
   private var timeText: String? {

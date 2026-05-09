@@ -205,6 +205,24 @@ final class ScheduleMonthModelTests: XCTestCase {
     XCTAssertEqual(inlineItems.map(\.id), ["event", "task"])
   }
 
+  func testContinuousWindowProvidesUniqueFullWeeksAroundAnchor() throws {
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+    calendar.firstWeekday = 1
+    let anchor = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 5, day: 9)))
+
+    let days = ScheduleMonthContinuousWindow.visibleDays(
+      containing: anchor,
+      monthRadius: 1,
+      calendar: calendar
+    )
+
+    XCTAssertEqual(days.count % 7, 0)
+    XCTAssertEqual(Set(days).count, days.count)
+    XCTAssertTrue(days.contains(ScheduleMonthContinuousWindow.weekStart(containing: anchor, calendar: calendar)))
+    XCTAssertTrue(days.contains(anchor))
+  }
+
   private func makeMonthItem(
     id: String,
     source: ScheduleMonthItemSource,

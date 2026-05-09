@@ -298,6 +298,47 @@ enum ScheduleMonthCalendar {
   }
 }
 
+enum ScheduleMonthContinuousWindow {
+  static let defaultMonthRadius = 3
+
+  static func visibleDays(
+    containing date: Date,
+    monthRadius: Int = defaultMonthRadius,
+    calendar: Calendar
+  ) -> [Date] {
+    let range = visibleDateRange(containing: date, monthRadius: monthRadius, calendar: calendar)
+    var days: [Date] = []
+    var current = range.lowerBound
+
+    while current < range.upperBound {
+      days.append(current)
+      guard let next = calendar.date(byAdding: .day, value: 1, to: current) else {
+        break
+      }
+      current = next
+    }
+
+    return days
+  }
+
+  static func visibleDateRange(
+    containing date: Date,
+    monthRadius: Int = defaultMonthRadius,
+    calendar: Calendar
+  ) -> ClosedRange<Date> {
+    let lowerAnchor = calendar.date(byAdding: .month, value: -monthRadius, to: date) ?? date
+    let upperAnchor = calendar.date(byAdding: .month, value: monthRadius, to: date) ?? date
+    let lowerRange = ScheduleMonthCalendar.visibleDateRange(containing: lowerAnchor, calendar: calendar)
+    let upperRange = ScheduleMonthCalendar.visibleDateRange(containing: upperAnchor, calendar: calendar)
+    return lowerRange.lowerBound...upperRange.upperBound
+  }
+
+  static func weekStart(containing date: Date, calendar: Calendar) -> Date {
+    ScheduleMonthCalendar.visibleDays(containing: date, calendar: calendar).first
+      ?? calendar.startOfDay(for: date)
+  }
+}
+
 enum ScheduleMonthOverflowPolicy {
   static let titleAndPaddingHeight: CGFloat = 34
   static let rowHeight: CGFloat = 20

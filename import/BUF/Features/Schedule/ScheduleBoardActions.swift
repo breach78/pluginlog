@@ -360,7 +360,7 @@ extension ScheduleBoardView {
 
   func calendarDisplayRange() -> ClosedRange<Date> {
     if displayMode == .month {
-      return ScheduleMonthCalendar.visibleDateRange(
+      return ScheduleMonthContinuousWindow.visibleDateRange(
         containing: monthAnchorDate,
         calendar: calendar
       )
