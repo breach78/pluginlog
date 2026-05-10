@@ -176,7 +176,7 @@ actor AppOwnedWorkspaceStore {
       try mergeTaskSupplements(
         db,
         supplements: preservedTaskSupplements,
-        durationAssignmentSQL: "scheduled_duration_minutes = COALESCE(scheduled_duration_minutes, ?)",
+        durationAssignmentSQL: "scheduled_duration_minutes = COALESCE(?, scheduled_duration_minutes)",
         rowOrderAssignmentSQL: "row_order = COALESCE(?, row_order)"
       )
       try restoreLocalCompletedRecurringOccurrences(db, rows: preservedCompletedRecurringOccurrences)
@@ -209,6 +209,61 @@ actor AppOwnedWorkspaceStore {
       durationAssignmentSQL: "scheduled_duration_minutes = COALESCE(?, scheduled_duration_minutes)",
       rowOrderAssignmentSQL: "row_order = COALESCE(?, row_order)"
     )
+  }
+
+  @discardableResult
+  func upsertProject(
+    projectID: UUID,
+    reminderListIdentifier: String,
+    reminderListExternalIdentifier: String?,
+    title: String,
+    colorHex: String?,
+    modifiedAt: Date
+  ) throws -> ProjectReference {
+    let db = try openDatabase()
+    defer { sqlite3_close(db) }
+    try migrate(db)
+    try exec(db, "BEGIN IMMEDIATE TRANSACTION;")
+    do {
+      try execute(
+        db,
+        """
+        INSERT OR IGNORE INTO app_projects (
+          id, reminder_list_identifier, reminder_list_external_identifier, title, color_hex, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?);
+        """,
+        bindings: [
+          .text(projectID.uuidString),
+          .text(reminderListIdentifier),
+          .optionalText(normalized(reminderListExternalIdentifier)),
+          .text(title),
+          .optionalText(normalized(colorHex)),
+          .double(modifiedAt.timeIntervalSinceReferenceDate),
+        ]
+      )
+      try execute(
+        db,
+        """
+        UPDATE app_projects
+        SET reminder_list_identifier = ?, reminder_list_external_identifier = ?,
+          title = ?, color_hex = COALESCE(?, color_hex), updated_at = ?
+        WHERE id = ?;
+        """,
+        bindings: [
+          .text(reminderListIdentifier),
+          .optionalText(normalized(reminderListExternalIdentifier)),
+          .text(title),
+          .optionalText(normalized(colorHex)),
+          .double(modifiedAt.timeIntervalSinceReferenceDate),
+          .text(projectID.uuidString),
+        ]
+      )
+      try exec(db, "COMMIT;")
+    } catch {
+      try? exec(db, "ROLLBACK;")
+      throw error
+    }
+    return try projectReference(projectID: projectID)
   }
 
   private func mergeTaskSupplements(

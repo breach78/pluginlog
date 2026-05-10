@@ -257,6 +257,18 @@ final class ScheduleMonthModelTests: XCTestCase {
     XCTAssertTrue(days.contains(anchor))
   }
 
+  func testContinuousWindowMonthStartWeekTargetsWeekContainingFirstDayOfMonth() throws {
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+    calendar.firstWeekday = 1
+    let anchor = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 5, day: 10)))
+
+    let target = ScheduleMonthContinuousWindow.monthStartWeek(containing: anchor, calendar: calendar)
+
+    XCTAssertEqual(calendar.component(.month, from: target), 4)
+    XCTAssertEqual(calendar.component(.day, from: target), 26)
+  }
+
   func testMonthDragGeometryMapsPointerLocationToWeekGridDay() throws {
     var calendar = Calendar(identifier: .gregorian)
     calendar.timeZone = TimeZone(secondsFromGMT: 0)!

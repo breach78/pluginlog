@@ -541,6 +541,11 @@ enum ScheduleMonthContinuousWindow {
     ScheduleMonthCalendar.visibleDays(containing: date, calendar: calendar).first
       ?? calendar.startOfDay(for: date)
   }
+
+  static func monthStartWeek(containing date: Date, calendar: Calendar) -> Date {
+    let monthStart = ScheduleMonthCalendar.monthStart(containing: date, calendar: calendar)
+    return weekStart(containing: monthStart, calendar: calendar)
+  }
 }
 
 enum ScheduleMonthOverflowPolicy {

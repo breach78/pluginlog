@@ -126,6 +126,18 @@ extension AppState {
         try? reminderProjectProvider.removeProjectList(identifier: reminderList.identifier)
         throw error
       }
+      if let appOwnedStore = try await AppOwnedRetainedTaskCommandService.enabledStore(
+        vaultRootURL: obsidianVaultRootURL
+      ) {
+        try await appOwnedStore.upsertProject(
+          projectID: projectID,
+          reminderListIdentifier: reminderList.identifier,
+          reminderListExternalIdentifier: reminderList.externalIdentifier,
+          title: reminderList.title,
+          colorHex: reminderList.colorHex,
+          modifiedAt: .now
+        )
+      }
       TaskIdentityBridgeStore.upsertProject(
         projectID: projectID,
         title: title,

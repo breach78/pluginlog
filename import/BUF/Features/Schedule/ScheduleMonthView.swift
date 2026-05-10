@@ -190,7 +190,7 @@ struct ScheduleMonthView: View {
   }
 
   private func scrollToAnchorWeek(using proxy: ScrollViewProxy, animated: Bool) {
-    let target = ScheduleMonthContinuousWindow.weekStart(containing: anchorDate, calendar: calendar)
+    let target = ScheduleMonthContinuousWindow.monthStartWeek(containing: anchorDate, calendar: calendar)
     let action = {
       proxy.scrollTo(target, anchor: .top)
     }

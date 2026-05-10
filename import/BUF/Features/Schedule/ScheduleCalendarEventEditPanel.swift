@@ -6,6 +6,37 @@ struct WorkspaceCalendarEventEditPanelTarget: Equatable, Sendable {
   let initialFields: ScheduleCalendarEventEditFields
 }
 
+@MainActor
+private final class ScheduleCalendarEventAutoSaveCoordinator: ObservableObject {
+  private var task: Task<Void, Never>?
+
+  func schedule(
+    delayNanoseconds: UInt64,
+    operation: @escaping @MainActor () async -> Void
+  ) {
+    cancel()
+    task = Task { @MainActor [weak self] in
+      do {
+        try await Task.sleep(nanoseconds: delayNanoseconds)
+      } catch {
+        return
+      }
+      guard let self else { return }
+      task = nil
+      await operation()
+    }
+  }
+
+  func cancel() {
+    task?.cancel()
+    task = nil
+  }
+
+  deinit {
+    task?.cancel()
+  }
+}
+
 struct ScheduleCalendarEventEditPanelContent: View {
   let event: ScheduleCalendarEvent
   let initialFields: ScheduleCalendarEventEditFields
@@ -26,11 +57,11 @@ struct ScheduleCalendarEventEditPanelContent: View {
   @State private var selectedEndTime: Date
   @State private var recurringScope: ScheduleCalendarRecurringEditScope = .thisEvent
   @State private var lastCommittedFields: ScheduleCalendarEventEditFields
-  @State private var autoSaveTask: Task<Void, Never>?
   @State private var isSaving = false
   @State private var saveAgainAfterCurrent = false
   @State private var isApplyingFields = false
   @State private var errorText: String?
+  @StateObject private var autoSaveCoordinator = ScheduleCalendarEventAutoSaveCoordinator()
 
   private let calendar = Calendar.autoupdatingCurrent
   private static let autoSaveDelayNanoseconds: UInt64 = 1_500_000_000
@@ -307,8 +338,7 @@ struct ScheduleCalendarEventEditPanelContent: View {
   private func apply(_ fields: ScheduleCalendarEventEditFields) {
     isApplyingFields = true
     defer { isApplyingFields = false }
-    autoSaveTask?.cancel()
-    autoSaveTask = nil
+    autoSaveCoordinator.cancel()
     let normalized = Self.normalizedFields(fields)
     title = normalized.title
     noteText = normalized.noteText
@@ -332,28 +362,19 @@ struct ScheduleCalendarEventEditPanelContent: View {
     guard !isApplyingFields, event.canEditTiming else { return }
     guard validationText == nil else { return }
     guard shouldSave(currentFields()) else { return }
-    autoSaveTask?.cancel()
-    autoSaveTask = Task { @MainActor in
-      do {
-        try await Task.sleep(nanoseconds: Self.autoSaveDelayNanoseconds)
-      } catch {
-        return
-      }
-      autoSaveTask = nil
+    autoSaveCoordinator.schedule(delayNanoseconds: Self.autoSaveDelayNanoseconds) {
       _ = await savePendingChanges()
     }
   }
 
   @MainActor
   private func flushPendingChanges() async -> Bool {
-    autoSaveTask?.cancel()
-    autoSaveTask = nil
+    autoSaveCoordinator.cancel()
     return await savePendingChanges()
   }
 
   private func flushPendingChangesOnDisappear() {
-    autoSaveTask?.cancel()
-    autoSaveTask = nil
+    autoSaveCoordinator.cancel()
     Task { @MainActor in
       _ = await savePendingChanges(afterCurrent: true)
     }
