@@ -380,6 +380,55 @@ final class ScheduleMonthModelTests: XCTestCase {
     )
   }
 
+  func testDayPanelDragUsesCurrentTimeContentOffsetWhenLeavingAllDayRail() throws {
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+    let targetDay = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 5, day: 12)))
+    let item = makeMonthItem(
+      id: "all-day-task",
+      source: .workspaceTask(taskID: UUID(), projectID: UUID()),
+      startDate: targetDay,
+      endDate: try XCTUnwrap(calendar.date(byAdding: .day, value: 1, to: targetDay)),
+      isAllDay: true
+    )
+    let initialState = ScheduleMonthDayItemDragState(
+      itemID: item.id,
+      originalItem: item,
+      originalTimeMinutes: nil,
+      originalDurationMinutes: nil,
+      originalPointerScheduleY: 120,
+      originalTopScheduleY: 105,
+      originalX: nil,
+      originalWidth: nil,
+      allDayBoundaryYInPanel: 160,
+      timeContentMinYInPanel: 0,
+      isInAllDayZone: true
+    )
+
+    let updatedState = ScheduleMonthDayInteractionAdapter.updatedDragState(
+      initialState,
+      drag: DragGestureProxy(
+        locationY: 700,
+        translation: CGSize(width: 0, height: 580)
+      ),
+      allDayRowHeight: 30,
+      timeContentMinYInPanel: -180
+    )
+    let preview = ScheduleMonthDayInteractionAdapter.movePreview(
+      for: updatedState,
+      targetDay: targetDay,
+      calendar: calendar,
+      metrics: ScheduleMonthDayInteractionAdapter.metrics(
+        hourHeight: 60,
+        minimumDurationMinutes: 30
+      )
+    )
+
+    XCTAssertEqual(updatedState.timeContentMinYInPanel, -180)
+    XCTAssertEqual(preview.timeMinutes, 14 * 60 + 30)
+    XCTAssertEqual(preview.durationMinutes, 30)
+  }
+
   func testScheduleMonthDropTargetResolverMapsGlobalPointToDay() throws {
     var calendar = Calendar(identifier: .gregorian)
     calendar.timeZone = TimeZone(secondsFromGMT: 0)!

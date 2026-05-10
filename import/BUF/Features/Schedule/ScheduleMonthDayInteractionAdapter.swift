@@ -21,9 +21,11 @@ enum ScheduleMonthDayInteractionAdapter {
   static func updatedDragState(
     _ state: ScheduleMonthDayItemDragState,
     drag: DragGestureProxy,
-    allDayRowHeight: CGFloat
+    allDayRowHeight: CGFloat,
+    timeContentMinYInPanel: CGFloat
   ) -> ScheduleMonthDayItemDragState {
     var next = state
+    next.timeContentMinYInPanel = timeContentMinYInPanel
     next.translation = drag.translation
     next.currentPointerPanelY = drag.locationY
     next.isInAllDayZone = isPointerInAllDayZone(

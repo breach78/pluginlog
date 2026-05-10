@@ -26,6 +26,7 @@ struct ScheduleMonthDaySchedulePanel: View {
   @State private var activeItemResizeState: ScheduleMonthDayItemResizeState?
   @State private var resizeBlockedMoveItemID: String?
   @State private var panelFrameInScreen: CGRect = .null
+  @State private var timeContentFrameInScreen: CGRect = .null
 
   init(
     target: ScheduleMonthDetailPanelTarget,
@@ -95,9 +96,6 @@ struct ScheduleMonthDaySchedulePanel: View {
         transaction.animation = nil
       }
     }
-    .onPreferenceChange(ScheduleMonthDayTimeContentMinYPreferenceKey.self) { minY in
-      timeContentMinYInPanel = minY
-    }
     .background(panelFrameReporter)
     .onChange(of: target.items) { _, newItems in
       items = Self.sortedItems(newItems, calendar: calendar)
@@ -134,6 +132,7 @@ struct ScheduleMonthDaySchedulePanel: View {
     ScheduleScreenFrameReporter { frame in
       panelFrameInScreen = frame
       reportDropTarget(frame: frame)
+      updateTimeContentOffset(timeFrame: timeContentFrameInScreen, panelFrame: frame)
     }
   }
 
@@ -360,12 +359,15 @@ struct ScheduleMonthDaySchedulePanel: View {
   }
 
   private var timeContentFrameReporter: some View {
-    GeometryReader { proxy in
-      Color.clear.preference(
-        key: ScheduleMonthDayTimeContentMinYPreferenceKey.self,
-        value: proxy.frame(in: .named(Self.panelCoordinateSpaceName)).minY
-      )
+    ScheduleScreenFrameReporter { frame in
+      timeContentFrameInScreen = frame
+      updateTimeContentOffset(timeFrame: frame, panelFrame: panelFrameInScreen)
     }
+  }
+
+  private func updateTimeContentOffset(timeFrame: CGRect, panelFrame: CGRect) {
+    guard !timeFrame.isNull, !panelFrame.isNull else { return }
+    timeContentMinYInPanel = panelFrame.maxY - timeFrame.maxY
   }
 
   private var timeScrollAnchorLayer: some View {
@@ -690,7 +692,8 @@ struct ScheduleMonthDaySchedulePanel: View {
         locationY: drag.location.y,
         translation: drag.translation
       ),
-      allDayRowHeight: Self.allDayRowHeight
+      allDayRowHeight: Self.allDayRowHeight,
+      timeContentMinYInPanel: timeContentMinYInPanel
     )
     activeItemDragState = next
     return next

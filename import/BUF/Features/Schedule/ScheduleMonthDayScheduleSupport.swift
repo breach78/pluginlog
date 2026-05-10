@@ -134,7 +134,7 @@ struct ScheduleMonthDayItemDragState: Equatable {
   let originalX: CGFloat?
   let originalWidth: CGFloat?
   let allDayBoundaryYInPanel: CGFloat
-  let timeContentMinYInPanel: CGFloat
+  var timeContentMinYInPanel: CGFloat
   var translation: CGSize = .zero
   var currentPointerPanelY: CGFloat?
   var isInAllDayZone: Bool
@@ -151,14 +151,6 @@ struct ScheduleMonthDayItemResizeState: Equatable {
   let originalWidth: CGFloat
   let timeContentMinYInPanel: CGFloat
   let edge: ScheduleResizeEdge
-}
-
-enum ScheduleMonthDayTimeContentMinYPreferenceKey: PreferenceKey {
-  static let defaultValue: CGFloat = 0
-
-  static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
-    value = nextValue()
-  }
 }
 
 struct ScheduleScreenFrameReporter: NSViewRepresentable {
