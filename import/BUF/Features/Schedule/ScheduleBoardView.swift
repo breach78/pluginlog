@@ -1531,7 +1531,9 @@ struct ScheduleBoardView: View {
     } pinnedTop: {
       scheduleBoardHeaderRailSection(
         allDayEntries: context.layoutCache.allDayEntries,
-        backgroundAllDayEntries: context.layoutCache.backgroundAllDayEntries
+        backgroundAllDayEntries: context.layoutCache.backgroundAllDayEntries,
+        timedEntries: context.layoutCache.timedEntries,
+        backgroundTimedEntries: context.layoutCache.backgroundTimedEntries
       )
     }
     .frame(width: geometry.size.width, height: geometry.size.height)

@@ -60,6 +60,76 @@ private struct CalendarPickerRow: View {
   }
 }
 
+private struct ScheduleHiddenTimedItemsIndicatorRow: View {
+  let dayCount: Int
+  let dayColumnWidth: CGFloat
+  let hourHeight: CGFloat
+  let timedEntries: [ScheduleTimedBlockLayout]
+  let backgroundTimedEntries: [ScheduleTimedBlockLayout]
+  let viewportState: ScheduleScrollViewportState
+  let onRevealDay: (Int, Int, [ScheduleTimedBlockLayout]) -> Void
+
+  @State private var visibleStartMinute = 0
+  @State private var viewportListenerID: UUID?
+
+  private var allTimedEntries: [ScheduleTimedBlockLayout] {
+    timedEntries + backgroundTimedEntries
+  }
+
+  var body: some View {
+    let layouts = allTimedEntries
+    let hiddenDayIndexes = ScheduleHiddenTimedItemIndicatorPolicy.hiddenDayIndexes(
+      layouts: layouts,
+      visibleStartMinute: visibleStartMinute
+    )
+
+    HStack(spacing: 0) {
+      ForEach(0..<dayCount, id: \.self) { dayIndex in
+        ZStack {
+          if hiddenDayIndexes.contains(dayIndex) {
+            Button {
+              onRevealDay(dayIndex, visibleStartMinute, layouts)
+            } label: {
+              Image(systemName: "arrowtriangle.up.fill")
+                .font(.system(size: 8.4, weight: .bold))
+                .foregroundStyle(Color.secondary.opacity(0.68))
+                .frame(width: 18, height: 12)
+            }
+            .buttonStyle(.plain)
+            .help("위쪽 숨겨진 시간대에 항목 있음")
+          }
+        }
+        .frame(width: dayColumnWidth, height: 12, alignment: .center)
+      }
+    }
+    .frame(width: CGFloat(dayCount) * dayColumnWidth, height: 12, alignment: .topLeading)
+    .onAppear {
+      updateVisibleStartMinute()
+      if viewportListenerID == nil {
+        viewportListenerID = viewportState.addViewportChangeListener {
+          updateVisibleStartMinute()
+        }
+      }
+    }
+    .onDisappear {
+      if let viewportListenerID {
+        viewportState.removeViewportChangeListener(viewportListenerID)
+        self.viewportListenerID = nil
+      }
+    }
+  }
+
+  private func updateVisibleStartMinute() {
+    let nextMinute = ScheduleHiddenTimedItemIndicatorPolicy.visibleStartMinute(
+      scrollOffsetY: viewportState.liveOffsetY,
+      hourHeight: hourHeight
+    )
+    if visibleStartMinute != nextMinute {
+      visibleStartMinute = nextMinute
+    }
+  }
+}
+
 extension ScheduleBoardView {
   var scheduleBoardTopLeftHeaderSection: some View {
     topLeftHeaderOverlay
@@ -74,12 +144,27 @@ extension ScheduleBoardView {
 
   func scheduleBoardHeaderRailSection(
     allDayEntries: [ScheduleAllDayLayout],
-    backgroundAllDayEntries: [ScheduleAllDayLayout]
+    backgroundAllDayEntries: [ScheduleAllDayLayout],
+    timedEntries: [ScheduleTimedBlockLayout],
+    backgroundTimedEntries: [ScheduleTimedBlockLayout]
   ) -> some View {
     topHeaderContent(
       allDayEntries: allDayEntries,
       backgroundAllDayEntries: backgroundAllDayEntries
     )
+    .overlay(alignment: .bottomLeading) {
+      ScheduleHiddenTimedItemsIndicatorRow(
+        dayCount: days.count,
+        dayColumnWidth: dayColumnWidth,
+        hourHeight: hourHeight,
+        timedEntries: timedEntries,
+        backgroundTimedEntries: backgroundTimedEntries,
+        viewportState: scrollViewportState,
+        onRevealDay: revealHiddenTimedItems
+      )
+      .padding(.bottom, 10)
+      .offset(y: 4)
+    }
   }
 
   @ViewBuilder
@@ -153,6 +238,25 @@ extension ScheduleBoardView {
     } else {
       appState.toggleScheduleCalendarBackgroundOnly(source.id)
     }
+  }
+
+  func revealHiddenTimedItems(
+    dayIndex: Int,
+    visibleStartMinute: Int,
+    layouts: [ScheduleTimedBlockLayout]
+  ) {
+    guard let targetMinute = ScheduleHiddenTimedItemIndicatorPolicy.earliestHiddenStartMinute(
+      dayIndex: dayIndex,
+      layouts: layouts,
+      visibleStartMinute: visibleStartMinute
+    ) else {
+      return
+    }
+
+    let revealMinute = max(0, targetMinute - 15)
+    requestedOffsetX = CGFloat(dayIndex) * dayColumnWidth
+    requestedOffsetY = CGFloat(revealMinute) / 60 * hourHeight
+    scrollRequestGeneration += 1
   }
 
   var calendarMenuLabel: some View {

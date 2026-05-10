@@ -290,6 +290,48 @@ enum ScheduleResizePreviewStylePolicy {
   }
 }
 
+enum ScheduleHiddenTimedItemIndicatorPolicy {
+  static func visibleStartMinute(
+    scrollOffsetY: CGFloat,
+    hourHeight: CGFloat
+  ) -> Int {
+    guard hourHeight > 0 else { return 0 }
+    let timelineOffsetY = max(0, scrollOffsetY)
+    let rawMinute = Int(floor(timelineOffsetY / hourHeight * 60))
+    return min(24 * 60, max(0, rawMinute))
+  }
+
+  static func hiddenDayIndexes(
+    layouts: [ScheduleTimedBlockLayout],
+    visibleStartMinute: Int
+  ) -> Set<Int> {
+    guard visibleStartMinute > 0 else { return [] }
+
+    return Set(
+      layouts.compactMap { layout in
+        let entry = layout.entry
+        return entry.endMinute <= visibleStartMinute ? entry.dayIndex : nil
+      }
+    )
+  }
+
+  static func earliestHiddenStartMinute(
+    dayIndex: Int,
+    layouts: [ScheduleTimedBlockLayout],
+    visibleStartMinute: Int
+  ) -> Int? {
+    guard visibleStartMinute > 0 else { return nil }
+
+    return layouts
+      .filter { layout in
+        let entry = layout.entry
+        return entry.dayIndex == dayIndex && entry.endMinute <= visibleStartMinute
+      }
+      .map(\.entry.startMinute)
+      .min()
+  }
+}
+
 struct ScheduleLayoutCache {
   let timedEntries: [ScheduleTimedBlockLayout]
   let allDayEntries: [ScheduleAllDayLayout]
