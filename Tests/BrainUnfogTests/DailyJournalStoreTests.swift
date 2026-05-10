@@ -62,6 +62,9 @@ final class DailyJournalStoreTests: XCTestCase {
     try store.save("5월 3일", for: try XCTUnwrap(
       testCalendar.date(from: DateComponents(year: 2026, month: 5, day: 3))
     ))
+    try store.save("", for: try XCTUnwrap(
+      testCalendar.date(from: DateComponents(year: 2026, month: 5, day: 2))
+    ))
     try store.save("5월 1일", for: try XCTUnwrap(
       testCalendar.date(from: DateComponents(year: 2026, month: 5, day: 1))
     ))

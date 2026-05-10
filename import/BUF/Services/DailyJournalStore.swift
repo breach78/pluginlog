@@ -104,15 +104,23 @@ struct DailyJournalStore {
     }
 
     let cutoffDate = startOfDay(for: earliestDate)
-    return try fileManager.contentsOfDirectory(
+    let candidates = try fileManager.contentsOfDirectory(
       at: journalRootURL,
       includingPropertiesForKeys: nil
     )
-    .compactMap { date(fromFileURL: $0) }
-    .filter { $0 < cutoffDate }
-    .sorted(by: >)
-    .prefix(count)
-    .map { $0 }
+    .compactMap { fileURL -> (date: Date, fileURL: URL)? in
+      guard let date = date(fromFileURL: fileURL), date < cutoffDate else { return nil }
+      return (date, fileURL)
+    }
+    .sorted { $0.date > $1.date }
+
+    var dates: [Date] = []
+    for candidate in candidates where dates.count < count {
+      if try hasJournalText(at: candidate.fileURL) {
+        dates.append(candidate.date)
+      }
+    }
+    return dates
   }
 
   private func date(fromFileURL fileURL: URL) -> Date? {
@@ -127,6 +135,11 @@ struct DailyJournalStore {
     formatter.dateFormat = "yyyy-MM-dd"
     guard let date = formatter.date(from: stem) else { return nil }
     return startOfDay(for: date)
+  }
+
+  private func hasJournalText(at fileURL: URL) throws -> Bool {
+    let text = try String(contentsOf: fileURL, encoding: .utf8)
+    return !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
   }
 }
 
