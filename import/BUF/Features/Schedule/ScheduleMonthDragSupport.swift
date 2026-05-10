@@ -1,9 +1,63 @@
 import CoreGraphics
 import Foundation
+import UniformTypeIdentifiers
 
 enum ScheduleMonthDragItem: Equatable, Sendable {
   case task(UUID)
   case calendarEvent(String)
+}
+
+enum ScheduleMonthDragPayload {
+  static let type = UTType(exportedAs: "com.brainunfog.schedule-month-item")
+  static let typeIdentifier = type.identifier
+  private static let taskPrefix = "buf-schedule-task:"
+  private static let calendarEventPrefix = "buf-schedule-calendar-event:"
+
+  static func payloadString(for item: ScheduleMonthDragItem) -> String {
+    switch item {
+    case .task(let taskID):
+      return "\(taskPrefix)\(taskID.uuidString)"
+    case .calendarEvent(let eventID):
+      return "\(calendarEventPrefix)\(eventID)"
+    }
+  }
+
+  static func itemProvider(for item: ScheduleMonthDragItem) -> NSItemProvider {
+    let payload = payloadString(for: item)
+    let provider = NSItemProvider(object: payload as NSString)
+    provider.registerDataRepresentation(
+      forTypeIdentifier: typeIdentifier,
+      visibility: .all
+    ) { completion in
+      completion(payload.data(using: .utf8), nil)
+      return nil
+    }
+    return provider
+  }
+
+  static func parseItem(from item: NSSecureCoding?) -> ScheduleMonthDragItem? {
+    if let data = item as? Data,
+      let payload = String(data: data, encoding: .utf8)
+    {
+      return parseItem(from: payload)
+    }
+    guard let payload = DragPayloadCodec.decodeTextPayload(from: item) else { return nil }
+    return parseItem(from: payload)
+  }
+
+  static func parseItem(from payload: String) -> ScheduleMonthDragItem? {
+    let trimmed = payload.trimmingCharacters(in: .whitespacesAndNewlines)
+    if trimmed.hasPrefix(taskPrefix) {
+      return UUID(uuidString: String(trimmed.dropFirst(taskPrefix.count))).map {
+        .task($0)
+      }
+    }
+    if trimmed.hasPrefix(calendarEventPrefix) {
+      let eventID = String(trimmed.dropFirst(calendarEventPrefix.count))
+      return eventID.isEmpty ? nil : .calendarEvent(eventID)
+    }
+    return nil
+  }
 }
 
 struct ScheduleMonthDragFeedback: Equatable {

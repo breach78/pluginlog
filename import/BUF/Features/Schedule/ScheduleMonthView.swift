@@ -439,6 +439,15 @@ private struct ScheduleMonthDayCell: View {
     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     .contentShape(Rectangle())
     .onTapGesture(perform: selectIfNotSuppressed)
+    .onDrop(
+      of: [ScheduleMonthDragPayload.typeIdentifier],
+      delegate: ScheduleMonthExternalItemDropDelegate(
+        targetDay: day,
+        activeDragDate: $activeDragDate,
+        calendar: calendar,
+        onMoveItem: onMoveItem
+      )
+    )
     .clipped()
   }
 
@@ -836,5 +845,50 @@ private struct ScheduleMonthLocalDragModifier: ViewModifier {
 
     guard let targetStartDay else { return }
     onMoveItem(dragItem, targetStartDay)
+  }
+}
+
+private struct ScheduleMonthExternalItemDropDelegate: DropDelegate {
+  let targetDay: Date
+  @Binding var activeDragDate: Date?
+  let calendar: Calendar
+  let onMoveItem: (ScheduleMonthDragItem, Date) -> Void
+
+  func validateDrop(info: DropInfo) -> Bool {
+    !info.itemProviders(for: [ScheduleMonthDragPayload.typeIdentifier]).isEmpty
+  }
+
+  func dropEntered(info _: DropInfo) {
+    activeDragDate = calendar.startOfDay(for: targetDay)
+  }
+
+  func dropExited(info _: DropInfo) {
+    if let activeDragDate,
+      calendar.isDate(activeDragDate, inSameDayAs: targetDay)
+    {
+      self.activeDragDate = nil
+    }
+  }
+
+  func dropUpdated(info: DropInfo) -> DropProposal? {
+    validateDrop(info: info) ? DropProposal(operation: .move) : nil
+  }
+
+  func performDrop(info: DropInfo) -> Bool {
+    activeDragDate = nil
+    guard let provider = info.itemProviders(for: [ScheduleMonthDragPayload.typeIdentifier]).first else {
+      return false
+    }
+    let normalizedTargetDay = calendar.startOfDay(for: targetDay)
+    provider.loadItem(forTypeIdentifier: ScheduleMonthDragPayload.typeIdentifier, options: nil) {
+      item,
+      _
+      in
+      guard let dragItem = ScheduleMonthDragPayload.parseItem(from: item) else { return }
+      Task { @MainActor in
+        onMoveItem(dragItem, normalizedTargetDay)
+      }
+    }
+    return true
   }
 }

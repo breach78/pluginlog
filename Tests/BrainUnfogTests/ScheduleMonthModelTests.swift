@@ -316,6 +316,25 @@ final class ScheduleMonthModelTests: XCTestCase {
     XCTAssertEqual(calendar.component(.day, from: movedStart), 14)
   }
 
+  func testScheduleMonthDragPayloadRoundTripsTaskAndCalendarEventItems() {
+    let taskID = UUID()
+    let calendarEventID = "calendar/event:2026-05-10"
+
+    XCTAssertEqual(
+      ScheduleMonthDragPayload.parseItem(
+        from: ScheduleMonthDragPayload.payloadString(for: .task(taskID))
+      ),
+      .task(taskID)
+    )
+    XCTAssertEqual(
+      ScheduleMonthDragPayload.parseItem(
+        from: ScheduleMonthDragPayload.payloadString(for: .calendarEvent(calendarEventID))
+      ),
+      .calendarEvent(calendarEventID)
+    )
+    XCTAssertNil(ScheduleMonthDragPayload.parseItem(from: "buf-project:\(UUID().uuidString)"))
+  }
+
   private func makeMonthItem(
     id: String,
     source: ScheduleMonthItemSource,
