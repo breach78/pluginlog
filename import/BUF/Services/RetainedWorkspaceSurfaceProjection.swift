@@ -97,6 +97,59 @@ enum RetainedWorkspaceSurfaceProjectionMergePolicy {
   }
 }
 
+enum RetainedWorkspaceProjectStageOverridePolicy {
+  static func apply(
+    _ overrides: [UUID: ProjectProgressStage],
+    to projection: RetainedWorkspaceSurfaceProjection
+  ) -> RetainedWorkspaceSurfaceProjection {
+    guard !overrides.isEmpty else { return projection }
+    return RetainedWorkspaceSurfaceProjection(
+      projectSnapshots: apply(overrides, to: projection.projectSnapshots),
+      projectSummaries: apply(overrides, to: projection.projectSummaries),
+      scheduleEntriesByProjectID: projection.scheduleEntriesByProjectID,
+      calendarBridgeDecisionsByTaskID: projection.calendarBridgeDecisionsByTaskID
+    )
+  }
+
+  static func apply(
+    _ overrides: [UUID: ProjectProgressStage],
+    to read: RetainedWorkspaceSurfaceProjectionResolvedRead
+  ) -> RetainedWorkspaceSurfaceProjectionResolvedRead {
+    guard !overrides.isEmpty else { return read }
+    return RetainedWorkspaceSurfaceProjectionResolvedRead(
+      projectSnapshots: apply(overrides, to: read.projectSnapshots),
+      projectSummaries: apply(overrides, to: read.projectSummaries),
+      scheduleEntriesByProjectID: read.scheduleEntriesByProjectID,
+      calendarBridgeDecisionsByTaskID: read.calendarBridgeDecisionsByTaskID,
+      source: read.source
+    )
+  }
+
+  private static func apply(
+    _ overrides: [UUID: ProjectProgressStage],
+    to snapshots: [UUID: WorkspaceProjectRuntimeRecord]
+  ) -> [UUID: WorkspaceProjectRuntimeRecord] {
+    var result = snapshots
+    for (projectID, stage) in overrides {
+      guard let snapshot = result[projectID] else { continue }
+      result[projectID] = snapshot.replacingProgressStage(stage)
+    }
+    return result
+  }
+
+  private static func apply(
+    _ overrides: [UUID: ProjectProgressStage],
+    to summaries: [UUID: ProjectSummaryRecord]
+  ) -> [UUID: ProjectSummaryRecord] {
+    var result = summaries
+    for (projectID, stage) in overrides {
+      guard let summary = result[projectID] else { continue }
+      result[projectID] = summary.replacingProgressStage(stage)
+    }
+    return result
+  }
+}
+
 enum RetainedWorkspaceSurfaceProjectionBlocker: Equatable {
   case identityFailure(RetainedProjectionBuilder.Error)
   case partialProjectCoverage(missingProjectIDs: [UUID])

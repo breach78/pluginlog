@@ -579,6 +579,59 @@ final class TimelineBoardReadPathTests: XCTestCase {
     XCTAssertEqual(reordered, [targetID, draggedID])
   }
 
+  func testPriorityProjectListDropMutationPersistsCompleteVisibleOrderAcrossStageChange() {
+    let draggedID = UUID()
+    let doID = UUID()
+    let targetID = UUID()
+    let otherDecideID = UUID()
+    let areaID = UUID()
+    let bars = [
+      makeBar(projectID: draggedID, title: "Dragged"),
+      makeBar(projectID: doID, title: "Do"),
+      makeBar(projectID: targetID, title: "Target"),
+      makeBar(projectID: otherDecideID, title: "Other Decide"),
+      makeBar(projectID: areaID, title: "Area"),
+    ]
+    let stages: [UUID: ProjectProgressStage] = [
+      draggedID: .do,
+      doID: .do,
+      targetID: .decide,
+      otherDecideID: .decide,
+      areaID: .area,
+    ]
+
+    let mutation = TimelineProjectListDropPlanner.mutation(
+      bars: bars,
+      mode: .priority,
+      draggedID: draggedID,
+      targetID: targetID,
+      placement: .after,
+      currentManualOrder: [
+        draggedID: 0,
+        doID: 1,
+        targetID: 2,
+        otherDecideID: 3,
+        areaID: 4,
+      ],
+      stageForBar: { stages[$0.projectID] ?? .do }
+    )
+
+    XCTAssertEqual(
+      mutation?.manualOrderByProjectID.filter { stages[$0.key] != nil },
+      [
+        doID: 0,
+        targetID: 1,
+        draggedID: 2,
+        otherDecideID: 3,
+        areaID: 4,
+      ]
+    )
+    XCTAssertEqual(
+      mutation?.stageChange,
+      TimelineProjectStageChange(projectID: draggedID, stage: .decide)
+    )
+  }
+
   func testPinnedTopSignatureChangesWhenScrollSuppressionEnds() {
     let anchorDate = Date(timeIntervalSince1970: 1_000)
 
@@ -931,6 +984,41 @@ final class TimelineBoardReadPathTests: XCTestCase {
     let task = TimelineProjectListWindowSnapshotFactory.taskSnapshot(for: entry)
 
     XCTAssertNil(task.notePreviewText)
+  }
+
+  func testProjectListTaskSnapshotIncludesMetadataIndicators() {
+    let entry = makeScheduleEntry(
+      taskID: UUID(),
+      title: "Task",
+      rowOrder: 0,
+      attachmentCount: 1,
+      hasReminderNoteContent: true,
+      reminderNoteText: """
+        note body
+        [Reference](https://example.com)
+        [Report.pdf](raw/assets/Report.pdf)
+        """
+    )
+
+    let task = TimelineProjectListWindowSnapshotFactory.taskSnapshot(for: entry)
+
+    XCTAssertTrue(task.metadataIndicators.hasNote)
+    XCTAssertEqual(task.metadataIndicators.attachmentCount, 2)
+  }
+
+  func testProjectListTaskSnapshotIncludesNoteIndicatorForPlainNoteOnly() {
+    let entry = makeScheduleEntry(
+      taskID: UUID(),
+      title: "Task",
+      rowOrder: 0,
+      hasReminderNoteContent: true,
+      reminderNoteText: "plain note"
+    )
+
+    let task = TimelineProjectListWindowSnapshotFactory.taskSnapshot(for: entry)
+
+    XCTAssertTrue(task.metadataIndicators.hasNote)
+    XCTAssertEqual(task.metadataIndicators.attachmentCount, 0)
   }
 
   func testScheduleSourceSignatureIgnoresNoteBodyWhenVisibleMetadataIsUnchanged() {

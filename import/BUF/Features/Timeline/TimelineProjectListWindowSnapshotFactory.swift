@@ -49,8 +49,33 @@ enum TimelineProjectListWindowSnapshotFactory {
       title: TimelineBoardReadPath.timelinePreviewTitle(for: entry.title),
       dateText: dateText(for: entry),
       notePreviewText: notePreviewText(for: entry),
+      metadataIndicators: metadataIndicators(for: entry),
       isCompleted: entry.isCompleted,
       isOverdue: isOverdue(entry, calendar: calendar)
+    )
+  }
+
+  static func metadataIndicators(
+    for entry: ScheduleSliceEntry
+  ) -> TimelineProjectListWindowSnapshot.Task.MetadataIndicators {
+    metadataIndicators(
+      noteText: entry.reminderNoteText,
+      attachmentCount: entry.attachmentCount
+    )
+  }
+
+  static func metadataIndicators(
+    noteText: String,
+    attachmentCount: Int
+  ) -> TimelineProjectListWindowSnapshot.Task.MetadataIndicators {
+    let noteTextWithoutAttachmentLinks =
+      TaskEditAttachmentService.noteTextByRemovingAttachmentLinks(from: noteText)
+    let trimmedNoteText = noteTextWithoutAttachmentLinks
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+    return TimelineProjectListWindowSnapshot.Task.MetadataIndicators(
+      hasNote: !trimmedNoteText.isEmpty,
+      attachmentCount: max(0, attachmentCount)
+        + TaskEditAttachmentService.attachmentLinkCount(in: noteText)
     )
   }
 

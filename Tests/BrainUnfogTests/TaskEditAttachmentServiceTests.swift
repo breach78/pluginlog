@@ -33,6 +33,17 @@ final class TaskEditAttachmentServiceTests: XCTestCase {
     )
   }
 
+  func testAttachmentLinkCountCountsRawAssetMarkdownLinksWithoutVault() {
+    let note = """
+      memo
+      [Report.pdf](raw/assets/Report.pdf)
+      ![Image.png](raw/assets/Image.png)
+      [Website](https://example.com)
+      """
+
+    XCTAssertEqual(TaskEditAttachmentService.attachmentLinkCount(in: note), 2)
+  }
+
   func testDeleteAttachmentMovesFileInsideRawAssetsToTrash() throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("TaskEditAttachmentDeleteTests-\(UUID().uuidString)", isDirectory: true)

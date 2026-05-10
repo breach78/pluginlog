@@ -9,12 +9,45 @@ extension NSUserInterfaceItemIdentifier {
 
 struct TimelineProjectListWindowSnapshot: Equatable {
   struct Task: Identifiable, Equatable {
+    struct MetadataIndicators: Equatable {
+      let hasNote: Bool
+      let attachmentCount: Int
+
+      static let empty = MetadataIndicators(
+        hasNote: false,
+        attachmentCount: 0
+      )
+
+      var isEmpty: Bool {
+        !hasNote && attachmentCount <= 0
+      }
+    }
+
     let id: UUID
     let title: String
     let dateText: String?
     let notePreviewText: String?
+    let metadataIndicators: MetadataIndicators
     let isCompleted: Bool
     let isOverdue: Bool
+
+    init(
+      id: UUID,
+      title: String,
+      dateText: String?,
+      notePreviewText: String?,
+      metadataIndicators: MetadataIndicators = .empty,
+      isCompleted: Bool,
+      isOverdue: Bool
+    ) {
+      self.id = id
+      self.title = title
+      self.dateText = dateText
+      self.notePreviewText = notePreviewText
+      self.metadataIndicators = metadataIndicators
+      self.isCompleted = isCompleted
+      self.isOverdue = isOverdue
+    }
   }
 
   let projectID: UUID
@@ -43,9 +76,19 @@ private struct TimelineProjectListTaskRow: Identifiable {
   let task: TimelineProjectListWindowSnapshot.Task
 }
 
-private enum TimelineProjectListScrollTarget: Hashable {
-  case task(UUID)
-  case draft(TimelineProjectListDraftAnchor)
+private enum TimelineProjectListScrollTarget {
+  static func task(_ taskID: UUID) -> String {
+    "task:\(taskID.uuidString)"
+  }
+
+  static func draft(_ anchor: TimelineProjectListDraftAnchor) -> String {
+    switch anchor {
+    case .beginning:
+      return "draft:beginning"
+    case .after(let taskID):
+      return "draft:after:\(taskID.uuidString)"
+    }
+  }
 }
 
 struct TimelineProjectMoveOption: Identifiable, Equatable {
@@ -563,12 +606,14 @@ struct TimelineProjectListContent: View {
         .foregroundStyle(.secondary)
         .frame(maxWidth: .infinity, minHeight: 180, alignment: .center)
     } else {
+      let rows = visibleTaskRows
+      let lastTaskID = rows.last?.task.id
       LazyVStack(alignment: .leading, spacing: 0) {
         if session.draftAnchor == .beginning {
           draftRow(anchor: .beginning)
         }
 
-        ForEach(visibleTaskRows) { row in
+        ForEach(rows) { row in
           let task = row.task
           dropLine(for: task, placement: .before)
           VStack(alignment: .leading, spacing: 0) {
@@ -608,7 +653,7 @@ struct TimelineProjectListContent: View {
           if session.draftAnchor == .after(task.id) {
             draftRow(anchor: .after(task.id))
           }
-          if task.id != visibleTaskRows.last?.task.id {
+          if task.id != lastTaskID {
             Divider()
               .padding(.leading, 32)
           }
@@ -717,12 +762,7 @@ struct TimelineProjectListContent: View {
           inlineTitleEditor(for: task)
             .layoutPriority(1)
         } else {
-          Text(task.title)
-            .font(projectListBodyFont)
-            .foregroundStyle(task.isCompleted ? Color.secondary : Color.primary)
-            .lineLimit(3)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .layoutPriority(1)
+          taskTitleLabel(for: task)
         }
 
         if let dateText = task.dateText {
@@ -744,6 +784,47 @@ struct TimelineProjectListContent: View {
         )
           .frame(maxWidth: .infinity, alignment: .leading)
       }
+    }
+  }
+
+  private func taskTitleLabel(for task: TimelineProjectListWindowSnapshot.Task) -> some View {
+    HStack(alignment: .firstTextBaseline, spacing: 5) {
+      Text(task.title)
+        .font(projectListBodyFont)
+        .foregroundStyle(task.isCompleted ? Color.secondary : Color.primary)
+        .lineLimit(3)
+        .layoutPriority(1)
+
+      taskMetadataIndicators(task.metadataIndicators, isCompleted: task.isCompleted)
+    }
+    .frame(maxWidth: .infinity, alignment: .leading)
+    .layoutPriority(1)
+  }
+
+  @ViewBuilder
+  private func taskMetadataIndicators(
+    _ indicators: TimelineProjectListWindowSnapshot.Task.MetadataIndicators,
+    isCompleted: Bool
+  ) -> some View {
+    if !indicators.isEmpty {
+      HStack(spacing: 3) {
+        if indicators.hasNote {
+          Image(systemName: "note.text")
+            .help("노트 있음")
+        }
+        if indicators.attachmentCount > 0 {
+          Image(systemName: "paperclip")
+            .help(
+              indicators.attachmentCount > 1
+                ? "첨부파일 \(indicators.attachmentCount)개" : "첨부파일 있음"
+            )
+        }
+      }
+      .font(projectListDateFont.weight(.semibold))
+      .foregroundStyle(Color.secondary.opacity(isCompleted ? 0.55 : 0.8))
+      .imageScale(.small)
+      .lineLimit(1)
+      .fixedSize(horizontal: true, vertical: false)
     }
   }
 

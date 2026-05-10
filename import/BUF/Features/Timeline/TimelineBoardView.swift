@@ -99,6 +99,7 @@ struct TimelineBoardView: View {
   @State var workspaceTimelineProjectSnapshots: [UUID: WorkspaceProjectRuntimeRecord] = [:]
   @State var workspaceTimelineProjectSummaries: [UUID: ProjectSummaryRecord] = [:]
   @State var workspaceTimelineScheduleEntriesByProjectID: [UUID: [ScheduleSliceEntry]] = [:]
+  @State var pendingTimelineProjectStageOverrides: [UUID: ProjectProgressStage] = [:]
   @State var retainedTimelineReadBlocker: RetainedWorkspaceSurfaceProjectionBlocker?
   @State var retainedTimelineCalendarBridgeDecisionsByTaskID:
     [UUID: RetainedCalendarBridgeDecision] = [:]

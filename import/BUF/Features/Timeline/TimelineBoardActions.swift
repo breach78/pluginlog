@@ -54,10 +54,8 @@ extension TimelineBoardView {
     guard nextOrder != timelineProjectManualOrder else { return }
     timelineProjectManualOrder = nextOrder
     TimelineProjectManualOrderStore.save(nextOrder)
-    cachedTimelineBars = []
-    cachedTimelineRowLayouts = []
-    cachedTimelineBarsSourceSignature = nil
-    cachedTimelineBarsPresentationSignature = nil
+    invalidateWorkspaceTimelineProjectionCaches()
+    rebuildWorkspaceTimelineProjectionCachesAfterMutation()
   }
 
   func restoreTimelineProjectManualOrder(
@@ -182,6 +180,7 @@ extension TimelineBoardView {
         title: timelinePreviewTitle(for: title),
         dateText: nil,
         notePreviewText: nil,
+        metadataIndicators: .empty,
         isCompleted: false,
         isOverdue: false
       )
@@ -236,6 +235,7 @@ extension TimelineBoardView {
         title: timelinePreviewTitle(for: title),
         dateText: timelineProjectListDateText(for: entry),
         notePreviewText: TimelineProjectListWindowSnapshotFactory.notePreviewText(for: entry),
+        metadataIndicators: TimelineProjectListWindowSnapshotFactory.metadataIndicators(for: entry),
         isCompleted: entry.isCompleted,
         isOverdue: timelineProjectListEntryIsOverdue(entry)
       )
@@ -391,6 +391,10 @@ extension TimelineBoardView {
         dateText: nil,
         notePreviewText: TimelineProjectListWindowSnapshotFactory.notePreviewText(
           for: snapshot.fields.noteText
+        ),
+        metadataIndicators: TimelineProjectListWindowSnapshotFactory.metadataIndicators(
+          noteText: snapshot.fields.noteText,
+          attachmentCount: 0
         ),
         isCompleted: snapshot.isCompleted,
         isOverdue: false
@@ -914,11 +918,14 @@ extension TimelineBoardView {
   func updateTimelineProjectStage(
     projectID: UUID,
     stage: ProjectProgressStage,
-    registerUndo: Bool = true
+    registerUndo: Bool = true,
+    onFailure: @escaping () -> Void = {}
   ) {
     let currentStage = timelineProjectStage(for: projectID)
     guard currentStage != stage else { return }
     guard allowTimelineRetainedWrite("project-stage") else { return }
+    pendingTimelineProjectStageOverrides[projectID] = stage
+    applyTimelineProjectStageLocally(projectID: projectID, stage: stage)
     Task { @MainActor in
       do {
         _ = try await ObsidianRetainedProjectCommandService.setProjectStage(
@@ -927,6 +934,9 @@ extension TimelineBoardView {
           stage: stage
         )
         await refreshTimelineProjectState(including: [projectID])
+        if pendingTimelineProjectStageOverrides[projectID] == stage {
+          pendingTimelineProjectStageOverrides.removeValue(forKey: projectID)
+        }
 
         guard registerUndo else { return }
         appState.registerUndo(
@@ -940,8 +950,33 @@ extension TimelineBoardView {
           )
         }
       } catch {
+        if pendingTimelineProjectStageOverrides[projectID] == stage {
+          pendingTimelineProjectStageOverrides.removeValue(forKey: projectID)
+          applyTimelineProjectStageLocally(projectID: projectID, stage: currentStage)
+          onFailure()
+        }
         appState.errorMessage = error.localizedDescription
       }
+    }
+  }
+
+  func applyTimelineProjectStageLocally(projectID: UUID, stage: ProjectProgressStage) {
+    var didChange = false
+    if let project = workspaceTimelineProjectSnapshots[projectID],
+      ProjectProgressStage.fromStorageValue(project.progressStageRaw) != stage
+    {
+      workspaceTimelineProjectSnapshots[projectID] = project.replacingProgressStage(stage)
+      didChange = true
+    }
+    if let summary = workspaceTimelineProjectSummaries[projectID],
+      ProjectProgressStage.fromStorageValue(summary.stageRaw) != stage
+    {
+      workspaceTimelineProjectSummaries[projectID] = summary.replacingProgressStage(stage)
+      didChange = true
+    }
+    if didChange {
+      invalidateWorkspaceTimelineProjectionCaches()
+      rebuildWorkspaceTimelineProjectionCachesAfterMutation()
     }
   }
 
@@ -1010,6 +1045,7 @@ extension TimelineBoardView {
     cachedTimelineRowLayouts = buildRowLayouts(for: cachedTimelineBars)
     cachedTimelineBarsSourceSignature = nil
     cachedTimelineBarsPresentationSignature = timelineSignature(for: cachedTimelineBars)
+    rebuildWorkspaceTimelineProjectionCachesAfterMutation()
     if activeTimelineProjectListPopoverProjectID == projectID {
       activeTimelineProjectListPopoverProjectID = nil
     }
@@ -1052,32 +1088,28 @@ extension TimelineBoardView {
     }
     guard draggedID != targetID else { return }
     let bars = timelineBoardSnapshot.bars
-    guard let draggedBar = bars.first(where: { $0.projectID == draggedID }),
-      let targetBar = bars.first(where: { $0.projectID == targetID })
-    else {
-      return
-    }
-    let draggedStage = priorityStage(for: draggedBar)
-    let targetStage = priorityStage(for: targetBar)
-    guard let reordered = TimelineBoardReadPath.reorderedProjectIDsAfterProjectListDrop(
+    guard let mutation = TimelineProjectListDropPlanner.mutation(
       bars: bars,
       mode: projectListSortMode,
       draggedID: draggedID,
       targetID: targetID,
       placement: placement,
+      currentManualOrder: timelineProjectManualOrder,
       stageForBar: priorityStage(for:)
     ) else {
       return
     }
 
-    var nextOrder = timelineProjectManualOrder
-    for (index, projectID) in reordered.enumerated() {
-      nextOrder[projectID] = Int64(index)
-    }
-    restoreTimelineProjectManualOrder(nextOrder)
+    let previousManualOrder = timelineProjectManualOrder
+    restoreTimelineProjectManualOrder(mutation.manualOrderByProjectID)
 
-    if projectListSortMode != .manual, draggedStage != targetStage {
-      updateTimelineProjectStage(projectID: draggedID, stage: targetStage)
+    if let stageChange = mutation.stageChange {
+      updateTimelineProjectStage(projectID: stageChange.projectID, stage: stageChange.stage) {
+        self.restoreTimelineProjectManualOrder(
+          previousManualOrder,
+          registerUndo: false
+        )
+      }
     }
   }
 

@@ -98,6 +98,7 @@ struct TimelineProjectListSession {
       title: TimelineBoardReadPath.timelinePreviewTitle(for: title),
       dateText: nil,
       notePreviewText: nil,
+      metadataIndicators: .empty,
       isCompleted: false,
       isOverdue: false
     )
@@ -144,6 +145,7 @@ struct TimelineProjectListSession {
       title: TimelineBoardReadPath.timelinePreviewTitle(for: title),
       dateText: previous.dateText,
       notePreviewText: previous.notePreviewText,
+      metadataIndicators: previous.metadataIndicators,
       isCompleted: previous.isCompleted,
       isOverdue: previous.isOverdue
     )
@@ -228,6 +230,7 @@ struct TimelineProjectListSession {
       title: task.title,
       dateText: task.dateText,
       notePreviewText: task.notePreviewText,
+      metadataIndicators: task.metadataIndicators,
       isCompleted: isCompleted,
       isOverdue: isCompleted ? false : task.isOverdue
     )

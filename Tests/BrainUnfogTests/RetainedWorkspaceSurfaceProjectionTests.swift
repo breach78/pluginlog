@@ -630,6 +630,38 @@ final class RetainedWorkspaceSurfaceProjectionTests: XCTestCase {
     XCTAssertEqual(filtered[untouchedTaskID]?.taskID, untouchedTaskID)
   }
 
+  func testProjectStageOverrideKeepsPendingStageOverStaleReload() {
+    let projectID = UUID()
+    let projection = RetainedWorkspaceSurfaceProjection(
+      projectSnapshots: [
+        projectID: makeWorkspaceProjectSnapshot(projectID: projectID, stage: .do)
+      ],
+      projectSummaries: [
+        projectID: makeSummary(title: "Project", stage: .do)
+      ],
+      scheduleEntriesByProjectID: [:],
+      calendarBridgeDecisionsByTaskID: [:]
+    )
+
+    let overridden = RetainedWorkspaceProjectStageOverridePolicy.apply(
+      [projectID: .decide],
+      to: projection
+    )
+
+    XCTAssertEqual(
+      overridden.projectSnapshots[projectID]?.progressStageRaw,
+      ProjectProgressStage.decide.storageRawValue
+    )
+    XCTAssertEqual(
+      overridden.projectSummaries[projectID]?.stageRaw,
+      ProjectProgressStage.decide.storageRawValue
+    )
+    XCTAssertEqual(
+      overridden.projectSummaries[projectID]?.progress,
+      ProjectProgressStage.decide.progressValue
+    )
+  }
+
   private static let calendar: Calendar = {
     var calendar = Calendar(identifier: .gregorian)
     calendar.timeZone = TimeZone(secondsFromGMT: 0)!
@@ -657,7 +689,8 @@ final class RetainedWorkspaceSurfaceProjectionTests: XCTestCase {
 
   private func makeWorkspaceProjectSnapshot(
     projectID: UUID,
-    title: String = "Project"
+    title: String = "Project",
+    stage: ProjectProgressStage? = nil
   ) -> WorkspaceProjectRuntimeRecord {
     WorkspaceProjectRuntimeRecord(
       id: projectID,
@@ -668,7 +701,7 @@ final class RetainedWorkspaceSurfaceProjectionTests: XCTestCase {
       projectNoteMarkdown: "",
       localStartDate: nil,
       localDeadline: nil,
-      progressStageRaw: nil,
+      progressStageRaw: stage?.storageRawValue,
       boardOrder: nil,
       createdAt: .distantPast,
       updatedAt: .distantPast,
@@ -676,7 +709,10 @@ final class RetainedWorkspaceSurfaceProjectionTests: XCTestCase {
     )
   }
 
-  private func makeSummary(title: String) -> ProjectSummaryRecord {
+  private func makeSummary(
+    title: String,
+    stage: ProjectProgressStage = .do
+  ) -> ProjectSummaryRecord {
     ProjectSummaryRecord(
       openRootTaskCount: 0,
       completedRootTaskCount: 0,
@@ -685,8 +721,8 @@ final class RetainedWorkspaceSurfaceProjectionTests: XCTestCase {
       todayTaskCount: 0,
       nextUpcomingDate: nil,
       deadline: nil,
-      stageRaw: ProjectProgressStage.do.storageRawValue,
-      progress: 0,
+      stageRaw: stage.storageRawValue,
+      progress: stage.progressValue,
       latestTaskUpdatedAt: nil,
       title: title,
       colorHex: nil,

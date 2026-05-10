@@ -36,6 +36,24 @@ struct WorkspaceProjectRuntimeRecord: Equatable, Sendable, Identifiable {
   let createdAt: Date
   let updatedAt: Date
   let isArchived: Bool
+
+  func replacingProgressStage(_ stage: ProjectProgressStage) -> WorkspaceProjectRuntimeRecord {
+    WorkspaceProjectRuntimeRecord(
+      id: id,
+      title: title,
+      colorHex: colorHex,
+      reminderListIdentifier: reminderListIdentifier,
+      reminderListExternalIdentifier: reminderListExternalIdentifier,
+      projectNoteMarkdown: projectNoteMarkdown,
+      localStartDate: localStartDate,
+      localDeadline: localDeadline,
+      progressStageRaw: stage.storageRawValue,
+      boardOrder: boardOrder,
+      createdAt: createdAt,
+      updatedAt: updatedAt,
+      isArchived: isArchived
+    )
+  }
 }
 
 struct ProjectSummaryRecord: Equatable, Sendable {
@@ -52,6 +70,24 @@ struct ProjectSummaryRecord: Equatable, Sendable {
   let title: String
   let colorHex: String?
   let isArchived: Bool
+
+  func replacingProgressStage(_ stage: ProjectProgressStage) -> ProjectSummaryRecord {
+    ProjectSummaryRecord(
+      openRootTaskCount: openRootTaskCount,
+      completedRootTaskCount: completedRootTaskCount,
+      undatedOpenRootTaskCount: undatedOpenRootTaskCount,
+      overdueOpenRootTaskCount: overdueOpenRootTaskCount,
+      todayTaskCount: todayTaskCount,
+      nextUpcomingDate: nextUpcomingDate,
+      deadline: deadline,
+      stageRaw: stage.storageRawValue,
+      progress: stage.progressValue,
+      latestTaskUpdatedAt: latestTaskUpdatedAt,
+      title: title,
+      colorHex: colorHex,
+      isArchived: isArchived
+    )
+  }
 }
 
 struct ScheduleSliceEntry: Identifiable, Equatable, Sendable {

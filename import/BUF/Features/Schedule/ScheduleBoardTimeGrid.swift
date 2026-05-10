@@ -5,9 +5,6 @@ private enum ScheduleItemVisualStyle {
   static let titleFontSize: CGFloat = 11.5
   static let supplementalFontSize = titleFontSize * 0.8
   static let secondaryTextOpacityMultiplier: Double = 0.6
-  static let attachmentLinkRegex = try? NSRegularExpression(
-    pattern: #"!?\[[^\]]+\]\(raw/assets/[^)]+\)"#
-  )
 }
 
 struct ScheduleCurrentTimeIndicator: View {
@@ -2317,11 +2314,7 @@ extension ScheduleBoardView {
   }
 
   private func scheduleAttachmentLinkCount(in noteText: String) -> Int {
-    guard let regex = ScheduleItemVisualStyle.attachmentLinkRegex else { return 0 }
-    return regex.numberOfMatches(
-      in: noteText,
-      range: NSRange(noteText.startIndex..<noteText.endIndex, in: noteText)
-    )
+    TaskEditAttachmentService.attachmentLinkCount(in: noteText)
   }
 
   func scheduleTimedTitleLineLimit(

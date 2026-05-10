@@ -52,8 +52,7 @@ enum TaskEditAttachmentService {
 
   static func attachments(in noteText: String, vaultRootURL: URL?) -> [TaskEditAttachment] {
     guard let vaultRootURL else { return [] }
-    let pattern = #"!?\[([^\]]+)\]\((raw/assets/[^)]+)\)"#
-    guard let regex = try? NSRegularExpression(pattern: pattern) else { return [] }
+    guard let regex = attachmentLinkRegex else { return [] }
     let nsRange = NSRange(noteText.startIndex..<noteText.endIndex, in: noteText)
     return regex.matches(in: noteText, range: nsRange).compactMap { match in
       guard
@@ -68,6 +67,14 @@ enum TaskEditAttachmentService {
         fileURL: vaultRootURL.appendingPathComponent(decodedPath).standardizedFileURL
       )
     }
+  }
+
+  static func attachmentLinkCount(in noteText: String) -> Int {
+    guard let regex = attachmentLinkRegex else { return 0 }
+    return regex.numberOfMatches(
+      in: noteText,
+      range: NSRange(noteText.startIndex..<noteText.endIndex, in: noteText)
+    )
   }
 
   static func noteTextByAppendingAttachments(
@@ -172,9 +179,13 @@ enum TaskEditAttachmentService {
   private static func isStandaloneAttachmentLink(_ line: String) -> Bool {
     let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !trimmed.isEmpty else { return false }
-    let pattern = #"^!?\[[^\]]+\]\(raw/assets/[^)]+\)$"#
-    return trimmed.range(of: pattern, options: .regularExpression) != nil
+    let range = NSRange(trimmed.startIndex..<trimmed.endIndex, in: trimmed)
+    return attachmentLinkRegex?.firstMatch(in: trimmed, range: range)?.range == range
   }
+
+  private static let attachmentLinkRegex = try? NSRegularExpression(
+    pattern: #"!?\[([^\]]+)\]\((raw/assets/[^)]+)\)"#
+  )
 
   private static func attachment(for fileURL: URL, vaultRootURL: URL) -> TaskEditAttachment {
     let fileName = fileURL.lastPathComponent

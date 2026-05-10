@@ -18,6 +18,88 @@ struct TimelineProjectDropTarget {
   let maxY: CGFloat
 }
 
+struct TimelineProjectStageChange: Equatable {
+  let projectID: UUID
+  let stage: ProjectProgressStage
+}
+
+struct TimelineProjectListDropMutation: Equatable {
+  let manualOrderByProjectID: [UUID: Int64]
+  let stageChange: TimelineProjectStageChange?
+}
+
+enum TimelineProjectListDropPlanner {
+  static func mutation(
+    bars: [TimelineProjectBar],
+    mode: ProjectListSortMode,
+    draggedID: UUID,
+    targetID: UUID,
+    placement: TimelineProjectDropPlacement,
+    currentManualOrder: [UUID: Int64],
+    stageForBar: (TimelineProjectBar) -> ProjectProgressStage
+  ) -> TimelineProjectListDropMutation? {
+    guard mode.allowsInteractiveReordering || mode == .bucketGrouped else { return nil }
+    guard draggedID != targetID else { return nil }
+    let visibleIDs = bars.map(\.projectID)
+    guard visibleIDs.contains(draggedID), visibleIDs.contains(targetID) else { return nil }
+
+    let stagesByProjectID = Dictionary(uniqueKeysWithValues: bars.map {
+      ($0.projectID, stageForBar($0))
+    })
+    guard let draggedStage = stagesByProjectID[draggedID],
+      let targetStage = stagesByProjectID[targetID]
+    else {
+      return nil
+    }
+
+    let reorderedIDs: [UUID]
+    switch mode {
+    case .manual:
+      guard let reordered = TimelineBoardReadPath.reorderedProjectIDsAfterDrop(
+        visibleIDs,
+        draggedID: draggedID,
+        targetID: targetID,
+        placement: placement
+      )
+      else {
+        return nil
+      }
+      reorderedIDs = reordered
+    case .priority, .bucketGrouped:
+      guard let targetStageIDs = TimelineBoardReadPath.reorderedProjectIDsAfterDrop(
+        visibleIDs.filter { stagesByProjectID[$0] == targetStage && $0 != draggedID },
+        draggedID: draggedID,
+        targetID: targetID,
+        placement: placement
+      ) else {
+        return nil
+      }
+      reorderedIDs = ProjectProgressStage.allCases.flatMap { stage in
+        if stage == targetStage {
+          return targetStageIDs
+        }
+        return visibleIDs.filter { stagesByProjectID[$0] == stage && $0 != draggedID }
+      }
+    case .recent, .title:
+      return nil
+    }
+
+    var nextOrder = currentManualOrder
+    for (index, projectID) in reorderedIDs.enumerated() {
+      nextOrder[projectID] = Int64(index)
+    }
+
+    let stageChange =
+      mode == .manual || draggedStage == targetStage
+      ? nil
+      : TimelineProjectStageChange(projectID: draggedID, stage: targetStage)
+    return TimelineProjectListDropMutation(
+      manualOrderByProjectID: nextOrder,
+      stageChange: stageChange
+    )
+  }
+}
+
 struct TimelineProjectRowDropDelegate: DropDelegate {
   let targetProjectID: UUID
   @Binding var draggingProjectID: UUID?
