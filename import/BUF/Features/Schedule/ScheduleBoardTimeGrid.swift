@@ -664,12 +664,13 @@ extension ScheduleBoardView {
     postponeAction: (() -> Void)? = nil
   ) -> some View {
     let taskRow = taskDescriptor.taskRow
+    let isCompleted = effectiveScheduleTaskIsCompleted(taskRow)
     let density = timedBlockDensity(for: blockHeight)
 
     return ScheduleTaskBlockSurface(
       color: color,
       isSelected: isSelected,
-      isCompleted: taskRow.isCompleted,
+      isCompleted: isCompleted,
       isPreparationSlot: isPreparationSlot,
       selectionHighlightColor: selectionHighlightColor
     ) {
@@ -679,6 +680,7 @@ extension ScheduleBoardView {
         subtitle: subtitle,
         color: color,
         isSelected: isSelected,
+        isCompleted: isCompleted,
         blockHeight: blockHeight,
         recordedAt: day,
         isPreparationSlot: isPreparationSlot,
@@ -805,6 +807,7 @@ extension ScheduleBoardView {
     subtitle: String?,
     color: Color,
     isSelected: Bool,
+    isCompleted: Bool,
     blockHeight: CGFloat,
     recordedAt: Date,
     isPreparationSlot: Bool,
@@ -813,10 +816,9 @@ extension ScheduleBoardView {
     density: ScheduleTimedBlockDensity,
     postponeAction: (() -> Void)? = nil
   ) -> some View {
-    let taskRow = taskDescriptor.taskRow
     let primaryTextColor = scheduleTaskPrimaryTextColor(
       isSelected: isSelected,
-      isCompleted: taskRow.isCompleted
+      isCompleted: isCompleted
     )
     let secondaryTextColor = scheduleTaskSecondaryTextColor(isSelected: isSelected)
     let titleLineLimit = scheduleTimedTitleLineLimit(for: blockHeight, density: density)
@@ -1051,6 +1053,7 @@ extension ScheduleBoardView {
     postponeAction: (() -> Void)? = nil
   ) -> some View {
     let taskRow = taskDescriptor.taskRow
+    let isCompleted = effectiveScheduleTaskIsCompleted(taskRow)
     return ScheduleTaskChipSurface(
       color: color,
       isSelected: isSelected,
@@ -1074,7 +1077,7 @@ extension ScheduleBoardView {
           taskDescriptor: taskDescriptor,
           titleColor: scheduleTaskPrimaryTextColor(
             isSelected: isSelected,
-            isCompleted: taskRow.isCompleted
+            isCompleted: isCompleted
           ),
           metadataColor: scheduleTaskSecondaryTextColor(isSelected: isSelected),
           lineLimit: 1
@@ -1206,12 +1209,13 @@ extension ScheduleBoardView {
     blockHeight: CGFloat
   ) -> some View {
     let taskRow = taskDescriptor.taskRow
+    let isCompleted = effectiveScheduleTaskIsCompleted(taskRow)
     let density = timedBlockDensity(for: blockHeight)
 
     return ScheduleTaskBlockSurface(
       color: color,
       isSelected: isSelected,
-      isCompleted: taskRow.isCompleted,
+      isCompleted: isCompleted,
       isPreparationSlot: isPreparationSlot,
       selectionHighlightColor: selectionHighlightColor
     ) {
@@ -1221,6 +1225,7 @@ extension ScheduleBoardView {
         subtitle: subtitle,
         color: color,
         isSelected: isSelected,
+        isCompleted: isCompleted,
         blockHeight: blockHeight,
         recordedAt: WorkspaceTaskScheduleEventStore.scheduledDay(for: taskRow) ?? .now,
         isPreparationSlot: isPreparationSlot,
@@ -1349,12 +1354,13 @@ extension ScheduleBoardView {
     targetCompletedWorkUnits: Int?
   ) -> some View {
     let taskRow = taskDescriptor.taskRow
+    let isCompleted = effectiveScheduleTaskIsCompleted(taskRow)
     let density = timedBlockDensity(for: frame.height)
 
     return ScheduleTaskBlockSurface(
       color: color,
       isSelected: true,
-      isCompleted: taskRow.isCompleted,
+      isCompleted: isCompleted,
       isPreparationSlot: isPreparationSlot,
       selectionHighlightColor: selectionHighlightColor
     ) {
@@ -1364,6 +1370,7 @@ extension ScheduleBoardView {
         subtitle: taskDescriptor.projectTitle,
         color: color,
         isSelected: true,
+        isCompleted: isCompleted,
         blockHeight: frame.height,
         recordedAt: day,
         isPreparationSlot: isPreparationSlot,
@@ -2101,6 +2108,7 @@ extension ScheduleBoardView {
     targetCompletedWorkUnits: Int? = nil
   ) -> some View {
     let taskRow = taskDescriptor.taskRow
+    let isCompleted = effectiveScheduleTaskIsCompleted(taskRow)
     return Button {
       suppressTaskTap(for: TaskTapSuppressionPolicy.completionControlDuration)
       if let targetCompletedWorkUnits {
@@ -2115,21 +2123,21 @@ extension ScheduleBoardView {
         updateScheduleTaskCompletion(
           taskID: taskRow.id,
           projectID: taskDescriptor.projectID,
-          isCompleted: !taskRow.isCompleted,
-          completionDate: taskRow.isCompleted ? nil : .now,
+          isCompleted: !isCompleted,
+          completionDate: isCompleted ? nil : .now,
           registerUndo: true
         )
       }
     } label: {
       scheduleTaskCompletionGlyph(
-        isCompleted: taskRow.isCompleted,
+        isCompleted: isCompleted,
         isRecurring: WorkspaceTaskScheduleEventStore.isRecurring(taskRow),
         color: color,
         isSelected: isSelected,
         compact: compact,
         isPreparationSlot: isPreparationSlot
       )
-      .padding(2)
+      .frame(width: compact ? 20 : 22, height: compact ? 20 : 22)
       .contentShape(Rectangle())
     }
     .buttonStyle(.plain)
@@ -2141,7 +2149,7 @@ extension ScheduleBoardView {
     .allowsHitTesting(!taskRow.isLocalCompletedRecurringOccurrence)
     .help(
       targetCompletedWorkUnits == nil
-        ? (taskRow.isCompleted ? "완료 취소" : "완료")
+        ? (isCompleted ? "완료 취소" : "완료")
         : "예상 작업 체크"
     )
   }

@@ -103,11 +103,36 @@ extension MainWorkspaceView {
   func workspaceScheduleMonthDetailPanel(
     _ target: ScheduleMonthDetailPanelTarget
   ) -> some View {
-    ScheduleMonthDetailPanelContent(
+    let quickAddProjects = activeQuickAddProjects.map {
+      ScheduleQuickAddProjectOption(id: $0.id, title: $0.title)
+    }
+    return ScheduleMonthDetailPanelContent(
       target: target,
       calendar: .autoupdatingCurrent,
+      quickAddProjects: quickAddProjects,
+      defaultQuickAddProjectID: syncQuickAddProjectID,
       onOpenItem: { item in
         openScheduleMonthDetailItem(item)
+      },
+      onToggleTaskCompletion: { item, isCompleted in
+        await toggleScheduleMonthDetailTaskCompletion(item, isCompleted: isCompleted)
+      },
+      onUpdateItemSchedule: { item, day, timeMinutes, durationMinutes in
+        await updateScheduleMonthDetailItemSchedule(
+          item,
+          day: day,
+          timeMinutes: timeMinutes,
+          durationMinutes: durationMinutes
+        )
+      },
+      onCreateTask: { title, projectID, day, timeMinutes, durationMinutes in
+        await createScheduleMonthDetailTask(
+          title: title,
+          projectID: projectID,
+          day: day,
+          timeMinutes: timeMinutes,
+          durationMinutes: durationMinutes
+        )
       },
       onClose: {
         dismissScheduleMonthDetail()

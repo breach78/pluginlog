@@ -106,7 +106,7 @@ extension ScheduleBoardView {
             targetCompletedWorkUnits: entry.targetCompletedWorkUnits
           )
         )
-        .gesture(
+        .simultaneousGesture(
           taskDragGesture(
             for: taskDescriptor,
             entryID: entry.id,

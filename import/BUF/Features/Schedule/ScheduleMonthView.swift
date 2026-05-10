@@ -23,6 +23,7 @@ struct ScheduleMonthView: View {
   let selectedDate: Date?
   let calendar: Calendar
   let onSelectDay: (Date, [ScheduleMonthItem]) -> Void
+  let onToggleTaskCompletion: (UUID, UUID, Bool) -> Void
   let onMoveItem: (ScheduleMonthDragItem, Date) -> Void
 
   private let weekdayHeaderHeight: CGFloat = 28
@@ -156,6 +157,7 @@ struct ScheduleMonthView: View {
               gridLineColor: gridLineColor,
               gridLineWidth: gridLineWidth,
               onSelectDay: onSelectDay,
+              onToggleTaskCompletion: onToggleTaskCompletion,
               onMoveItem: onMoveItem
             )
             .id(weekLayout.weekStart)
@@ -220,6 +222,7 @@ private struct ScheduleMonthWeekRow: View {
   let gridLineColor: Color
   let gridLineWidth: CGFloat
   let onSelectDay: (Date, [ScheduleMonthItem]) -> Void
+  let onToggleTaskCompletion: (UUID, UUID, Bool) -> Void
   let onMoveItem: (ScheduleMonthDragItem, Date) -> Void
 
   private var visibleAllDaySegments: [ScheduleMonthAllDaySpanSegment] {
@@ -261,6 +264,7 @@ private struct ScheduleMonthWeekRow: View {
               onSelect: {
                 onSelectDay(dayLayout.normalizedDay, dayLayout.allItems)
               },
+              onToggleTaskCompletion: onToggleTaskCompletion,
               onMoveItem: onMoveItem
             )
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -399,7 +403,10 @@ private struct ScheduleMonthDayCell: View {
   @Binding var activeDragFeedback: ScheduleMonthDragFeedback?
   let calendar: Calendar
   let onSelect: () -> Void
+  let onToggleTaskCompletion: (UUID, UUID, Bool) -> Void
   let onMoveItem: (ScheduleMonthDragItem, Date) -> Void
+
+  @State private var suppressedSelectUntil: Date = .distantPast
 
   private var visibleRowCapacity: Int {
     max(0, visibleItemLimit)
@@ -431,7 +438,7 @@ private struct ScheduleMonthDayCell: View {
     }
     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     .contentShape(Rectangle())
-    .onTapGesture(perform: onSelect)
+    .onTapGesture(perform: selectIfNotSuppressed)
     .clipped()
   }
 
@@ -449,7 +456,9 @@ private struct ScheduleMonthDayCell: View {
       ForEach(visibleItems) { item in
         ScheduleMonthCompactItemRow(
           item: item,
-          isPastCompletedTask: isPastCompletedTask(item)
+          isCompletedTask: isCompletedTask(item),
+          onToggleCompletion: completionToggleAction(for: item),
+          onPressCompletionControl: completionPressAction(for: item)
         )
         .modifier(
           ScheduleMonthLocalDragModifier(
@@ -464,7 +473,7 @@ private struct ScheduleMonthDayCell: View {
           )
         )
         .simultaneousGesture(
-          TapGesture().onEnded(onSelect)
+          TapGesture().onEnded(selectIfNotSuppressed)
         )
       }
 
@@ -507,10 +516,44 @@ private struct ScheduleMonthDayCell: View {
       : .secondary.opacity(0.55)
   }
 
-  private func isPastCompletedTask(_ item: ScheduleMonthItem) -> Bool {
+  private func isCompletedTask(_ item: ScheduleMonthItem) -> Bool {
     guard item.isCompleted else { return false }
     guard case .workspaceTask = item.source else { return false }
-    return calendar.startOfDay(for: item.startDate) < calendar.startOfDay(for: today)
+    return true
+  }
+
+  private func completionToggleAction(for item: ScheduleMonthItem) -> (() -> Void)? {
+    guard !item.isPreparationSlot else { return nil }
+    guard case .workspaceTask(let taskID, let projectID) = item.source else { return nil }
+    return {
+      suppressSelectionAfterCompletionPress()
+      onToggleTaskCompletion(taskID, projectID, item.isCompleted)
+    }
+  }
+
+  private func completionPressAction(for item: ScheduleMonthItem) -> (() -> Void)? {
+    guard !item.isPreparationSlot else { return nil }
+    guard case .workspaceTask = item.source else { return nil }
+    return {
+      suppressSelectionAfterCompletionPress()
+    }
+  }
+
+  private func suppressSelectionAfterCompletionPress() {
+    suppressedSelectUntil = TaskTapSuppressionPolicy.suppressedUntil(
+      now: Date(),
+      duration: TaskTapSuppressionPolicy.completionControlDuration
+    )
+  }
+
+  private func selectIfNotSuppressed() {
+    guard TaskTapSuppressionPolicy.shouldHandleTaskTap(
+      now: Date(),
+      suppressedUntil: suppressedSelectUntil
+    ) else {
+      return
+    }
+    onSelect()
   }
 
   @ViewBuilder
@@ -565,7 +608,9 @@ private struct ScheduleMonthAllDaySpanRow: View {
 
 private struct ScheduleMonthCompactItemRow: View {
   let item: ScheduleMonthItem
-  let isPastCompletedTask: Bool
+  let isCompletedTask: Bool
+  let onToggleCompletion: (() -> Void)?
+  let onPressCompletionControl: (() -> Void)?
 
   private static let timeFormatStyle = Date.FormatStyle(
     date: .omitted,
@@ -574,14 +619,14 @@ private struct ScheduleMonthCompactItemRow: View {
   .locale(Locale(identifier: "ko_KR"))
 
   private var rowOpacity: Double {
-    if isPastCompletedTask { return 0.384 }
+    if isCompletedTask { return 0.384 }
     if item.isBackgroundCalendar { return 0.48 }
     return 1
   }
 
   var body: some View {
     HStack(spacing: 4) {
-      marker
+      markerControl
 
       Text(item.title)
         .font(.system(size: 13, weight: .regular))
@@ -602,10 +647,31 @@ private struct ScheduleMonthCompactItemRow: View {
   }
 
   @ViewBuilder
+  private var markerControl: some View {
+    if let onToggleCompletion {
+      Button(action: onToggleCompletion) {
+        marker
+          .frame(width: 16, height: ScheduleMonthLayoutMetrics.itemRowHeight)
+          .contentShape(Rectangle())
+      }
+      .buttonStyle(.plain)
+      .simultaneousGesture(
+        taskCompletionPressGesture {
+          onPressCompletionControl?()
+        }
+      )
+      .help(item.isCompleted ? "완료 취소" : "완료")
+    } else {
+      marker
+        .frame(width: 16, height: ScheduleMonthLayoutMetrics.itemRowHeight)
+    }
+  }
+
+  @ViewBuilder
   private var marker: some View {
     switch item.source {
     case .workspaceTask:
-      if isPastCompletedTask {
+      if isCompletedTask {
         Image(systemName: "checkmark.circle.fill")
           .font(.system(size: 10, weight: .semibold))
           .foregroundStyle(itemColor)
@@ -632,7 +698,7 @@ private struct ScheduleMonthCompactItemRow: View {
   }
 
   private var textColor: Color {
-    isPastCompletedTask ? .secondary : .primary
+    isCompletedTask ? .secondary : .primary
   }
 
   private var timeText: String? {

@@ -815,6 +815,286 @@ extension MainWorkspaceView {
     }
   }
 
+  func toggleScheduleMonthDetailTaskCompletion(
+    _ item: ScheduleMonthItem,
+    isCompleted: Bool
+  ) async -> ScheduleMonthItem? {
+    guard case .workspaceTask(let taskID, let projectID) = item.source else { return nil }
+    let didSave = await setWorkspaceProjectListWindowTaskCompletion(
+      taskID,
+      projectID: projectID,
+      isCompleted: isCompleted,
+      registerUndo: true
+    )
+    guard didSave else { return nil }
+    return scheduleMonthDetailItem(item, isCompleted: isCompleted)
+  }
+
+  func updateScheduleMonthDetailItemSchedule(
+    _ item: ScheduleMonthItem,
+    day: Date,
+    timeMinutes: Int?,
+    durationMinutes: Int?
+  ) async -> ScheduleMonthItem? {
+    switch item.source {
+    case .workspaceTask(let taskID, let projectID):
+      return await updateScheduleMonthDetailTaskSchedule(
+        item,
+        taskID: taskID,
+        projectID: projectID,
+        day: day,
+        timeMinutes: timeMinutes,
+        durationMinutes: durationMinutes
+      )
+    case .calendarEvent:
+      return await updateScheduleMonthDetailCalendarEventSchedule(
+        item,
+        day: day,
+        timeMinutes: timeMinutes,
+        durationMinutes: durationMinutes
+      )
+    }
+  }
+
+  func createScheduleMonthDetailTask(
+    title: String,
+    projectID: UUID,
+    day: Date,
+    timeMinutes: Int?,
+    durationMinutes: Int?
+  ) async -> ScheduleMonthItem? {
+    let calendar = Calendar.autoupdatingCurrent
+    let normalizedDay = calendar.startOfDay(for: day)
+    let startDate = scheduleMonthDetailStartDate(
+      day: normalizedDay,
+      timeMinutes: timeMinutes,
+      calendar: calendar
+    )
+    let taskID = await appState.createTask(
+      inProjectID: projectID,
+      title: title,
+      startDate: startDate,
+      durationMinutes: timeMinutes == nil ? nil : durationMinutes,
+      context: modelContext
+    )
+    guard let taskID else { return nil }
+
+    appState.registerUndo(with: undoManager, actionName: "할일 추가") {
+      Task { @MainActor in
+        do {
+          _ = try await ObsidianRetainedTaskCommandService.deleteTask(
+            vaultRootURL: appState.obsidianVaultRootURL,
+            projectID: projectID,
+            taskID: taskID,
+            reminderProjectProvider: appState.reminderProjectProvider
+          )
+          appState.bumpWorkspaceTreeRevision()
+        } catch {
+          appState.reportError(error, logMessage: "schedule month detail quick add undo failed")
+        }
+      }
+    }
+
+    let descriptor = workspaceProjectDescriptorsByID[projectID]
+    return ScheduleMonthItem(
+      id: "workspace-task-\(taskID.uuidString)",
+      source: .workspaceTask(taskID: taskID, projectID: projectID),
+      title: title.trimmingCharacters(in: .whitespacesAndNewlines),
+      subtitle: descriptor?.title,
+      startDate: startDate,
+      endDate: scheduleMonthDetailEndDate(
+        day: normalizedDay,
+        timeMinutes: timeMinutes,
+        durationMinutes: durationMinutes,
+        calendar: calendar
+      ),
+      isAllDay: timeMinutes == nil,
+      colorHex: descriptor?.colorHex,
+      isCompleted: false,
+      isPreparationSlot: false,
+      isBackgroundCalendar: false,
+      calendarEvent: nil
+    )
+  }
+
+  private func updateScheduleMonthDetailTaskSchedule(
+    _ item: ScheduleMonthItem,
+    taskID: UUID,
+    projectID: UUID,
+    day: Date,
+    timeMinutes: Int?,
+    durationMinutes: Int?
+  ) async -> ScheduleMonthItem? {
+    let calendar = Calendar.autoupdatingCurrent
+    let normalizedDay = calendar.startOfDay(for: day)
+    let previousDay = calendar.startOfDay(for: item.startDate)
+    let previousTimeMinutes = item.isAllDay ? nil : scheduleMonthDetailTimeMinutes(item.startDate, calendar: calendar)
+    let previousDuration = item.durationMinutes
+
+    do {
+      _ = try await ObsidianRetainedTaskCommandService.setTaskSchedule(
+        vaultRootURL: appState.obsidianVaultRootURL,
+        projectID: projectID,
+        taskID: taskID,
+        day: normalizedDay,
+        timeMinutes: timeMinutes,
+        durationMinutes: timeMinutes == nil ? nil : durationMinutes,
+        calendar: calendar,
+        reminderProjectProvider: appState.reminderProjectProvider
+      )
+      appState.bumpWorkspaceTreeRevision()
+      appState.registerUndo(with: undoManager, actionName: "일정 변경") {
+        Task { @MainActor in
+          do {
+            _ = try await ObsidianRetainedTaskCommandService.setTaskSchedule(
+              vaultRootURL: appState.obsidianVaultRootURL,
+              projectID: projectID,
+              taskID: taskID,
+              day: previousDay,
+              timeMinutes: previousTimeMinutes,
+              durationMinutes: previousDuration,
+              calendar: calendar,
+              reminderProjectProvider: appState.reminderProjectProvider
+            )
+            appState.bumpWorkspaceTreeRevision()
+          } catch {
+            appState.reportError(error, logMessage: "schedule month detail task schedule undo failed")
+          }
+        }
+      }
+      return scheduleMonthDetailItem(
+        item,
+        startDate: scheduleMonthDetailStartDate(
+          day: normalizedDay,
+          timeMinutes: timeMinutes,
+          calendar: calendar
+        ),
+        endDate: scheduleMonthDetailEndDate(
+          day: normalizedDay,
+          timeMinutes: timeMinutes,
+          durationMinutes: durationMinutes,
+          calendar: calendar
+        ),
+        isAllDay: timeMinutes == nil
+      )
+    } catch {
+      appState.reportError(error, logMessage: "schedule month detail task schedule failed")
+      return nil
+    }
+  }
+
+  private func updateScheduleMonthDetailCalendarEventSchedule(
+    _ item: ScheduleMonthItem,
+    day: Date,
+    timeMinutes: Int?,
+    durationMinutes: Int?
+  ) async -> ScheduleMonthItem? {
+    guard let event = item.calendarEvent, event.canEditTiming else { return nil }
+    let calendar = Calendar.autoupdatingCurrent
+    let normalizedDay = calendar.startOfDay(for: day)
+    let previousPreview = ScheduleInteractionPreview(
+      day: calendar.startOfDay(for: event.startDate),
+      timeMinutes: event.isAllDay ? nil : scheduleMonthDetailTimeMinutes(event.startDate, calendar: calendar),
+      durationMinutes: event.isAllDay
+        ? nil
+        : max(5, Int(event.endDate.timeIntervalSince(event.startDate) / 60))
+    )
+    let preview = ScheduleInteractionPreview(
+      day: normalizedDay,
+      timeMinutes: timeMinutes,
+      durationMinutes: timeMinutes == nil ? nil : durationMinutes
+    )
+
+    do {
+      let updatedEvent = try await appState.writeScheduleCalendarEventTiming(
+        event,
+        preview: preview,
+        scope: .thisEvent
+      )
+      appState.registerUndo(with: undoManager, actionName: "일정 변경") {
+        Task { @MainActor in
+          do {
+            _ = try await appState.writeScheduleCalendarEventTiming(
+              updatedEvent,
+              preview: previousPreview,
+              scope: .thisEvent
+            )
+          } catch {
+            appState.reportError(error, logMessage: "schedule month detail calendar undo failed")
+          }
+        }
+      }
+      return ScheduleMonthItem(
+        id: "calendar-\(updatedEvent.id)",
+        source: .calendarEvent(eventID: updatedEvent.id),
+        title: updatedEvent.title,
+        subtitle: updatedEvent.calendarTitle,
+        startDate: updatedEvent.startDate,
+        endDate: updatedEvent.endDate,
+        isAllDay: updatedEvent.isAllDay,
+        colorHex: updatedEvent.calendarColorHex,
+        isCompleted: false,
+        isPreparationSlot: false,
+        isBackgroundCalendar: item.isBackgroundCalendar,
+        calendarEvent: updatedEvent
+      )
+    } catch {
+      appState.reportError(error, logMessage: "schedule month detail calendar schedule failed")
+      return nil
+    }
+  }
+
+  private func scheduleMonthDetailItem(
+    _ item: ScheduleMonthItem,
+    startDate: Date? = nil,
+    endDate: Date? = nil,
+    isAllDay: Bool? = nil,
+    isCompleted: Bool? = nil
+  ) -> ScheduleMonthItem {
+    ScheduleMonthItem(
+      id: item.id,
+      source: item.source,
+      title: item.title,
+      subtitle: item.subtitle,
+      startDate: startDate ?? item.startDate,
+      endDate: endDate ?? item.endDate,
+      isAllDay: isAllDay ?? item.isAllDay,
+      colorHex: item.colorHex,
+      isCompleted: isCompleted ?? item.isCompleted,
+      isPreparationSlot: item.isPreparationSlot,
+      isBackgroundCalendar: item.isBackgroundCalendar,
+      calendarEvent: item.calendarEvent
+    )
+  }
+
+  private func scheduleMonthDetailStartDate(
+    day: Date,
+    timeMinutes: Int?,
+    calendar: Calendar
+  ) -> Date {
+    let normalizedDay = calendar.startOfDay(for: day)
+    guard let timeMinutes else { return normalizedDay }
+    return calendar.date(byAdding: .minute, value: timeMinutes, to: normalizedDay) ?? normalizedDay
+  }
+
+  private func scheduleMonthDetailEndDate(
+    day: Date,
+    timeMinutes: Int?,
+    durationMinutes: Int?,
+    calendar: Calendar
+  ) -> Date {
+    let start = scheduleMonthDetailStartDate(day: day, timeMinutes: timeMinutes, calendar: calendar)
+    guard timeMinutes != nil else {
+      return calendar.date(byAdding: .day, value: 1, to: calendar.startOfDay(for: day)) ?? start
+    }
+    return calendar.date(byAdding: .minute, value: durationMinutes ?? 30, to: start) ?? start
+  }
+
+  private func scheduleMonthDetailTimeMinutes(_ date: Date, calendar: Calendar) -> Int {
+    let components = calendar.dateComponents([.hour, .minute], from: date)
+    return (components.hour ?? 0) * 60 + (components.minute ?? 0)
+  }
+
   func loadCalendarEventEditFields(
     eventID: String,
     fallback: ScheduleCalendarEventEditFields

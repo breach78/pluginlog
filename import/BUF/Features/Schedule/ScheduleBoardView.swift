@@ -537,6 +537,12 @@ struct ScheduleTaskSnapshotCache {
   let signature: Int
 }
 
+struct OptimisticScheduleTaskScheduleState: Equatable, Hashable {
+  let day: Date?
+  let timeMinutes: Int?
+  let durationMinutes: Int?
+}
+
 struct ScheduleBoardGlobalFramePreferenceKey: PreferenceKey {
   static let defaultValue: CGRect = .null
 
@@ -676,6 +682,8 @@ struct ScheduleBoardView: View {
   @State var cachedBackgroundTimedEntries: [ScheduleTimedBlockLayout] = []
   @State var cachedBackgroundAllDayEntries: [ScheduleAllDayLayout] = []
   @State var scheduleMonthItemCache = ScheduleMonthItemCache()
+  @State var optimisticScheduleTaskCompletionByID: [UUID: Bool] = [:]
+  @State var optimisticScheduleTaskScheduleByID: [UUID: OptimisticScheduleTaskScheduleState] = [:]
   @State var retainedScheduleCalendarBridgeDecisionsByTaskID:
     [UUID: RetainedCalendarBridgeDecision] = [:]
   @State var retainedScheduleCalendarBridgeWriteMarkersByTaskID:
@@ -866,10 +874,12 @@ struct ScheduleBoardView: View {
     )
   }
   var workspaceScheduleTasks: [WorkspaceScheduleTaskDescriptor] {
-    ScheduleProjectionService.taskDescriptors(
-      projectIDs: activeProjectIDs,
-      projectSnapshots: workspaceScheduleProjectSnapshots,
-      scheduleEntriesByProjectID: workspaceScheduleSliceEntriesByProjectID
+    scheduleTaskDescriptorsApplyingOptimisticSchedule(
+      ScheduleProjectionService.taskDescriptors(
+        projectIDs: activeProjectIDs,
+        projectSnapshots: workspaceScheduleProjectSnapshots,
+        scheduleEntriesByProjectID: workspaceScheduleSliceEntriesByProjectID
+      )
     )
   }
   var scheduleQuickAddProjects: [ScheduleQuickAddProjectOption] {
@@ -888,12 +898,13 @@ struct ScheduleBoardView: View {
     scheduleQuickAddState.defaultProjectID
   }
   var scheduleTaskSourceSignature: Int {
-    ScheduleBoardReadPath.sourceSignature(
+    let baseSignature = ScheduleBoardReadPath.sourceSignature(
       today: today,
       projectIDs: activeProjectIDs,
       projectSnapshots: workspaceScheduleProjectSnapshots,
       scheduleEntriesByProjectID: workspaceScheduleSliceEntriesByProjectID
     )
+    return scheduleTaskSourceSignatureApplyingOptimisticSchedule(baseSignature: baseSignature)
   }
   var scheduleCalendarOverlayProjection: ScheduleCalendarOverlayProjection {
     appState.resolvedScheduleCalendarOverlayProjection()
@@ -1129,15 +1140,20 @@ struct ScheduleBoardView: View {
       preferCached: appState.isEditorMotionSuppressed || !isActive
     )
     let projection = appState.resolvedScheduleCalendarOverlayProjection()
-    let monthItemsSignature = ScheduleMonthItemCache.signature(
+    let rawMonthItemsSignature = ScheduleMonthItemCache.signature(
       taskSignature: taskSnapshot.signature,
       visibleEventsSignature: projection.visibleEventsSignature,
       calendar: calendar
     )
-    let monthItems = scheduleMonthItemCache.items(
+    let rawMonthItems = scheduleMonthItemCache.items(
       taskSnapshot: taskSnapshot,
       projection: projection,
       calendar: calendar
+    )
+    let monthItems = scheduleMonthItemsApplyingOptimisticTaskCompletion(rawMonthItems)
+    let monthItemsSignature = scheduleMonthItemsSignature(
+      baseSignature: rawMonthItemsSignature,
+      items: rawMonthItems
     )
 
     return ScheduleMonthView(
@@ -1150,6 +1166,15 @@ struct ScheduleBoardView: View {
       onSelectDay: { day, items in
         selectedScheduleMonthDate = day
         onShowMonthDetail(ScheduleMonthDetailPanelTarget(date: day, items: items))
+      },
+      onToggleTaskCompletion: { taskID, projectID, isCompleted in
+        updateScheduleTaskCompletion(
+          taskID: taskID,
+          projectID: projectID,
+          isCompleted: !isCompleted,
+          completionDate: isCompleted ? nil : .now,
+          registerUndo: true
+        )
       },
       onMoveItem: { item, targetDay in
         moveScheduleMonthItem(item, to: targetDay)
