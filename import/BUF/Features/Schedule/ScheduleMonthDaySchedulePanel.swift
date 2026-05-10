@@ -10,6 +10,8 @@ struct ScheduleMonthDaySchedulePanel: View {
   let onUpdateItemSchedule: (ScheduleMonthItem, Date, Int?, Int?) async -> ScheduleMonthItem?
   let onCreateTask: (String, UUID, Date, Int?, Int?) async -> ScheduleMonthItem?
   let onDeleteItem: (ScheduleMonthItem, ScheduleCalendarRecurringEditScope?) async -> Bool
+  let resolveExternalMonthDropDay: (CGPoint) -> Date?
+  let onExternalMonthDragTargetChanged: (Date?) -> Void
 
   @State private var items: [ScheduleMonthItem]
   @State private var activeMutationPreview: ScheduleMonthDayScheduleMutationPreview?
@@ -21,6 +23,7 @@ struct ScheduleMonthDaySchedulePanel: View {
   @State private var activeItemDragState: ScheduleMonthDayItemDragState?
   @State private var activeItemResizeState: ScheduleMonthDayItemResizeState?
   @State private var resizeBlockedMoveItemID: String?
+  @State private var panelFrameInGlobal: CGRect = .null
 
   init(
     target: ScheduleMonthDetailPanelTarget,
@@ -31,7 +34,9 @@ struct ScheduleMonthDaySchedulePanel: View {
     onToggleTaskCompletion: @escaping (ScheduleMonthItem, Bool) async -> ScheduleMonthItem?,
     onUpdateItemSchedule: @escaping (ScheduleMonthItem, Date, Int?, Int?) async -> ScheduleMonthItem?,
     onCreateTask: @escaping (String, UUID, Date, Int?, Int?) async -> ScheduleMonthItem?,
-    onDeleteItem: @escaping (ScheduleMonthItem, ScheduleCalendarRecurringEditScope?) async -> Bool
+    onDeleteItem: @escaping (ScheduleMonthItem, ScheduleCalendarRecurringEditScope?) async -> Bool,
+    resolveExternalMonthDropDay: @escaping (CGPoint) -> Date?,
+    onExternalMonthDragTargetChanged: @escaping (Date?) -> Void
   ) {
     self.target = target
     self.calendar = calendar
@@ -42,6 +47,8 @@ struct ScheduleMonthDaySchedulePanel: View {
     self.onUpdateItemSchedule = onUpdateItemSchedule
     self.onCreateTask = onCreateTask
     self.onDeleteItem = onDeleteItem
+    self.resolveExternalMonthDropDay = resolveExternalMonthDropDay
+    self.onExternalMonthDragTargetChanged = onExternalMonthDragTargetChanged
     _items = State(initialValue: Self.sortedItems(target.items, calendar: calendar))
   }
 
@@ -87,6 +94,10 @@ struct ScheduleMonthDaySchedulePanel: View {
     .onPreferenceChange(ScheduleMonthDayTimeContentMinYPreferenceKey.self) { minY in
       timeContentMinYInPanel = minY
     }
+    .background(panelFrameReporter)
+    .onPreferenceChange(ScheduleMonthDayPanelGlobalFramePreferenceKey.self) { frame in
+      panelFrameInGlobal = frame
+    }
     .onChange(of: target.items) { _, newItems in
       items = Self.sortedItems(newItems, calendar: calendar)
     }
@@ -99,7 +110,11 @@ struct ScheduleMonthDaySchedulePanel: View {
       activeItemResizeState = nil
       resizeBlockedMoveItemID = nil
       savingItemIDs = []
+      onExternalMonthDragTargetChanged(nil)
       timeScrollResetID = UUID()
+    }
+    .onDisappear {
+      onExternalMonthDragTargetChanged(nil)
     }
   }
 
@@ -109,6 +124,15 @@ struct ScheduleMonthDaySchedulePanel: View {
       DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
         proxy.scrollTo(Self.nightScrollID, anchor: .top)
       }
+    }
+  }
+
+  private var panelFrameReporter: some View {
+    GeometryReader { proxy in
+      Color.clear.preference(
+        key: ScheduleMonthDayPanelGlobalFramePreferenceKey.self,
+        value: proxy.frame(in: .global)
+      )
     }
   }
 
@@ -504,7 +528,7 @@ struct ScheduleMonthDaySchedulePanel: View {
       return
     }
 
-    replaceItem(updated)
+    replaceOrRemoveForCurrentDay(updated)
     savingItemIDs.insert(item.id)
     Task { @MainActor in
       defer { savingItemIDs.remove(item.id) }
@@ -516,10 +540,10 @@ struct ScheduleMonthDaySchedulePanel: View {
           preview.durationMinutes
         )
       else {
-        replaceItem(item)
+        replaceOrRemoveForCurrentDay(item)
         return
       }
-      replaceItem(saved)
+      replaceOrRemoveForCurrentDay(saved)
     }
   }
 
@@ -539,6 +563,12 @@ struct ScheduleMonthDaySchedulePanel: View {
       originalX: originalX,
       originalWidth: originalWidth
     )
+    if ScheduleMonthDayInteractionAdapter.isExternalMonthDropIntent(translation: drag.translation) {
+      activeMutationPreview = nil
+      onExternalMonthDragTargetChanged(externalMonthDropDay(for: drag))
+      return
+    }
+    onExternalMonthDragTargetChanged(nil)
     activeMutationPreview = movePreview(for: state)
   }
 
@@ -563,6 +593,18 @@ struct ScheduleMonthDaySchedulePanel: View {
       originalX: originalX,
       originalWidth: originalWidth
     )
+    if ScheduleMonthDayInteractionAdapter.isExternalMonthDropIntent(translation: drag.translation) {
+      defer { onExternalMonthDragTargetChanged(nil) }
+      guard let targetDay = externalMonthDropDay(for: drag) else {
+        activeMutationPreview = nil
+        activeItemDragState = nil
+        return
+      }
+      let preview = externalMonthDropPreview(for: state, targetDay: targetDay)
+      commitMutationPreview(preview, item: state.originalItem)
+      return
+    }
+    onExternalMonthDragTargetChanged(nil)
     let preview = movePreview(for: state)
     commitMutationPreview(preview, item: state.originalItem)
   }
@@ -697,8 +739,26 @@ struct ScheduleMonthDaySchedulePanel: View {
     items = Self.sortedItems(items, calendar: calendar)
   }
 
+  private func replaceOrRemoveForCurrentDay(_ item: ScheduleMonthItem) {
+    if itemBelongsToCurrentDay(item) {
+      replaceItem(item)
+    } else {
+      removeItem(item.id)
+    }
+  }
+
   private func removeItem(_ itemID: String) {
     items.removeAll { $0.id == itemID }
+  }
+
+  private func itemBelongsToCurrentDay(_ item: ScheduleMonthItem) -> Bool {
+    let day = calendar.startOfDay(for: target.date)
+    if item.isAllDay {
+      let start = calendar.startOfDay(for: item.startDate)
+      let end = calendar.startOfDay(for: item.endDate)
+      return start <= day && day < end
+    }
+    return calendar.isDate(item.startDate, inSameDayAs: day)
   }
 
   private func movePreview(
@@ -710,6 +770,27 @@ struct ScheduleMonthDaySchedulePanel: View {
       calendar: calendar,
       metrics: interactionMetrics
     )
+  }
+
+  private func externalMonthDropPreview(
+    for state: ScheduleMonthDayItemDragState,
+    targetDay: Date
+  ) -> ScheduleMonthDayScheduleMutationPreview {
+    ScheduleMonthDayScheduleMutationPreview(
+      itemID: state.itemID,
+      day: calendar.startOfDay(for: targetDay),
+      timeMinutes: state.originalTimeMinutes,
+      durationMinutes: state.originalDurationMinutes
+    )
+  }
+
+  private func externalMonthDropDay(for drag: DragGesture.Value) -> Date? {
+    guard !panelFrameInGlobal.isNull else { return nil }
+    let globalPoint = CGPoint(
+      x: panelFrameInGlobal.minX + drag.location.x,
+      y: panelFrameInGlobal.minY + drag.location.y
+    )
+    return resolveExternalMonthDropDay(globalPoint)
   }
 
   private func resizePreview(

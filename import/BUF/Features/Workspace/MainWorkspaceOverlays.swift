@@ -137,6 +137,12 @@ extension MainWorkspaceView {
       onDeleteItem: { item, scope in
         await deleteScheduleMonthDetailItem(item, scope: scope)
       },
+      resolveExternalMonthDropDay: { globalPoint in
+        scheduleMonthDropDay(at: globalPoint)
+      },
+      onExternalMonthDragTargetChanged: { day in
+        activeScheduleMonthExternalDropDay = day
+      },
       onClose: {
         dismissScheduleMonthDetail()
       }

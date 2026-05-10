@@ -645,6 +645,8 @@ struct ScheduleBoardView: View {
   let onEditTask: (WorkspaceTaskEditPanelTarget) -> Void
   let onEditCalendarEvent: (ScheduleCalendarEvent) -> Void
   let onShowMonthDetail: (ScheduleMonthDetailPanelTarget) -> Void
+  let externalMonthDragTargetDate: Date?
+  let onMonthDropTargetsChanged: ([ScheduleMonthDropTarget]) -> Void
 
   @AppStorage("BrainUnfog.ScheduleBoard.allDayVisibleRowCount")
   var storedAllDayVisibleRowCount: Int = 4
@@ -781,7 +783,9 @@ struct ScheduleBoardView: View {
     isActive: Bool,
     onEditTask: @escaping (WorkspaceTaskEditPanelTarget) -> Void = { _ in },
     onEditCalendarEvent: @escaping (ScheduleCalendarEvent) -> Void = { _ in },
-    onShowMonthDetail: @escaping (ScheduleMonthDetailPanelTarget) -> Void = { _ in }
+    onShowMonthDetail: @escaping (ScheduleMonthDetailPanelTarget) -> Void = { _ in },
+    externalMonthDragTargetDate: Date? = nil,
+    onMonthDropTargetsChanged: @escaping ([ScheduleMonthDropTarget]) -> Void = { _ in }
   ) {
     _displayMode = displayMode
     self.projectIDs = projectIDs
@@ -797,6 +801,8 @@ struct ScheduleBoardView: View {
     self.onEditTask = onEditTask
     self.onEditCalendarEvent = onEditCalendarEvent
     self.onShowMonthDetail = onShowMonthDetail
+    self.externalMonthDragTargetDate = externalMonthDragTargetDate
+    self.onMonthDropTargetsChanged = onMonthDropTargetsChanged
   }
 
   var allDayDropZoneFrame: CGRect {
@@ -1178,7 +1184,9 @@ struct ScheduleBoardView: View {
       },
       onMoveItem: { item, targetDay in
         moveScheduleMonthItem(item, to: targetDay)
-      }
+      },
+      externalDragTargetDate: externalMonthDragTargetDate,
+      onDropTargetsChanged: onMonthDropTargetsChanged
     )
     .onAppear {
       if scheduleMonthAnchorDate == nil {

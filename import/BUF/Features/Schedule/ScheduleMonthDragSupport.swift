@@ -10,6 +10,15 @@ enum ScheduleMonthDragItem: Equatable, Sendable {
 enum ScheduleMonthDragPayload {
   static let type = UTType(exportedAs: "com.brainunfog.schedule-month-item")
   static let typeIdentifier = type.identifier
+  static let textTypeIdentifier = UTType.text.identifier
+  static let plainTextTypeIdentifier = UTType.plainText.identifier
+  static let utf8PlainTextTypeIdentifier = UTType.utf8PlainText.identifier
+  static let dropTypeIdentifiers = [
+    typeIdentifier,
+    utf8PlainTextTypeIdentifier,
+    plainTextTypeIdentifier,
+    textTypeIdentifier,
+  ]
   private static let taskPrefix = "buf-schedule-task:"
   private static let calendarEventPrefix = "buf-schedule-calendar-event:"
 
@@ -75,6 +84,24 @@ struct ScheduleMonthDragFeedback: Equatable {
     isAllDay = item.isAllDay
     self.weekStart = weekStart
     self.location = location
+  }
+}
+
+struct ScheduleMonthDropTarget: Equatable {
+  let day: Date
+  let frame: CGRect
+}
+
+enum ScheduleMonthDropTargetResolver {
+  static func day(
+    at point: CGPoint,
+    targets: [ScheduleMonthDropTarget],
+    calendar: Calendar
+  ) -> Date? {
+    targets.first { target in
+      !target.frame.isNull && target.frame.contains(point)
+    }
+    .map { calendar.startOfDay(for: $0.day) }
   }
 }
 

@@ -25,6 +25,8 @@ struct ScheduleMonthView: View {
   let onSelectDay: (Date, [ScheduleMonthItem]) -> Void
   let onToggleTaskCompletion: (UUID, UUID, Bool) -> Void
   let onMoveItem: (ScheduleMonthDragItem, Date) -> Void
+  let externalDragTargetDate: Date?
+  let onDropTargetsChanged: ([ScheduleMonthDropTarget]) -> Void
 
   private let weekdayHeaderHeight: CGFloat = 28
   private let monthHeaderHeight: CGFloat = 58
@@ -156,6 +158,7 @@ struct ScheduleMonthView: View {
               calendar: calendar,
               gridLineColor: gridLineColor,
               gridLineWidth: gridLineWidth,
+              externalDragTargetDate: externalDragTargetDate,
               onSelectDay: onSelectDay,
               onToggleTaskCompletion: onToggleTaskCompletion,
               onMoveItem: onMoveItem
@@ -171,6 +174,12 @@ struct ScheduleMonthView: View {
       }
       .onChange(of: anchorDate) { _, _ in
         scrollToAnchorWeek(using: proxy, animated: true)
+      }
+      .onPreferenceChange(ScheduleMonthDropTargetPreferenceKey.self) { targets in
+        onDropTargetsChanged(targets)
+      }
+      .onDisappear {
+        onDropTargetsChanged([])
       }
     }
   }
@@ -221,6 +230,7 @@ private struct ScheduleMonthWeekRow: View {
   let calendar: Calendar
   let gridLineColor: Color
   let gridLineWidth: CGFloat
+  let externalDragTargetDate: Date?
   let onSelectDay: (Date, [ScheduleMonthItem]) -> Void
   let onToggleTaskCompletion: (UUID, UUID, Bool) -> Void
   let onMoveItem: (ScheduleMonthDragItem, Date) -> Void
@@ -254,7 +264,9 @@ private struct ScheduleMonthWeekRow: View {
               hiddenAllDayItemCount: hiddenAllDayItemCount(on: dayIndex),
               reservedAllDayRowCount: visibleAllDayRowCount(on: dayIndex),
               isSelected: selectedDate.map { calendar.isDate($0, inSameDayAs: dayLayout.day) } ?? false,
-              isDragTarget: activeDragDate.map { calendar.isDate($0, inSameDayAs: dayLayout.day) } ?? false,
+              isDragTarget:
+                activeDragDate.map { calendar.isDate($0, inSameDayAs: dayLayout.day) } ?? false
+                || externalDragTargetDate.map { calendar.isDate($0, inSameDayAs: dayLayout.day) } ?? false,
               weekStart: layout.weekStart,
               rowSize: rowSize,
               rowCoordinateSpaceName: rowCoordinateSpaceName,
@@ -357,6 +369,17 @@ private struct ScheduleMonthHorizontalGridLine: View {
   }
 }
 
+private struct ScheduleMonthDropTargetPreferenceKey: PreferenceKey {
+  static let defaultValue: [ScheduleMonthDropTarget] = []
+
+  static func reduce(
+    value: inout [ScheduleMonthDropTarget],
+    nextValue: () -> [ScheduleMonthDropTarget]
+  ) {
+    value.append(contentsOf: nextValue())
+  }
+}
+
 private struct ScheduleMonthWeekGridLines: View {
   let color: Color
   let lineWidth: CGFloat
@@ -440,7 +463,7 @@ private struct ScheduleMonthDayCell: View {
     .contentShape(Rectangle())
     .onTapGesture(perform: selectIfNotSuppressed)
     .onDrop(
-      of: [ScheduleMonthDragPayload.typeIdentifier],
+      of: ScheduleMonthDragPayload.dropTypeIdentifiers,
       delegate: ScheduleMonthExternalItemDropDelegate(
         targetDay: day,
         activeDragDate: $activeDragDate,
@@ -448,7 +471,22 @@ private struct ScheduleMonthDayCell: View {
         onMoveItem: onMoveItem
       )
     )
+    .background(dropTargetFrameReporter)
     .clipped()
+  }
+
+  private var dropTargetFrameReporter: some View {
+    GeometryReader { proxy in
+      Color.clear.preference(
+        key: ScheduleMonthDropTargetPreferenceKey.self,
+        value: [
+          ScheduleMonthDropTarget(
+            day: calendar.startOfDay(for: day),
+            frame: proxy.frame(in: .global)
+          )
+        ]
+      )
+    }
   }
 
   private var cellContent: some View {
@@ -855,7 +893,7 @@ private struct ScheduleMonthExternalItemDropDelegate: DropDelegate {
   let onMoveItem: (ScheduleMonthDragItem, Date) -> Void
 
   func validateDrop(info: DropInfo) -> Bool {
-    !info.itemProviders(for: [ScheduleMonthDragPayload.typeIdentifier]).isEmpty
+    dropProvider(in: info) != nil
   }
 
   func dropEntered(info _: DropInfo) {
@@ -876,19 +914,37 @@ private struct ScheduleMonthExternalItemDropDelegate: DropDelegate {
 
   func performDrop(info: DropInfo) -> Bool {
     activeDragDate = nil
-    guard let provider = info.itemProviders(for: [ScheduleMonthDragPayload.typeIdentifier]).first else {
+    guard let provider = dropProvider(in: info) else {
       return false
     }
     let normalizedTargetDay = calendar.startOfDay(for: targetDay)
-    provider.loadItem(forTypeIdentifier: ScheduleMonthDragPayload.typeIdentifier, options: nil) {
-      item,
-      _
-      in
-      guard let dragItem = ScheduleMonthDragPayload.parseItem(from: item) else { return }
-      Task { @MainActor in
-        onMoveItem(dragItem, normalizedTargetDay)
-      }
+    loadDragItem(from: provider) { dragItem in
+      guard let dragItem else { return }
+      onMoveItem(dragItem, normalizedTargetDay)
     }
     return true
+  }
+
+  private func dropProvider(in info: DropInfo) -> NSItemProvider? {
+    ScheduleMonthDragPayload.dropTypeIdentifiers.lazy.compactMap { typeIdentifier in
+      info.itemProviders(for: [typeIdentifier]).first
+    }.first
+  }
+
+  private func loadDragItem(
+    from provider: NSItemProvider,
+    completion: @escaping @MainActor (ScheduleMonthDragItem?) -> Void
+  ) {
+    let preferredType =
+      ScheduleMonthDragPayload.dropTypeIdentifiers.first {
+        provider.hasItemConformingToTypeIdentifier($0)
+      } ?? ScheduleMonthDragPayload.textTypeIdentifier
+
+    provider.loadItem(forTypeIdentifier: preferredType, options: nil) { item, _ in
+      let dragItem = ScheduleMonthDragPayload.parseItem(from: item)
+      Task { @MainActor in
+        completion(dragItem)
+      }
+    }
   }
 }

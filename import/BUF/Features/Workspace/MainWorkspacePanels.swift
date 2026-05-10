@@ -104,6 +104,10 @@ extension MainWorkspaceView {
         },
         onShowMonthDetail: { target in
           showScheduleMonthDetail(target)
+        },
+        externalMonthDragTargetDate: activeScheduleMonthExternalDropDay,
+        onMonthDropTargetsChanged: { targets in
+          scheduleMonthDropTargets = targets
         }
       )
       .frame(maxWidth: .infinity, maxHeight: .infinity)

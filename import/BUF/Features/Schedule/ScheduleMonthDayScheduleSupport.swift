@@ -160,6 +160,14 @@ enum ScheduleMonthDayTimeContentMinYPreferenceKey: PreferenceKey {
   }
 }
 
+enum ScheduleMonthDayPanelGlobalFramePreferenceKey: PreferenceKey {
+  static let defaultValue: CGRect = .null
+
+  static func reduce(value: inout CGRect, nextValue: () -> CGRect) {
+    value = nextValue()
+  }
+}
+
 enum ScheduleMonthDayTimeFormatter {
   static func timeText(from date: Date) -> String {
     let formatter = DateFormatter()

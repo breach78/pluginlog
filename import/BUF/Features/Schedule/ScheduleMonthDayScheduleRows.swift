@@ -47,7 +47,6 @@ struct ScheduleMonthDayAllDayItemRow: View {
         onDeleteItem: onDeleteItem
       )
     }
-    .scheduleMonthExternalItemDrag(item: item, enabled: canDrag && !isSaving)
     .simultaneousGesture(dragGesture)
   }
 
@@ -154,7 +153,6 @@ struct ScheduleMonthDayTimedItemBlock: View {
       }
       .padding(.horizontal, 8)
       .padding(.vertical, 7)
-      .scheduleMonthExternalItemDrag(item: layout.item, enabled: canDrag && !isSaving)
 
       if canResize {
         resizeHandle(edge: .start)
@@ -273,19 +271,6 @@ struct ScheduleMonthDayTimedItemBlock: View {
     let start = ScheduleMonthDayTimeFormatter.timeText(from: layout.item.startDate)
     let end = ScheduleMonthDayTimeFormatter.timeText(from: layout.item.endDate)
     return "\(start)-\(end)"
-  }
-}
-
-private extension View {
-  @ViewBuilder
-  func scheduleMonthExternalItemDrag(item: ScheduleMonthItem, enabled: Bool) -> some View {
-    if enabled, let dragItem = ScheduleMonthDragSupport.dragItem(for: item) {
-      onDrag {
-        ScheduleMonthDragPayload.itemProvider(for: dragItem)
-      }
-    } else {
-      self
-    }
   }
 }
 

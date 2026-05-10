@@ -487,6 +487,8 @@ struct MainWorkspaceView: View {
   @State var activeWorkspaceCalendarEventEditPanelTarget: WorkspaceCalendarEventEditPanelTarget?
   @State var activeWorkspaceScheduleMonthDetailTarget: ScheduleMonthDetailPanelTarget?
   @State var previousWorkspaceScheduleMonthDetailTarget: ScheduleMonthDetailPanelTarget?
+  @State var scheduleMonthDropTargets: [ScheduleMonthDropTarget] = []
+  @State var activeScheduleMonthExternalDropDay: Date?
   @State var suppressedWorkspaceTaskEditorOpenUntil: Date = .distantPast
   @State var hiddenTimelineProjectIDs = TimelineHiddenProjectStore.load()
 

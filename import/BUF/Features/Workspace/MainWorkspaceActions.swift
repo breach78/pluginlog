@@ -801,6 +801,15 @@ extension MainWorkspaceView {
   func dismissScheduleMonthDetail() {
     activeWorkspaceScheduleMonthDetailTarget = nil
     previousWorkspaceScheduleMonthDetailTarget = nil
+    activeScheduleMonthExternalDropDay = nil
+  }
+
+  func scheduleMonthDropDay(at globalPoint: CGPoint) -> Date? {
+    ScheduleMonthDropTargetResolver.day(
+      at: globalPoint,
+      targets: scheduleMonthDropTargets,
+      calendar: .autoupdatingCurrent
+    )
   }
 
   func openScheduleMonthDetailItem(_ item: ScheduleMonthItem) {
