@@ -1559,6 +1559,14 @@ extension ScheduleBoardView {
         registerUndo: true,
         actionName: "월간 일정 이동"
       )
+      if let updatedDescriptor = scheduleTaskDescriptor(for: taskID),
+        let updatedItem = ScheduleMonthItemFactory.item(
+          workspaceTask: updatedDescriptor,
+          calendar: calendar
+        )
+      {
+        onMonthItemScheduleChanged(updatedItem)
+      }
 
     case .calendarEvent(let eventID):
       guard let event = appState.resolvedScheduleCalendarEvent(eventID: eventID),
@@ -1567,16 +1575,71 @@ extension ScheduleBoardView {
         return
       }
 
+      let preview = ScheduleInteractionPreview(
+        day: normalizedTargetDay,
+        timeMinutes: event.isAllDay ? nil : timeMinutes(for: event.startDate),
+        durationMinutes: event.isAllDay ? nil : durationMinutes(for: event)
+      )
       commitCalendarPreview(
-        ScheduleInteractionPreview(
-          day: normalizedTargetDay,
-          timeMinutes: event.isAllDay ? nil : timeMinutes(for: event.startDate),
-          durationMinutes: event.isAllDay ? nil : durationMinutes(for: event)
-        ),
+        preview,
         for: event,
         actionName: "월간 일정 이동"
       )
+      if !event.isRecurring {
+        onMonthItemScheduleChanged(
+          ScheduleMonthItemFactory.item(
+            calendarEvent: calendarEvent(applying: preview, to: event),
+            isBackgroundCalendar: false
+          )
+        )
+      }
     }
+  }
+
+  private func calendarEvent(
+    applying preview: ScheduleInteractionPreview,
+    to event: ScheduleCalendarEvent
+  ) -> ScheduleCalendarEvent {
+    let startDate = previewStartDate(preview)
+    let endDate = previewEndDate(preview, startDate: startDate)
+    return ScheduleCalendarEvent(
+      id: event.id,
+      eventIdentifier: event.eventIdentifier,
+      externalIdentifier: event.externalIdentifier,
+      occurrenceDate: event.occurrenceDate,
+      calendarIdentifier: event.calendarIdentifier,
+      calendarTitle: event.calendarTitle,
+      calendarColorHex: event.calendarColorHex,
+      title: event.title,
+      notes: event.notes,
+      startDate: startDate,
+      endDate: endDate,
+      isAllDay: preview.timeMinutes == nil,
+      isRecurring: event.isRecurring,
+      isDetached: event.isDetached,
+      canEditTiming: event.canEditTiming,
+      editTimingRestrictionReason: event.editTimingRestrictionReason
+    )
+  }
+
+  private func previewStartDate(_ preview: ScheduleInteractionPreview) -> Date {
+    let day = calendar.startOfDay(for: preview.day ?? today)
+    guard let timeMinutes = preview.timeMinutes else {
+      return day
+    }
+    return calendar.date(byAdding: .minute, value: timeMinutes, to: day) ?? day
+  }
+
+  private func previewEndDate(
+    _ preview: ScheduleInteractionPreview,
+    startDate: Date
+  ) -> Date {
+    if preview.timeMinutes != nil {
+      let duration = max(5, preview.durationMinutes ?? WorkspaceTaskScheduleEventStore.defaultScheduledDurationMinutes)
+      return calendar.date(byAdding: .minute, value: duration, to: startDate) ?? startDate
+    }
+    let day = calendar.startOfDay(for: preview.day ?? today)
+    return calendar.date(byAdding: .day, value: 1, to: day) ?? day
   }
 
   func applyPreparationScheduleState(

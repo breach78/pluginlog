@@ -802,6 +802,7 @@ extension MainWorkspaceView {
     activeWorkspaceScheduleMonthDetailTarget = nil
     previousWorkspaceScheduleMonthDetailTarget = nil
     activeScheduleMonthExternalDropDay = nil
+    scheduleMonthDetailDropTarget = nil
   }
 
   func scheduleMonthDropDay(at globalPoint: CGPoint) -> Date? {
@@ -810,6 +811,16 @@ extension MainWorkspaceView {
       targets: scheduleMonthDropTargets,
       calendar: .autoupdatingCurrent
     )
+  }
+
+  func updateScheduleMonthDetailAfterMovedItem(_ item: ScheduleMonthItem) {
+    guard let target = activeWorkspaceScheduleMonthDetailTarget else { return }
+    activeWorkspaceScheduleMonthDetailTarget =
+      ScheduleMonthDetailTargetUpdater.applyingMovedItem(
+        item,
+        to: target,
+        calendar: .autoupdatingCurrent
+      )
   }
 
   func openScheduleMonthDetailItem(_ item: ScheduleMonthItem) {

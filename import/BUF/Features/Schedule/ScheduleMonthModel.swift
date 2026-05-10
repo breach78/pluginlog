@@ -559,6 +559,22 @@ enum ScheduleMonthOverflowPolicy {
 }
 
 enum ScheduleMonthItemFactory {
+  static func item(
+    workspaceTask descriptor: WorkspaceScheduleTaskDescriptor,
+    calendar: Calendar
+  ) -> ScheduleMonthItem? {
+    WorkspaceTaskScheduleEventStore.items(from: [descriptor], calendar: calendar)
+      .first { !$0.isPreparationSlot }
+      .map { item(from: $0, isBackgroundCalendar: false, calendarEvent: nil) }
+  }
+
+  static func item(
+    calendarEvent event: ScheduleCalendarEvent,
+    isBackgroundCalendar: Bool
+  ) -> ScheduleMonthItem {
+    item(from: event, isBackgroundCalendar: isBackgroundCalendar)
+  }
+
   static func items(
     workspaceTasks: [WorkspaceScheduleTaskDescriptor],
     foregroundEvents: [ScheduleCalendarEvent],

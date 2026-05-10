@@ -2,8 +2,8 @@ import CoreGraphics
 import Foundation
 
 enum ScheduleMonthDayInteractionAdapter {
-  private static let externalDropMinimumHorizontalDistance: CGFloat = 36
-  private static let externalDropHorizontalDominance: CGFloat = 1.2
+  private static let externalDropMinimumHorizontalDistance: CGFloat = 24
+  private static let externalDropLeftEscapeSlop: CGFloat = 8
 
   static func metrics(
     hourHeight: CGFloat,
@@ -124,11 +124,12 @@ enum ScheduleMonthDayInteractionAdapter {
     return pointerYInPanel < bottom
   }
 
-  static func isExternalMonthDropIntent(translation: CGSize) -> Bool {
-    let horizontal = abs(translation.width)
-    let vertical = abs(translation.height)
-    return horizontal >= externalDropMinimumHorizontalDistance
-      && horizontal > vertical * externalDropHorizontalDominance
+  static func isExternalMonthDropLocation(
+    locationXInPanel: CGFloat,
+    translation: CGSize
+  ) -> Bool {
+    translation.width <= -externalDropMinimumHorizontalDistance
+      && locationXInPanel <= -externalDropLeftEscapeSlop
   }
 
   private static func currentPointerScheduleY(for state: ScheduleMonthDayItemDragState) -> CGFloat {

@@ -106,6 +106,10 @@ extension MainWorkspaceView {
           showScheduleMonthDetail(target)
         },
         externalMonthDragTargetDate: activeScheduleMonthExternalDropDay,
+        externalDayDropTarget: scheduleMonthDetailDropTarget,
+        onMonthItemScheduleChanged: { item in
+          updateScheduleMonthDetailAfterMovedItem(item)
+        },
         onMonthDropTargetsChanged: { targets in
           scheduleMonthDropTargets = targets
         }

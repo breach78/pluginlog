@@ -353,20 +353,29 @@ final class ScheduleMonthModelTests: XCTestCase {
     )
   }
 
-  func testDayPanelExternalDropIntentRequiresHorizontalDominance() {
+  func testDayPanelExternalMonthDropUsesEscapedPointerLocation() {
     XCTAssertTrue(
-      ScheduleMonthDayInteractionAdapter.isExternalMonthDropIntent(
+      ScheduleMonthDayInteractionAdapter.isExternalMonthDropLocation(
+        locationXInPanel: -18,
+        translation: CGSize(width: -90, height: 8)
+      )
+    )
+    XCTAssertTrue(
+      ScheduleMonthDayInteractionAdapter.isExternalMonthDropLocation(
+        locationXInPanel: -18,
+        translation: CGSize(width: -90, height: 120)
+      )
+    )
+    XCTAssertFalse(
+      ScheduleMonthDayInteractionAdapter.isExternalMonthDropLocation(
+        locationXInPanel: -4,
         translation: CGSize(width: -90, height: 8)
       )
     )
     XCTAssertFalse(
-      ScheduleMonthDayInteractionAdapter.isExternalMonthDropIntent(
-        translation: CGSize(width: 18, height: 2)
-      )
-    )
-    XCTAssertFalse(
-      ScheduleMonthDayInteractionAdapter.isExternalMonthDropIntent(
-        translation: CGSize(width: 24, height: 90)
+      ScheduleMonthDayInteractionAdapter.isExternalMonthDropLocation(
+        locationXInPanel: 80,
+        translation: CGSize(width: -90, height: 8)
       )
     )
   }
@@ -397,6 +406,96 @@ final class ScheduleMonthModelTests: XCTestCase {
         calendar: calendar
       )
     )
+  }
+
+  func testScheduleMonthDropTargetResolverMapsSingleExternalPanelTarget() throws {
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+    let may9 = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 5, day: 9)))
+    let target = ScheduleMonthDropTarget(day: may9, frame: CGRect(x: 300, y: 100, width: 180, height: 500))
+
+    let resolved = try XCTUnwrap(
+      ScheduleMonthDropTargetResolver.day(
+        at: CGPoint(x: 420, y: 320),
+        target: target,
+        calendar: calendar
+      )
+    )
+
+    XCTAssertEqual(calendar.component(.day, from: resolved), 9)
+    XCTAssertNil(
+      ScheduleMonthDropTargetResolver.day(
+        at: CGPoint(x: 260, y: 320),
+        target: target,
+        calendar: calendar
+      )
+    )
+    XCTAssertNil(
+      ScheduleMonthDropTargetResolver.day(
+        at: CGPoint(x: 420, y: 320),
+        target: nil,
+        calendar: calendar
+      )
+    )
+  }
+
+  func testScheduleMonthDetailTargetUpdaterAddsMovedItemForOpenDay() throws {
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+    let may9 = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 5, day: 9)))
+    let movedItem = ScheduleMonthItem(
+      id: "workspace-task-\(UUID().uuidString)",
+      source: .workspaceTask(taskID: UUID(), projectID: UUID()),
+      title: "옮긴 할일",
+      subtitle: "프로젝트",
+      startDate: may9,
+      endDate: try XCTUnwrap(calendar.date(byAdding: .day, value: 1, to: may9)),
+      isAllDay: true,
+      colorHex: nil,
+      isCompleted: false,
+      isPreparationSlot: false,
+      isBackgroundCalendar: false,
+      calendarEvent: nil
+    )
+    let target = ScheduleMonthDetailPanelTarget(date: may9, items: [])
+
+    let updated = ScheduleMonthDetailTargetUpdater.applyingMovedItem(
+      movedItem,
+      to: target,
+      calendar: calendar
+    )
+
+    XCTAssertEqual(updated.items.map(\.id), [movedItem.id])
+  }
+
+  func testScheduleMonthDetailTargetUpdaterRemovesMovedItemOutsideOpenDay() throws {
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+    let may9 = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 5, day: 9)))
+    let may10 = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 5, day: 10)))
+    let movedItem = ScheduleMonthItem(
+      id: "workspace-task-\(UUID().uuidString)",
+      source: .workspaceTask(taskID: UUID(), projectID: UUID()),
+      title: "옮긴 할일",
+      subtitle: "프로젝트",
+      startDate: may10,
+      endDate: try XCTUnwrap(calendar.date(byAdding: .day, value: 1, to: may10)),
+      isAllDay: true,
+      colorHex: nil,
+      isCompleted: false,
+      isPreparationSlot: false,
+      isBackgroundCalendar: false,
+      calendarEvent: nil
+    )
+    let target = ScheduleMonthDetailPanelTarget(date: may9, items: [movedItem])
+
+    let updated = ScheduleMonthDetailTargetUpdater.applyingMovedItem(
+      movedItem,
+      to: target,
+      calendar: calendar
+    )
+
+    XCTAssertTrue(updated.items.isEmpty)
   }
 
   func testScheduleMonthItemAppliesDateOnlyPreviewWithoutDroppingTime() throws {

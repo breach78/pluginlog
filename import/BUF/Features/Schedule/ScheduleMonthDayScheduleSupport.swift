@@ -1,5 +1,6 @@
 import CoreGraphics
 import Foundation
+import AppKit
 import SwiftUI
 
 struct ScheduleMonthDayTimedInterval {
@@ -160,11 +161,102 @@ enum ScheduleMonthDayTimeContentMinYPreferenceKey: PreferenceKey {
   }
 }
 
-enum ScheduleMonthDayPanelGlobalFramePreferenceKey: PreferenceKey {
-  static let defaultValue: CGRect = .null
+struct ScheduleScreenFrameReporter: NSViewRepresentable {
+  let onFrameChange: (CGRect) -> Void
 
-  static func reduce(value: inout CGRect, nextValue: () -> CGRect) {
-    value = nextValue()
+  func makeNSView(context: Context) -> FrameView {
+    let view = FrameView(frame: .zero)
+    view.onFrameChange = onFrameChange
+    return view
+  }
+
+  func updateNSView(_ view: FrameView, context: Context) {
+    view.onFrameChange = onFrameChange
+    view.scheduleReport()
+  }
+
+  final class FrameView: NSView {
+    var onFrameChange: ((CGRect) -> Void)?
+    private var lastReportedFrame: CGRect = .null
+    private weak var observedClipView: NSClipView?
+
+    deinit {
+      NotificationCenter.default.removeObserver(self)
+    }
+
+    override func viewDidMoveToWindow() {
+      super.viewDidMoveToWindow()
+      updateScrollObserver()
+      scheduleReport()
+    }
+
+    override func viewDidMoveToSuperview() {
+      super.viewDidMoveToSuperview()
+      updateScrollObserver()
+      scheduleReport()
+    }
+
+    override func layout() {
+      super.layout()
+      updateScrollObserver()
+      scheduleReport()
+    }
+
+    override func viewDidChangeBackingProperties() {
+      super.viewDidChangeBackingProperties()
+      scheduleReport()
+    }
+
+    func scheduleReport() {
+      DispatchQueue.main.async { [weak self] in
+        self?.report()
+      }
+    }
+
+    private func report() {
+      guard let window else {
+        reportFrame(.null)
+        return
+      }
+      let rectInWindow = convert(bounds, to: nil)
+      reportFrame(window.convertToScreen(rectInWindow))
+    }
+
+    private func reportFrame(_ frame: CGRect) {
+      guard frame != lastReportedFrame else { return }
+      lastReportedFrame = frame
+      onFrameChange?(frame)
+    }
+
+    private func updateScrollObserver() {
+      let clipView = enclosingScrollView?.contentView
+      guard clipView !== observedClipView else { return }
+      removeScrollObserver()
+      observedClipView = clipView
+      clipView?.postsBoundsChangedNotifications = true
+      if let clipView {
+        NotificationCenter.default.addObserver(
+          self,
+          selector: #selector(scrollBoundsChanged),
+          name: NSView.boundsDidChangeNotification,
+          object: clipView
+        )
+      }
+    }
+
+    private func removeScrollObserver() {
+      guard let observedClipView else { return }
+      NotificationCenter.default.removeObserver(
+        self,
+        name: NSView.boundsDidChangeNotification,
+        object: observedClipView
+      )
+      self.observedClipView = nil
+    }
+
+    @objc private func scrollBoundsChanged() {
+      scheduleReport()
+    }
   }
 }
 

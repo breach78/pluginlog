@@ -103,6 +103,15 @@ enum ScheduleMonthDropTargetResolver {
     }
     .map { calendar.startOfDay(for: $0.day) }
   }
+
+  static func day(
+    at point: CGPoint,
+    target: ScheduleMonthDropTarget?,
+    calendar: Calendar
+  ) -> Date? {
+    guard let target else { return nil }
+    return day(at: point, targets: [target], calendar: calendar)
+  }
 }
 
 enum ScheduleMonthDragSupport {
@@ -115,6 +124,37 @@ enum ScheduleMonthDragSupport {
       guard item.calendarEvent?.canEditTiming == true else { return nil }
       return .calendarEvent(eventID)
     }
+  }
+}
+
+enum ScheduleMonthDetailTargetUpdater {
+  static func applyingMovedItem(
+    _ item: ScheduleMonthItem,
+    to target: ScheduleMonthDetailPanelTarget,
+    calendar: Calendar
+  ) -> ScheduleMonthDetailPanelTarget {
+    let targetDay = calendar.startOfDay(for: target.date)
+    var items = target.items.filter { $0.id != item.id }
+    if containsItem(item, on: targetDay, calendar: calendar) {
+      items.append(item)
+    }
+    items.sort {
+      itemSortKey($0, calendar: calendar) < itemSortKey($1, calendar: calendar)
+    }
+    return ScheduleMonthDetailPanelTarget(date: target.date, items: items)
+  }
+
+  private static func containsItem(
+    _ item: ScheduleMonthItem,
+    on day: Date,
+    calendar: Calendar
+  ) -> Bool {
+    if item.isAllDay {
+      let start = calendar.startOfDay(for: item.startDate)
+      let end = calendar.startOfDay(for: item.endDate)
+      return start <= day && day < end
+    }
+    return calendar.isDate(item.startDate, inSameDayAs: day)
   }
 }
 

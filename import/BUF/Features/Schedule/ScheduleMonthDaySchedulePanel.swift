@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 struct ScheduleMonthDaySchedulePanel: View {
@@ -12,6 +13,7 @@ struct ScheduleMonthDaySchedulePanel: View {
   let onDeleteItem: (ScheduleMonthItem, ScheduleCalendarRecurringEditScope?) async -> Bool
   let resolveExternalMonthDropDay: (CGPoint) -> Date?
   let onExternalMonthDragTargetChanged: (Date?) -> Void
+  let onDropTargetChanged: (ScheduleMonthDropTarget?) -> Void
 
   @State private var items: [ScheduleMonthItem]
   @State private var activeMutationPreview: ScheduleMonthDayScheduleMutationPreview?
@@ -23,7 +25,7 @@ struct ScheduleMonthDaySchedulePanel: View {
   @State private var activeItemDragState: ScheduleMonthDayItemDragState?
   @State private var activeItemResizeState: ScheduleMonthDayItemResizeState?
   @State private var resizeBlockedMoveItemID: String?
-  @State private var panelFrameInGlobal: CGRect = .null
+  @State private var panelFrameInScreen: CGRect = .null
 
   init(
     target: ScheduleMonthDetailPanelTarget,
@@ -36,7 +38,8 @@ struct ScheduleMonthDaySchedulePanel: View {
     onCreateTask: @escaping (String, UUID, Date, Int?, Int?) async -> ScheduleMonthItem?,
     onDeleteItem: @escaping (ScheduleMonthItem, ScheduleCalendarRecurringEditScope?) async -> Bool,
     resolveExternalMonthDropDay: @escaping (CGPoint) -> Date?,
-    onExternalMonthDragTargetChanged: @escaping (Date?) -> Void
+    onExternalMonthDragTargetChanged: @escaping (Date?) -> Void,
+    onDropTargetChanged: @escaping (ScheduleMonthDropTarget?) -> Void = { _ in }
   ) {
     self.target = target
     self.calendar = calendar
@@ -49,6 +52,7 @@ struct ScheduleMonthDaySchedulePanel: View {
     self.onDeleteItem = onDeleteItem
     self.resolveExternalMonthDropDay = resolveExternalMonthDropDay
     self.onExternalMonthDragTargetChanged = onExternalMonthDragTargetChanged
+    self.onDropTargetChanged = onDropTargetChanged
     _items = State(initialValue: Self.sortedItems(target.items, calendar: calendar))
   }
 
@@ -95,9 +99,6 @@ struct ScheduleMonthDaySchedulePanel: View {
       timeContentMinYInPanel = minY
     }
     .background(panelFrameReporter)
-    .onPreferenceChange(ScheduleMonthDayPanelGlobalFramePreferenceKey.self) { frame in
-      panelFrameInGlobal = frame
-    }
     .onChange(of: target.items) { _, newItems in
       items = Self.sortedItems(newItems, calendar: calendar)
     }
@@ -111,10 +112,12 @@ struct ScheduleMonthDaySchedulePanel: View {
       resizeBlockedMoveItemID = nil
       savingItemIDs = []
       onExternalMonthDragTargetChanged(nil)
+      reportDropTarget(frame: panelFrameInScreen)
       timeScrollResetID = UUID()
     }
     .onDisappear {
       onExternalMonthDragTargetChanged(nil)
+      onDropTargetChanged(nil)
     }
   }
 
@@ -128,10 +131,21 @@ struct ScheduleMonthDaySchedulePanel: View {
   }
 
   private var panelFrameReporter: some View {
-    GeometryReader { proxy in
-      Color.clear.preference(
-        key: ScheduleMonthDayPanelGlobalFramePreferenceKey.self,
-        value: proxy.frame(in: .global)
+    ScheduleScreenFrameReporter { frame in
+      panelFrameInScreen = frame
+      reportDropTarget(frame: frame)
+    }
+  }
+
+  private func reportDropTarget(frame: CGRect) {
+    if frame.isNull {
+      onDropTargetChanged(nil)
+    } else {
+      onDropTargetChanged(
+        ScheduleMonthDropTarget(
+          day: calendar.startOfDay(for: target.date),
+          frame: frame
+        )
       )
     }
   }
@@ -563,12 +577,15 @@ struct ScheduleMonthDaySchedulePanel: View {
       originalX: originalX,
       originalWidth: originalWidth
     )
-    if ScheduleMonthDayInteractionAdapter.isExternalMonthDropIntent(translation: drag.translation) {
+    let externalDrop = externalMonthDropContext(for: drag)
+    if externalDrop.isExternal {
       activeMutationPreview = nil
-      onExternalMonthDragTargetChanged(externalMonthDropDay(for: drag))
+      onExternalMonthDragTargetChanged(externalDrop.day)
+      updateMoveCursor(isExternalDrop: true, externalDropDay: externalDrop.day)
       return
     }
     onExternalMonthDragTargetChanged(nil)
+    updateMoveCursor(isExternalDrop: false, externalDropDay: nil)
     activeMutationPreview = movePreview(for: state)
   }
 
@@ -593,9 +610,11 @@ struct ScheduleMonthDaySchedulePanel: View {
       originalX: originalX,
       originalWidth: originalWidth
     )
-    if ScheduleMonthDayInteractionAdapter.isExternalMonthDropIntent(translation: drag.translation) {
+    defer { NSCursor.arrow.set() }
+    let externalDrop = externalMonthDropContext(for: drag)
+    if externalDrop.isExternal {
       defer { onExternalMonthDragTargetChanged(nil) }
-      guard let targetDay = externalMonthDropDay(for: drag) else {
+      guard let targetDay = externalDrop.day else {
         activeMutationPreview = nil
         activeItemDragState = nil
         return
@@ -784,13 +803,37 @@ struct ScheduleMonthDaySchedulePanel: View {
     )
   }
 
-  private func externalMonthDropDay(for drag: DragGesture.Value) -> Date? {
-    guard !panelFrameInGlobal.isNull else { return nil }
-    let globalPoint = CGPoint(
-      x: panelFrameInGlobal.minX + drag.location.x,
-      y: panelFrameInGlobal.minY + drag.location.y
+  private func externalMonthDropContext(for drag: DragGesture.Value) -> (
+    isExternal: Bool,
+    day: Date?
+  ) {
+    let screenPoint = NSEvent.mouseLocation
+    let targetDay = externalMonthDropDay(at: screenPoint)
+    let leftPanel = ScheduleMonthDayInteractionAdapter.isExternalMonthDropLocation(
+      locationXInPanel: panelX(forScreenX: screenPoint.x),
+      translation: drag.translation
     )
-    return resolveExternalMonthDropDay(globalPoint)
+    return (targetDay != nil || leftPanel, targetDay)
+  }
+
+  private func externalMonthDropDay(at screenPoint: CGPoint) -> Date? {
+    guard !panelFrameInScreen.isNull else { return nil }
+    return resolveExternalMonthDropDay(screenPoint)
+  }
+
+  private func panelX(forScreenX x: CGFloat) -> CGFloat {
+    guard !panelFrameInScreen.isNull else { return x }
+    return x - panelFrameInScreen.minX
+  }
+
+  private func updateMoveCursor(isExternalDrop: Bool, externalDropDay day: Date?) {
+    if day != nil {
+      NSCursor.dragCopy.set()
+    } else if isExternalDrop {
+      NSCursor.operationNotAllowed.set()
+    } else if activeItemDragState != nil {
+      NSCursor.closedHand.set()
+    }
   }
 
   private func resizePreview(
