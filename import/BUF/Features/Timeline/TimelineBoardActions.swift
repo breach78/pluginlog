@@ -1047,7 +1047,9 @@ extension TimelineBoardView {
     placement: TimelineProjectDropPlacement
   ) {
     defer { clearProjectDragFeedback() }
-    guard projectListSortMode == .priority || projectListSortMode == .bucketGrouped else { return }
+    guard projectListSortMode.allowsInteractiveReordering || projectListSortMode == .bucketGrouped else {
+      return
+    }
     guard draggedID != targetID else { return }
     let bars = timelineBoardSnapshot.bars
     guard let draggedBar = bars.first(where: { $0.projectID == draggedID }),
@@ -1057,14 +1059,13 @@ extension TimelineBoardView {
     }
     let draggedStage = priorityStage(for: draggedBar)
     let targetStage = priorityStage(for: targetBar)
-    let stageProjectIDs = bars
-      .filter { priorityStage(for: $0) == targetStage }
-      .map(\.projectID)
-    guard let reordered = TimelineBoardReadPath.reorderedProjectIDsAfterDrop(
-      stageProjectIDs,
+    guard let reordered = TimelineBoardReadPath.reorderedProjectIDsAfterProjectListDrop(
+      bars: bars,
+      mode: projectListSortMode,
       draggedID: draggedID,
       targetID: targetID,
-      placement: placement
+      placement: placement,
+      stageForBar: priorityStage(for:)
     ) else {
       return
     }
@@ -1075,7 +1076,7 @@ extension TimelineBoardView {
     }
     restoreTimelineProjectManualOrder(nextOrder)
 
-    if draggedStage != targetStage {
+    if projectListSortMode != .manual, draggedStage != targetStage {
       updateTimelineProjectStage(projectID: draggedID, stage: targetStage)
     }
   }

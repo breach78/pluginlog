@@ -255,6 +255,7 @@ enum TimelineProjectManualOrderStore {
     let raw = Dictionary(uniqueKeysWithValues: order.map { ($0.key.uuidString, $0.value) })
     guard let data = try? JSONEncoder().encode(raw) else { return }
     defaults.set(data, forKey: storageKey)
+    defaults.synchronize()
   }
 
   static func mergedOrder(

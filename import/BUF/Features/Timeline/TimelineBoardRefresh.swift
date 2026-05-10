@@ -64,6 +64,38 @@ enum TimelineBoardReadPath {
     return reordered == projectIDs ? nil : reordered
   }
 
+  static func reorderedProjectIDsAfterProjectListDrop(
+    bars: [TimelineProjectBar],
+    mode: ProjectListSortMode,
+    draggedID: UUID,
+    targetID: UUID,
+    placement: TimelineProjectDropPlacement,
+    stageForBar: (TimelineProjectBar) -> ProjectProgressStage
+  ) -> [UUID]? {
+    let scopedProjectIDs: [UUID]
+    switch mode {
+    case .manual:
+      scopedProjectIDs = bars.map(\.projectID)
+    case .priority, .bucketGrouped:
+      guard let targetBar = bars.first(where: { $0.projectID == targetID }) else {
+        return nil
+      }
+      let targetStage = stageForBar(targetBar)
+      scopedProjectIDs = bars
+        .filter { stageForBar($0) == targetStage }
+        .map(\.projectID)
+    case .recent, .title:
+      return nil
+    }
+
+    return reorderedProjectIDsAfterDrop(
+      scopedProjectIDs,
+      draggedID: draggedID,
+      targetID: targetID,
+      placement: placement
+    )
+  }
+
   static func reorderedTaskIDsAfterDrop(
     _ taskIDs: [UUID],
     draggedID: UUID,

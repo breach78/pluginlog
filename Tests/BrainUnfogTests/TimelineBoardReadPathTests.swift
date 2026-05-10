@@ -527,6 +527,58 @@ final class TimelineBoardReadPathTests: XCTestCase {
     )
   }
 
+  func testManualProjectListDropReordersAcrossWholeVisibleList() {
+    let firstID = UUID()
+    let secondID = UUID()
+    let thirdID = UUID()
+    let bars = [
+      makeBar(projectID: firstID, title: "First"),
+      makeBar(projectID: secondID, title: "Second"),
+      makeBar(projectID: thirdID, title: "Third"),
+    ]
+
+    let reordered = TimelineBoardReadPath.reorderedProjectIDsAfterProjectListDrop(
+      bars: bars,
+      mode: .manual,
+      draggedID: thirdID,
+      targetID: firstID,
+      placement: .before,
+      stageForBar: { _ in .do }
+    )
+
+    XCTAssertEqual(reordered, [thirdID, firstID, secondID])
+  }
+
+  func testPriorityProjectListDropReordersOnlyTargetStageScope() {
+    let draggedID = UUID()
+    let doID = UUID()
+    let targetID = UUID()
+    let laterID = UUID()
+    let bars = [
+      makeBar(projectID: draggedID, title: "Dragged"),
+      makeBar(projectID: doID, title: "Do"),
+      makeBar(projectID: targetID, title: "Target"),
+      makeBar(projectID: laterID, title: "Later"),
+    ]
+    let stages: [UUID: ProjectProgressStage] = [
+      draggedID: .do,
+      doID: .do,
+      targetID: .decide,
+      laterID: .later,
+    ]
+
+    let reordered = TimelineBoardReadPath.reorderedProjectIDsAfterProjectListDrop(
+      bars: bars,
+      mode: .priority,
+      draggedID: draggedID,
+      targetID: targetID,
+      placement: .after,
+      stageForBar: { stages[$0.projectID] ?? .do }
+    )
+
+    XCTAssertEqual(reordered, [targetID, draggedID])
+  }
+
   func testPinnedTopSignatureChangesWhenScrollSuppressionEnds() {
     let anchorDate = Date(timeIntervalSince1970: 1_000)
 
