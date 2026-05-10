@@ -119,6 +119,36 @@ enum ScheduleDragDropInteractionLayer {
     return min(max(projectedY, minY), maxY)
   }
 
+  static func dragGhostViewportFrame(
+    resolvedDropFrame: CGRect?,
+    originalViewportFrame: CGRect,
+    translation: CGSize,
+    allowsHorizontalMovement: Bool
+  ) -> CGRect {
+    if let resolvedDropFrame {
+      return resolvedDropFrame
+    }
+
+    return originalViewportFrame.offsetBy(
+      dx: allowsHorizontalMovement ? translation.width : 0,
+      dy: translation.height
+    )
+  }
+
+  static func dragTopScheduleY(
+    currentPointerScheduleY: CGFloat?,
+    originalPointerScheduleY: CGFloat,
+    originalTopScheduleY: CGFloat,
+    fallbackTopScheduleY: CGFloat?
+  ) -> CGFloat? {
+    guard let currentPointerScheduleY else {
+      return fallbackTopScheduleY
+    }
+
+    let grabOffsetY = originalPointerScheduleY - originalTopScheduleY
+    return currentPointerScheduleY - grabOffsetY
+  }
+
   static func preview(
     originalDay: Date,
     originalTimeMinutes: Int?,

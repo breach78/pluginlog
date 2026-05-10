@@ -242,4 +242,53 @@ final class ScheduleDragDropInteractionLayerTests: XCTestCase {
 
     XCTAssertEqual(y, 136)
   }
+
+  func testDragGhostUsesResolvedDropFrameWhenAvailable() {
+    let originalFrame = CGRect(x: 180, y: 420, width: 160, height: 240)
+    let dropFrame = CGRect(x: 760, y: 180, width: 150, height: 120)
+
+    let ghostFrame = ScheduleDragDropInteractionLayer.dragGhostViewportFrame(
+      resolvedDropFrame: dropFrame,
+      originalViewportFrame: originalFrame,
+      translation: CGSize(width: -280, height: 90),
+      allowsHorizontalMovement: true
+    )
+
+    XCTAssertEqual(ghostFrame, dropFrame)
+  }
+
+  func testDragGhostFallsBackToTranslationWithoutResolvedDropFrame() {
+    let originalFrame = CGRect(x: 180, y: 420, width: 160, height: 240)
+
+    let ghostFrame = ScheduleDragDropInteractionLayer.dragGhostViewportFrame(
+      resolvedDropFrame: nil,
+      originalViewportFrame: originalFrame,
+      translation: CGSize(width: -80, height: 90),
+      allowsHorizontalMovement: true
+    )
+
+    XCTAssertEqual(ghostFrame, originalFrame.offsetBy(dx: -80, dy: 90))
+  }
+
+  func testDragTopScheduleYUsesCurrentPointerAndGrabOffset() {
+    let topY = ScheduleDragDropInteractionLayer.dragTopScheduleY(
+      currentPointerScheduleY: 620,
+      originalPointerScheduleY: 515,
+      originalTopScheduleY: 480,
+      fallbackTopScheduleY: 700
+    )
+
+    XCTAssertEqual(topY, 585)
+  }
+
+  func testDragTopScheduleYUsesFallbackWhenPointerIsUnavailable() {
+    let topY = ScheduleDragDropInteractionLayer.dragTopScheduleY(
+      currentPointerScheduleY: nil,
+      originalPointerScheduleY: 515,
+      originalTopScheduleY: 480,
+      fallbackTopScheduleY: 700
+    )
+
+    XCTAssertEqual(topY, 700)
+  }
 }

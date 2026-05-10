@@ -1894,7 +1894,7 @@ extension ScheduleBoardView {
         {
           let preview = preview(for: dragState)
           let dropFrame = dragDropTargetViewportFrame(for: dragState, preview: preview)
-          let ghostFrame = dragGhostViewportFrame(for: dragState)
+          let ghostFrame = dragGhostViewportFrame(for: dragState, dropFrame: dropFrame)
           let ghostPresentsAsAllDay = dragState.originalTimeMinutes == nil
           let color = scheduleColor(for: taskDescriptor.projectColorHex)
           let taskRow = taskDescriptor.taskRow
@@ -1932,7 +1932,7 @@ extension ScheduleBoardView {
                 isSelected: false,
                 isPreparationSlot: dragState.isPreparationSlot,
                 targetCompletedWorkUnits: dragState.targetCompletedWorkUnits,
-                timeLabel: originalTaskDragTimeLabel(for: dragState),
+                timeLabel: taskDragTimeLabel(for: dragState, preview: preview, dropFrame: dropFrame),
                 blockHeight: ghostFrame.height
               )
             }
@@ -1954,7 +1954,7 @@ extension ScheduleBoardView {
         {
           let preview = preview(for: dragState)
           let dropFrame = dragDropTargetViewportFrame(for: dragState, preview: preview)
-          let ghostFrame = dragGhostViewportFrame(for: dragState)
+          let ghostFrame = dragGhostViewportFrame(for: dragState, dropFrame: dropFrame)
           let ghostPresentsAsAllDay = dragState.originalTimeMinutes == nil
           let color = scheduleColor(for: event.calendarColorHex, fallback: .secondary)
 
@@ -1986,7 +1986,7 @@ extension ScheduleBoardView {
                 title: event.title,
                 subtitle: event.calendarTitle,
                 color: color,
-                timeLabel: originalCalendarDragTimeLabel(for: dragState),
+                timeLabel: calendarDragTimeLabel(for: dragState, preview: preview, dropFrame: dropFrame),
                 blockHeight: ghostFrame.height,
                 durationMinutes: dragState.originalDurationMinutes ?? timedMinimumDuration
               )
@@ -2648,18 +2648,50 @@ extension ScheduleBoardView {
     return pointerX < 0
   }
 
-  func dragGhostViewportFrame(for dragState: ScheduleTaskDragState) -> CGRect {
-    dragState.originalViewportFrame.offsetBy(
-      dx: dragState.isPreparationSlot ? 0 : dragState.translation.width,
-      dy: dragState.translation.height
+  func dragGhostViewportFrame(
+    for dragState: ScheduleTaskDragState,
+    dropFrame: CGRect?
+  ) -> CGRect {
+    ScheduleDragDropInteractionLayer.dragGhostViewportFrame(
+      resolvedDropFrame: dropFrame,
+      originalViewportFrame: dragState.originalViewportFrame,
+      translation: dragState.translation,
+      allowsHorizontalMovement: !dragState.isPreparationSlot
     )
   }
 
-  func dragGhostViewportFrame(for dragState: ScheduleCalendarDragState) -> CGRect {
-    dragState.originalViewportFrame.offsetBy(
-      dx: dragState.translation.width,
-      dy: dragState.translation.height
+  func dragGhostViewportFrame(
+    for dragState: ScheduleCalendarDragState,
+    dropFrame: CGRect?
+  ) -> CGRect {
+    ScheduleDragDropInteractionLayer.dragGhostViewportFrame(
+      resolvedDropFrame: dropFrame,
+      originalViewportFrame: dragState.originalViewportFrame,
+      translation: dragState.translation,
+      allowsHorizontalMovement: true
     )
+  }
+
+  func taskDragTimeLabel(
+    for dragState: ScheduleTaskDragState,
+    preview: ScheduleInteractionPreview,
+    dropFrame: CGRect?
+  ) -> String? {
+    guard dropFrame != nil else {
+      return originalTaskDragTimeLabel(for: dragState)
+    }
+    return scheduleDragPreviewLabel(for: preview)
+  }
+
+  func calendarDragTimeLabel(
+    for dragState: ScheduleCalendarDragState,
+    preview: ScheduleInteractionPreview,
+    dropFrame: CGRect?
+  ) -> String? {
+    guard dropFrame != nil else {
+      return originalCalendarDragTimeLabel(for: dragState)
+    }
+    return scheduleDragPreviewLabel(for: preview)
   }
 
   func originalTaskDragTimeLabel(for dragState: ScheduleTaskDragState) -> String? {

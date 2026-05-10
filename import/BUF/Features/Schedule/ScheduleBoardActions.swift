@@ -471,10 +471,14 @@ extension ScheduleBoardView {
     let currentPointerScheduleY = dragState.currentPointerViewportLocation.map {
       $0.y - headerHeight + currentScrollOffsetY
     }
-    let currentTopScheduleY: CGFloat? =
-      dragState.originalTimeMinutes == nil
-      ? dragState.originalTopScheduleY + dragState.translation.height + currentScrollOffsetY
-      : nil
+    let currentTopScheduleY = ScheduleDragDropInteractionLayer.dragTopScheduleY(
+      currentPointerScheduleY: currentPointerScheduleY,
+      originalPointerScheduleY: dragState.originalPointerScheduleY,
+      originalTopScheduleY: dragState.originalTopScheduleY,
+      fallbackTopScheduleY: dragState.originalTimeMinutes == nil
+        ? dragState.originalTopScheduleY + dragState.translation.height + currentScrollOffsetY
+        : nil
+    )
 
     let allowsDayChange = !dragState.isPreparationSlot
     let allowsTranslationDateSnap = allowsScheduleDragDateSnapping && allowsDayChange
@@ -504,10 +508,14 @@ extension ScheduleBoardView {
     let currentPointerScheduleY = dragState.currentPointerViewportLocation.map {
       $0.y - headerHeight + currentScrollOffsetY
     }
-    let currentTopScheduleY: CGFloat? =
-      dragState.originalTimeMinutes == nil
-      ? dragState.originalTopScheduleY + dragState.translation.height + currentScrollOffsetY
-      : nil
+    let currentTopScheduleY = ScheduleDragDropInteractionLayer.dragTopScheduleY(
+      currentPointerScheduleY: currentPointerScheduleY,
+      originalPointerScheduleY: dragState.originalPointerScheduleY,
+      originalTopScheduleY: dragState.originalTopScheduleY,
+      fallbackTopScheduleY: dragState.originalTimeMinutes == nil
+        ? dragState.originalTopScheduleY + dragState.translation.height + currentScrollOffsetY
+        : nil
+    )
 
     let preview = ScheduleDragDropInteractionLayer.preview(
       originalDay: dragState.originalDay,
@@ -741,10 +749,9 @@ extension ScheduleBoardView {
       return nil
     }
 
-    let rawFollowFrame = dragState.originalViewportFrame.offsetBy(
-      dx: dragState.isPreparationSlot ? 0 : dragState.translation.width,
-      dy: dragState.translation.height
-    )
+    let resolvedPreview = preview(for: dragState)
+    let dropFrame = dragDropTargetViewportFrame(for: dragState, preview: resolvedPreview)
+    let rawFollowFrame = dragGhostViewportFrame(for: dragState, dropFrame: dropFrame)
 
     return rawFollowFrame.offsetBy(dx: boardFrameInGlobal.minX, dy: boardFrameInGlobal.minY)
   }
