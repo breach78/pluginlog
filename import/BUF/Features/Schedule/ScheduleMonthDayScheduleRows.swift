@@ -102,6 +102,8 @@ struct ScheduleMonthDayTimedItemBlock: View {
   let isSaving: Bool
   let canDrag: Bool
   let canResize: Bool
+  let allowsStartResize: Bool
+  let allowsEndResize: Bool
   let isInteracting: Bool
   let coordinateSpaceName: String
   let onOpen: () -> Void
@@ -154,10 +156,12 @@ struct ScheduleMonthDayTimedItemBlock: View {
       .padding(.horizontal, 8)
       .padding(.vertical, 7)
 
-      if canResize {
+      if canResize && allowsStartResize {
         resizeHandle(edge: .start)
           .frame(maxHeight: .infinity, alignment: .top)
+      }
 
+      if canResize && allowsEndResize {
         resizeHandle(edge: .end)
           .frame(maxHeight: .infinity, alignment: .bottom)
       }

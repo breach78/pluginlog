@@ -87,6 +87,50 @@ final class ScheduleDragDropInteractionLayerTests: XCTestCase {
     XCTAssertEqual(preview.day, expectedDay)
   }
 
+  func testTimedDragPreservesDurationWhenMovedPastMidnight() {
+    let preview = ScheduleDragDropInteractionLayer.preview(
+      originalDay: Date(timeIntervalSince1970: 0),
+      originalTimeMinutes: 20 * 60,
+      originalDurationMinutes: 6 * 60,
+      translation: CGSize(width: 0, height: 2 * 60),
+      originalPointerScheduleY: 20 * 60,
+      originalTopScheduleY: 20 * 60,
+      metrics: metrics,
+      calendar: Calendar(identifier: .gregorian)
+    )
+
+    XCTAssertEqual(preview.timeMinutes, 22 * 60)
+    XCTAssertEqual(preview.durationMinutes, 6 * 60)
+  }
+
+  func testEndResizePreservesDurationPastMidnight() {
+    let preview = ScheduleTimeResizingInteractionLayer.preview(
+      originalDay: Date(timeIntervalSince1970: 0),
+      originalTimeMinutes: 22 * 60,
+      originalDurationMinutes: 3 * 60,
+      isStartEdge: false,
+      translationHeight: 60,
+      metrics: metrics
+    )
+
+    XCTAssertEqual(preview.timeMinutes, 22 * 60)
+    XCTAssertEqual(preview.durationMinutes, 4 * 60)
+  }
+
+  func testStartResizePreservesOvernightEndInsteadOfClampingToSameDay() {
+    let preview = ScheduleTimeResizingInteractionLayer.preview(
+      originalDay: Date(timeIntervalSince1970: 0),
+      originalTimeMinutes: 22 * 60,
+      originalDurationMinutes: 4 * 60,
+      isStartEdge: true,
+      translationHeight: 60,
+      metrics: metrics
+    )
+
+    XCTAssertEqual(preview.timeMinutes, 23 * 60)
+    XCTAssertEqual(preview.durationMinutes, 3 * 60)
+  }
+
   func testPointerViewportXMapsToVisibleDayColumn() {
     let calendar = Calendar(identifier: .gregorian)
     let firstDay = Date(timeIntervalSince1970: 0)

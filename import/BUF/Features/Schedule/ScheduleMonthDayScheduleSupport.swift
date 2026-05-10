@@ -7,6 +7,11 @@ struct ScheduleMonthDayTimedInterval {
   let item: ScheduleMonthItem
   let startMinute: Int
   let durationMinutes: Int
+  let sourceStartDay: Date
+  let sourceStartMinute: Int
+  let sourceDurationMinutes: Int
+  let isFirstSegment: Bool
+  let isLastSegment: Bool
 
   var endMinute: Int {
     startMinute + durationMinutes
@@ -17,6 +22,11 @@ struct ScheduleMonthDayTimedItemLayout: Identifiable {
   let item: ScheduleMonthItem
   let startMinute: Int
   let durationMinutes: Int
+  let sourceStartDay: Date
+  let sourceStartMinute: Int
+  let sourceDurationMinutes: Int
+  let isFirstSegment: Bool
+  let isLastSegment: Bool
   let column: Int
   let columnCount: Int
   let containerWidth: CGFloat
@@ -103,6 +113,11 @@ enum ScheduleMonthDayTimedLayoutBuilder {
         item: entry.interval.item,
         startMinute: entry.interval.startMinute,
         durationMinutes: entry.interval.durationMinutes,
+        sourceStartDay: entry.interval.sourceStartDay,
+        sourceStartMinute: entry.interval.sourceStartMinute,
+        sourceDurationMinutes: entry.interval.sourceDurationMinutes,
+        isFirstSegment: entry.interval.isFirstSegment,
+        isLastSegment: entry.interval.isLastSegment,
         column: entry.column,
         columnCount: columnCount,
         containerWidth: width,
@@ -344,17 +359,10 @@ extension ScheduleMonthItem {
     calendar: Calendar
   ) -> Date {
     let start = startDate(for: preview, calendar: calendar)
-    guard let timeMinutes = preview.timeMinutes else {
+    guard preview.timeMinutes != nil else {
       return calendar.date(byAdding: .day, value: 1, to: calendar.startOfDay(for: preview.day)) ?? start
     }
-    let duration = ScheduleDragDropInteractionLayer.clampedDuration(
-      preview.durationMinutes ?? 30,
-      for: timeMinutes,
-      metrics: ScheduleMonthDayInteractionAdapter.metrics(
-        hourHeight: 56,
-        minimumDurationMinutes: 30
-      )
-    )
+    let duration = max(5, preview.durationMinutes ?? 30)
     return calendar.date(byAdding: .minute, value: duration, to: start) ?? start
   }
 }

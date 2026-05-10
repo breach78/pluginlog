@@ -138,6 +138,11 @@ struct ScheduleTimedEntry: Identifiable {
   let startMinute: Int
   let durationMinutes: Int
   let endMinute: Int
+  let sourceStartDay: Date
+  let sourceStartMinute: Int
+  let sourceDurationMinutes: Int
+  let isFirstSegment: Bool
+  let isLastSegment: Bool
   let title: String
   let subtitle: String?
   let color: Color
@@ -166,6 +171,11 @@ struct ScheduleTimedBlockLayout: Identifiable {
         startMinute: entry.startMinute,
         durationMinutes: entry.durationMinutes,
         endMinute: entry.endMinute,
+        sourceStartDay: entry.sourceStartDay,
+        sourceStartMinute: entry.sourceStartMinute,
+        sourceDurationMinutes: entry.sourceDurationMinutes,
+        isFirstSegment: entry.isFirstSegment,
+        isLastSegment: entry.isLastSegment,
         title: entry.title,
         subtitle: entry.subtitle,
         color: entry.color,
@@ -561,6 +571,11 @@ extension ScheduleBoardView {
           targetCompletedWorkUnits: layout.entry.targetCompletedWorkUnits,
           startMinute: layout.entry.startMinute,
           durationMinutes: layout.entry.durationMinutes,
+          sourceDay: layout.entry.sourceStartDay,
+          sourceTimeMinutes: layout.entry.sourceStartMinute,
+          sourceDurationMinutes: layout.entry.sourceDurationMinutes,
+          allowsStartResize: layout.entry.isFirstSegment,
+          allowsEndResize: layout.entry.isLastSegment,
           timeLabel: timeRangeLabel(
             startMinute: layout.entry.startMinute,
             durationMinutes: layout.entry.durationMinutes
@@ -587,10 +602,11 @@ extension ScheduleBoardView {
           taskDragGesture(
             for: taskDescriptor,
             entryID: layout.entry.id,
-            originalDay: days[layout.entry.dayIndex],
-            originalTimeMinutes: layout.entry.startMinute,
-            originalDurationMinutes: layout.entry.durationMinutes,
+            originalDay: layout.entry.sourceStartDay,
+            originalTimeMinutes: layout.entry.sourceStartMinute,
+            originalDurationMinutes: layout.entry.sourceDurationMinutes,
             itemFrame: frame,
+            originalTopScheduleYOverride: CGFloat(layout.entry.sourceStartMinute) / 60 * hourHeight,
             isAllDay: false,
             isPreparationSlot: layout.entry.isPreparationSlot,
             targetCompletedWorkUnits: layout.entry.targetCompletedWorkUnits
@@ -637,12 +653,18 @@ extension ScheduleBoardView {
               blockHeight: blockHeight,
               startMinute: layout.entry.startMinute,
               durationMinutes: layout.entry.durationMinutes,
-              viewportFrame: viewportFrame
+              viewportFrame: viewportFrame,
+              resizeSourceDay: layout.entry.sourceStartDay,
+              resizeSourceTimeMinutes: layout.entry.sourceStartMinute,
+              resizeSourceDurationMinutes: layout.entry.sourceDurationMinutes,
+              allowsStartResize: layout.entry.isFirstSegment,
+              allowsEndResize: layout.entry.isLastSegment
             )
             .gesture(
               eventDragGesture(
                 for: event,
                 itemFrame: frame,
+                originalTopScheduleYOverride: CGFloat(layout.entry.sourceStartMinute) / 60 * hourHeight,
                 isAllDay: false
               )
             )
@@ -697,6 +719,11 @@ extension ScheduleBoardView {
     targetCompletedWorkUnits: Int?,
     startMinute: Int,
     durationMinutes: Int,
+    sourceDay: Date,
+    sourceTimeMinutes: Int,
+    sourceDurationMinutes: Int,
+    allowsStartResize: Bool,
+    allowsEndResize: Bool,
     timeLabel: String?,
     blockHeight: CGFloat,
     viewportFrame: CGRect,
@@ -744,30 +771,34 @@ extension ScheduleBoardView {
       scheduleTaskContextMenu(taskDescriptor)
     }
     .overlay(alignment: .top) {
-      resizeHandle(
-        for: taskDescriptor,
-        entryID: entryID,
-        day: day,
-        originalTimeMinutes: startMinute,
-        durationMinutes: durationMinutes,
-        edge: .start,
-        originalViewportFrame: viewportFrame,
-        isPreparationSlot: isPreparationSlot,
-        targetCompletedWorkUnits: targetCompletedWorkUnits
-      )
+      if allowsStartResize {
+        resizeHandle(
+          for: taskDescriptor,
+          entryID: entryID,
+          day: sourceDay,
+          originalTimeMinutes: sourceTimeMinutes,
+          durationMinutes: sourceDurationMinutes,
+          edge: .start,
+          originalViewportFrame: viewportFrame,
+          isPreparationSlot: isPreparationSlot,
+          targetCompletedWorkUnits: targetCompletedWorkUnits
+        )
+      }
     }
     .overlay(alignment: .bottom) {
-      resizeHandle(
-        for: taskDescriptor,
-        entryID: entryID,
-        day: day,
-        originalTimeMinutes: startMinute,
-        durationMinutes: durationMinutes,
-        edge: .end,
-        originalViewportFrame: viewportFrame,
-        isPreparationSlot: isPreparationSlot,
-        targetCompletedWorkUnits: targetCompletedWorkUnits
-      )
+      if allowsEndResize {
+        resizeHandle(
+          for: taskDescriptor,
+          entryID: entryID,
+          day: sourceDay,
+          originalTimeMinutes: sourceTimeMinutes,
+          durationMinutes: sourceDurationMinutes,
+          edge: .end,
+          originalViewportFrame: viewportFrame,
+          isPreparationSlot: isPreparationSlot,
+          targetCompletedWorkUnits: targetCompletedWorkUnits
+        )
+      }
     }
   }
 
@@ -781,6 +812,11 @@ extension ScheduleBoardView {
     startMinute _: Int,
     durationMinutes: Int,
     viewportFrame: CGRect,
+    resizeSourceDay: Date? = nil,
+    resizeSourceTimeMinutes: Int? = nil,
+    resizeSourceDurationMinutes: Int? = nil,
+    allowsStartResize: Bool = true,
+    allowsEndResize: Bool = true,
     contentTopOffset: CGFloat = 0,
     isBackgroundCalendar: Bool = false
   ) -> some View {
@@ -820,19 +856,33 @@ extension ScheduleBoardView {
       }
     }
     .overlay(alignment: .top) {
-      if event.canEditTiming && !event.spansMultipleDays && !isBackgroundCalendar {
+      if event.canEditTiming && allowsStartResize && !isBackgroundCalendar,
+        let resizeSourceDay,
+        let resizeSourceTimeMinutes,
+        let resizeSourceDurationMinutes
+      {
         eventResizeHandle(
           for: event,
           edge: .start,
+          originalDay: resizeSourceDay,
+          originalTimeMinutes: resizeSourceTimeMinutes,
+          originalDurationMinutes: resizeSourceDurationMinutes,
           originalViewportFrame: viewportFrame
         )
       }
     }
     .overlay(alignment: .bottom) {
-      if event.canEditTiming && !event.spansMultipleDays && !isBackgroundCalendar {
+      if event.canEditTiming && allowsEndResize && !isBackgroundCalendar,
+        let resizeSourceDay,
+        let resizeSourceTimeMinutes,
+        let resizeSourceDurationMinutes
+      {
         eventResizeHandle(
           for: event,
           edge: .end,
+          originalDay: resizeSourceDay,
+          originalTimeMinutes: resizeSourceTimeMinutes,
+          originalDurationMinutes: resizeSourceDurationMinutes,
           originalViewportFrame: viewportFrame
         )
       }
@@ -1530,6 +1580,9 @@ extension ScheduleBoardView {
   func eventResizeHandle(
     for event: ScheduleCalendarEvent,
     edge: ScheduleResizeEdge,
+    originalDay: Date,
+    originalTimeMinutes: Int,
+    originalDurationMinutes: Int,
     originalViewportFrame: CGRect
   ) -> some View {
     let hitZoneHeight = min(10, max(7, originalViewportFrame.height * 0.24))
@@ -1547,7 +1600,14 @@ extension ScheduleBoardView {
       }
       .contentShape(Rectangle())
       .highPriorityGesture(
-        eventResizeGesture(for: event, edge: edge, originalViewportFrame: originalViewportFrame)
+        eventResizeGesture(
+          for: event,
+          originalDay: originalDay,
+          originalTimeMinutes: originalTimeMinutes,
+          originalDurationMinutes: originalDurationMinutes,
+          edge: edge,
+          originalViewportFrame: originalViewportFrame
+        )
       )
       .help(edge == .start ? "시작 시간 조절" : "종료 시간 조절")
   }
@@ -1595,6 +1655,11 @@ extension ScheduleBoardView {
               startMinute: placement.startMinute,
               durationMinutes: placement.durationMinutes,
               endMinute: placement.endMinute,
+              sourceStartDay: placement.sourceStartDay,
+              sourceStartMinute: placement.sourceStartMinute,
+              sourceDurationMinutes: placement.sourceDurationMinutes,
+              isFirstSegment: placement.isFirstSegment,
+              isLastSegment: placement.isLastSegment,
               title: eventModel.title,
               subtitle: eventModel.subtitle,
               color: scheduleColor(for: eventModel.colorHex),
@@ -1620,6 +1685,11 @@ extension ScheduleBoardView {
               startMinute: placement.startMinute,
               durationMinutes: placement.durationMinutes,
               endMinute: placement.endMinute,
+              sourceStartDay: placement.sourceStartDay,
+              sourceStartMinute: placement.sourceStartMinute,
+              sourceDurationMinutes: placement.sourceDurationMinutes,
+              isFirstSegment: placement.isFirstSegment,
+              isLastSegment: placement.isLastSegment,
               title: eventModel.title,
               subtitle: eventModel.subtitle,
               color: scheduleColor(for: eventModel.colorHex, fallback: .secondary),

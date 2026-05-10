@@ -43,6 +43,44 @@ final class ScheduleDayTimelineLayoutEngineTests: XCTestCase {
     )
   }
 
+  func testOvernightTimedSegmentsCarrySourceTiming() throws {
+    let calendar = testCalendar()
+    let day1 = try testDate(year: 2026, month: 5, day: 1, calendar: calendar)
+    let day2 = try testDate(year: 2026, month: 5, day: 2, calendar: calendar)
+    let startDate = try XCTUnwrap(
+      calendar.date(byAdding: .hour, value: 22, to: day1)
+    )
+    let endDate = try XCTUnwrap(
+      calendar.date(byAdding: .hour, value: 4, to: day2)
+    )
+    let item = event(
+      id: "overnight",
+      title: "Overnight",
+      startDate: startDate,
+      endDate: endDate,
+      isAllDay: false
+    )
+
+    let layout = ScheduleDayTimelineLayoutEngine().makeLayout(
+      items: [item],
+      dayIndexByDate: [day1: 0, day2: 1],
+      calendar: calendar,
+      metrics: ScheduleDayTimelineLayoutMetrics(minimumTimedDurationMinutes: 15)
+    )
+
+    let segments = layout.timed.sorted { $0.dayIndex < $1.dayIndex }
+    XCTAssertEqual(segments.count, 2)
+    XCTAssertEqual(segments[0].startMinute, 22 * 60)
+    XCTAssertEqual(segments[0].durationMinutes, 2 * 60)
+    XCTAssertEqual(segments[1].startMinute, 0)
+    XCTAssertEqual(segments[1].durationMinutes, 4 * 60)
+    XCTAssertEqual(segments.map(\.sourceStartDay), [day1, day1])
+    XCTAssertEqual(segments.map(\.sourceStartMinute), [22 * 60, 22 * 60])
+    XCTAssertEqual(segments.map(\.sourceDurationMinutes), [6 * 60, 6 * 60])
+    XCTAssertEqual(segments.map(\.isFirstSegment), [true, false])
+    XCTAssertEqual(segments.map(\.isLastSegment), [false, true])
+  }
+
   private func event(
     id: String,
     title: String,

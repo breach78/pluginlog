@@ -7,6 +7,11 @@ struct ScheduleTimedPlacementCandidate: Identifiable, Hashable {
   let startMinute: Int
   let durationMinutes: Int
   let endMinute: Int
+  let sourceStartDay: Date
+  let sourceStartMinute: Int
+  let sourceDurationMinutes: Int
+  let isFirstSegment: Bool
+  let isLastSegment: Bool
 }
 
 struct ScheduleTimedPlacement: Identifiable, Hashable {
@@ -16,6 +21,11 @@ struct ScheduleTimedPlacement: Identifiable, Hashable {
   let startMinute: Int
   let durationMinutes: Int
   let endMinute: Int
+  let sourceStartDay: Date
+  let sourceStartMinute: Int
+  let sourceDurationMinutes: Int
+  let isFirstSegment: Bool
+  let isLastSegment: Bool
   let column: Int
   let columnCount: Int
   let columnSpan: Int
@@ -63,6 +73,11 @@ struct DefaultScheduleCollisionDetector: ScheduleCollisionDetecting {
               startMinute: item.entry.startMinute,
               durationMinutes: item.entry.durationMinutes,
               endMinute: item.entry.endMinute,
+              sourceStartDay: item.entry.sourceStartDay,
+              sourceStartMinute: item.entry.sourceStartMinute,
+              sourceDurationMinutes: item.entry.sourceDurationMinutes,
+              isFirstSegment: item.entry.isFirstSegment,
+              isLastSegment: item.entry.isLastSegment,
               column: item.column,
               columnCount: normalizedColumnCount,
               columnSpan: expandableColumnSpan

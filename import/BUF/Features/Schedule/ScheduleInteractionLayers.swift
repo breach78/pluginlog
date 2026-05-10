@@ -152,10 +152,9 @@ enum ScheduleDragDropInteractionLayer {
       return ScheduleInteractionPreview(
         day: day,
         timeMinutes: timeMinutes,
-        durationMinutes: clampedDuration(
+        durationMinutes: max(
+          metrics.timedMinimumDurationMinutes,
           originalDurationMinutes ?? metrics.timedMinimumDurationMinutes,
-          for: timeMinutes,
-          metrics: metrics
         )
       )
     }
@@ -219,10 +218,9 @@ enum ScheduleTimeResizingInteractionLayer {
       return ScheduleInteractionPreview(
         day: originalDay,
         timeMinutes: proposedStart,
-        durationMinutes: ScheduleDragDropInteractionLayer.clampedDuration(
+        durationMinutes: max(
+          metrics.timedMinimumDurationMinutes,
           endMinute - proposedStart,
-          for: proposedStart,
-          metrics: metrics
         )
       )
     }
@@ -234,11 +232,7 @@ enum ScheduleTimeResizingInteractionLayer {
     return ScheduleInteractionPreview(
       day: originalDay,
       timeMinutes: originalTimeMinutes,
-      durationMinutes: ScheduleDragDropInteractionLayer.clampedDuration(
-        proposedDuration,
-        for: originalTimeMinutes,
-        metrics: metrics
-      )
+      durationMinutes: proposedDuration
     )
   }
 

@@ -596,6 +596,7 @@ extension ScheduleBoardView {
     originalTimeMinutes: Int?,
     originalDurationMinutes: Int?,
     itemFrame: CGRect,
+    originalTopScheduleYOverride: CGFloat? = nil,
     isAllDay: Bool,
     isPreparationSlot: Bool = false,
     targetCompletedWorkUnits: Int? = nil
@@ -608,7 +609,9 @@ extension ScheduleBoardView {
         var dragState = activeTaskDrag
         if dragState?.entryID != entryID {
           let visibleAllDayY = min(itemFrame.minY, allDayRailVisibleHeight - itemFrame.height)
-          let originalScheduleY = isAllDay ? visibleAllDayY - allDayRailVisibleHeight : itemFrame.minY
+          let originalScheduleY =
+            originalTopScheduleYOverride
+            ?? (isAllDay ? visibleAllDayY - allDayRailVisibleHeight : itemFrame.minY)
           let originalViewportFrame =
             isAllDay
             ? CGRect(
@@ -749,6 +752,7 @@ extension ScheduleBoardView {
   func eventDragGesture(
     for event: ScheduleCalendarEvent,
     itemFrame: CGRect,
+    originalTopScheduleYOverride: CGFloat? = nil,
     isAllDay: Bool
   ) -> some Gesture {
     DragGesture(minimumDistance: 6)
@@ -760,7 +764,9 @@ extension ScheduleBoardView {
         var dragState = activeCalendarDrag
         if dragState?.eventID != event.id {
           let visibleAllDayY = min(itemFrame.minY, allDayRailVisibleHeight - itemFrame.height)
-          let originalScheduleY = isAllDay ? visibleAllDayY - allDayRailVisibleHeight : itemFrame.minY
+          let originalScheduleY =
+            originalTopScheduleYOverride
+            ?? (isAllDay ? visibleAllDayY - allDayRailVisibleHeight : itemFrame.minY)
           let originalViewportFrame =
             isAllDay
             ? CGRect(
@@ -900,6 +906,9 @@ extension ScheduleBoardView {
 
   func eventResizeGesture(
     for event: ScheduleCalendarEvent,
+    originalDay: Date,
+    originalTimeMinutes: Int,
+    originalDurationMinutes: Int,
     edge: ScheduleResizeEdge,
     originalViewportFrame: CGRect
   ) -> some Gesture {
@@ -907,7 +916,7 @@ extension ScheduleBoardView {
       .onChanged { value in
         guard event.canEditTiming,
           activeTaskDrag == nil, activeTaskResize == nil, activeCalendarDrag == nil,
-          !event.isAllDay, !event.spansMultipleDays
+          !event.isAllDay
         else {
           return
         }
@@ -915,9 +924,9 @@ extension ScheduleBoardView {
         if activeCalendarResize?.eventID != event.id || activeCalendarResize?.edge != edge {
           activeCalendarResize = ScheduleCalendarResizeState(
             eventID: event.id,
-            originalDay: calendar.startOfDay(for: event.startDate),
-            originalTimeMinutes: timeMinutes(for: event.startDate),
-            originalDurationMinutes: durationMinutes(for: event),
+            originalDay: originalDay,
+            originalTimeMinutes: originalTimeMinutes,
+            originalDurationMinutes: originalDurationMinutes,
             edge: edge,
             originalViewportFrame: originalViewportFrame
           )
@@ -1502,16 +1511,11 @@ extension ScheduleBoardView {
     suppressTaskTap(for: 0.2)
 
     let durationMinutes: Int?
-    if let timeMinutes = preview.timeMinutes {
-      let requestedDuration = max(
+    if preview.timeMinutes != nil {
+      durationMinutes = max(
         timedMinimumDuration,
         WorkspaceTaskScheduleEventStore.normalizedScheduledDurationMinutes(for: taskDescriptor.taskRow)
           ?? timedMinimumDuration
-      )
-      durationMinutes = ScheduleDragDropInteractionLayer.clampedDuration(
-        requestedDuration,
-        for: timeMinutes,
-        metrics: interactionMetrics
       )
     } else {
       durationMinutes = nil

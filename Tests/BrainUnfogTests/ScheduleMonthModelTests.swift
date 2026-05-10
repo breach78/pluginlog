@@ -578,6 +578,146 @@ final class ScheduleMonthModelTests: XCTestCase {
     XCTAssertEqual(Int(moved.endDate.timeIntervalSince(moved.startDate) / 60), 75)
   }
 
+  func testScheduleMonthItemAppliesOvernightTimedPreviewWithoutTruncatingDuration() throws {
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+    let may7 = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 5, day: 7, hour: 20)))
+    let may8 = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 5, day: 8, hour: 2)))
+    let item = makeMonthItem(
+      id: "overnight-task",
+      source: .workspaceTask(taskID: UUID(), projectID: UUID()),
+      startDate: may7,
+      endDate: may8,
+      isAllDay: false
+    )
+
+    let moved = item.applyingSchedulePreview(
+      ScheduleMonthDayScheduleMutationPreview(
+        itemID: item.id,
+        day: may7,
+        timeMinutes: 22 * 60,
+        durationMinutes: 6 * 60
+      ),
+      calendar: calendar
+    )
+
+    XCTAssertFalse(moved.isAllDay)
+    XCTAssertEqual(calendar.component(.hour, from: moved.startDate), 22)
+    XCTAssertEqual(Int(moved.endDate.timeIntervalSince(moved.startDate) / 60), 6 * 60)
+    XCTAssertEqual(calendar.component(.day, from: moved.endDate), 8)
+    XCTAssertEqual(calendar.component(.hour, from: moved.endDate), 4)
+  }
+
+  func testMonthLayoutShowsOvernightTimedItemOnlyOnStartDay() throws {
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+    let may7 = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 5, day: 7, hour: 22)))
+    let may8 = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 5, day: 8, hour: 4)))
+    let may7Day = calendar.startOfDay(for: may7)
+    let may8Day = calendar.startOfDay(for: may8)
+    let item = makeMonthItem(
+      id: "overnight-task",
+      source: .workspaceTask(taskID: UUID(), projectID: UUID()),
+      startDate: may7,
+      endDate: may8,
+      isAllDay: false
+    )
+
+    let itemsByDay = ScheduleMonthCalendar.itemsByDay(
+      items: [item],
+      visibleDays: [may7Day, may8Day],
+      calendar: calendar
+    )
+
+    XCTAssertEqual(itemsByDay[may7Day]?.map(\.id), ["overnight-task"])
+    XCTAssertNil(itemsByDay[may8Day])
+  }
+
+  func testDayPanelDraggingSecondDaySegmentPreservesOriginalOvernightOffset() throws {
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+    let may7 = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 5, day: 7, hour: 22)))
+    let may8 = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 5, day: 8)))
+    let may8Four = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 5, day: 8, hour: 4)))
+    let item = makeMonthItem(
+      id: "overnight-task",
+      source: .workspaceTask(taskID: UUID(), projectID: UUID()),
+      startDate: may7,
+      endDate: may8Four,
+      isAllDay: false
+    )
+    var state = ScheduleMonthDayItemDragState(
+      itemID: item.id,
+      originalItem: item,
+      originalTimeMinutes: 22 * 60,
+      originalDurationMinutes: 6 * 60,
+      originalPointerScheduleY: 0,
+      originalTopScheduleY: -2 * 60,
+      originalX: nil,
+      originalWidth: nil,
+      allDayBoundaryYInPanel: 120,
+      timeContentMinYInPanel: 0,
+      isInAllDayZone: false
+    )
+    state.translation = CGSize(width: 0, height: 60)
+
+    let preview = ScheduleMonthDayInteractionAdapter.movePreview(
+      for: state,
+      targetDay: may8,
+      calendar: calendar,
+      metrics: ScheduleMonthDayInteractionAdapter.metrics(
+        hourHeight: 60,
+        minimumDurationMinutes: 30
+      )
+    )
+
+    XCTAssertEqual(preview.day, calendar.startOfDay(for: may7))
+    XCTAssertEqual(preview.timeMinutes, 23 * 60)
+    XCTAssertEqual(preview.durationMinutes, 6 * 60)
+  }
+
+  func testDayPanelEndResizeOnSecondDaySegmentPreservesPreviousDayStart() throws {
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+    let may7 = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 5, day: 7, hour: 22)))
+    let may8 = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 5, day: 8)))
+    let may8Four = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 5, day: 8, hour: 4)))
+    let item = makeMonthItem(
+      id: "overnight-task",
+      source: .workspaceTask(taskID: UUID(), projectID: UUID()),
+      startDate: may7,
+      endDate: may8Four,
+      isAllDay: false
+    )
+    let state = ScheduleMonthDayItemResizeState(
+      itemID: item.id,
+      originalItem: item,
+      originalTimeMinutes: 22 * 60,
+      originalDurationMinutes: 6 * 60,
+      originalPointerScheduleY: 4 * 60,
+      originalEdgeScheduleY: 4 * 60,
+      originalX: 0,
+      originalWidth: 100,
+      timeContentMinYInPanel: 0,
+      edge: .end
+    )
+
+    let preview = ScheduleMonthDayInteractionAdapter.resizePreview(
+      for: state,
+      currentPointerPanelY: 5 * 60,
+      targetDay: may8,
+      calendar: calendar,
+      metrics: ScheduleMonthDayInteractionAdapter.metrics(
+        hourHeight: 60,
+        minimumDurationMinutes: 30
+      )
+    )
+
+    XCTAssertEqual(preview.day, calendar.startOfDay(for: may7))
+    XCTAssertEqual(preview.timeMinutes, 22 * 60)
+    XCTAssertEqual(preview.durationMinutes, 7 * 60)
+  }
+
   private func makeMonthItem(
     id: String,
     source: ScheduleMonthItemSource,

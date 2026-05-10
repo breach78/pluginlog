@@ -481,7 +481,10 @@ enum ScheduleMonthCalendar {
     for item: ScheduleMonthItem,
     calendar: Calendar = .autoupdatingCurrent
   ) -> Date {
-    guard item.isAllDay, item.endDate > item.startDate else {
+    guard item.isAllDay else {
+      return item.startDate
+    }
+    guard item.endDate > item.startDate else {
       return max(item.endDate, item.startDate)
     }
     let endDay = calendar.startOfDay(for: item.endDate)

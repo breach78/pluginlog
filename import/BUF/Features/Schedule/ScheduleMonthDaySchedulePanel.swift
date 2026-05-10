@@ -267,6 +267,8 @@ struct ScheduleMonthDaySchedulePanel: View {
               isSaving: savingItemIDs.contains(layout.item.id),
               canDrag: canUpdateSchedule(for: layout.item),
               canResize: canResizeSchedule(for: layout.item),
+              allowsStartResize: layout.isFirstSegment,
+              allowsEndResize: layout.isLastSegment,
               isInteracting: activeMutationPreview?.itemID == layout.item.id,
               coordinateSpaceName: Self.panelCoordinateSpaceName,
               onOpen: {
@@ -279,10 +281,10 @@ struct ScheduleMonthDaySchedulePanel: View {
                 deleteItem(layout.item, scope: scope)
               },
               onMoveChanged: { value in
-                updateMovePreview(for: layout.item, drag: value, originalTopScheduleY: layout.y, originalX: layout.x, originalWidth: layout.width)
+                updateMovePreview(for: layout.item, drag: value, originalTopScheduleY: sourceTopScheduleY(for: layout), originalX: layout.x, originalWidth: layout.width)
               },
               onMoveEnded: { value in
-                finishMovePreview(for: layout.item, drag: value, originalTopScheduleY: layout.y, originalX: layout.x, originalWidth: layout.width)
+                finishMovePreview(for: layout.item, drag: value, originalTopScheduleY: sourceTopScheduleY(for: layout), originalX: layout.x, originalWidth: layout.width)
               },
               onResizeChanged: { edge, value in
                 updateResizePreview(for: layout, edge: edge, drag: value)
@@ -433,18 +435,52 @@ struct ScheduleMonthDaySchedulePanel: View {
   }
 
   private func timedLayouts(for width: CGFloat) -> [ScheduleMonthDayTimedItemLayout] {
-    let intervals = timedItems.map {
-      ScheduleMonthDayTimedInterval(
-        item: $0,
-        startMinute: startMinute(for: $0),
-        durationMinutes: durationMinutes(for: $0)
-      )
-    }
+    let intervals = timedItems.compactMap(timedInterval)
     return ScheduleMonthDayTimedLayoutBuilder.layouts(
       intervals: intervals,
       width: width,
       hourHeight: Self.hourHeight
     )
+  }
+
+  private func timedInterval(for item: ScheduleMonthItem) -> ScheduleMonthDayTimedInterval? {
+    let dayStart = calendar.startOfDay(for: target.date)
+    guard let dayEnd = calendar.date(byAdding: .day, value: 1, to: dayStart) else {
+      return nil
+    }
+    let segmentStart = max(item.startDate, dayStart)
+    let segmentEnd = min(item.endDate, dayEnd)
+    guard segmentEnd > segmentStart else { return nil }
+
+    let sourceStartComponents = calendar.dateComponents([.hour, .minute], from: item.startDate)
+    let sourceStartMinute =
+      (sourceStartComponents.hour ?? 0) * 60 + (sourceStartComponents.minute ?? 0)
+    let startMinute = calendar.dateComponents([.minute], from: dayStart, to: segmentStart).minute ?? 0
+    let segmentDurationMinutes = max(
+      Self.minimumDurationMinutes,
+      calendar.dateComponents([.minute], from: segmentStart, to: segmentEnd).minute ?? 0
+    )
+
+    return ScheduleMonthDayTimedInterval(
+      item: item,
+      startMinute: max(0, min(23 * 60 + 45, startMinute)),
+      durationMinutes: min(segmentDurationMinutes, max(Self.minimumDurationMinutes, (24 * 60) - startMinute)),
+      sourceStartDay: calendar.startOfDay(for: item.startDate),
+      sourceStartMinute: sourceStartMinute,
+      sourceDurationMinutes: durationMinutes(for: item),
+      isFirstSegment: calendar.isDate(item.startDate, inSameDayAs: dayStart),
+      isLastSegment: item.endDate <= dayEnd
+    )
+  }
+
+  private func sourceTopScheduleY(for layout: ScheduleMonthDayTimedItemLayout) -> CGFloat {
+    let targetDay = calendar.startOfDay(for: target.date)
+    let relativeMinute = calendar.dateComponents(
+      [.minute],
+      from: targetDay,
+      to: layout.item.startDate
+    ).minute ?? layout.startMinute
+    return CGFloat(relativeMinute) / 60 * Self.hourHeight
   }
 
   private func createPreviewBlock(
@@ -715,10 +751,13 @@ struct ScheduleMonthDaySchedulePanel: View {
     let state = ScheduleMonthDayItemResizeState(
       itemID: item.id,
       originalItem: item,
-      originalTimeMinutes: startMinute(for: item),
-      originalDurationMinutes: durationMinutes(for: item),
+      originalTimeMinutes: layout.sourceStartMinute,
+      originalDurationMinutes: layout.sourceDurationMinutes,
       originalPointerScheduleY: drag.startLocation.y - timeContentMinYInPanel,
-      originalEdgeScheduleY: edge == .start ? layout.y : layout.y + layout.height,
+      originalEdgeScheduleY: edge == .start
+        ? sourceTopScheduleY(for: layout)
+        : sourceTopScheduleY(for: layout)
+          + CGFloat(layout.sourceDurationMinutes) / 60 * Self.hourHeight,
       originalX: layout.x,
       originalWidth: layout.width,
       timeContentMinYInPanel: timeContentMinYInPanel,
@@ -780,7 +819,10 @@ struct ScheduleMonthDaySchedulePanel: View {
       let end = calendar.startOfDay(for: item.endDate)
       return start <= day && day < end
     }
-    return calendar.isDate(item.startDate, inSameDayAs: day)
+    guard let nextDay = calendar.date(byAdding: .day, value: 1, to: day) else {
+      return calendar.isDate(item.startDate, inSameDayAs: day)
+    }
+    return item.startDate < nextDay && item.endDate > day
   }
 
   private func movePreview(
@@ -847,6 +889,7 @@ struct ScheduleMonthDaySchedulePanel: View {
       for: state,
       currentPointerPanelY: currentPointerPanelY,
       targetDay: calendar.startOfDay(for: target.date),
+      calendar: calendar,
       metrics: interactionMetrics
     )
   }
@@ -873,11 +916,7 @@ struct ScheduleMonthDaySchedulePanel: View {
   }
 
   private func durationMinutes(for item: ScheduleMonthItem) -> Int {
-    ScheduleMonthDayInteractionAdapter.clampedDuration(
-      item.durationMinutes ?? Self.minimumDurationMinutes,
-      startMinute: startMinute(for: item),
-      metrics: interactionMetrics
-    )
+    max(Self.minimumDurationMinutes, item.durationMinutes ?? Self.minimumDurationMinutes)
   }
 
   private func snappedTimeMinutes(forY y: CGFloat) -> Int {
@@ -912,7 +951,7 @@ struct ScheduleMonthDaySchedulePanel: View {
     case .workspaceTask:
       return true
     case .calendarEvent:
-      return item.calendarEvent?.spansMultipleDays == false
+      return item.calendarEvent?.canEditTiming == true
     }
   }
 

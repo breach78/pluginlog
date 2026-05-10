@@ -54,19 +54,19 @@ enum ScheduleMonthDayInteractionAdapter {
 
     let currentPointerScheduleY = currentPointerScheduleY(for: state)
     let projectedTopY = currentPointerScheduleY - (state.originalPointerScheduleY - state.originalTopScheduleY)
-    let startMinute = ScheduleDragDropInteractionLayer.snappedTimeMinutes(
-      for: max(0, projectedTopY),
-      metrics: metrics
-    )
-    let durationMinutes = ScheduleDragDropInteractionLayer.clampedDuration(
+    let durationMinutes = max(
+      metrics.timedMinimumDurationMinutes,
       state.originalDurationMinutes ?? metrics.timedMinimumDurationMinutes,
-      for: startMinute,
-      metrics: metrics
+    )
+    let resolvedStart = resolvedDateAndMinute(
+      relativeMinute: snappedRelativeMinutes(for: projectedTopY, metrics: metrics),
+      targetDay: targetDay,
+      calendar: calendar
     )
     return ScheduleMonthDayScheduleMutationPreview(
       itemID: state.itemID,
-      day: calendar.startOfDay(for: targetDay),
-      timeMinutes: startMinute,
+      day: resolvedStart.day,
+      timeMinutes: resolvedStart.timeMinutes,
       durationMinutes: durationMinutes
     )
   }
@@ -75,22 +75,45 @@ enum ScheduleMonthDayInteractionAdapter {
     for state: ScheduleMonthDayItemResizeState,
     currentPointerPanelY: CGFloat,
     targetDay: Date,
+    calendar: Calendar,
     metrics: ScheduleInteractionMetrics
   ) -> ScheduleMonthDayScheduleMutationPreview {
     let currentPointerScheduleY = currentPointerPanelY - state.timeContentMinYInPanel
     let edgeY = currentPointerScheduleY - (state.originalPointerScheduleY - state.originalEdgeScheduleY)
-    let edgeMinute = snappedTimeMinutes(for: edgeY, metrics: metrics)
-    let endMinute = state.originalTimeMinutes + state.originalDurationMinutes
+    let edgeMinute = snappedRelativeMinutes(for: edgeY, metrics: metrics)
+    let originalStartMinute = relativeMinute(
+      from: targetDay,
+      to: state.originalItem.startDate,
+      calendar: calendar
+    )
+    let originalEndMinute = originalStartMinute + state.originalDurationMinutes
     let preview: ScheduleInteractionPreview
     if state.edge == .start {
-      let start = min(max(0, edgeMinute), max(0, endMinute - metrics.timedMinimumDurationMinutes))
-      preview = ScheduleInteractionPreview(day: targetDay, timeMinutes: start, durationMinutes: endMinute - start)
-    } else {
-      let end = max(state.originalTimeMinutes + metrics.timedMinimumDurationMinutes, edgeMinute)
+      let start = min(
+        edgeMinute,
+        originalEndMinute - metrics.timedMinimumDurationMinutes
+      )
+      let resolvedStart = resolvedDateAndMinute(
+        relativeMinute: start,
+        targetDay: targetDay,
+        calendar: calendar
+      )
       preview = ScheduleInteractionPreview(
-        day: targetDay,
-        timeMinutes: state.originalTimeMinutes,
-        durationMinutes: clampedDuration(end - state.originalTimeMinutes, startMinute: state.originalTimeMinutes, metrics: metrics)
+        day: resolvedStart.day,
+        timeMinutes: resolvedStart.timeMinutes,
+        durationMinutes: originalEndMinute - start
+      )
+    } else {
+      let end = max(originalStartMinute + metrics.timedMinimumDurationMinutes, edgeMinute)
+      let resolvedStart = resolvedDateAndMinute(
+        relativeMinute: originalStartMinute,
+        targetDay: targetDay,
+        calendar: calendar
+      )
+      preview = ScheduleInteractionPreview(
+        day: resolvedStart.day,
+        timeMinutes: resolvedStart.timeMinutes,
+        durationMinutes: end - originalStartMinute
       )
     }
     return preview.monthDayPreview(itemID: state.itemID, fallbackDay: targetDay)
@@ -139,6 +162,38 @@ enum ScheduleMonthDayInteractionAdapter {
       return currentPointerPanelY - state.timeContentMinYInPanel
     }
     return state.originalPointerScheduleY + state.translation.height
+  }
+
+  private static func snappedRelativeMinutes(
+    for scheduleY: CGFloat,
+    metrics: ScheduleInteractionMetrics
+  ) -> Int {
+    Int((scheduleY / metrics.quarterHourHeight).rounded()) * 15
+  }
+
+  private static func relativeMinute(
+    from day: Date,
+    to date: Date,
+    calendar: Calendar
+  ) -> Int {
+    calendar.dateComponents([.minute], from: calendar.startOfDay(for: day), to: date).minute ?? 0
+  }
+
+  private static func resolvedDateAndMinute(
+    relativeMinute: Int,
+    targetDay: Date,
+    calendar: Calendar
+  ) -> (day: Date, timeMinutes: Int) {
+    let date = calendar.date(
+      byAdding: .minute,
+      value: relativeMinute,
+      to: calendar.startOfDay(for: targetDay)
+    ) ?? targetDay
+    let components = calendar.dateComponents([.hour, .minute], from: date)
+    return (
+      calendar.startOfDay(for: date),
+      (components.hour ?? 0) * 60 + (components.minute ?? 0)
+    )
   }
 }
 

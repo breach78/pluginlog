@@ -71,7 +71,12 @@ struct ScheduleDayTimelineLayoutEngine {
             dayIndex: dayIndex,
             startMinute: segment.startMinute,
             durationMinutes: segment.durationMinutes,
-            endMinute: segment.startMinute + segment.durationMinutes
+            endMinute: segment.startMinute + segment.durationMinutes,
+            sourceStartDay: segment.sourceStartDay,
+            sourceStartMinute: segment.sourceStartMinute,
+            sourceDurationMinutes: segment.sourceDurationMinutes,
+            isFirstSegment: segment.isFirstSegment,
+            isLastSegment: segment.isLastSegment
           )
         )
       }
@@ -127,7 +132,19 @@ struct ScheduleDayTimelineLayoutEngine {
     for item: ScheduleEventModel,
     calendar: Calendar,
     metrics: ScheduleDayTimelineLayoutMetrics
-  ) -> [(id: String, day: Date, startMinute: Int, durationMinutes: Int)] {
+  ) -> [
+    (
+      id: String,
+      day: Date,
+      startMinute: Int,
+      durationMinutes: Int,
+      sourceStartDay: Date,
+      sourceStartMinute: Int,
+      sourceDurationMinutes: Int,
+      isFirstSegment: Bool,
+      isLastSegment: Bool
+    )
+  ] {
     let boundedEndDate =
       item.endDate > item.startDate
       ? item.endDate
@@ -137,7 +154,27 @@ struct ScheduleDayTimelineLayoutEngine {
         to: item.startDate
       ) ?? item.startDate
 
-    var result: [(id: String, day: Date, startMinute: Int, durationMinutes: Int)] = []
+    let sourceStartDay = calendar.startOfDay(for: item.startDate)
+    let sourceComponents = calendar.dateComponents([.hour, .minute], from: item.startDate)
+    let sourceStartMinute = (sourceComponents.hour ?? 0) * 60 + (sourceComponents.minute ?? 0)
+    let sourceDurationMinutes = max(
+      metrics.minimumTimedDurationMinutes,
+      Int(boundedEndDate.timeIntervalSince(item.startDate) / 60)
+    )
+
+    var result: [
+      (
+        id: String,
+        day: Date,
+        startMinute: Int,
+        durationMinutes: Int,
+        sourceStartDay: Date,
+        sourceStartMinute: Int,
+        sourceDurationMinutes: Int,
+        isFirstSegment: Bool,
+        isLastSegment: Bool
+      )
+    ] = []
     var cursor = item.startDate
     var segmentIndex = 0
 
@@ -158,7 +195,12 @@ struct ScheduleDayTimelineLayoutEngine {
           durationMinutes: min(
             durationMinutes,
             max(metrics.minimumTimedDurationMinutes, (24 * 60) - startMinute)
-          )
+          ),
+          sourceStartDay: sourceStartDay,
+          sourceStartMinute: sourceStartMinute,
+          sourceDurationMinutes: sourceDurationMinutes,
+          isFirstSegment: segmentIndex == 0,
+          isLastSegment: segmentEnd >= boundedEndDate
         )
       )
 
