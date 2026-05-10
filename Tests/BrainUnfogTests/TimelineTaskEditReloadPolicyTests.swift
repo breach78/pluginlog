@@ -29,6 +29,18 @@ final class TimelineTaskEditReloadPolicyTests: XCTestCase {
     XCTAssertEqual(TimelineTaskEditDurationPolicy.displayText(15), "15분")
   }
 
+  func testDurationPolicyPreservesMultiDayDuration() {
+    XCTAssertEqual(TimelineTaskEditDurationPolicy.normalized(26 * 60), 26 * 60)
+    XCTAssertEqual(
+      TimelineTaskEditDurationPolicy.savedDuration(
+        hasDate: true,
+        hasTime: true,
+        durationMinutes: 3 * 24 * 60 + 45
+      ),
+      3 * 24 * 60 + 45
+    )
+  }
+
   func testPreservesEditorWhenReloadOnlyDropsTrailingBlankLine() {
     let current = fields(noteText: "First line\n")
     let loaded = fields(noteText: "First line")

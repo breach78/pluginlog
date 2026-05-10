@@ -440,31 +440,40 @@ struct TimelineTaskEditPopoverContent: View {
         HStack(spacing: 8) {
           Image(systemName: "timer")
             .font(.system(size: 13, weight: .semibold))
-          Text(
-            hasDate && hasTime
-              ? TimelineTaskEditDurationPolicy.displayText(
+          if hasDate && hasTime {
+            Text(
+              TimelineTaskEditDurationPolicy.displayText(
                 TimelineTaskEditDurationPolicy.normalized(durationMinutes)
               )
-              : "시간 없음"
-          )
-          .font(TaskEditTypography.controlFont)
-          .lineLimit(1)
-          Spacer(minLength: 0)
-          Stepper(
-            "",
-            value: Binding(
-              get: {
-                TimelineTaskEditDurationPolicy.normalized(durationMinutes)
-              },
-              set: { nextValue in
-                durationMinutes = TimelineTaskEditDurationPolicy.normalized(nextValue)
-              }
-            ),
-            in: TimelineTaskEditDurationPolicy.minimumMinutes...TimelineTaskEditDurationPolicy.maximumMinutes,
-            step: TimelineTaskEditDurationPolicy.stepMinutes
-          )
-          .labelsHidden()
-          .frame(width: 54)
+            )
+            .font(TaskEditTypography.controlFont)
+            .lineLimit(1)
+            Spacer(minLength: 0)
+            HStack(spacing: 4) {
+              TextField("분", value: durationValueBinding, format: .number)
+                .textFieldStyle(.plain)
+                .font(TaskEditTypography.controlFont)
+                .monospacedDigit()
+                .multilineTextAlignment(.trailing)
+                .frame(width: 52)
+              Text("분")
+                .font(TaskEditTypography.controlFont)
+                .foregroundStyle(.secondary)
+            }
+            Stepper(
+              "",
+              value: durationValueBinding,
+              in: TimelineTaskEditDurationPolicy.minimumMinutes...TimelineTaskEditDurationPolicy.maximumMinutes,
+              step: TimelineTaskEditDurationPolicy.stepMinutes
+            )
+            .labelsHidden()
+            .frame(width: 54)
+          } else {
+            Text("시간 없음")
+              .font(TaskEditTypography.controlFont)
+              .lineLimit(1)
+            Spacer(minLength: 0)
+          }
         }
         .taskEditCompactControlBackground()
         .foregroundStyle(hasDate && hasTime ? Color.primary : Color.secondary)
@@ -473,6 +482,17 @@ struct TimelineTaskEditPopoverContent: View {
     }
     .frame(maxWidth: .infinity, alignment: .leading)
     .tint(TaskEditFieldStyle.softAccentColor)
+  }
+
+  private var durationValueBinding: Binding<Int> {
+    Binding(
+      get: {
+        TimelineTaskEditDurationPolicy.normalized(durationMinutes)
+      },
+      set: { nextValue in
+        durationMinutes = TimelineTaskEditDurationPolicy.normalized(nextValue)
+      }
+    )
   }
 
   private var attachmentSection: some View {
@@ -919,7 +939,7 @@ struct TimelineTaskEditPopoverContent: View {
 
 enum TimelineTaskEditDurationPolicy {
   static let minimumMinutes = 5
-  static let maximumMinutes = 24 * 60
+  static let maximumMinutes = 30 * 24 * 60
   static let stepMinutes = 5
   static let defaultMinutes = WorkspaceTaskScheduleEventStore.defaultScheduledDurationMinutes
 
