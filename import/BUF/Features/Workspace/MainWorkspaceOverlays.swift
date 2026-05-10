@@ -134,6 +134,9 @@ extension MainWorkspaceView {
           durationMinutes: durationMinutes
         )
       },
+      onDeleteItem: { item, scope in
+        await deleteScheduleMonthDetailItem(item, scope: scope)
+      },
       onClose: {
         dismissScheduleMonthDetail()
       }

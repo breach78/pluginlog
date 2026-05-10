@@ -8,6 +8,7 @@ struct ScheduleMonthDayAllDayItemRow: View {
   let coordinateSpaceName: String
   let onOpen: () -> Void
   let onToggleCompletion: () -> Void
+  let onDeleteItem: (ScheduleCalendarRecurringEditScope?) -> Void
   let onMoveChanged: (DragGesture.Value) -> Void
   let onMoveEnded: (DragGesture.Value) -> Void
 
@@ -39,6 +40,13 @@ struct ScheduleMonthDayAllDayItemRow: View {
     }
     .contentShape(Rectangle())
     .opacity(isInteracting ? 0.22 : opacity)
+    .contextMenu {
+      ScheduleMonthDayDeleteContextMenu(
+        item: item,
+        isSaving: isSaving,
+        onDeleteItem: onDeleteItem
+      )
+    }
     .simultaneousGesture(dragGesture)
   }
 
@@ -98,6 +106,7 @@ struct ScheduleMonthDayTimedItemBlock: View {
   let coordinateSpaceName: String
   let onOpen: () -> Void
   let onToggleCompletion: () -> Void
+  let onDeleteItem: (ScheduleCalendarRecurringEditScope?) -> Void
   let onMoveChanged: (DragGesture.Value) -> Void
   let onMoveEnded: (DragGesture.Value) -> Void
   let onResizeChanged: (ScheduleResizeEdge, DragGesture.Value) -> Void
@@ -155,6 +164,13 @@ struct ScheduleMonthDayTimedItemBlock: View {
     }
     .contentShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
     .opacity(isInteracting ? 0.22 : baseOpacity)
+    .contextMenu {
+      ScheduleMonthDayDeleteContextMenu(
+        item: layout.item,
+        isSaving: isSaving,
+        onDeleteItem: onDeleteItem
+      )
+    }
     .simultaneousGesture(moveGesture)
   }
 
@@ -255,6 +271,49 @@ struct ScheduleMonthDayTimedItemBlock: View {
     let start = ScheduleMonthDayTimeFormatter.timeText(from: layout.item.startDate)
     let end = ScheduleMonthDayTimeFormatter.timeText(from: layout.item.endDate)
     return "\(start)-\(end)"
+  }
+}
+
+struct ScheduleMonthDayDeleteContextMenu: View {
+  let item: ScheduleMonthItem
+  let isSaving: Bool
+  let onDeleteItem: (ScheduleCalendarRecurringEditScope?) -> Void
+
+  var body: some View {
+    if !isSaving {
+      switch item.source {
+      case .workspaceTask:
+        if !item.isPreparationSlot {
+          Button(role: .destructive) {
+            onDeleteItem(nil)
+          } label: {
+            Label("삭제", systemImage: "trash")
+          }
+        }
+      case .calendarEvent:
+        if let event = item.calendarEvent, event.canEditTiming, !item.isBackgroundCalendar {
+          if event.isRecurring {
+            Button(role: .destructive) {
+              onDeleteItem(.thisEvent)
+            } label: {
+              Label("이 일정만 삭제", systemImage: "trash")
+            }
+
+            Button(role: .destructive) {
+              onDeleteItem(.futureEvents)
+            } label: {
+              Label("이후 반복 일정 삭제", systemImage: "trash")
+            }
+          } else {
+            Button(role: .destructive) {
+              onDeleteItem(.thisEvent)
+            } label: {
+              Label("삭제", systemImage: "trash")
+            }
+          }
+        }
+      }
+    }
   }
 }
 

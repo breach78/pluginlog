@@ -9,6 +9,7 @@ struct ScheduleMonthDetailPanelContent: View {
   let onToggleTaskCompletion: (ScheduleMonthItem, Bool) async -> ScheduleMonthItem?
   let onUpdateItemSchedule: (ScheduleMonthItem, Date, Int?, Int?) async -> ScheduleMonthItem?
   let onCreateTask: (String, UUID, Date, Int?, Int?) async -> ScheduleMonthItem?
+  let onDeleteItem: (ScheduleMonthItem, ScheduleCalendarRecurringEditScope?) async -> Bool
   let onClose: () -> Void
 
   var body: some View {
@@ -25,7 +26,8 @@ struct ScheduleMonthDetailPanelContent: View {
         onOpenItem: onOpenItem,
         onToggleTaskCompletion: onToggleTaskCompletion,
         onUpdateItemSchedule: onUpdateItemSchedule,
-        onCreateTask: onCreateTask
+        onCreateTask: onCreateTask,
+        onDeleteItem: onDeleteItem
       )
     }
     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)

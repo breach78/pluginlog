@@ -9,6 +9,7 @@ struct ScheduleMonthDaySchedulePanel: View {
   let onToggleTaskCompletion: (ScheduleMonthItem, Bool) async -> ScheduleMonthItem?
   let onUpdateItemSchedule: (ScheduleMonthItem, Date, Int?, Int?) async -> ScheduleMonthItem?
   let onCreateTask: (String, UUID, Date, Int?, Int?) async -> ScheduleMonthItem?
+  let onDeleteItem: (ScheduleMonthItem, ScheduleCalendarRecurringEditScope?) async -> Bool
 
   @State private var items: [ScheduleMonthItem]
   @State private var activeMutationPreview: ScheduleMonthDayScheduleMutationPreview?
@@ -29,7 +30,8 @@ struct ScheduleMonthDaySchedulePanel: View {
     onOpenItem: @escaping (ScheduleMonthItem) -> Void,
     onToggleTaskCompletion: @escaping (ScheduleMonthItem, Bool) async -> ScheduleMonthItem?,
     onUpdateItemSchedule: @escaping (ScheduleMonthItem, Date, Int?, Int?) async -> ScheduleMonthItem?,
-    onCreateTask: @escaping (String, UUID, Date, Int?, Int?) async -> ScheduleMonthItem?
+    onCreateTask: @escaping (String, UUID, Date, Int?, Int?) async -> ScheduleMonthItem?,
+    onDeleteItem: @escaping (ScheduleMonthItem, ScheduleCalendarRecurringEditScope?) async -> Bool
   ) {
     self.target = target
     self.calendar = calendar
@@ -39,6 +41,7 @@ struct ScheduleMonthDaySchedulePanel: View {
     self.onToggleTaskCompletion = onToggleTaskCompletion
     self.onUpdateItemSchedule = onUpdateItemSchedule
     self.onCreateTask = onCreateTask
+    self.onDeleteItem = onDeleteItem
     _items = State(initialValue: Self.sortedItems(target.items, calendar: calendar))
   }
 
@@ -142,6 +145,9 @@ struct ScheduleMonthDaySchedulePanel: View {
             onToggleCompletion: {
               toggleCompletion(for: item)
             },
+            onDeleteItem: { scope in
+              deleteItem(item, scope: scope)
+            },
             onMoveChanged: { value in
               updateMovePreview(for: item, drag: value, originalTopScheduleY: nil, originalX: nil, originalWidth: nil)
             },
@@ -231,6 +237,9 @@ struct ScheduleMonthDaySchedulePanel: View {
               },
               onToggleCompletion: {
                 toggleCompletion(for: layout.item)
+              },
+              onDeleteItem: { scope in
+                deleteItem(layout.item, scope: scope)
               },
               onMoveChanged: { value in
                 updateMovePreview(for: layout.item, drag: value, originalTopScheduleY: layout.y, originalX: layout.x, originalWidth: layout.width)
@@ -452,6 +461,23 @@ struct ScheduleMonthDaySchedulePanel: View {
     }
   }
 
+  private func deleteItem(
+    _ item: ScheduleMonthItem,
+    scope: ScheduleCalendarRecurringEditScope?
+  ) {
+    guard !savingItemIDs.contains(item.id) else { return }
+    let previousItems = items
+    removeItem(item.id)
+    savingItemIDs.insert(item.id)
+    Task { @MainActor in
+      defer { savingItemIDs.remove(item.id) }
+      guard await onDeleteItem(item, scope) else {
+        items = previousItems
+        return
+      }
+    }
+  }
+
   private func commitMutationPreview(
     _ preview: ScheduleMonthDayScheduleMutationPreview,
     item: ScheduleMonthItem
@@ -660,6 +686,10 @@ struct ScheduleMonthDaySchedulePanel: View {
       items.append(item)
     }
     items = Self.sortedItems(items, calendar: calendar)
+  }
+
+  private func removeItem(_ itemID: String) {
+    items.removeAll { $0.id == itemID }
   }
 
   private func movePreview(

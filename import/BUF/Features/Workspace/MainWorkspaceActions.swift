@@ -198,6 +198,7 @@ extension MainWorkspaceView {
     activeWorkspaceProjectListPanelProjectID = nil
     activeWorkspaceCalendarEventEditPanelTarget = nil
     activeWorkspaceScheduleMonthDetailTarget = nil
+    previousWorkspaceScheduleMonthDetailTarget = nil
     appState.isHoveringTimelineTaskBadgeOverlay = false
     appState.isHoveringTimelineDayHeaderOverlay = false
     activeWorkspaceTaskEditPanelTarget = target
@@ -230,6 +231,7 @@ extension MainWorkspaceView {
     activeWorkspaceTaskEditPanelTarget = nil
     activeWorkspaceCalendarEventEditPanelTarget = nil
     activeWorkspaceScheduleMonthDetailTarget = nil
+    previousWorkspaceScheduleMonthDetailTarget = nil
     appState.isHoveringTimelineTaskBadgeOverlay = false
     appState.isHoveringTimelineDayHeaderOverlay = false
     activeWorkspaceProjectListPanelProjectID = projectID
@@ -770,6 +772,7 @@ extension MainWorkspaceView {
     activeWorkspaceTaskEditPanelTarget = nil
     activeWorkspaceProjectListPanelProjectID = nil
     activeWorkspaceScheduleMonthDetailTarget = nil
+    previousWorkspaceScheduleMonthDetailTarget = nil
     appState.isHoveringTimelineTaskBadgeOverlay = false
     appState.isHoveringTimelineDayHeaderOverlay = false
     activeWorkspaceCalendarEventEditPanelTarget = WorkspaceCalendarEventEditPanelTarget(
@@ -789,6 +792,7 @@ extension MainWorkspaceView {
     activeWorkspaceTaskEditPanelTarget = nil
     activeWorkspaceCalendarEventEditPanelTarget = nil
     activeWorkspaceProjectListPanelProjectID = nil
+    previousWorkspaceScheduleMonthDetailTarget = nil
     appState.isHoveringTimelineTaskBadgeOverlay = false
     appState.isHoveringTimelineDayHeaderOverlay = false
     activeWorkspaceScheduleMonthDetailTarget = target
@@ -796,9 +800,11 @@ extension MainWorkspaceView {
 
   func dismissScheduleMonthDetail() {
     activeWorkspaceScheduleMonthDetailTarget = nil
+    previousWorkspaceScheduleMonthDetailTarget = nil
   }
 
   func openScheduleMonthDetailItem(_ item: ScheduleMonthItem) {
+    let backTarget = activeWorkspaceScheduleMonthDetailTarget
     switch item.source {
     case .workspaceTask(let taskID, let projectID):
       showTimelineTaskEditor(
@@ -809,9 +815,11 @@ extension MainWorkspaceView {
         hasExplicitTime: item.hasExplicitTime,
         durationMinutes: item.durationMinutes
       )
+      previousWorkspaceScheduleMonthDetailTarget = backTarget
     case .calendarEvent:
       guard let event = item.calendarEvent else { return }
       showCalendarEventEditor(event)
+      previousWorkspaceScheduleMonthDetailTarget = backTarget
     }
   }
 
@@ -915,6 +923,55 @@ extension MainWorkspaceView {
       isBackgroundCalendar: false,
       calendarEvent: nil
     )
+  }
+
+  func deleteScheduleMonthDetailItem(
+    _ item: ScheduleMonthItem,
+    scope: ScheduleCalendarRecurringEditScope?
+  ) async -> Bool {
+    switch item.source {
+    case .workspaceTask(let taskID, let projectID):
+      return await deleteScheduleMonthDetailTask(taskID: taskID, projectID: projectID)
+    case .calendarEvent:
+      return await deleteScheduleMonthDetailCalendarEvent(item, scope: scope ?? .thisEvent)
+    }
+  }
+
+  private func deleteScheduleMonthDetailTask(taskID: UUID, projectID: UUID) async -> Bool {
+    await deleteWorkspaceProjectListWindowTask(taskID, projectID: projectID)
+  }
+
+  private func deleteScheduleMonthDetailCalendarEvent(
+    _ item: ScheduleMonthItem,
+    scope: ScheduleCalendarRecurringEditScope
+  ) async -> Bool {
+    guard let event = item.calendarEvent, event.canEditTiming else { return false }
+    do {
+      let snapshot = try await appState.deleteScheduleCalendarEvent(
+        event,
+        scope: scope,
+        undoManager: undoManager
+      )
+      appState.registerUndo(with: undoManager, actionName: "캘린더 일정 삭제") {
+        Task { @MainActor in
+          do {
+            _ = try await appState.restoreDeletedScheduleCalendarEvent(
+              snapshot,
+              undoManager: undoManager
+            )
+          } catch {
+            appState.reportError(
+              error,
+              logMessage: "schedule month detail calendar restore failed"
+            )
+          }
+        }
+      }
+      return true
+    } catch {
+      appState.reportError(error, logMessage: "schedule month detail calendar delete failed")
+      return false
+    }
   }
 
   private func updateScheduleMonthDetailTaskSchedule(
@@ -1483,6 +1540,10 @@ extension MainWorkspaceView {
       return nil
     }
 
+    if isCommandLeftBracketShortcut(event), returnToPreviousScheduleMonthDetailIfAvailable() {
+      return nil
+    }
+
     if event.keyCode == 53 {
       let action = WorkspaceEscapeKeyPolicy.action(
         hasActiveEditPanelTextResponder: hasActiveEditPanelTextResponder(),
@@ -1510,6 +1571,26 @@ extension MainWorkspaceView {
   private func isCommandTShortcut(_ event: NSEvent) -> Bool {
     let shortcutModifiers = event.modifierFlags.intersection([.command, .shift, .option, .control])
     return event.keyCode == 17 && shortcutModifiers == .command
+  }
+
+  private func isCommandLeftBracketShortcut(_ event: NSEvent) -> Bool {
+    let shortcutModifiers = event.modifierFlags.intersection([.command, .shift, .option, .control])
+    guard shortcutModifiers == .command else { return false }
+    return event.keyCode == 33 || event.charactersIgnoringModifiers == "["
+  }
+
+  private func returnToPreviousScheduleMonthDetailIfAvailable() -> Bool {
+    guard let target = previousWorkspaceScheduleMonthDetailTarget else { return false }
+    guard activeWorkspaceTaskEditPanelTarget != nil || activeWorkspaceCalendarEventEditPanelTarget != nil else {
+      return false
+    }
+    activeWorkspaceTaskEditPanelTarget = nil
+    activeWorkspaceCalendarEventEditPanelTarget = nil
+    activeWorkspaceProjectListPanelProjectID = nil
+    inspectorSelection = nil
+    activeWorkspaceScheduleMonthDetailTarget = target
+    previousWorkspaceScheduleMonthDetailTarget = nil
+    return true
   }
 
   private func jumpCurrentWorkspaceBoardToToday() {
