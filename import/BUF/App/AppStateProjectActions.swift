@@ -95,41 +95,18 @@ extension AppState {
     let title = rawTitle.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !title.isEmpty else { return nil }
     guard let obsidianVaultRootURL else {
-      errorMessage = "Obsidian vault is not configured."
+      errorMessage = "Vault path is not configured."
       return nil
     }
 
     do {
-      let store = ObsidianProjectMarkdownStore(vaultRootURL: obsidianVaultRootURL)
-      let preferredFileName = try await store.availableProjectFileName(preferredTitle: title)
+      let store = AppOwnedWorkspaceStore.storeForVaultRootURL(obsidianVaultRootURL)
       let reminderList = try reminderProjectProvider.createProjectList(title: title)
       let projectID = RetainedProjectionBuilder.derivedProjectID(
         for: reminderList.externalIdentifier
       )
       do {
-        _ = try await store.writeProjectNote(
-          ObsidianProjectNote(
-            frontmatter: ObsidianProjectFrontmatter(
-              tags: ["프로젝트"],
-              reminderListExternalIdentifier: reminderList.externalIdentifier,
-              colorHex: reminderList.colorHex,
-              preservedLines: []
-            ),
-            bodyMarkdown: "",
-            tasks: [],
-            diagnostics: [],
-            normalizedContentHash: ""
-          ),
-          preferredFileName: preferredFileName
-        )
-      } catch {
-        try? reminderProjectProvider.removeProjectList(identifier: reminderList.identifier)
-        throw error
-      }
-      if let appOwnedStore = try await AppOwnedRetainedTaskCommandService.enabledStore(
-        vaultRootURL: obsidianVaultRootURL
-      ) {
-        try await appOwnedStore.upsertProject(
+        try await store.upsertProject(
           projectID: projectID,
           reminderListIdentifier: reminderList.identifier,
           reminderListExternalIdentifier: reminderList.externalIdentifier,
@@ -137,6 +114,10 @@ extension AppState {
           colorHex: reminderList.colorHex,
           modifiedAt: .now
         )
+        try await store.setProjectionReadEnabled(true)
+      } catch {
+        try? reminderProjectProvider.removeProjectList(identifier: reminderList.identifier)
+        throw error
       }
       TaskIdentityBridgeStore.upsertProject(
         projectID: projectID,
@@ -147,25 +128,6 @@ extension AppState {
       return projectID
     } catch {
       reportError(error, logMessage: "createProjectList failed")
-      return nil
-    }
-  }
-
-  @discardableResult
-  func createProjectStub(context: ModelContext) async -> ObsidianProjectMarkdownStore.Snapshot? {
-    _ = context
-    guard let obsidianVaultRootURL else {
-      errorMessage = "Obsidian vault is not configured."
-      return nil
-    }
-
-    do {
-      let snapshot = try await ObsidianProjectMarkdownStore(vaultRootURL: obsidianVaultRootURL)
-        .createProjectStub()
-      bumpWorkspaceTreeRevision()
-      return snapshot
-    } catch {
-      reportError(error, logMessage: "createProjectStub failed")
       return nil
     }
   }
@@ -182,98 +144,37 @@ extension AppState {
     let title = rawTitle.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !title.isEmpty else { return nil }
     guard let obsidianVaultRootURL else {
-      errorMessage = "Obsidian vault is not configured."
+      errorMessage = "Vault path is not configured."
       return nil
     }
 
     do {
-      if try await AppOwnedRetainedTaskCommandService.enabledStore(vaultRootURL: obsidianVaultRootURL) != nil {
-        let calendar = Calendar.autoupdatingCurrent
-        let day = startDate.map { calendar.startOfDay(for: $0) }
-        let timeMinutes = startDate.flatMap { date -> Int? in
-          let startOfDay = calendar.startOfDay(for: date)
-          guard date != startOfDay else { return nil }
-          let components = calendar.dateComponents([.hour, .minute], from: date)
-          return (components.hour ?? 0) * 60 + (components.minute ?? 0)
-        }
-        let result = try await ObsidianRetainedTaskCommandService.createTask(
-          vaultRootURL: obsidianVaultRootURL,
-          projectID: projectID,
-          title: title,
-          day: day,
-          timeMinutes: timeMinutes,
-          durationMinutes: durationMinutes,
-          calendar: calendar,
-          reminderProjectProvider: reminderProjectProvider
-        )
-        bumpWorkspaceTreeRevision()
-        return result.taskID
-      }
-      let store = ObsidianProjectMarkdownStore(vaultRootURL: obsidianVaultRootURL)
-      let snapshots = try await store.loadProjectNotesInScope()
-      guard let snapshot = snapshots.first(where: { snapshot in
-        guard let listID = snapshot.note.reminderListExternalIdentifier else { return false }
-        return RetainedProjectionBuilder.derivedProjectID(for: listID) == projectID
-      }),
-        let reminderListIdentifier = snapshot.note.reminderListExternalIdentifier
-      else {
-        errorMessage = "할일을 추가할 Obsidian 프로젝트 노트를 찾지 못했습니다."
+      guard let store = try await AppOwnedRetainedTaskCommandService.enabledStore(
+        vaultRootURL: obsidianVaultRootURL
+      ) else {
+        errorMessage = "App-owned workspace storage is not ready."
         return nil
       }
-
-      let hasExplicitTime = startDate != nil && Calendar.autoupdatingCurrent.component(.hour, from: startDate!) != 0
-      let remote = try reminderProjectProvider.createTaskReminder(
-        inProject: reminderListIdentifier,
-        title: title,
-        dueDate: startDate,
-        hasExplicitTime: hasExplicitTime,
-        noteText: ""
-      )
-      guard let reminderExternalIdentifier = remote?.externalIdentifier else {
-        errorMessage = "생성된 Reminder task external id를 확인하지 못했습니다."
-        return nil
+      let calendar = Calendar.autoupdatingCurrent
+      let day = startDate.map { calendar.startOfDay(for: $0) }
+      let timeMinutes = startDate.flatMap { date -> Int? in
+        let startOfDay = calendar.startOfDay(for: date)
+        guard date != startOfDay else { return nil }
+        let components = calendar.dateComponents([.hour, .minute], from: date)
+        return (components.hour ?? 0) * 60 + (components.minute ?? 0)
       }
-      let taskID = ReminderProjectionIdentity.taskID(for: reminderExternalIdentifier)
-      let note = noteByAppendingTask(
-        title: title,
-        reminderExternalIdentifier: reminderExternalIdentifier,
-        startDate: startDate,
-        hasExplicitTime: hasExplicitTime,
-        durationMinutes: durationMinutes,
-        to: snapshot.note
-      )
-      _ = try await store.writeProjectNote(
-        note,
-        preferredFileName: snapshot.fileURL.lastPathComponent,
-        expectedBaseline: ObsidianProjectMarkdownStore.WriteBaseline(snapshot: snapshot)
-      )
-      ReminderSyncBaselineStore.upsert(
-        reminderExternalIdentifier: reminderExternalIdentifier,
-        state: ReminderSyncTaskState(
-          title: title,
-          isCompleted: false,
-          date: ReminderScheduleMetadataCodec.encodeDate(
-            startDate,
-            hasExplicitTime: hasExplicitTime
-          ),
-          repeatRule: nil,
-          noteText: nil
-        ),
-        remoteModifiedAt: remote?.modifiedAt
-      )
-      TaskIdentityBridgeStore.upsertProject(
+      let result = try await AppOwnedRetainedTaskCommandService.createTask(
+        store: store,
         projectID: projectID,
-        title: snapshot.fileURL.deletingPathExtension().lastPathComponent,
-        reminderListExternalIdentifier: reminderListIdentifier
-      )
-      TaskIdentityBridgeStore.upsertTask(
-        taskID: taskID,
         title: title,
-        reminderExternalIdentifier: reminderExternalIdentifier,
-        ownerProjectID: projectID
+        day: day,
+        timeMinutes: timeMinutes,
+        durationMinutes: durationMinutes,
+        calendar: calendar,
+        reminderProjectProvider: reminderProjectProvider
       )
       bumpWorkspaceTreeRevision()
-      return taskID
+      return result.taskID
     } catch {
       reportError(error, logMessage: "createTask failed")
       return nil
@@ -393,57 +294,6 @@ extension AppState {
     }
   }
 
-  private func noteByAppendingTask(
-    title: String,
-    reminderExternalIdentifier: String,
-    startDate: Date?,
-    hasExplicitTime: Bool,
-    durationMinutes: Int?,
-    to note: ObsidianProjectNote
-  ) -> ObsidianProjectNote {
-    var bodyLines = note.bodyMarkdown.isEmpty ? [] : note.bodyMarkdown.components(separatedBy: "\n")
-    bodyLines.append("- [ ] \(title)")
-    let metadata = ObsidianTaskMetadata(
-      reminderExternalIdentifier: reminderExternalIdentifier,
-      date: startDate.map { formatObsidianDate($0) },
-      time: hasExplicitTime ? startDate.map { formatObsidianTime($0) } : nil,
-      durationMinutes: durationMinutes,
-      repeatRule: nil
-    )
-    bodyLines.append(
-      ObsidianReminderImportFormatting.renderMetadataLine(metadata, indentation: "  ")
-    )
-    return ObsidianProjectNoteParser.parse(
-      ObsidianProjectNoteRenderer.render(
-        ObsidianProjectNote(
-          frontmatter: note.frontmatter,
-          bodyMarkdown: bodyLines.joined(separator: "\n"),
-          tasks: [],
-          diagnostics: [],
-          normalizedContentHash: ""
-        )
-      )
-    )
-  }
-
-  private func formatObsidianDate(_ date: Date) -> String {
-    let formatter = DateFormatter()
-    formatter.calendar = Calendar(identifier: .gregorian)
-    formatter.locale = Locale(identifier: "en_US_POSIX")
-    formatter.timeZone = .autoupdatingCurrent
-    formatter.dateFormat = "yyyy-MM-dd"
-    return formatter.string(from: date)
-  }
-
-  private func formatObsidianTime(_ date: Date) -> String {
-    let formatter = DateFormatter()
-    formatter.calendar = Calendar(identifier: .gregorian)
-    formatter.locale = Locale(identifier: "en_US_POSIX")
-    formatter.timeZone = .autoupdatingCurrent
-    formatter.dateFormat = "HH:mm"
-    return formatter.string(from: date)
-  }
-
   @discardableResult
   func renameProject(_ projectID: UUID, to rawTitle: String, context: ModelContext) async -> Bool {
     _ = context
@@ -451,8 +301,15 @@ extension AppState {
     guard !title.isEmpty else { return false }
     let previousRecord = TaskIdentityBridgeStore.projectRecord(for: projectID)
     do {
-      let updatedSnapshot = try await ObsidianRetainedProjectCommandService.setProjectTitle(
+      guard let store = try await AppOwnedRetainedTaskCommandService.enabledStore(
+        vaultRootURL: obsidianVaultRootURL
+      ) else {
+        errorMessage = "App-owned workspace storage is not ready."
+        return false
+      }
+      let updatedSnapshot = try await AppOwnedRetainedProjectCommandService.setProjectTitle(
         vaultRootURL: obsidianVaultRootURL,
+        store: store,
         projectID: projectID,
         title: title,
         reminderProjectProvider: reminderProjectProvider
@@ -496,21 +353,37 @@ extension AppState {
 
   @discardableResult
   func writeProjectBoardOrders(_ boardOrdersByProjectID: [UUID: Int?]) async -> Bool {
-    _ = boardOrdersByProjectID
-    return false
+    guard !boardOrdersByProjectID.isEmpty else { return true }
+    do {
+      guard let store = try await AppOwnedRetainedTaskCommandService.enabledStore(
+        vaultRootURL: obsidianVaultRootURL
+      ) else {
+        return false
+      }
+      try await store.updateProjectBoardOrders(boardOrdersByProjectID)
+      bumpWorkspaceTreeRevision()
+      return true
+    } catch {
+      reportError(error, logMessage: "writeProjectBoardOrders failed")
+      return false
+    }
   }
 
   @discardableResult
   func deleteProjectPermanently(_ projectID: UUID, context: ModelContext) async -> Bool {
     _ = context
     do {
-      let result = try await ObsidianProjectDeletionSync.deleteProject(
-        vaultRootURL: obsidianVaultRootURL,
-        projectID: projectID,
-        reminderProjectProvider: reminderProjectProvider,
-        now: .now
-      )
-      if selectedProjectID == result.deletedProjectID {
+      guard let store = try await AppOwnedRetainedTaskCommandService.enabledStore(
+        vaultRootURL: obsidianVaultRootURL
+      ) else {
+        errorMessage = "App-owned workspace storage is not ready."
+        return false
+      }
+      let project = try await store.projectReference(projectID: projectID)
+      try reminderProjectProvider.removeProjectList(identifier: project.reminderListIdentifier)
+      try await store.deleteProject(projectID: projectID)
+      TaskIdentityBridgeStore.removeProjects(projectIDs: [projectID])
+      if selectedProjectID == projectID {
         selectedProjectID = nil
       }
       syncStatus = "Deleted project"

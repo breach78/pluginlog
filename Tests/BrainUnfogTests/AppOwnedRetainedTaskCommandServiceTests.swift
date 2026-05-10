@@ -73,6 +73,50 @@ final class AppOwnedRetainedTaskCommandServiceTests: XCTestCase {
   }
 
   @MainActor
+  func testAppOwnedTaskEditDurationOnlyEditStaysLocalAndLoadsBack() async throws {
+    let start = try XCTUnwrap(
+      Self.calendar.date(from: DateComponents(year: 2026, month: 5, day: 2, hour: 9, minute: 30))
+    )
+    let fixture = try await makeEnabledStoreFixture(
+      taskExternalIdentifier: "task-1",
+      dueDate: start,
+      scheduleHasExplicitTime: true,
+      scheduledDurationMinutes: 30
+    )
+    let provider = FakeAppOwnedReminderProjectProvider()
+    let taskID = ReminderProjectionIdentity.taskID(for: "task-1")
+    let day = Self.calendar.startOfDay(for: start)
+
+    _ = try await ObsidianRetainedTaskCommandService.updateTaskEditFields(
+      vaultRootURL: fixture.vaultRoot,
+      projectID: fixture.projectID,
+      taskID: taskID,
+      fields: RetainedTaskEditFields(
+        title: "Task",
+        noteText: "",
+        day: day,
+        timeMinutes: 9 * 60 + 30,
+        durationMinutes: 90
+      ),
+      calendar: Self.calendar,
+      reminderProjectProvider: provider
+    )
+
+    let fields = try await ObsidianRetainedTaskCommandService.taskEditFields(
+      vaultRootURL: fixture.vaultRoot,
+      projectID: fixture.projectID,
+      taskID: taskID,
+      calendar: Self.calendar
+    )
+    let snapshot = try await fixture.store.loadRetainedWorkspaceSnapshot(projectIDs: [fixture.projectID])
+    let task = try XCTUnwrap(snapshot.projects.first?.tasks.first)
+
+    XCTAssertNil(provider.scheduleUpdate)
+    XCTAssertEqual(fields.durationMinutes, 90)
+    XCTAssertEqual(task.schedule.durationMinutes, 90)
+  }
+
+  @MainActor
   func testObsidianProjectTitleRoutesToAppOwnedStoreWhenEnabled() async throws {
     let fixture = try await makeEnabledStoreFixture()
     let provider = FakeAppOwnedReminderProjectProvider()
@@ -411,6 +455,23 @@ final class AppOwnedRetainedTaskCommandServiceTests: XCTestCase {
     XCTAssertTrue(task.schedule.hasExplicitTime)
     XCTAssertEqual(task.schedule.durationMinutes, 45)
     XCTAssertEqual(task.schedule.rawRepeatRule, "daily|3")
+  }
+
+  @MainActor
+  func testObsidianCommandDoesNotFallbackToLegacyMarkdownWhenAppOwnedStoreIsUnavailable() async throws {
+    let vaultRoot = try makeTemporaryDirectory()
+
+    do {
+      _ = try await ObsidianRetainedTaskCommandService.taskEditFields(
+        vaultRootURL: vaultRoot,
+        projectID: UUID(),
+        taskID: UUID(),
+        calendar: Self.calendar
+      )
+      XCTFail("Expected disabled legacy Obsidian markdown storage to fail")
+    } catch RetainedTaskCommandError.retainedProjectionFailed(let message) {
+      XCTAssertTrue(message.contains("legacy Obsidian project/task markdown storage is disabled"))
+    }
   }
 
   private struct StoreFixture {

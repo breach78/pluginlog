@@ -903,19 +903,7 @@ struct MainWorkspaceView: View {
   func openProjectPage(for projectID: UUID, fallbackTitle: String? = nil) {
     showArchive = false
     selectProjectContext(projectID)
-    inspectorSelection = nil
-
-    Task { @MainActor in
-      do {
-        try await ObsidianTaskOpenService.openProjectNote(
-          vaultRootURL: appState.obsidianVaultRootURL,
-          projectID: projectID,
-          documentOpener: appState.platformUIFoundation.documentOpener
-        )
-      } catch {
-        appState.errorMessage = error.localizedDescription
-      }
-    }
+    inspectorSelection = projectID
     _ = fallbackTitle
   }
 

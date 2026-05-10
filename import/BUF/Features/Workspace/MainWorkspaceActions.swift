@@ -1517,9 +1517,23 @@ extension MainWorkspaceView {
   }
 
   func moveProjects(from source: IndexSet, to destination: Int) {
-    _ = source
-    _ = destination
-    appState.errorMessage = RetainedSurfaceMutationGate.block(.timeline, feature: "project-ordering")
+    guard canInteractivelyReorderSidebarProjects else { return }
+    var reorderedProjects = filteredSidebarProjects
+    reorderedProjects.move(fromOffsets: source, toOffset: destination)
+    let orderedProjectIDs = reorderedProjects.compactMap(\.projectID)
+    guard orderedProjectIDs.count == reorderedProjects.count else { return }
+
+    workspaceSidebarProjects = reorderedProjects
+    projectBoardOrderRevision += 1
+
+    let boardOrders = Dictionary(
+      uniqueKeysWithValues: orderedProjectIDs.enumerated().map { index, projectID in
+        (projectID, Optional(index))
+      }
+    )
+    Task { @MainActor in
+      _ = await appState.writeProjectBoardOrders(boardOrders)
+    }
   }
 
   func moveTaskToProjectFromSidebar(_ taskID: UUID, targetProjectID: UUID) {

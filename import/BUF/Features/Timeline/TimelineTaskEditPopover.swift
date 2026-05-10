@@ -119,6 +119,11 @@ struct TimelineTaskEditPopoverContent: View {
       in: initialFields.noteText,
       vaultRootURL: vaultRootURL
     )
+    let initialDurationMinutes = TimelineTaskEditDurationPolicy.savedDuration(
+      hasDate: initialFields.day != nil,
+      hasTime: initialFields.timeMinutes != nil,
+      durationMinutes: initialFields.durationMinutes
+    )
     self.initialFields = initialFields
     self.presentationStyle = presentationStyle
     self.reloadToken = reloadToken
@@ -138,7 +143,7 @@ struct TimelineTaskEditPopoverContent: View {
     _selectedDate = State(initialValue: initialFields.day ?? .now)
     _hasTime = State(initialValue: initialFields.timeMinutes != nil)
     _selectedTime = State(initialValue: Self.timeDate(minutes: initialFields.timeMinutes))
-    _durationMinutes = State(initialValue: initialFields.durationMinutes)
+    _durationMinutes = State(initialValue: initialDurationMinutes)
     _lastCommittedFields = State(
       initialValue: Self.savingFields(
         title: initialFields.title,
@@ -146,7 +151,7 @@ struct TimelineTaskEditPopoverContent: View {
         attachments: initialAttachments,
         day: initialFields.day,
         timeMinutes: initialFields.timeMinutes,
-        durationMinutes: initialFields.durationMinutes
+        durationMinutes: initialDurationMinutes
       )
     )
   }
@@ -189,9 +194,15 @@ struct TimelineTaskEditPopoverContent: View {
         scheduleAutoSave()
       }
       .onChange(of: hasTime) { _, _ in
+        if hasTime, durationMinutes == nil {
+          durationMinutes = TimelineTaskEditDurationPolicy.defaultMinutes
+        }
         if !hasTime {
           isTimePickerPresented = false
         }
+        scheduleAutoSave()
+      }
+      .onChange(of: durationMinutes) { _, _ in
         scheduleAutoSave()
       }
       .onChange(of: selectedDate) { _, _ in
@@ -418,6 +429,46 @@ struct TimelineTaskEditPopoverContent: View {
             .frame(width: 148, alignment: .leading)
             .background(TaskEditFieldStyle.panelBackgroundColor)
         }
+      }
+
+      HStack(alignment: .center, spacing: 10) {
+        Text("듀레이션")
+          .font(TaskEditTypography.controlFont)
+          .foregroundStyle(hasDate && hasTime ? Color.primary : Color.secondary)
+          .frame(width: 88, alignment: .leading)
+
+        HStack(spacing: 8) {
+          Image(systemName: "timer")
+            .font(.system(size: 13, weight: .semibold))
+          Text(
+            hasDate && hasTime
+              ? TimelineTaskEditDurationPolicy.displayText(
+                TimelineTaskEditDurationPolicy.normalized(durationMinutes)
+              )
+              : "시간 없음"
+          )
+          .font(TaskEditTypography.controlFont)
+          .lineLimit(1)
+          Spacer(minLength: 0)
+          Stepper(
+            "",
+            value: Binding(
+              get: {
+                TimelineTaskEditDurationPolicy.normalized(durationMinutes)
+              },
+              set: { nextValue in
+                durationMinutes = TimelineTaskEditDurationPolicy.normalized(nextValue)
+              }
+            ),
+            in: TimelineTaskEditDurationPolicy.minimumMinutes...TimelineTaskEditDurationPolicy.maximumMinutes,
+            step: TimelineTaskEditDurationPolicy.stepMinutes
+          )
+          .labelsHidden()
+          .frame(width: 54)
+        }
+        .taskEditCompactControlBackground()
+        .foregroundStyle(hasDate && hasTime ? Color.primary : Color.secondary)
+        .disabled(!(hasDate && hasTime))
       }
     }
     .frame(maxWidth: .infinity, alignment: .leading)
@@ -665,7 +716,11 @@ struct TimelineTaskEditPopoverContent: View {
     selectedDate = fields.day ?? .now
     hasTime = fields.timeMinutes != nil
     selectedTime = Self.timeDate(minutes: fields.timeMinutes)
-    durationMinutes = fields.durationMinutes
+    durationMinutes = TimelineTaskEditDurationPolicy.savedDuration(
+      hasDate: fields.day != nil,
+      hasTime: fields.timeMinutes != nil,
+      durationMinutes: fields.durationMinutes
+    )
     lastCommittedFields =
       committedFields
       ?? Self.savingFields(
@@ -804,13 +859,18 @@ struct TimelineTaskEditPopoverContent: View {
   }
 
   private func currentFields() -> RetainedTaskEditFields {
-    Self.savingFields(
+    let timeMinutes = hasDate && hasTime ? Self.timeMinutes(from: selectedTime) : nil
+    return Self.savingFields(
       title: title,
       noteText: noteText,
       attachments: attachments,
       day: hasDate ? calendar.startOfDay(for: selectedDate) : nil,
-      timeMinutes: hasDate && hasTime ? Self.timeMinutes(from: selectedTime) : nil,
-      durationMinutes: durationMinutes
+      timeMinutes: timeMinutes,
+      durationMinutes: TimelineTaskEditDurationPolicy.savedDuration(
+        hasDate: hasDate,
+        hasTime: hasTime,
+        durationMinutes: durationMinutes
+      )
     )
   }
 
@@ -827,12 +887,17 @@ struct TimelineTaskEditPopoverContent: View {
     timeMinutes: Int?,
     durationMinutes: Int?
   ) -> RetainedTaskEditFields {
-    RetainedTaskEditFields(
+    let savedDuration = TimelineTaskEditDurationPolicy.savedDuration(
+      hasDate: day != nil,
+      hasTime: timeMinutes != nil,
+      durationMinutes: durationMinutes
+    )
+    return RetainedTaskEditFields(
       title: title.replacingOccurrences(of: "\n", with: " "),
       noteText: TaskEditAttachmentService.noteTextByAppendingAttachments(attachments, to: noteText),
       day: day,
       timeMinutes: timeMinutes,
-      durationMinutes: durationMinutes
+      durationMinutes: savedDuration
     )
   }
 
@@ -849,6 +914,43 @@ struct TimelineTaskEditPopoverContent: View {
   private static func timeMinutes(from date: Date) -> Int {
     let components = Calendar.autoupdatingCurrent.dateComponents([.hour, .minute], from: date)
     return (components.hour ?? 0) * 60 + (components.minute ?? 0)
+  }
+}
+
+enum TimelineTaskEditDurationPolicy {
+  static let minimumMinutes = 5
+  static let maximumMinutes = 24 * 60
+  static let stepMinutes = 5
+  static let defaultMinutes = WorkspaceTaskScheduleEventStore.defaultScheduledDurationMinutes
+
+  static func normalized(_ durationMinutes: Int?) -> Int {
+    normalized(durationMinutes ?? defaultMinutes)
+  }
+
+  static func normalized(_ durationMinutes: Int) -> Int {
+    min(max(durationMinutes, minimumMinutes), maximumMinutes)
+  }
+
+  static func savedDuration(
+    hasDate: Bool,
+    hasTime: Bool,
+    durationMinutes: Int?
+  ) -> Int? {
+    guard hasDate, hasTime else { return nil }
+    return normalized(durationMinutes)
+  }
+
+  static func displayText(_ durationMinutes: Int) -> String {
+    let normalizedMinutes = normalized(durationMinutes)
+    let hours = normalizedMinutes / 60
+    let minutes = normalizedMinutes % 60
+    if hours == 0 {
+      return "\(minutes)분"
+    }
+    if minutes == 0 {
+      return "\(hours)시간"
+    }
+    return "\(hours)시간 \(minutes)분"
   }
 }
 

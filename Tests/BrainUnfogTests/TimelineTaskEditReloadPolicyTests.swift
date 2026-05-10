@@ -2,6 +2,33 @@ import XCTest
 @testable import BrainUnfog
 
 final class TimelineTaskEditReloadPolicyTests: XCTestCase {
+  func testDurationPolicySavesDefaultDurationForTimedTasks() {
+    XCTAssertEqual(
+      TimelineTaskEditDurationPolicy.savedDuration(
+        hasDate: true,
+        hasTime: true,
+        durationMinutes: nil
+      ),
+      WorkspaceTaskScheduleEventStore.defaultScheduledDurationMinutes
+    )
+  }
+
+  func testDurationPolicyDoesNotSaveDurationForAllDayTasks() {
+    XCTAssertNil(
+      TimelineTaskEditDurationPolicy.savedDuration(
+        hasDate: true,
+        hasTime: false,
+        durationMinutes: 90
+      )
+    )
+  }
+
+  func testDurationPolicyFormatsDurationForDisplay() {
+    XCTAssertEqual(TimelineTaskEditDurationPolicy.displayText(90), "1시간 30분")
+    XCTAssertEqual(TimelineTaskEditDurationPolicy.displayText(60), "1시간")
+    XCTAssertEqual(TimelineTaskEditDurationPolicy.displayText(15), "15분")
+  }
+
   func testPreservesEditorWhenReloadOnlyDropsTrailingBlankLine() {
     let current = fields(noteText: "First line\n")
     let loaded = fields(noteText: "First line")

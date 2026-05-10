@@ -72,6 +72,46 @@ final class AppOwnedWorkspaceStoreTests: XCTestCase {
     XCTAssertEqual(task.schedule.rawRepeatRule, "daily")
   }
 
+  func testProjectBoardOrderPersistsAcrossReminderImports() async throws {
+    let store = AppOwnedWorkspaceStore(containerRootURL: try makeTemporaryDirectory())
+    let importedAt = Date(timeIntervalSinceReferenceDate: 201)
+    let batch = ReminderImportSnapshotBatch(
+      lists: [
+        ReminderListImportSnapshot(
+          identifier: "list-1",
+          externalIdentifier: "list-1",
+          title: "First",
+          colorHex: nil
+        ),
+        ReminderListImportSnapshot(
+          identifier: "list-2",
+          externalIdentifier: "list-2",
+          title: "Second",
+          colorHex: nil
+        ),
+      ],
+      itemsByListIdentifier: [:]
+    )
+    let firstProjectID = RetainedProjectionBuilder.derivedProjectID(for: "list-1")
+    let secondProjectID = RetainedProjectionBuilder.derivedProjectID(for: "list-2")
+
+    try await store.replaceReminderSnapshot(batch, importedAt: importedAt)
+    try await store.updateProjectBoardOrders(
+      [
+        firstProjectID: 1,
+        secondProjectID: 0,
+      ]
+    )
+    try await store.replaceReminderSnapshot(batch, importedAt: importedAt.addingTimeInterval(20))
+
+    let snapshot = try await store.loadRetainedWorkspaceSnapshot(projectIDs: [])
+    let projectsByID = Dictionary(uniqueKeysWithValues: snapshot.projects.map {
+      ($0.identity.projectID, $0)
+    })
+    XCTAssertEqual(projectsByID[firstProjectID]?.boardOrder, 1)
+    XCTAssertEqual(projectsByID[secondProjectID]?.boardOrder, 0)
+  }
+
   func testAppOwnedProjectionCanLoadProjectInsertedAfterInitialImport() async throws {
     let vaultRoot = try makeTemporaryDirectory()
     let store = AppOwnedWorkspaceStore.storeForVaultRootURL(vaultRoot)

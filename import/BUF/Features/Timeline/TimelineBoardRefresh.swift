@@ -335,15 +335,31 @@ enum TimelineBoardReadPath {
         let lhsStage = stage(for: $0, workspaceProjectSnapshots: workspaceProjectSnapshots)
         let rhsStage = stage(for: $1, workspaceProjectSnapshots: workspaceProjectSnapshots)
         if lhsStage.rawValue != rhsStage.rawValue { return lhsStage.rawValue < rhsStage.rawValue }
-        let lhsOrder = manualOrderByProjectID[$0.projectID] ?? Int64.max
-        let rhsOrder = manualOrderByProjectID[$1.projectID] ?? Int64.max
+        let lhsOrder = boardOrder(
+          for: $0.projectID,
+          manualOrderByProjectID: manualOrderByProjectID,
+          workspaceProjectSnapshots: workspaceProjectSnapshots
+        )
+        let rhsOrder = boardOrder(
+          for: $1.projectID,
+          manualOrderByProjectID: manualOrderByProjectID,
+          workspaceProjectSnapshots: workspaceProjectSnapshots
+        )
         if lhsOrder != rhsOrder { return lhsOrder < rhsOrder }
         return titleSort($0, $1)
       }
     case .manual:
       return bars.sorted {
-        let lhsOrder = manualOrderByProjectID[$0.projectID] ?? Int64.max
-        let rhsOrder = manualOrderByProjectID[$1.projectID] ?? Int64.max
+        let lhsOrder = boardOrder(
+          for: $0.projectID,
+          manualOrderByProjectID: manualOrderByProjectID,
+          workspaceProjectSnapshots: workspaceProjectSnapshots
+        )
+        let rhsOrder = boardOrder(
+          for: $1.projectID,
+          manualOrderByProjectID: manualOrderByProjectID,
+          workspaceProjectSnapshots: workspaceProjectSnapshots
+        )
         if lhsOrder != rhsOrder { return lhsOrder < rhsOrder }
         return titleSort($0, $1)
       }
@@ -410,6 +426,7 @@ enum TimelineBoardReadPath {
       hasher.combine(project.localDeadline?.timeIntervalSinceReferenceDate)
       hasher.combine(project.title)
       hasher.combine(project.colorHex)
+      hasher.combine(project.boardOrder)
       hasher.combine(project.reminderListIdentifier)
       hasher.combine(project.reminderListExternalIdentifier)
       hasher.combine(project.isArchived)
@@ -473,6 +490,16 @@ enum TimelineBoardReadPath {
       return projectDate
     }
     return max(projectDate, taskDate)
+  }
+
+  private static func boardOrder(
+    for projectID: UUID,
+    manualOrderByProjectID: [UUID: Int64],
+    workspaceProjectSnapshots: [UUID: WorkspaceProjectRuntimeRecord]
+  ) -> Int64 {
+    manualOrderByProjectID[projectID]
+      ?? workspaceProjectSnapshots[projectID]?.boardOrder.map(Int64.init)
+      ?? Int64.max
   }
 
   private static func stage(
@@ -545,12 +572,16 @@ extension TimelineBoardView {
     let nextWriteMarkers = retainedTimelineCalendarBridgeWriteMarkersByTaskID.filter {
       currentTaskIDs.contains($0.key)
     }
+    let didManualOrderChange = reconcileTimelineProjectManualOrderFromPersistedBoardOrder(
+      resolvedRead.projectSnapshots
+    )
     let didChange = workspaceTimelineProjectSnapshots != resolvedRead.projectSnapshots
       || workspaceTimelineProjectSummaries != resolvedRead.projectSummaries
       || workspaceTimelineScheduleEntriesByProjectID != resolvedRead.scheduleEntriesByProjectID
       || retainedTimelineReadBlocker != nextReadBlocker
       || retainedTimelineCalendarBridgeDecisionsByTaskID != resolvedRead.calendarBridgeDecisionsByTaskID
       || retainedTimelineCalendarBridgeWriteMarkersByTaskID != nextWriteMarkers
+      || didManualOrderChange
     if didChange {
       retainedTimelineReadBlocker = nextReadBlocker
       workspaceTimelineProjectSnapshots = resolvedRead.projectSnapshots
@@ -610,12 +641,16 @@ extension TimelineBoardView {
       loaded: loadedProjection,
       replacingProjectIDs: requestedProjectIDs
     )
+    let didManualOrderChange = reconcileTimelineProjectManualOrderFromPersistedBoardOrder(
+      visibleProjection.projectSnapshots
+    )
     let didChange = workspaceTimelineProjectSnapshots != visibleProjection.projectSnapshots
       || workspaceTimelineProjectSummaries != visibleProjection.projectSummaries
       || workspaceTimelineScheduleEntriesByProjectID != visibleProjection.scheduleEntriesByProjectID
       || retainedTimelineReadBlocker != nil
       || retainedTimelineCalendarBridgeDecisionsByTaskID != visibleProjection.calendarBridgeDecisionsByTaskID
       || retainedTimelineCalendarBridgeWriteMarkersByTaskID != nextWriteMarkers
+      || didManualOrderChange
     if didChange {
       retainedTimelineReadBlocker = nil
       workspaceTimelineProjectSnapshots = visibleProjection.projectSnapshots

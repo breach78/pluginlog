@@ -29,7 +29,7 @@ enum AppUITestRuntime {
       )
       self.rootURL = rootURL
       self.vaultRootURL = rootURL.appendingPathComponent("vault", isDirectory: true)
-      self.containerRootURL = rootURL.appendingPathComponent("container", isDirectory: true)
+      self.containerRootURL = ObsidianVaultLayout(vaultRootURL: self.vaultRootURL).sidecarRootURL
       self.shouldReset =
         Self.isEnabled(environment[AppUITestRuntime.resetEnvironmentKey])
         || arguments.contains(AppUITestRuntime.resetArgument)
@@ -169,6 +169,7 @@ enum AppUITestRuntime {
 
     try prepareSeedVault(configuration: configuration)
     try await storageCoordinator.openOrInitializeContainer(at: configuration.containerRootURL)
+    try await prepareAppOwnedStore(configuration: configuration)
     installRetainedStores(dataDirectory: storageCoordinator.paths?.dataDirectory)
     replaceBridgeRecords(seed: configuration.seed)
     upsertBaselines(seed: configuration.seed)
@@ -183,59 +184,58 @@ enum AppUITestRuntime {
       at: configuration.vaultRootURL.appendingPathComponent(".obsidian", isDirectory: true),
       withIntermediateDirectories: true
     )
-    let projectsRootURL = configuration.vaultRootURL
+    let journalsRootURL = configuration.vaultRootURL
       .appendingPathComponent("raw", isDirectory: true)
-      .appendingPathComponent("projects", isDirectory: true)
-    try fileManager.createDirectory(at: projectsRootURL, withIntermediateDirectories: true)
-
-    for project in configuration.seed.projects {
-      let fileURL = projectsRootURL.appendingPathComponent("\(project.title).md")
-      guard configuration.shouldReset || !fileManager.fileExists(atPath: fileURL.path) else {
-        continue
-      }
-      try markdown(for: project).write(to: fileURL, atomically: true, encoding: .utf8)
-    }
+      .appendingPathComponent("journals", isDirectory: true)
+    try fileManager.createDirectory(at: journalsRootURL, withIntermediateDirectories: true)
   }
 
-  private static func markdown(for project: Project) -> String {
-    let tasks = project.tasks.map { task in
-      var metadata: [String] = [#""reminder_external_id":"\#(task.externalIdentifier)""#]
-      if let schedule = task.schedule {
-        let day = ReminderScheduleMetadataCodec.encodeDate(
-          schedule.date,
-          hasExplicitTime: false
-        )
-        if let day {
-          metadata.append(#""date":"\#(day)""#)
-        }
-        if schedule.hasExplicitTime {
-          let components = Calendar.autoupdatingCurrent.dateComponents(
-            [.hour, .minute],
-            from: schedule.date
+  private static func prepareAppOwnedStore(configuration: Configuration) async throws {
+    let store = AppOwnedWorkspaceStore(containerRootURL: configuration.containerRootURL)
+    try await store.replaceReminderSnapshot(
+      ReminderImportSnapshotBatch(
+        lists: configuration.seed.projects.map { project in
+          ReminderListImportSnapshot(
+            identifier: project.listIdentifier,
+            externalIdentifier: project.listIdentifier,
+            title: project.title,
+            colorHex: project.colorHex
           )
-          let hour = String(format: "%02d", components.hour ?? 0)
-          let minute = String(format: "%02d", components.minute ?? 0)
-          metadata.append(#""time":"\#(hour):\#(minute)""#)
-        }
-      }
-      if let durationMinutes = task.durationMinutes {
-        metadata.append(#""duration":\#(durationMinutes)"#)
-      }
-      return """
-      - [\(task.isCompleted ? "x" : " ")] \(task.title)
-        %% brain-unfog: {\(metadata.joined(separator: ","))} %%
-      """
-    }
-
-    return """
-    ---
-    tags:
-      - 프로젝트
-    reminder_list_external_id: \(project.listIdentifier)
-    ---
-
-    \(tasks.joined(separator: "\n"))
-    """
+        },
+        itemsByListIdentifier: Dictionary(
+          uniqueKeysWithValues: configuration.seed.projects.map { project in
+            (
+              project.listIdentifier,
+              project.tasks.map { task in
+                ReminderItemImportSnapshot(
+                  identifier: task.externalIdentifier,
+                  externalIdentifier: task.externalIdentifier,
+                  parentExternalIdentifier: nil,
+                  sourceListIdentifier: project.listIdentifier,
+                  sourceListTitle: project.title,
+                  title: task.title,
+                  notes: task.noteText,
+                  attachmentCount: 0,
+                  isCompleted: task.isCompleted,
+                  completionDate: task.isCompleted ? Date.now : nil,
+                  startDate: nil,
+                  dueDate: task.schedule?.date,
+                  scheduleHasExplicitTime: task.schedule?.hasExplicitTime ?? false,
+                  scheduledDurationMinutes: task.durationMinutes,
+                  priority: 0,
+                  recurrenceRuleRaw: nil,
+                  isFlagged: false,
+                  requiredWorkDays: 0,
+                  createdAt: .now,
+                  modifiedAt: .now
+                )
+              }
+            )
+          }
+        )
+      )
+    )
+    try await store.setProjectionReadEnabled(true)
   }
 
   private static func installRetainedStores(dataDirectory: URL?) {

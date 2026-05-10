@@ -30,7 +30,10 @@ final class AppUITestRuntimeTests: XCTestCase {
 
     XCTAssertEqual(configuration.rootURL.path, root.path)
     XCTAssertEqual(configuration.vaultRootURL.path, root.appendingPathComponent("vault").path)
-    XCTAssertEqual(configuration.containerRootURL.path, root.appendingPathComponent("container").path)
+    XCTAssertEqual(
+      configuration.containerRootURL.path,
+      root.appendingPathComponent("vault").appendingPathComponent(".buf").path
+    )
   }
 
   func testConfigurationCanBeEnabledFromLaunchArguments() throws {
@@ -72,6 +75,11 @@ final class AppUITestRuntimeTests: XCTestCase {
 
     XCTAssertTrue(
       FileManager.default.fileExists(
+        atPath: configuration.vaultRootURL.appendingPathComponent("raw/journals").path
+      )
+    )
+    XCTAssertFalse(
+      FileManager.default.fileExists(
         atPath: configuration.vaultRootURL.appendingPathComponent("raw/projects").path
       )
     )
@@ -109,7 +117,10 @@ final class AppUITestRuntimeTests: XCTestCase {
     XCTAssertTrue(appState.boardsLoaded)
     XCTAssertEqual(appState.syncStatus, "UI Test Ready")
     XCTAssertEqual(appState.obsidianVaultRootURL?.path, root.appendingPathComponent("vault").path)
-    XCTAssertEqual(appState.containerRootURL?.path, root.appendingPathComponent("container").path)
+    XCTAssertEqual(
+      appState.containerRootURL?.path,
+      root.appendingPathComponent("vault").appendingPathComponent(".buf").path
+    )
   }
 
   private func makeTemporaryDirectory(prefix: String) throws -> URL {

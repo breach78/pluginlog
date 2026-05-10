@@ -222,6 +222,7 @@ private final class ProjectOrderingCache {
     for descriptor in descriptors {
       hasher.combine(descriptor.id)
       hasher.combine(descriptor.workspaceSortKey)
+      hasher.combine(descriptor.boardOrder)
       hasher.combine(descriptor.title)
       hasher.combine(descriptor.updatedAt.timeIntervalSinceReferenceDate)
       hasher.combine(descriptor.latestTaskUpdatedAt?.timeIntervalSinceReferenceDate)

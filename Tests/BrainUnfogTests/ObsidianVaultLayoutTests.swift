@@ -2,7 +2,7 @@ import XCTest
 @testable import BrainUnfog
 
 final class ObsidianVaultLayoutTests: XCTestCase {
-  func testPrepareCreatesOnlyBufAndRawProjects() throws {
+  func testPrepareCreatesOnlyBufAndRawJournals() throws {
     let vaultURL = try makeTemporaryDirectory(named: "ObsidianLayout")
     defer { try? FileManager.default.removeItem(at: vaultURL) }
     let layout = ObsidianVaultLayout(vaultRootURL: vaultURL)
@@ -14,7 +14,8 @@ final class ObsidianVaultLayoutTests: XCTestCase {
     try layout.prepareAppDirectories()
 
     XCTAssertTrue(FileManager.default.fileExists(atPath: layout.sidecarRootURL.path))
-    XCTAssertTrue(FileManager.default.fileExists(atPath: layout.rawProjectsRootURL.path))
+    XCTAssertTrue(FileManager.default.fileExists(atPath: layout.rawJournalsRootURL.path))
+    XCTAssertFalse(FileManager.default.fileExists(atPath: layout.rawProjectsRootURL.path))
     var isDirectory: ObjCBool = false
     XCTAssertTrue(
       FileManager.default.fileExists(
@@ -60,6 +61,7 @@ final class ObsidianVaultLayoutTests: XCTestCase {
     }
     XCTAssertFalse(FileManager.default.fileExists(atPath: layout.sidecarRootURL.path))
     XCTAssertFalse(FileManager.default.fileExists(atPath: layout.rawProjectsRootURL.path))
+    XCTAssertFalse(FileManager.default.fileExists(atPath: layout.rawJournalsRootURL.path))
     XCTAssertFalse(FileManager.default.fileExists(atPath: layout.obsidianConfigURL.path))
   }
 

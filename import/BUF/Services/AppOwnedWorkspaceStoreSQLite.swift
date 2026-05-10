@@ -30,7 +30,7 @@ extension AppOwnedWorkspaceStore {
 
   func migrate(_ db: OpaquePointer) throws {
     try exec(db, "PRAGMA foreign_keys = ON;")
-    if try schemaVersion(db) == "1" {
+    if try schemaVersion(db) == "2" {
       return
     }
     try exec(
@@ -56,6 +56,7 @@ extension AppOwnedWorkspaceStore {
         start_date REAL,
         deadline REAL,
         is_archived INTEGER NOT NULL DEFAULT 0,
+        board_order INTEGER,
         updated_at REAL NOT NULL
       );
       """
@@ -65,6 +66,7 @@ extension AppOwnedWorkspaceStore {
     try addColumnIfMissing(db, table: "app_projects", definition: "start_date REAL")
     try addColumnIfMissing(db, table: "app_projects", definition: "deadline REAL")
     try addColumnIfMissing(db, table: "app_projects", definition: "is_archived INTEGER NOT NULL DEFAULT 0")
+    try addColumnIfMissing(db, table: "app_projects", definition: "board_order INTEGER")
     try exec(
       db,
       """
@@ -95,7 +97,7 @@ extension AppOwnedWorkspaceStore {
       """
     )
     try exec(db, "CREATE INDEX IF NOT EXISTS idx_app_tasks_project_order ON app_tasks(project_id, row_order);")
-    try upsertMetadata(db, key: "schema_version", value: "1")
+    try upsertMetadata(db, key: "schema_version", value: "2")
   }
 
   func execute(_ db: OpaquePointer, _ sql: String, bindings: [Binding]) throws {

@@ -48,6 +48,7 @@ extension TimelineBoardView {
     var nextOrder = timelineProjectManualOrder
     nextOrder[projectID] = (nextOrder.values.max() ?? -1) + 1
     applyTimelineProjectManualOrder(nextOrder)
+    persistTimelineProjectManualOrder(nextOrder)
   }
 
   func applyTimelineProjectManualOrder(_ nextOrder: [UUID: Int64]) {
@@ -58,6 +59,23 @@ extension TimelineBoardView {
     rebuildWorkspaceTimelineProjectionCachesAfterMutation()
   }
 
+  func reconcileTimelineProjectManualOrderFromPersistedBoardOrder(
+    _ projectSnapshots: [UUID: WorkspaceProjectRuntimeRecord]
+  ) -> Bool {
+    guard !didReconcileTimelineProjectBoardOrder else { return false }
+    let persistedOrders = projectSnapshots.compactMapValues(\.boardOrder)
+    guard !persistedOrders.isEmpty else { return false }
+    didReconcileTimelineProjectBoardOrder = true
+    var nextOrder = timelineProjectManualOrder
+    for (projectID, boardOrder) in persistedOrders {
+      nextOrder[projectID] = Int64(boardOrder)
+    }
+    guard nextOrder != timelineProjectManualOrder else { return false }
+    timelineProjectManualOrder = nextOrder
+    TimelineProjectManualOrderStore.save(nextOrder)
+    return true
+  }
+
   func restoreTimelineProjectManualOrder(
     _ nextOrder: [UUID: Int64],
     actionName: String = "프로젝트 순서 변경",
@@ -66,6 +84,7 @@ extension TimelineBoardView {
     let previousOrder = timelineProjectManualOrder
     guard previousOrder != nextOrder else { return }
     applyTimelineProjectManualOrder(nextOrder)
+    persistTimelineProjectManualOrder(nextOrder)
     guard registerUndo else { return }
     appState.registerUndo(with: undoManager, actionName: actionName) {
       self.restoreTimelineProjectManualOrder(
@@ -73,6 +92,16 @@ extension TimelineBoardView {
         actionName: actionName,
         registerUndo: true
       )
+    }
+  }
+
+  func persistTimelineProjectManualOrder(_ order: [UUID: Int64]) {
+    let boardOrders = order.reduce(into: [UUID: Int?]()) { result, item in
+      result[item.key] = Int(exactly: item.value)
+    }
+    guard !boardOrders.isEmpty else { return }
+    Task { @MainActor in
+      _ = await appState.writeProjectBoardOrders(boardOrders)
     }
   }
 

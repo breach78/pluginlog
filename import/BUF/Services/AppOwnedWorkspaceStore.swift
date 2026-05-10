@@ -55,6 +55,27 @@ actor AppOwnedWorkspaceStore {
     let deadline: Date?
     let isArchived: Bool
     let colorHex: String?
+    let boardOrder: Int?
+
+    init(
+      projectID: UUID,
+      noteMarkdown: String,
+      progressStageRaw: String,
+      startDate: Date?,
+      deadline: Date?,
+      isArchived: Bool,
+      colorHex: String?,
+      boardOrder: Int? = nil
+    ) {
+      self.projectID = projectID
+      self.noteMarkdown = noteMarkdown
+      self.progressStageRaw = progressStageRaw
+      self.startDate = startDate
+      self.deadline = deadline
+      self.isArchived = isArchived
+      self.colorHex = colorHex
+      self.boardOrder = boardOrder
+    }
   }
 
   struct TaskSupplement: Equatable, Sendable {
@@ -320,6 +341,34 @@ actor AppOwnedWorkspaceStore {
     )
   }
 
+  func updateProjectBoardOrders(_ boardOrdersByProjectID: [UUID: Int?]) throws {
+    guard !boardOrdersByProjectID.isEmpty else { return }
+    let db = try openDatabase()
+    defer { sqlite3_close(db) }
+    try migrate(db)
+    try exec(db, "BEGIN IMMEDIATE TRANSACTION;")
+    do {
+      for (projectID, boardOrder) in boardOrdersByProjectID {
+        try execute(
+          db,
+          """
+          UPDATE app_projects
+          SET board_order = ?
+          WHERE id = ?;
+          """,
+          bindings: [
+            .optionalInt(boardOrder),
+            .text(projectID.uuidString),
+          ]
+        )
+      }
+      try exec(db, "COMMIT;")
+    } catch {
+      try? exec(db, "ROLLBACK;")
+      throw error
+    }
+  }
+
   private func mergeProjectSupplements(
     _ db: OpaquePointer,
     supplements: [ProjectSupplement],
@@ -332,7 +381,7 @@ actor AppOwnedWorkspaceStore {
         """
         UPDATE app_projects
         SET note_markdown = ?, progress_stage = ?, start_date = ?, deadline = ?,
-          is_archived = ?, \(colorAssignmentSQL)
+          is_archived = ?, \(colorAssignmentSQL), board_order = COALESCE(?, board_order)
         WHERE id = ?;
         """,
         bindings: [
@@ -342,6 +391,7 @@ actor AppOwnedWorkspaceStore {
           .optionalDouble(supplement.deadline?.timeIntervalSinceReferenceDate),
           .int(supplement.isArchived ? 1 : 0),
           .optionalText(normalized(supplement.colorHex)),
+          .optionalInt(supplement.boardOrder),
           .text(supplement.projectID.uuidString),
         ]
       )
@@ -401,6 +451,7 @@ actor AppOwnedWorkspaceStore {
           localStartDate: project.startDate,
           localDeadline: project.deadline,
           progressStage: ProjectProgressStage.fromStorageValue(project.progressStageRaw) ?? .do,
+          boardOrder: project.boardOrder,
           updatedAt: project.updatedAt
         )
       }
@@ -673,6 +724,29 @@ actor AppOwnedWorkspaceStore {
     )
   }
 
+  func deleteProject(projectID: UUID) throws {
+    let db = try openDatabase()
+    defer { sqlite3_close(db) }
+    try migrate(db)
+    try exec(db, "BEGIN IMMEDIATE TRANSACTION;")
+    do {
+      try execute(
+        db,
+        "DELETE FROM app_tasks WHERE project_id = ?;",
+        bindings: [.text(projectID.uuidString)]
+      )
+      try execute(
+        db,
+        "DELETE FROM app_projects WHERE id = ?;",
+        bindings: [.text(projectID.uuidString)]
+      )
+      try exec(db, "COMMIT;")
+    } catch {
+      try? exec(db, "ROLLBACK;")
+      throw error
+    }
+  }
+
   private func insertProject(
     _ db: OpaquePointer,
     list: ReminderListImportSnapshot,
@@ -760,6 +834,7 @@ actor AppOwnedWorkspaceStore {
     let startDate: Date?
     let deadline: Date?
     let isArchived: Bool
+    let boardOrder: Int?
     let updatedAt: Date
   }
 
@@ -770,7 +845,8 @@ actor AppOwnedWorkspaceStore {
     try query(
       db,
       """
-      SELECT id, note_markdown, progress_stage, start_date, deadline, is_archived, color_hex
+      SELECT id, note_markdown, progress_stage, start_date, deadline, is_archived, color_hex,
+        board_order
       FROM app_projects;
       """
     ) { statement in
@@ -784,7 +860,8 @@ actor AppOwnedWorkspaceStore {
         startDate: columnDouble(statement, 3).map(Date.init(timeIntervalSinceReferenceDate:)),
         deadline: columnDouble(statement, 4).map(Date.init(timeIntervalSinceReferenceDate:)),
         isArchived: columnInt(statement, 5) == 1,
-        colorHex: preservesImportedColor ? columnText(statement, 6) : nil
+        colorHex: preservesImportedColor ? columnText(statement, 6) : nil,
+        boardOrder: columnInt(statement, 7)
       )
     }
   }
@@ -1088,7 +1165,7 @@ actor AppOwnedWorkspaceStore {
       db,
       """
       SELECT id, reminder_list_external_identifier, title, color_hex, note_markdown,
-        progress_stage, start_date, deadline, is_archived, updated_at
+        progress_stage, start_date, deadline, is_archived, board_order, updated_at
       FROM app_projects
       \(projectFilterClause(column: "id", projectIDs: projectIDs))
       ORDER BY title COLLATE NOCASE;
@@ -1107,7 +1184,8 @@ actor AppOwnedWorkspaceStore {
         startDate: columnDouble(statement, 6).map(Date.init(timeIntervalSinceReferenceDate:)),
         deadline: columnDouble(statement, 7).map(Date.init(timeIntervalSinceReferenceDate:)),
         isArchived: columnInt(statement, 8) == 1,
-        updatedAt: Date(timeIntervalSinceReferenceDate: columnDouble(statement, 9) ?? 0)
+        boardOrder: columnInt(statement, 9),
+        updatedAt: Date(timeIntervalSinceReferenceDate: columnDouble(statement, 10) ?? 0)
       )
     }
   }

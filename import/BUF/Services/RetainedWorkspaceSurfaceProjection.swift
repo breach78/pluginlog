@@ -166,7 +166,7 @@ enum RetainedWorkspaceSurfaceProjectionBlocker: Equatable {
     case .taskIdentityUnavailable(_, let title):
       return "Retained task cannot be shown in Schedule/Timeline without a stable task id: \(title)"
     case .obsidianVaultNotConfigured:
-      return "Obsidian vault is not configured for Schedule/Timeline retained projection."
+      return "Vault path is not configured for Schedule/Timeline retained projection."
     case .loadFailed(let message):
       return "Retained projection load failed: \(message)"
     }
@@ -229,23 +229,7 @@ enum RetainedWorkspaceSurfaceProjectionBuilder {
       return .blocked(.loadFailed("App-owned store load failed: \(error.localizedDescription)"))
     }
 
-    let store = ObsidianProjectMarkdownStore(vaultRootURL: obsidianVaultRootURL)
-    do {
-      let requestedProjectIDs = Set(projectIDs)
-      let snapshots =
-        requestedProjectIDs.isEmpty
-        ? try await store.loadProjectNotesInScope()
-        : try await store.loadProjectNotesInScope(matchingProjectIDs: requestedProjectIDs)
-      let snapshot = try ObsidianRetainedProjectionAdapter.build(
-        snapshots: snapshots,
-        calendar: calendar
-      )
-      return build(snapshot: snapshot, projectIDs: projectIDs, calendar: calendar, now: now)
-    } catch let error as RetainedProjectionBuilder.Error {
-      return .blocked(.identityFailure(error))
-    } catch {
-      return .blocked(.loadFailed(error.localizedDescription))
-    }
+    return .blocked(.loadFailed("App-owned workspace has not imported Reminders yet."))
   }
 
   static func build(
@@ -441,7 +425,7 @@ enum RetainedWorkspaceSurfaceProjectionBuilder {
       localStartDate: project.localStartDate,
       localDeadline: project.localDeadline,
       progressStageRaw: project.progressStage.storageRawValue,
-      boardOrder: nil,
+      boardOrder: project.boardOrder,
       createdAt: .distantPast,
       updatedAt: project.updatedAt,
       isArchived: project.isArchived

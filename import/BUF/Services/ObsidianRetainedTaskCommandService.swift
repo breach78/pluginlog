@@ -4,6 +4,13 @@ import Foundation
 enum ObsidianRetainedTaskCommandService {
   private static let reminderTimestampTolerance: TimeInterval = 0.5
   private static let mutationGate = RetainedTaskCommandMutationGate()
+  private static let legacyObsidianStorageEnabled = false
+
+  private static func legacyObsidianStorageDisabled() -> RetainedTaskCommandError {
+    RetainedTaskCommandError.retainedProjectionFailed(
+      "legacy Obsidian project/task markdown storage is disabled"
+    )
+  }
 
   static func createTask(
     vaultRootURL: URL?,
@@ -33,6 +40,9 @@ enum ObsidianRetainedTaskCommandService {
         calendar: calendar,
         reminderProjectProvider: reminderProjectProvider
       )
+    }
+    guard legacyObsidianStorageEnabled else {
+      throw legacyObsidianStorageDisabled()
     }
 
     let context = try await projectContext(vaultRootURL: vaultRootURL, projectID: projectID)
@@ -100,6 +110,9 @@ enum ObsidianRetainedTaskCommandService {
         completionDate: completionDate,
         reminderProjectProvider: reminderProjectProvider
       )
+    }
+    guard legacyObsidianStorageEnabled else {
+      throw legacyObsidianStorageDisabled()
     }
 
     let context = try await commandContext(
@@ -265,6 +278,9 @@ enum ObsidianRetainedTaskCommandService {
         resetRecurringAnchor: resetRecurringAnchor
       )
     }
+    guard legacyObsidianStorageEnabled else {
+      throw legacyObsidianStorageDisabled()
+    }
 
     let context = try await commandContext(
       vaultRootURL: vaultRootURL,
@@ -357,6 +373,9 @@ enum ObsidianRetainedTaskCommandService {
         reminderProjectProvider: reminderProjectProvider
       )
     }
+    guard legacyObsidianStorageEnabled else {
+      throw legacyObsidianStorageDisabled()
+    }
 
     let context = try await commandContext(
       vaultRootURL: vaultRootURL,
@@ -421,6 +440,9 @@ enum ObsidianRetainedTaskCommandService {
         targetProjectID: targetProjectID,
         reminderProjectProvider: reminderProjectProvider
       )
+    }
+    guard legacyObsidianStorageEnabled else {
+      throw legacyObsidianStorageDisabled()
     }
 
     let sourceContext = try await commandContext(
@@ -519,6 +541,9 @@ enum ObsidianRetainedTaskCommandService {
         calendar: calendar
       )
     }
+    guard legacyObsidianStorageEnabled else {
+      throw legacyObsidianStorageDisabled()
+    }
     let context = try await commandContext(
       vaultRootURL: vaultRootURL,
       projectID: projectID,
@@ -561,6 +586,9 @@ enum ObsidianRetainedTaskCommandService {
         reminderProjectProvider: reminderProjectProvider
       )
     }
+    guard legacyObsidianStorageEnabled else {
+      throw legacyObsidianStorageDisabled()
+    }
 
     let context = try await commandContext(
       vaultRootURL: vaultRootURL,
@@ -574,6 +602,10 @@ enum ObsidianRetainedTaskCommandService {
     )
     let dueDate = scheduledDate(day: rawFields.day, timeMinutes: rawFields.timeMinutes, calendar: calendar)
     let hasExplicitTime = dueDate != nil && rawFields.timeMinutes != nil
+    let nextDuration = hasExplicitTime ? normalizedDuration(rawFields.durationMinutes) : nil
+    let previousDuration = hasExplicitTime
+      ? normalizedDuration(context.task.metadata?.durationMinutes)
+      : nil
     let nextState = ReminderSyncTaskState(
       title: title,
       isCompleted: previousState.isCompleted,
@@ -582,7 +614,8 @@ enum ObsidianRetainedTaskCommandService {
       noteText: rawFields.noteText
     )
     let changedFields = editableChangedFields(from: previousState, to: nextState)
-    guard !changedFields.isEmpty else {
+    let durationChanged = previousDuration != nextDuration
+    guard !changedFields.isEmpty || durationChanged else {
       return try result(projectID: projectID, taskID: taskID, snapshot: context.snapshot)
     }
 
@@ -608,7 +641,7 @@ enum ObsidianRetainedTaskCommandService {
           reminderExternalIdentifier: task.reminderExternalIdentifier,
           day: rawFields.day,
           timeMinutes: rawFields.timeMinutes,
-          durationMinutes: hasExplicitTime ? rawFields.durationMinutes : nil,
+          durationMinutes: nextDuration,
           calendar: calendar
         )
         let metadataLineIndex = applyMetadata(metadata, to: task, in: &bodyLines)
@@ -651,14 +684,16 @@ enum ObsidianRetainedTaskCommandService {
         }
         remoteModifiedAt = metadata.modifiedAt
       }
-      try updateBaseline(
-        from: writtenSnapshot,
-        taskID: taskID,
-        reminderExternalIdentifier: reminderReference.reminderExternalIdentifier,
-        remoteModifiedAt: remoteModifiedAt,
-        pushedFields: changedFields,
-        previousBaseline: originalBaseline
-      )
+      if !changedFields.isEmpty {
+        try updateBaseline(
+          from: writtenSnapshot,
+          taskID: taskID,
+          reminderExternalIdentifier: reminderReference.reminderExternalIdentifier,
+          remoteModifiedAt: remoteModifiedAt,
+          pushedFields: changedFields,
+          previousBaseline: originalBaseline
+        )
+      }
     } catch {
       try await rollbackObsidianWrite(
         context: context,

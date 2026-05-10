@@ -198,6 +198,56 @@ final class TimelineBoardReadPathTests: XCTestCase {
     XCTAssertEqual(ordered.map(\.projectID), [doFirstID, doSecondID, decideID, areaID, laterID])
   }
 
+  func testTimelineFallsBackToPersistedBoardOrderWhenManualOrderIsMissing() {
+    let firstID = UUID()
+    let secondID = UUID()
+    let thirdID = UUID()
+    let bars = [
+      makeBar(projectID: thirdID, title: "Third"),
+      makeBar(projectID: firstID, title: "First"),
+      makeBar(projectID: secondID, title: "Second"),
+    ]
+
+    let ordered = TimelineBoardReadPath.orderedBars(
+      bars,
+      mode: .manual,
+      workspaceProjectSnapshots: [
+        firstID: makeProject(projectID: firstID, boardOrder: 0),
+        secondID: makeProject(projectID: secondID, boardOrder: 1),
+        thirdID: makeProject(projectID: thirdID, boardOrder: 2),
+      ],
+      workspaceProjectSummaries: [:],
+      manualOrderByProjectID: [:]
+    )
+
+    XCTAssertEqual(ordered.map(\.projectID), [firstID, secondID, thirdID])
+  }
+
+  func testTimelineManualOrderWinsOverPersistedBoardOrder() {
+    let firstID = UUID()
+    let secondID = UUID()
+    let bars = [
+      makeBar(projectID: firstID, title: "First"),
+      makeBar(projectID: secondID, title: "Second"),
+    ]
+
+    let ordered = TimelineBoardReadPath.orderedBars(
+      bars,
+      mode: .manual,
+      workspaceProjectSnapshots: [
+        firstID: makeProject(projectID: firstID, boardOrder: 0),
+        secondID: makeProject(projectID: secondID, boardOrder: 1),
+      ],
+      workspaceProjectSummaries: [:],
+      manualOrderByProjectID: [
+        firstID: 10,
+        secondID: 0,
+      ]
+    )
+
+    XCTAssertEqual(ordered.map(\.projectID), [secondID, firstID])
+  }
+
   func testTimelineSortModeDefaultsToManualAndCyclesThroughModes() {
     XCTAssertEqual(ProjectListSortMode.resolvedTimeline(storedRawValue: nil), .manual)
     XCTAssertEqual(ProjectListSortMode.resolvedTimeline(storedRawValue: "manual"), .manual)
@@ -1097,7 +1147,8 @@ final class TimelineBoardReadPathTests: XCTestCase {
     projectID: UUID,
     title: String = "Project",
     updatedAt: Date = .distantPast,
-    stage: ProjectProgressStage? = nil
+    stage: ProjectProgressStage? = nil,
+    boardOrder: Int? = nil
   ) -> WorkspaceProjectRuntimeRecord {
     WorkspaceProjectRuntimeRecord(
       id: projectID,
@@ -1109,7 +1160,7 @@ final class TimelineBoardReadPathTests: XCTestCase {
       localStartDate: nil,
       localDeadline: nil,
       progressStageRaw: stage?.storageRawValue,
-      boardOrder: nil,
+      boardOrder: boardOrder,
       createdAt: .distantPast,
       updatedAt: updatedAt,
       isArchived: false

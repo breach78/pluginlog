@@ -21,7 +21,7 @@ extension AppState {
         storageCoordinator.clearActiveContainer()
         refreshContainerRootURL()
         errorMessage = error.localizedDescription
-        syncStatus = "Obsidian storage failed"
+        syncStatus = "Vault storage failed"
       }
     }
     refreshContainerRootURL()
@@ -51,7 +51,7 @@ extension AppState {
       let urls = try await platformUIFoundation.pathPicker.pick(
         request: PlatformPathPickerRequest(
           kind: .directory,
-          message: "Obsidian vault 루트를 선택해 주세요."
+          message: "Vault 루트를 선택해 주세요."
         )
       )
       guard let rootURL = urls.first else { return }
@@ -255,7 +255,7 @@ private enum ObsidianVaultSetupError: LocalizedError {
   var errorDescription: String? {
     switch self {
     case .bootstrapFailed(let status):
-      "Obsidian bootstrap failed before setup could complete: \(status)"
+      "Vault bootstrap failed before setup could complete: \(status)"
     }
   }
 }

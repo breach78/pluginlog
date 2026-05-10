@@ -13,17 +13,17 @@ struct AppSettingsView: View {
       Text("설정")
         .font(.title2.bold())
 
-      GroupBox("Obsidian vault") {
+      GroupBox("Vault") {
         VStack(alignment: .leading, spacing: 10) {
-          Text("`.obsidian` 폴더가 이미 있는 vault 루트를 선택합니다.")
+          Text("앱 지원 저장소와 저널/첨부 파일을 둘 vault 루트를 선택합니다.")
             .foregroundStyle(.secondary)
 
           SettingsPathRow(title: "현재 vault", value: obsidianVaultPath)
           SettingsPathRow(title: "앱 지원 폴더", value: obsidianBufFolderPath)
-          SettingsPathRow(title: "프로젝트 노트", value: obsidianProjectsFolderPath)
+          SettingsPathRow(title: "저널 폴더", value: journalFolderPath)
 
           HStack(spacing: 10) {
-            Button("Obsidian vault 변경...") {
+            Button("Vault 변경...") {
               chooseObsidianVault()
             }
             .disabled(isChangingObsidianVault)
@@ -52,7 +52,7 @@ struct AppSettingsView: View {
             }
           }
 
-          Text("선택 직후 첫 sync는 Reminders -> Obsidian `raw/projects/` 방향입니다.")
+          Text("프로젝트와 할일 상태는 앱 지원 저장소가 사용하며, Obsidian 프로젝트 마크다운은 읽거나 쓰지 않습니다.")
             .font(.footnote)
             .foregroundStyle(.secondary)
         }
@@ -97,11 +97,11 @@ struct AppSettingsView: View {
     return rootURL.appendingPathComponent(".buf", isDirectory: true).path
   }
 
-  private var obsidianProjectsFolderPath: String {
+  private var journalFolderPath: String {
     guard let rootURL = appState.obsidianVaultRootURL else { return "선택되지 않음" }
     return rootURL
       .appendingPathComponent("raw", isDirectory: true)
-      .appendingPathComponent("projects", isDirectory: true)
+      .appendingPathComponent("journals", isDirectory: true)
       .path
   }
 

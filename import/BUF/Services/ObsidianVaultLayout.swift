@@ -71,7 +71,7 @@ struct ObsidianVaultLayout {
       withIntermediateDirectories: true
     )
     try fileManager.createDirectory(
-      at: rawProjectsRootURL,
+      at: rawJournalsRootURL,
       withIntermediateDirectories: true
     )
   }

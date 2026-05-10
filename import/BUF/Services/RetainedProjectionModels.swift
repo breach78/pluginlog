@@ -23,6 +23,7 @@ struct RetainedProject: Equatable, Sendable {
   let localStartDate: Date?
   let localDeadline: Date?
   let progressStage: ProjectProgressStage
+  let boardOrder: Int?
   let updatedAt: Date
 
   init(
@@ -40,6 +41,7 @@ struct RetainedProject: Equatable, Sendable {
     localStartDate: Date? = nil,
     localDeadline: Date? = nil,
     progressStage: ProjectProgressStage = .do,
+    boardOrder: Int? = nil,
     updatedAt: Date = .distantPast
   ) {
     self.identity = identity
@@ -56,6 +58,7 @@ struct RetainedProject: Equatable, Sendable {
     self.localStartDate = localStartDate
     self.localDeadline = localDeadline
     self.progressStage = progressStage
+    self.boardOrder = boardOrder
     self.updatedAt = updatedAt
   }
 }

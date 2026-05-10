@@ -123,6 +123,7 @@ struct TimelineBoardView: View {
   @State var activeTimelineProjectListPopoverProjectID: UUID?
   @State var activeTimelineTaskEditTarget: TimelineTaskEditTarget?
   @State var timelineProjectManualOrder = TimelineProjectManualOrderStore.load()
+  @State var didReconcileTimelineProjectBoardOrder = false
   @State var workspaceTimelineLoadGeneration = 0
   @State var workspaceTimelineLastLoadSignature: Int?
   @State var midnightRefreshTimer: Timer?

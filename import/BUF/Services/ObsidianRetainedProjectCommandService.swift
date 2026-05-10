@@ -17,21 +17,7 @@ enum ObsidianRetainedProjectCommandService {
         reminderProjectProvider: reminderProjectProvider
       )
     }
-    let title = rawTitle.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard !title.isEmpty else {
-      throw RetainedTaskCommandError.retainedProjectionFailed("empty project title")
-    }
-    let context = try await commandContext(vaultRootURL: vaultRootURL, projectID: projectID)
-    guard let listID = context.snapshot.note.reminderListExternalIdentifier else {
-      throw RetainedTaskCommandError.unsafeProjectNote(projectID)
-    }
-    let remote = try reminderProjectProvider.setProjectTitle(identifier: listID, title: title)
-    let resolvedTitle = normalized(remote?.title) ?? title
-    return try await context.store.renameProjectNote(
-      context.snapshot,
-      preferredFileName: resolvedTitle,
-      expectedBaseline: ObsidianProjectMarkdownStore.WriteBaseline(snapshot: context.snapshot)
-    )
+    throw legacyObsidianStorageDisabled()
   }
 
   static func setProjectStage(
@@ -47,10 +33,7 @@ enum ObsidianRetainedProjectCommandService {
         stage: stage
       )
     }
-    let context = try await commandContext(vaultRootURL: vaultRootURL, projectID: projectID)
-    return try await writeProject(using: context) { frontmatter in
-      frontmatter.projectStage = stage
-    }
+    throw legacyObsidianStorageDisabled()
   }
 
   static func setProjectNote(
@@ -88,15 +71,13 @@ enum ObsidianRetainedProjectCommandService {
         reminderProjectProvider: reminderProjectProvider
       )
     }
-    let context = try await commandContext(vaultRootURL: vaultRootURL, projectID: projectID)
-    guard let listID = context.snapshot.note.reminderListExternalIdentifier else {
-      throw RetainedTaskCommandError.unsafeProjectNote(projectID)
-    }
-    let remote = try reminderProjectProvider.setProjectColor(identifier: listID, colorHex: colorHex)
-    let resolvedColor = normalized(remote?.colorHex) ?? normalized(colorHex)
-    return try await writeProject(using: context) { frontmatter in
-      frontmatter.colorHex = resolvedColor
-    }
+    throw legacyObsidianStorageDisabled()
+  }
+
+  private static func legacyObsidianStorageDisabled() -> RetainedTaskCommandError {
+    RetainedTaskCommandError.retainedProjectionFailed(
+      "legacy Obsidian project/task markdown storage is disabled"
+    )
   }
 
   private struct CommandContext {

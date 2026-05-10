@@ -9,10 +9,10 @@ struct SetupContainerView: View {
       Text("Brain Unfog")
         .font(.largeTitle.bold())
 
-      Text("Obsidian vault를 선택하세요. 앱 지원 파일은 vault 안의 숨김 `.buf` 폴더에 준비됩니다.")
+      Text("Vault를 선택하세요. 앱 지원 파일은 vault 안의 숨김 `.buf` 폴더에 준비됩니다.")
         .foregroundStyle(.secondary)
 
-      GroupBox("Obsidian vault") {
+      GroupBox("Vault") {
         VStack(alignment: .leading, spacing: 8) {
           if let root = appState.obsidianVaultRootURL {
             Label("선택됨", systemImage: "checkmark.circle.fill")
@@ -23,7 +23,7 @@ struct SetupContainerView: View {
               .foregroundStyle(.secondary)
           }
 
-          Button(appState.isObsidianVaultConfigured ? "Obsidian vault 변경" : "Obsidian vault 선택") {
+          Button(appState.isObsidianVaultConfigured ? "Vault 변경" : "Vault 선택") {
             runSetupAction {
               await appState.chooseObsidianVaultWithPicker(activateWhenReady: true)
             }
@@ -31,10 +31,10 @@ struct SetupContainerView: View {
           .buttonStyle(.borderedProminent)
           .disabled(isInitializing)
 
-          Text("첫 sync는 Reminders에서 Obsidian `raw/projects/`로 가져오는 방향으로만 실행됩니다.")
+          Text("프로젝트와 할일 상태는 앱 지원 저장소에 보관하고, 저널은 `raw/journals`에 저장합니다.")
             .font(.footnote)
             .foregroundStyle(.secondary)
-          Text("`.obsidian`은 새로 만들지 않고, `.buf`와 `raw/projects`만 준비합니다.")
+          Text("`.obsidian`은 새로 만들지 않고, `.buf`와 `raw/journals`만 준비합니다.")
             .font(.footnote)
             .foregroundStyle(.secondary)
         }
