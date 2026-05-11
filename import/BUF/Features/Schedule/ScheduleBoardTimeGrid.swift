@@ -2636,12 +2636,14 @@ extension ScheduleBoardView {
     for preview: ScheduleInteractionPreview,
     allDayViewportY: CGFloat? = nil
   ) -> CGRect? {
-    ScheduleInteractionViewportProjection.dragDropFrame(
-      for: preview,
-      dayIndexByDate: dayIndexByDate,
-      metrics: interactionViewportProjectionMetrics,
-      allDayViewportY: allDayViewportY
-    )
+    SyncPerformanceCounter.measure(.dragFrameUpdate) {
+      ScheduleInteractionViewportProjection.dragDropFrame(
+        for: preview,
+        dayIndexByDate: dayIndexByDate,
+        metrics: interactionViewportProjectionMetrics,
+        allDayViewportY: allDayViewportY
+      )
+    }
   }
 
   func allDayPreviewViewportY(

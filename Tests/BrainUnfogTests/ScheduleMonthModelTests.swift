@@ -1039,6 +1039,23 @@ final class ScheduleMonthModelTests: XCTestCase {
     )
   }
 
+  @MainActor
+  func testMonthLayoutPerformanceCounterRecordsCacheMissOnly() throws {
+    SyncPerformanceCounter.reset()
+    defer { SyncPerformanceCounter.reset() }
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+    calendar.firstWeekday = 1
+    let anchor = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 5, day: 9)))
+    let cache = ScheduleMonthLayoutCache()
+
+    _ = cache.layout(containing: anchor, items: [], itemsSignature: 0, calendar: calendar)
+    _ = cache.layout(containing: anchor, items: [], itemsSignature: 0, calendar: calendar)
+
+    let snapshot = SyncPerformanceCounter.operationSnapshot()
+    XCTAssertEqual(snapshot[SyncPerformanceOperation.monthLayout.rawValue]?.count, 1)
+  }
+
   private func makeMonthItem(
     id: String,
     source: ScheduleMonthItemSource,

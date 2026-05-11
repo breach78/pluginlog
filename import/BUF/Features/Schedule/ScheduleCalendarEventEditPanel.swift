@@ -398,6 +398,13 @@ struct ScheduleCalendarEventEditPanelContent: View {
     isSaving = true
     errorText = nil
     do {
+      let saveStart = DispatchTime.now().uptimeNanoseconds
+      defer {
+        SyncPerformanceCounter.record(
+          .editorSave,
+          durationNanoseconds: DispatchTime.now().uptimeNanoseconds - saveStart
+        )
+      }
       let savedFields = try await saveFields(fields, event.isRecurring ? recurringScope : .thisEvent)
       lastCommittedFields = Self.normalizedFields(savedFields)
       isSaving = false

@@ -833,6 +833,13 @@ struct TimelineTaskEditPopoverContent: View {
     isSaving = true
     errorText = nil
     do {
+      let saveStart = DispatchTime.now().uptimeNanoseconds
+      defer {
+        SyncPerformanceCounter.record(
+          .editorSave,
+          durationNanoseconds: DispatchTime.now().uptimeNanoseconds - saveStart
+        )
+      }
       try await saveFields(fields)
       lastCommittedFields = fields
       skipCleanReloadAfterLocalSaveUntil = Date()

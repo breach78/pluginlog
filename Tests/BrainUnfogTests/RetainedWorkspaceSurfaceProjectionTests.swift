@@ -662,6 +662,23 @@ final class RetainedWorkspaceSurfaceProjectionTests: XCTestCase {
     )
   }
 
+  func testProjectionBuildRecordsPerformanceMeasurement() throws {
+    SyncPerformanceCounter.reset()
+    defer { SyncPerformanceCounter.reset() }
+    let projectID = UUID()
+    let snapshot = RetainedWorkspaceSnapshot(projects: [makeProject(projectID: projectID)])
+
+    _ = RetainedWorkspaceSurfaceProjectionBuilder.build(
+      snapshot: snapshot,
+      projectIDs: [projectID],
+      calendar: Self.calendar,
+      now: .distantPast
+    )
+
+    let operationSnapshot = SyncPerformanceCounter.operationSnapshot()
+    XCTAssertEqual(operationSnapshot[SyncPerformanceOperation.projectionBuild.rawValue]?.count, 1)
+  }
+
   private static let calendar: Calendar = {
     var calendar = Calendar(identifier: .gregorian)
     calendar.timeZone = TimeZone(secondsFromGMT: 0)!

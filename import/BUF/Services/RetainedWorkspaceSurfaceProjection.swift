@@ -238,74 +238,76 @@ enum RetainedWorkspaceSurfaceProjectionBuilder {
     calendar: Calendar = .autoupdatingCurrent,
     now: Date = .now
   ) -> RetainedWorkspaceSurfaceProjectionLoadResult {
-    if let blocker = validateSnapshotIdentities(snapshot) {
-      return .blocked(blocker)
-    }
-
-    let normalizedProjectIDs = normalizedProjectIDs(projectIDs)
-    let projectsByID = Dictionary(uniqueKeysWithValues: snapshot.projects.map {
-      ($0.identity.projectID, $0)
-    })
-    let missingProjectIDs = normalizedProjectIDs.filter { projectsByID[$0] == nil }
-    guard missingProjectIDs.isEmpty else {
-      return .blocked(.partialProjectCoverage(missingProjectIDs: missingProjectIDs))
-    }
-
-    let selectedProjects =
-      normalizedProjectIDs.isEmpty
-      ? snapshot.projects
-      : normalizedProjectIDs.compactMap { projectsByID[$0] }
-
-    var projectSnapshots: [UUID: WorkspaceProjectRuntimeRecord] = [:]
-    var projectSummaries: [UUID: ProjectSummaryRecord] = [:]
-    var scheduleEntriesByProjectID: [UUID: [ScheduleSliceEntry]] = [:]
-    var calendarBridgeDecisionsByTaskID: [UUID: RetainedCalendarBridgeDecision] = [:]
-
-    for project in selectedProjects {
-      let projectID = project.identity.projectID
-      let projectTasks = ProjectNoteReminderPolicy.visibleTasks(project.tasks)
-      let projectNoteMarkdown = ProjectNoteReminderPolicy.projectNoteText(in: project.tasks)
-        ?? project.noteMarkdown
-      let projectSnapshot = workspaceProjectSnapshot(
-        for: project,
-        projectNoteMarkdown: projectNoteMarkdown
-      )
-      var scheduleEntries: [ScheduleSliceEntry] = []
-
-      for (index, task) in projectTasks.enumerated() {
-        guard let taskID = task.identity.taskID else {
-          continue
-        }
-
-        let scheduleEntry = scheduleEntry(
-          for: task,
-          taskID: taskID,
-          projectID: projectID,
-          rowOrder: index,
-          projectSnapshot: projectSnapshot
-        )
-        scheduleEntries.append(scheduleEntry)
-        calendarBridgeDecisionsByTaskID[taskID] = RetainedCalendarBridgePolicy.decision(for: task)
+    return SyncPerformanceCounter.measure(.projectionBuild) {
+      if let blocker = validateSnapshotIdentities(snapshot) {
+        return .blocked(blocker)
       }
 
-      projectSnapshots[projectID] = projectSnapshot
-      scheduleEntriesByProjectID[projectID] = scheduleEntries
-      projectSummaries[projectID] = projectSummary(
-        from: scheduleEntries,
-        projectSnapshot: projectSnapshot,
-        calendar: calendar,
-        now: now
+      let normalizedProjectIDs = normalizedProjectIDs(projectIDs)
+      let projectsByID = Dictionary(uniqueKeysWithValues: snapshot.projects.map {
+        ($0.identity.projectID, $0)
+      })
+      let missingProjectIDs = normalizedProjectIDs.filter { projectsByID[$0] == nil }
+      guard missingProjectIDs.isEmpty else {
+        return .blocked(.partialProjectCoverage(missingProjectIDs: missingProjectIDs))
+      }
+
+      let selectedProjects =
+        normalizedProjectIDs.isEmpty
+        ? snapshot.projects
+        : normalizedProjectIDs.compactMap { projectsByID[$0] }
+
+      var projectSnapshots: [UUID: WorkspaceProjectRuntimeRecord] = [:]
+      var projectSummaries: [UUID: ProjectSummaryRecord] = [:]
+      var scheduleEntriesByProjectID: [UUID: [ScheduleSliceEntry]] = [:]
+      var calendarBridgeDecisionsByTaskID: [UUID: RetainedCalendarBridgeDecision] = [:]
+
+      for project in selectedProjects {
+        let projectID = project.identity.projectID
+        let projectTasks = ProjectNoteReminderPolicy.visibleTasks(project.tasks)
+        let projectNoteMarkdown = ProjectNoteReminderPolicy.projectNoteText(in: project.tasks)
+          ?? project.noteMarkdown
+        let projectSnapshot = workspaceProjectSnapshot(
+          for: project,
+          projectNoteMarkdown: projectNoteMarkdown
+        )
+        var scheduleEntries: [ScheduleSliceEntry] = []
+
+        for (index, task) in projectTasks.enumerated() {
+          guard let taskID = task.identity.taskID else {
+            continue
+          }
+
+          let scheduleEntry = scheduleEntry(
+            for: task,
+            taskID: taskID,
+            projectID: projectID,
+            rowOrder: index,
+            projectSnapshot: projectSnapshot
+          )
+          scheduleEntries.append(scheduleEntry)
+          calendarBridgeDecisionsByTaskID[taskID] = RetainedCalendarBridgePolicy.decision(for: task)
+        }
+
+        projectSnapshots[projectID] = projectSnapshot
+        scheduleEntriesByProjectID[projectID] = scheduleEntries
+        projectSummaries[projectID] = projectSummary(
+          from: scheduleEntries,
+          projectSnapshot: projectSnapshot,
+          calendar: calendar,
+          now: now
+        )
+      }
+
+      return .loaded(
+        RetainedWorkspaceSurfaceProjection(
+          projectSnapshots: projectSnapshots,
+          projectSummaries: projectSummaries,
+          scheduleEntriesByProjectID: scheduleEntriesByProjectID,
+          calendarBridgeDecisionsByTaskID: calendarBridgeDecisionsByTaskID
+        )
       )
     }
-
-    return .loaded(
-      RetainedWorkspaceSurfaceProjection(
-        projectSnapshots: projectSnapshots,
-        projectSummaries: projectSummaries,
-        scheduleEntriesByProjectID: scheduleEntriesByProjectID,
-        calendarBridgeDecisionsByTaskID: calendarBridgeDecisionsByTaskID
-      )
-    )
   }
 
   static func resolveRetainedOnly(

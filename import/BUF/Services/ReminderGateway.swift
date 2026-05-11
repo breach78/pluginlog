@@ -125,6 +125,14 @@ final class EventKitReminderGateway: ReminderGateway {
   }
 
   func fetchAllCalendars() async throws -> [EKCalendar] {
+    let start = DispatchTime.now().uptimeNanoseconds
+    defer {
+      SyncPerformanceCounter.record(
+        .remindersFetch,
+        durationNanoseconds: DispatchTime.now().uptimeNanoseconds - start
+      )
+    }
+
     let authorization = EKEventStore.authorizationStatus(for: .reminder)
     switch authorization {
     case .notDetermined:
@@ -171,6 +179,13 @@ final class EventKitReminderGateway: ReminderGateway {
     -> [EKReminder]
   {
     SyncPerformanceCounter.recordEventKitFetch()
+    let start = DispatchTime.now().uptimeNanoseconds
+    defer {
+      SyncPerformanceCounter.record(
+        .remindersFetch,
+        durationNanoseconds: DispatchTime.now().uptimeNanoseconds - start
+      )
+    }
     return try await fetchRemindersImpl(in: [calendar], scope: scope)
   }
 
@@ -178,6 +193,13 @@ final class EventKitReminderGateway: ReminderGateway {
     -> [EKReminder]
   {
     SyncPerformanceCounter.recordEventKitFetch()
+    let start = DispatchTime.now().uptimeNanoseconds
+    defer {
+      SyncPerformanceCounter.record(
+        .remindersFetch,
+        durationNanoseconds: DispatchTime.now().uptimeNanoseconds - start
+      )
+    }
     return try await fetchRemindersImpl(in: calendars, scope: scope)
   }
 

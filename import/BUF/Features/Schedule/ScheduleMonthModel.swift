@@ -267,11 +267,13 @@ final class ScheduleMonthLayoutCache {
       return cachedLayout
     }
 
-    let layout = ScheduleMonthLayoutBuilder.build(
-      containing: anchorDate,
-      items: items,
-      calendar: calendar
-    )
+    let layout = SyncPerformanceCounter.measure(.monthLayout) {
+      ScheduleMonthLayoutBuilder.build(
+        containing: anchorDate,
+        items: items,
+        calendar: calendar
+      )
+    }
     cachedKey = key
     cachedLayout = layout
     return layout
