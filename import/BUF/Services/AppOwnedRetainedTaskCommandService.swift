@@ -319,6 +319,8 @@ enum AppOwnedRetainedTaskCommandService {
     let dueDate = scheduledDate(day: day, timeMinutes: timeMinutes, calendar: calendar)
     let hasExplicitTime = dueDate != nil && timeMinutes != nil
     let effectiveDurationMinutes = hasExplicitTime ? (durationMinutes ?? task.durationMinutes) : nil
+    var taskForStorage = task
+    var remoteMetadata: ReminderTaskRemoteMetadata?
     if resetRecurringAnchor, normalized(task.recurrenceRuleRaw) != nil {
       let project = try await store.projectReference(projectID: projectID)
       return try await recreateRecurringReminderAnchor(
@@ -334,22 +336,44 @@ enum AppOwnedRetainedTaskCommandService {
     let scheduleDateChanged = !matchesScheduleDate(task, dueDate: dueDate, hasExplicitTime: hasExplicitTime)
     let modifiedAt: Date
     if scheduleDateChanged {
-      guard let metadata = try reminderProjectProvider.setTaskSchedule(
+      let metadata = try reminderProjectProvider.setTaskSchedule(
         for: reminderReference(task),
         dueDate: dueDate,
         hasExplicitTime: hasExplicitTime
-      ) else {
+      )
+      if let metadata {
+        remoteMetadata = metadata
+      } else {
+        switch try await retryScheduleAfterReminderRefresh(
+          store: store,
+          projectID: projectID,
+          originalTask: task,
+          dueDate: dueDate,
+          hasExplicitTime: hasExplicitTime,
+          reminderProjectProvider: reminderProjectProvider
+        ) {
+        case .resolved(let refreshedTask, let metadata):
+          taskForStorage = refreshedTask
+          remoteMetadata = metadata
+        case .removedStaleTask:
+          return commandResult(projectID: projectID, taskID: taskID)
+        case .unresolved:
+          throw RetainedTaskCommandError.reminderOwnerUnresolved(taskID)
+        }
+      }
+      guard let remoteMetadata else {
         throw RetainedTaskCommandError.reminderOwnerUnresolved(taskID)
       }
-      modifiedAt = metadata.modifiedAt
+      modifiedAt = remoteMetadata.modifiedAt
       updateBaseline(
-        reminderExternalIdentifier: task.reminderExternalIdentifier,
+        reminderExternalIdentifier: normalized(remoteMetadata.externalIdentifier)
+          ?? taskForStorage.reminderExternalIdentifier,
         title: task.title,
         isCompleted: task.isCompleted,
         noteText: task.noteText,
         dueDate: dueDate,
         hasExplicitTime: hasExplicitTime,
-        remoteModifiedAt: metadata.modifiedAt
+        remoteModifiedAt: remoteMetadata.modifiedAt
       )
     } else {
       modifiedAt = .now
@@ -357,21 +381,62 @@ enum AppOwnedRetainedTaskCommandService {
     try await store.upsertTask(
       projectID: projectID,
       taskID: taskID,
-      reminderIdentifier: task.reminderIdentifier,
-      reminderExternalIdentifier: task.reminderExternalIdentifier,
-      title: task.title,
-      noteText: task.noteText,
-      isCompleted: task.isCompleted,
-      completionDate: task.completionDate,
+      reminderIdentifier: remoteMetadata?.identifier ?? taskForStorage.reminderIdentifier,
+      reminderExternalIdentifier: normalized(remoteMetadata?.externalIdentifier)
+        ?? taskForStorage.reminderExternalIdentifier,
+      title: taskForStorage.title,
+      noteText: taskForStorage.noteText,
+      isCompleted: taskForStorage.isCompleted,
+      completionDate: taskForStorage.completionDate,
       dueDate: dueDate,
       hasExplicitTime: hasExplicitTime,
       durationMinutes: effectiveDurationMinutes,
-      recurrenceRuleRaw: task.recurrenceRuleRaw,
-      priority: task.priority,
+      recurrenceRuleRaw: taskForStorage.recurrenceRuleRaw,
+      priority: taskForStorage.priority,
       modifiedAt: modifiedAt,
       appendIfMissing: false
     )
     return commandResult(projectID: projectID, taskID: taskID)
+  }
+
+  private enum ReminderScheduleRetryResult {
+    case resolved(AppOwnedWorkspaceStore.TaskReference, ReminderTaskRemoteMetadata)
+    case removedStaleTask
+    case unresolved
+  }
+
+  private static func retryScheduleAfterReminderRefresh(
+    store: AppOwnedWorkspaceStore,
+    projectID: UUID,
+    originalTask: AppOwnedWorkspaceStore.TaskReference,
+    dueDate: Date?,
+    hasExplicitTime: Bool,
+    reminderProjectProvider: ReminderProjectProvider
+  ) async throws -> ReminderScheduleRetryResult {
+    let project = try await store.projectReference(projectID: projectID)
+    guard let batch = try await reminderProjectProvider.fetchImportSnapshotBatch(
+      forListIdentifiers: [project.reminderListIdentifier]
+    ) else {
+      return .unresolved
+    }
+
+    try await store.replaceReminderSnapshot(batch, importedAt: .now)
+
+    let refreshedTask: AppOwnedWorkspaceStore.TaskReference
+    do {
+      refreshedTask = try await store.taskReference(projectID: projectID, taskID: originalTask.taskID)
+    } catch RetainedTaskCommandError.taskNotFound {
+      return .removedStaleTask
+    }
+
+    guard let metadata = try reminderProjectProvider.setTaskSchedule(
+      for: reminderReference(refreshedTask),
+      dueDate: dueDate,
+      hasExplicitTime: hasExplicitTime
+    ) else {
+      return .unresolved
+    }
+    return .resolved(refreshedTask, metadata)
   }
 
   private static func recreateRecurringReminderAnchor(

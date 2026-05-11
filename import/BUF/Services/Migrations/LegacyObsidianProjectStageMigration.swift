@@ -1,7 +1,7 @@
 import Foundation
 
 enum LegacyObsidianProjectStageMigration {
-  static let metadataKey = "legacy_obsidian_project_stage_migration_v1"
+  static let metadataKey = "legacy_obsidian_project_stage_migration_v2"
   static let completedValue = "1"
 
   static func runIfNeeded(

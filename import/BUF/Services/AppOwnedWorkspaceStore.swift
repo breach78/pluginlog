@@ -259,7 +259,8 @@ actor AppOwnedWorkspaceStore {
       db,
       supplements: durationSupplements,
       durationAssignmentSQL: "scheduled_duration_minutes = COALESCE(scheduled_duration_minutes, ?)",
-      rowOrderAssignmentSQL: "row_order = COALESCE(?, row_order)"
+      rowOrderAssignmentSQL: "row_order = COALESCE(?, row_order)",
+      overwritePersistedDurations: false
     )
   }
 
@@ -322,7 +323,8 @@ actor AppOwnedWorkspaceStore {
     _ db: OpaquePointer,
     supplements: [TaskSupplement],
     durationAssignmentSQL: String,
-    rowOrderAssignmentSQL: String
+    rowOrderAssignmentSQL: String,
+    overwritePersistedDurations: Bool = true
   ) throws {
     guard !supplements.isEmpty else { return }
     for supplement in supplements {
@@ -339,6 +341,23 @@ actor AppOwnedWorkspaceStore {
           .text(supplement.taskID.uuidString),
         ]
       )
+      if let durationMinutes = supplement.durationMinutes, durationMinutes > 0 {
+        if overwritePersistedDurations {
+          try upsertTaskDurationSupplement(
+            db,
+            taskID: supplement.taskID,
+            reminderExternalIdentifier: nil,
+            durationMinutes: durationMinutes
+          )
+        } else {
+          try insertMissingTaskDurationSupplement(
+            db,
+            taskID: supplement.taskID,
+            reminderExternalIdentifier: nil,
+            durationMinutes: durationMinutes
+          )
+        }
+      }
     }
   }
 
@@ -392,6 +411,7 @@ actor AppOwnedWorkspaceStore {
             .text(projectID.uuidString),
           ]
         )
+        try upsertProjectSupplementFromCurrentRow(db, projectID: projectID)
       }
       try exec(db, "COMMIT;")
     } catch {
@@ -424,6 +444,7 @@ actor AppOwnedWorkspaceStore {
             .text(ProjectProgressStage.do.title.lowercased()),
           ]
         )
+        try upsertProjectSupplementFromCurrentRow(db, projectID: projectID)
       }
       try exec(db, "COMMIT;")
     } catch {
@@ -458,7 +479,65 @@ actor AppOwnedWorkspaceStore {
           .text(supplement.projectID.uuidString),
         ]
       )
+      try upsertProjectSupplement(db, supplement: supplement)
     }
+  }
+
+  private func upsertProjectSupplementFromCurrentRow(_ db: OpaquePointer, projectID: UUID) throws {
+    let rows = try query(
+      db,
+      """
+      SELECT id, note_markdown, progress_stage, start_date, deadline, is_archived, color_hex,
+        board_order
+      FROM app_projects
+      WHERE id = '\(projectID.uuidString)';
+      """,
+    ) { statement in
+      ProjectSupplement(
+        projectID: projectID,
+        noteMarkdown: columnText(statement, 1) ?? "",
+        progressStageRaw: columnText(statement, 2) ?? ProjectProgressStage.do.storageRawValue,
+        startDate: columnDouble(statement, 3).map(Date.init(timeIntervalSinceReferenceDate:)),
+        deadline: columnDouble(statement, 4).map(Date.init(timeIntervalSinceReferenceDate:)),
+        isArchived: columnInt(statement, 5) == 1,
+        colorHex: columnText(statement, 6),
+        boardOrder: columnInt(statement, 7)
+      )
+    }
+    guard let supplement = rows.first else { return }
+    try upsertProjectSupplement(db, supplement: supplement)
+  }
+
+  private func upsertProjectSupplement(_ db: OpaquePointer, supplement: ProjectSupplement) throws {
+    try execute(
+      db,
+      """
+      INSERT INTO app_project_supplements (
+        project_id, note_markdown, progress_stage, start_date, deadline, is_archived,
+        color_hex, board_order, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(project_id) DO UPDATE SET
+        note_markdown = excluded.note_markdown,
+        progress_stage = excluded.progress_stage,
+        start_date = excluded.start_date,
+        deadline = excluded.deadline,
+        is_archived = excluded.is_archived,
+        color_hex = excluded.color_hex,
+        board_order = excluded.board_order,
+        updated_at = excluded.updated_at;
+      """,
+      bindings: [
+        .text(supplement.projectID.uuidString),
+        .text(supplement.noteMarkdown),
+        .text(supplement.progressStageRaw),
+        .optionalDouble(supplement.startDate?.timeIntervalSinceReferenceDate),
+        .optionalDouble(supplement.deadline?.timeIntervalSinceReferenceDate),
+        .int(supplement.isArchived ? 1 : 0),
+        .optionalText(normalized(supplement.colorHex)),
+        .optionalInt(supplement.boardOrder),
+        .double(Date().timeIntervalSinceReferenceDate),
+      ]
+    )
   }
 
   private func updateProject(
@@ -478,6 +557,7 @@ actor AppOwnedWorkspaceStore {
         .text(projectID.uuidString),
       ]
     )
+    try upsertProjectSupplementFromCurrentRow(db, projectID: projectID)
     return try projectReference(projectID: projectID)
   }
 
@@ -659,6 +739,72 @@ actor AppOwnedWorkspaceStore {
         .double(modifiedAt.timeIntervalSinceReferenceDate),
         .int(rowOrder),
       ]
+    )
+    if hasExplicitTime, let durationMinutes, durationMinutes > 0 {
+      try upsertTaskDurationSupplement(
+        db,
+        taskID: taskID,
+        reminderExternalIdentifier: reminderExternalIdentifier,
+        durationMinutes: durationMinutes
+      )
+    } else if !hasExplicitTime {
+      try deleteTaskDurationSupplement(db, taskID: taskID)
+    }
+  }
+
+  private func upsertTaskDurationSupplement(
+    _ db: OpaquePointer,
+    taskID: UUID,
+    reminderExternalIdentifier: String?,
+    durationMinutes: Int
+  ) throws {
+    try execute(
+      db,
+      """
+      INSERT INTO app_task_supplements (
+        task_id, reminder_external_identifier, scheduled_duration_minutes, updated_at
+      ) VALUES (?, ?, ?, ?)
+      ON CONFLICT(task_id) DO UPDATE SET
+        reminder_external_identifier = COALESCE(excluded.reminder_external_identifier, reminder_external_identifier),
+        scheduled_duration_minutes = excluded.scheduled_duration_minutes,
+        updated_at = excluded.updated_at;
+      """,
+      bindings: [
+        .text(taskID.uuidString),
+        .optionalText(normalized(reminderExternalIdentifier)),
+        .int(durationMinutes),
+        .double(Date().timeIntervalSinceReferenceDate),
+      ]
+    )
+  }
+
+  private func insertMissingTaskDurationSupplement(
+    _ db: OpaquePointer,
+    taskID: UUID,
+    reminderExternalIdentifier: String?,
+    durationMinutes: Int
+  ) throws {
+    try execute(
+      db,
+      """
+      INSERT OR IGNORE INTO app_task_supplements (
+        task_id, reminder_external_identifier, scheduled_duration_minutes, updated_at
+      ) VALUES (?, ?, ?, ?);
+      """,
+      bindings: [
+        .text(taskID.uuidString),
+        .optionalText(normalized(reminderExternalIdentifier)),
+        .int(durationMinutes),
+        .double(Date().timeIntervalSinceReferenceDate),
+      ]
+    )
+  }
+
+  private func deleteTaskDurationSupplement(_ db: OpaquePointer, taskID: UUID) throws {
+    try execute(
+      db,
+      "DELETE FROM app_task_supplements WHERE task_id = ?;",
+      bindings: [.text(taskID.uuidString)]
     )
   }
 
@@ -905,7 +1051,8 @@ actor AppOwnedWorkspaceStore {
     _ db: OpaquePointer,
     preservesImportedColor: Bool
   ) throws -> [ProjectSupplement] {
-    try query(
+    var supplementsByProjectID: [UUID: ProjectSupplement] = [:]
+    let projectRows = try query(
       db,
       """
       SELECT id, note_markdown, progress_stage, start_date, deadline, is_archived, color_hex,
@@ -927,10 +1074,43 @@ actor AppOwnedWorkspaceStore {
         boardOrder: columnInt(statement, 7)
       )
     }
+    for supplement in projectRows {
+      supplementsByProjectID[supplement.projectID] = supplement
+    }
+
+    let persistentRows = try query(
+      db,
+      """
+      SELECT project_id, note_markdown, progress_stage, start_date, deadline, is_archived,
+        color_hex, board_order
+      FROM app_project_supplements;
+      """
+    ) { statement -> ProjectSupplement? in
+      guard let projectID = UUID(uuidString: columnText(statement, 0) ?? "") else {
+        return nil
+      }
+      let existing = supplementsByProjectID[projectID]
+      return ProjectSupplement(
+        projectID: projectID,
+        noteMarkdown: columnText(statement, 1) ?? existing?.noteMarkdown ?? "",
+        progressStageRaw: columnText(statement, 2) ?? existing?.progressStageRaw
+          ?? ProjectProgressStage.do.storageRawValue,
+        startDate: columnDouble(statement, 3).map(Date.init(timeIntervalSinceReferenceDate:)),
+        deadline: columnDouble(statement, 4).map(Date.init(timeIntervalSinceReferenceDate:)),
+        isArchived: columnInt(statement, 5) == 1,
+        colorHex: preservesImportedColor ? (columnText(statement, 6) ?? existing?.colorHex) : nil,
+        boardOrder: columnInt(statement, 7) ?? existing?.boardOrder
+      )
+    }
+    for supplement in persistentRows.compactMap({ $0 }) {
+      supplementsByProjectID[supplement.projectID] = supplement
+    }
+    return supplementsByProjectID.values.sorted { $0.projectID.uuidString < $1.projectID.uuidString }
   }
 
   private func loadTaskSupplements(_ db: OpaquePointer) throws -> [TaskSupplement] {
-    try query(
+    var supplementsByTaskID: [UUID: TaskSupplement] = [:]
+    let taskRows = try query(
       db,
       """
       SELECT id, scheduled_duration_minutes, row_order
@@ -946,6 +1126,35 @@ actor AppOwnedWorkspaceStore {
         rowOrder: columnInt(statement, 2)
       )
     }
+    for supplement in taskRows {
+      supplementsByTaskID[supplement.taskID] = supplement
+    }
+
+    let persistentDurationRows = try query(
+      db,
+      """
+      SELECT task_id, scheduled_duration_minutes
+      FROM app_task_supplements
+      WHERE scheduled_duration_minutes IS NOT NULL AND scheduled_duration_minutes > 0;
+      """
+    ) { statement -> (UUID, Int)? in
+      guard let taskID = UUID(uuidString: columnText(statement, 0) ?? ""),
+        let durationMinutes = columnInt(statement, 1),
+        durationMinutes > 0
+      else {
+        return nil
+      }
+      return (taskID, durationMinutes)
+    }
+    for row in persistentDurationRows.compactMap({ $0 }) {
+      let existing = supplementsByTaskID[row.0]
+      supplementsByTaskID[row.0] = TaskSupplement(
+        taskID: row.0,
+        durationMinutes: row.1,
+        rowOrder: existing?.rowOrder
+      )
+    }
+    return supplementsByTaskID.values.sorted { $0.taskID.uuidString < $1.taskID.uuidString }
   }
 
   private struct StoredTaskOrderRow {

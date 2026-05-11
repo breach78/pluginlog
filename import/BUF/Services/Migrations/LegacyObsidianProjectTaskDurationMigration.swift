@@ -1,7 +1,7 @@
 import Foundation
 
 enum LegacyObsidianProjectTaskDurationMigration {
-  static let metadataKey = "legacy_task_duration_repair_v1"
+  static let metadataKey = "legacy_task_duration_repair_v2"
   static let completedValue = "1"
 
   static func runIfNeeded(

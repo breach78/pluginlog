@@ -30,7 +30,7 @@ extension AppOwnedWorkspaceStore {
 
   func migrate(_ db: OpaquePointer) throws {
     try exec(db, "PRAGMA foreign_keys = ON;")
-    if try schemaVersion(db) == "2" {
+    if try schemaVersion(db) == "4" {
       return
     }
     try exec(
@@ -97,7 +97,43 @@ extension AppOwnedWorkspaceStore {
       """
     )
     try exec(db, "CREATE INDEX IF NOT EXISTS idx_app_tasks_project_order ON app_tasks(project_id, row_order);")
-    try upsertMetadata(db, key: "schema_version", value: "2")
+    try exec(
+      db,
+      """
+      CREATE TABLE IF NOT EXISTS app_task_supplements (
+        task_id TEXT PRIMARY KEY NOT NULL,
+        reminder_external_identifier TEXT,
+        scheduled_duration_minutes INTEGER,
+        updated_at REAL NOT NULL
+      );
+      """
+    )
+    try exec(
+      db,
+      """
+      CREATE INDEX IF NOT EXISTS idx_app_task_supplements_external_identifier
+      ON app_task_supplements(reminder_external_identifier);
+      """
+    )
+    try exec(
+      db,
+      """
+      CREATE TABLE IF NOT EXISTS app_project_supplements (
+        project_id TEXT PRIMARY KEY NOT NULL,
+        note_markdown TEXT NOT NULL,
+        progress_stage TEXT NOT NULL,
+        start_date REAL,
+        deadline REAL,
+        is_archived INTEGER NOT NULL,
+        color_hex TEXT,
+        board_order INTEGER,
+        updated_at REAL NOT NULL
+      );
+      """
+    )
+    try seedTaskSupplements(db)
+    try seedProjectSupplements(db)
+    try upsertMetadata(db, key: "schema_version", value: "4")
   }
 
   func execute(_ db: OpaquePointer, _ sql: String, bindings: [Binding]) throws {
@@ -106,8 +142,14 @@ extension AppOwnedWorkspaceStore {
       throw AppOwnedWorkspaceStoreError.prepareFailed(errorMessage(db))
     }
     defer { sqlite3_finalize(statement) }
+    let expectedBindingCount = Int(sqlite3_bind_parameter_count(statement))
+    guard expectedBindingCount == bindings.count else {
+      throw AppOwnedWorkspaceStoreError.invalidSQLiteValue(
+        "SQLite binding count mismatch: expected \(expectedBindingCount), got \(bindings.count)"
+      )
+    }
     for (index, binding) in bindings.enumerated() {
-      bind(binding, to: statement, at: Int32(index + 1))
+      try bind(binding, to: statement, at: Int32(index + 1))
     }
     guard sqlite3_step(statement) == SQLITE_DONE else {
       throw AppOwnedWorkspaceStoreError.stepFailed(errorMessage(db))
@@ -205,6 +247,35 @@ extension AppOwnedWorkspaceStore {
     }
   }
 
+  func seedTaskSupplements(_ db: OpaquePointer) throws {
+    try exec(
+      db,
+      """
+      INSERT OR IGNORE INTO app_task_supplements (
+        task_id, reminder_external_identifier, scheduled_duration_minutes, updated_at
+      )
+      SELECT id, reminder_external_identifier, scheduled_duration_minutes, modified_at
+      FROM app_tasks
+      WHERE scheduled_duration_minutes IS NOT NULL AND scheduled_duration_minutes > 0;
+      """
+    )
+  }
+
+  func seedProjectSupplements(_ db: OpaquePointer) throws {
+    try exec(
+      db,
+      """
+      INSERT OR IGNORE INTO app_project_supplements (
+        project_id, note_markdown, progress_stage, start_date, deadline, is_archived,
+        color_hex, board_order, updated_at
+      )
+      SELECT id, note_markdown, progress_stage, start_date, deadline, is_archived,
+        color_hex, board_order, updated_at
+      FROM app_projects;
+      """
+    )
+  }
+
   func schemaVersion(_ db: OpaquePointer) throws -> String? {
     guard try tableExists(db, table: "app_metadata") else {
       return nil
@@ -228,32 +299,36 @@ extension AppOwnedWorkspaceStore {
     }.contains(column)
   }
 
-  func bind(_ binding: Binding, to statement: OpaquePointer, at index: Int32) {
+  func bind(_ binding: Binding, to statement: OpaquePointer, at index: Int32) throws {
+    let status: Int32
     switch binding {
     case .text(let value):
-      sqlite3_bind_text(statement, index, value, -1, appOwnedSQLiteTransient)
+      status = sqlite3_bind_text(statement, index, value, -1, appOwnedSQLiteTransient)
     case .optionalText(let value):
       if let value {
-        sqlite3_bind_text(statement, index, value, -1, appOwnedSQLiteTransient)
+        status = sqlite3_bind_text(statement, index, value, -1, appOwnedSQLiteTransient)
       } else {
-        sqlite3_bind_null(statement, index)
+        status = sqlite3_bind_null(statement, index)
       }
     case .int(let value):
-      sqlite3_bind_int64(statement, index, sqlite3_int64(value))
+      status = sqlite3_bind_int64(statement, index, sqlite3_int64(value))
     case .optionalInt(let value):
       if let value {
-        sqlite3_bind_int64(statement, index, sqlite3_int64(value))
+        status = sqlite3_bind_int64(statement, index, sqlite3_int64(value))
       } else {
-        sqlite3_bind_null(statement, index)
+        status = sqlite3_bind_null(statement, index)
       }
     case .double(let value):
-      sqlite3_bind_double(statement, index, value)
+      status = sqlite3_bind_double(statement, index, value)
     case .optionalDouble(let value):
       if let value {
-        sqlite3_bind_double(statement, index, value)
+        status = sqlite3_bind_double(statement, index, value)
       } else {
-        sqlite3_bind_null(statement, index)
+        status = sqlite3_bind_null(statement, index)
       }
+    }
+    guard status == SQLITE_OK else {
+      throw AppOwnedWorkspaceStoreError.invalidSQLiteValue("SQLite bind failed at index \(index)")
     }
   }
 

@@ -72,6 +72,49 @@ final class AppOwnedWorkspaceStoreTests: XCTestCase {
     XCTAssertEqual(task.schedule.rawRepeatRule, "daily")
   }
 
+  func testReplaceReminderSnapshotStoresImportedTimedDurationInCorrectColumns() async throws {
+    let store = AppOwnedWorkspaceStore(containerRootURL: try makeTemporaryDirectory())
+    let projectID = RetainedProjectionBuilder.derivedProjectID(for: "list-1")
+    let taskID = ReminderProjectionIdentity.taskID(for: "task-1")
+    let dueDate = try XCTUnwrap(
+      Self.calendar.date(from: DateComponents(year: 2026, month: 5, day: 2, hour: 9, minute: 30))
+    )
+    let createdAt = Date(timeIntervalSinceReferenceDate: 200)
+    let item = ReminderItemImportSnapshot(
+      identifier: "task-1",
+      externalIdentifier: "task-1",
+      parentExternalIdentifier: nil,
+      sourceListIdentifier: "list-1",
+      sourceListTitle: "Project",
+      title: "Task",
+      notes: "note",
+      attachmentCount: 0,
+      isCompleted: false,
+      completionDate: nil,
+      startDate: nil,
+      dueDate: dueDate,
+      scheduleHasExplicitTime: true,
+      scheduledDurationMinutes: 125,
+      priority: 0,
+      recurrenceRuleRaw: nil,
+      isFlagged: false,
+      requiredWorkDays: 0,
+      createdAt: createdAt,
+      modifiedAt: createdAt
+    )
+
+    try await store.replaceReminderSnapshot(
+      Self.batch(items: [item], createdAt: createdAt),
+      importedAt: createdAt
+    )
+
+    let task = try await store.taskReference(projectID: projectID, taskID: taskID)
+    XCTAssertEqual(task.dueDate, dueDate)
+    XCTAssertTrue(task.hasExplicitTime)
+    XCTAssertEqual(task.durationMinutes, 125)
+    XCTAssertEqual(task.priority, 0)
+  }
+
   func testProjectBoardOrderPersistsAcrossReminderImports() async throws {
     let store = AppOwnedWorkspaceStore(containerRootURL: try makeTemporaryDirectory())
     let importedAt = Date(timeIntervalSinceReferenceDate: 201)
@@ -417,6 +460,40 @@ final class AppOwnedWorkspaceStoreTests: XCTestCase {
     XCTAssertEqual(project.colorHex, "#333333")
   }
 
+  func testReplaceReminderSnapshotRestoresProjectStageFromPersistentSupplementStore() async throws {
+    let containerRoot = try makeTemporaryDirectory()
+    let store = AppOwnedWorkspaceStore(containerRootURL: containerRoot)
+    let projectID = RetainedProjectionBuilder.derivedProjectID(for: "list-1")
+    let importedAt = Date(timeIntervalSinceReferenceDate: 270)
+    let batch = ReminderImportSnapshotBatch(
+      lists: [
+        ReminderListImportSnapshot(
+          identifier: "list-1",
+          externalIdentifier: "list-1",
+          title: "Project",
+          colorHex: "#111111"
+        )
+      ],
+      itemsByListIdentifier: [:]
+    )
+    try await store.replaceReminderSnapshot(batch, importedAt: importedAt)
+    try await store.updateProjectStage(
+      projectID: projectID,
+      stage: .area,
+      modifiedAt: importedAt.addingTimeInterval(1)
+    )
+    try clearStoredProjectStages(containerRoot: containerRoot)
+
+    try await store.replaceReminderSnapshot(
+      batch,
+      importedAt: importedAt.addingTimeInterval(2)
+    )
+    let snapshot = try await store.loadRetainedWorkspaceSnapshot(projectIDs: [projectID])
+    let project = try XCTUnwrap(snapshot.projects.first)
+
+    XCTAssertEqual(project.progressStage, .area)
+  }
+
   func testReplaceReminderSnapshotKeepsTaskDurationAcrossImports() async throws {
     let store = AppOwnedWorkspaceStore(containerRootURL: try makeTemporaryDirectory())
     let taskID = ReminderProjectionIdentity.taskID(for: "task-1")
@@ -464,6 +541,56 @@ final class AppOwnedWorkspaceStoreTests: XCTestCase {
     let task = try XCTUnwrap(snapshot.tasks.first)
 
     XCTAssertEqual(task.schedule.durationMinutes, 45)
+  }
+
+  func testReplaceReminderSnapshotRestoresDurationFromPersistentSupplementStore() async throws {
+    let containerRoot = try makeTemporaryDirectory()
+    let store = AppOwnedWorkspaceStore(containerRootURL: containerRoot)
+    let taskID = ReminderProjectionIdentity.taskID(for: "task-1")
+    let createdAt = Date(timeIntervalSinceReferenceDate: 304)
+    let dueDate = try XCTUnwrap(
+      Self.calendar.date(from: DateComponents(year: 2026, month: 5, day: 2, hour: 9, minute: 30))
+    )
+    let item = ReminderItemImportSnapshot(
+      identifier: "task-identifier",
+      externalIdentifier: "task-1",
+      parentExternalIdentifier: nil,
+      sourceListIdentifier: "list-1",
+      sourceListTitle: "Project",
+      title: "Task",
+      notes: "",
+      attachmentCount: 0,
+      isCompleted: false,
+      completionDate: nil,
+      startDate: nil,
+      dueDate: dueDate,
+      scheduleHasExplicitTime: true,
+      scheduledDurationMinutes: nil,
+      priority: 0,
+      recurrenceRuleRaw: nil,
+      isFlagged: false,
+      requiredWorkDays: 0,
+      createdAt: createdAt,
+      modifiedAt: createdAt
+    )
+
+    try await store.replaceReminderSnapshot(
+      Self.batch(items: [item], createdAt: createdAt),
+      importedAt: createdAt
+    )
+    try await store.mergeTaskSupplements([
+      AppOwnedWorkspaceStore.TaskSupplement(taskID: taskID, durationMinutes: 90)
+    ])
+    try clearStoredTaskDurations(containerRoot: containerRoot)
+
+    try await store.replaceReminderSnapshot(
+      Self.batch(items: [item], createdAt: createdAt.addingTimeInterval(10)),
+      importedAt: createdAt.addingTimeInterval(10)
+    )
+    let snapshot = try await store.loadRetainedWorkspaceSnapshot(projectIDs: [])
+    let task = try XCTUnwrap(snapshot.tasks.first)
+
+    XCTAssertEqual(task.schedule.durationMinutes, 90)
   }
 
   func testReplaceReminderSnapshotKeepsLocalTaskDurationWhenImportHasDefaultDuration() async throws {
@@ -1310,5 +1437,27 @@ final class AppOwnedWorkspaceStoreTests: XCTestCase {
       .appendingPathComponent("AppOwnedWorkspaceStoreTests-\(UUID().uuidString)", isDirectory: true)
     try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
     return url
+  }
+
+  private func clearStoredTaskDurations(containerRoot: URL) throws {
+    let sqliteURL = ContainerPaths(root: containerRoot).sqliteURL
+    var db: OpaquePointer?
+    XCTAssertEqual(sqlite3_open(sqliteURL.path, &db), SQLITE_OK)
+    defer { sqlite3_close(db) }
+    XCTAssertEqual(
+      sqlite3_exec(db, "UPDATE app_tasks SET scheduled_duration_minutes = NULL;", nil, nil, nil),
+      SQLITE_OK
+    )
+  }
+
+  private func clearStoredProjectStages(containerRoot: URL) throws {
+    let sqliteURL = ContainerPaths(root: containerRoot).sqliteURL
+    var db: OpaquePointer?
+    XCTAssertEqual(sqlite3_open(sqliteURL.path, &db), SQLITE_OK)
+    defer { sqlite3_close(db) }
+    XCTAssertEqual(
+      sqlite3_exec(db, "UPDATE app_projects SET progress_stage = 'do';", nil, nil, nil),
+      SQLITE_OK
+    )
   }
 }

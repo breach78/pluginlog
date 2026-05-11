@@ -359,6 +359,88 @@ final class AppOwnedRetainedTaskCommandServiceTests: XCTestCase {
   }
 
   @MainActor
+  func testAppOwnedScheduleEditRefreshesStaleReminderIdentifierAndRetries() async throws {
+    let start = try XCTUnwrap(
+      Self.calendar.date(from: DateComponents(year: 2026, month: 5, day: 2, hour: 9, minute: 30))
+    )
+    let expectedDate = try XCTUnwrap(
+      Self.calendar.date(from: DateComponents(year: 2026, month: 5, day: 2, hour: 11, minute: 15))
+    )
+    let fixture = try await makeEnabledStoreFixture(
+      taskExternalIdentifier: "task-1",
+      dueDate: start,
+      scheduleHasExplicitTime: true,
+      scheduledDurationMinutes: 90
+    )
+    let provider = FakeAppOwnedReminderProjectProvider()
+    provider.scheduleMetadataResults = [
+      nil,
+      ReminderTaskRemoteMetadata(
+        identifier: "fresh-task-identifier",
+        externalIdentifier: "task-1",
+        modifiedAt: Date(timeIntervalSinceReferenceDate: 710)
+      ),
+    ]
+    provider.fetchedImportSnapshotBatch = ReminderImportSnapshotBatch(
+      lists: [
+        ReminderListImportSnapshot(
+          identifier: "list-1",
+          externalIdentifier: "list-1",
+          title: "Project",
+          colorHex: nil
+        )
+      ],
+      itemsByListIdentifier: [
+        "list-1": [
+          ReminderItemImportSnapshot(
+            identifier: "fresh-task-identifier",
+            externalIdentifier: "task-1",
+            parentExternalIdentifier: nil,
+            sourceListIdentifier: "list-1",
+            sourceListTitle: "Project",
+            title: "Task",
+            notes: "",
+            attachmentCount: 0,
+            isCompleted: false,
+            completionDate: nil,
+            startDate: nil,
+            dueDate: start,
+            scheduleHasExplicitTime: true,
+            scheduledDurationMinutes: nil,
+            priority: 0,
+            recurrenceRuleRaw: nil,
+            isFlagged: false,
+            requiredWorkDays: 0,
+            createdAt: Date(timeIntervalSinceReferenceDate: 700),
+            modifiedAt: Date(timeIntervalSinceReferenceDate: 700)
+          )
+        ]
+      ]
+    )
+    let taskID = ReminderProjectionIdentity.taskID(for: "task-1")
+
+    _ = try await ObsidianRetainedTaskCommandService.setTaskSchedule(
+      vaultRootURL: fixture.vaultRoot,
+      projectID: fixture.projectID,
+      taskID: taskID,
+      day: Self.calendar.startOfDay(for: start),
+      timeMinutes: 11 * 60 + 15,
+      durationMinutes: nil,
+      calendar: Self.calendar,
+      reminderProjectProvider: provider
+    )
+    let task = try await fixture.store.taskReference(projectID: fixture.projectID, taskID: taskID)
+
+    XCTAssertEqual(provider.scheduleTaskReferences.map(\.reminderIdentifier), [
+      "task-identifier",
+      "fresh-task-identifier",
+    ])
+    XCTAssertEqual(task.reminderIdentifier, "fresh-task-identifier")
+    XCTAssertEqual(task.dueDate, expectedDate)
+    XCTAssertEqual(task.durationMinutes, 90)
+  }
+
+  @MainActor
   func testAppOwnedRecurringCompletionUsesAdvancedReminderSnapshotAndClearsTime() async throws {
     let dueDate = try XCTUnwrap(Self.calendar.date(from: DateComponents(year: 2026, month: 5, day: 2, hour: 2)))
     let nextDueDate = try XCTUnwrap(Self.calendar.date(from: DateComponents(year: 2026, month: 5, day: 9, hour: 2)))
@@ -616,14 +698,24 @@ private final class FakeAppOwnedReminderProjectProvider: ReminderProjectProvider
   var projectColorUpdate: (String, String?)?
   var completionUpdate: (UUID, Bool)?
   var scheduleUpdate: (Date?, Bool)?
+  var scheduleTaskReferences: [ReminderTaskReference] = []
+  var scheduleMetadataResults: [ReminderTaskRemoteMetadata?]?
   var recurrenceUpdate: (String?, String?)?
   var removedTaskExternalIdentifiers: [String?] = []
   var remoteTaskSnapshot: ReminderTaskRemoteSnapshot?
+  var fetchedImportSnapshotBatch: ReminderImportSnapshotBatch?
   var presentationUpdates: [String: Int] = [:]
 
   var defaultCalendarIdentifierForNewReminders: String? { "list-1" }
 
   func requestAccess() async throws -> Bool { true }
+  func fetchImportSnapshotBatch(
+    forListIdentifiers identifiers: [String]
+  ) async throws -> ReminderImportSnapshotBatch? {
+    _ = identifiers
+    return fetchedImportSnapshotBatch
+  }
+
   func createProjectList(title: String) throws -> ReminderProjectListSnapshot {
     ReminderProjectListSnapshot(identifier: "list-1", externalIdentifier: "list-1", title: title, colorHex: nil)
   }
@@ -696,8 +788,15 @@ private final class FakeAppOwnedReminderProjectProvider: ReminderProjectProvider
     dueDate: Date?,
     hasExplicitTime: Bool
   ) throws -> ReminderTaskRemoteMetadata? {
-    _ = task
+    scheduleTaskReferences.append(task)
     scheduleUpdate = (dueDate, hasExplicitTime)
+    let metadata: ReminderTaskRemoteMetadata?
+    if var scheduleMetadataResults {
+      metadata = scheduleMetadataResults.removeFirst()
+      self.scheduleMetadataResults = scheduleMetadataResults
+    } else {
+      metadata = updateMetadata
+    }
     if let snapshot = remoteTaskSnapshot {
       remoteTaskSnapshot = ReminderTaskRemoteSnapshot(
         identifier: snapshot.identifier,
@@ -712,10 +811,10 @@ private final class FakeAppOwnedReminderProjectProvider: ReminderProjectProvider
         hasExplicitTime: hasExplicitTime,
         priority: snapshot.priority,
         recurrenceRuleRaw: snapshot.recurrenceRuleRaw,
-        modifiedAt: updateMetadata.modifiedAt
+        modifiedAt: metadata?.modifiedAt ?? updateMetadata.modifiedAt
       )
     }
-    return updateMetadata
+    return metadata
   }
 
   func setTaskRecurrence(
