@@ -132,6 +132,14 @@ struct ScheduleMonthDayScheduleMutationPreview: Equatable {
   let day: Date
   let timeMinutes: Int?
   let durationMinutes: Int?
+
+  var interactionPreview: ScheduleInteractionPreview {
+    ScheduleInteractionPreview(
+      day: day,
+      timeMinutes: timeMinutes,
+      durationMinutes: durationMinutes
+    )
+  }
 }
 
 struct ScheduleMonthDayScheduleCreatePreview: Equatable {

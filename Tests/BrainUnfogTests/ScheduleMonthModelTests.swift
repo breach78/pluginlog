@@ -341,6 +341,68 @@ final class ScheduleMonthModelTests: XCTestCase {
     XCTAssertEqual(calendar.component(.day, from: movedStart), 14)
   }
 
+  func testMonthDragTargetResolutionReturnsMonthDayInteractionTarget() throws {
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+    let originalStart = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 5, day: 7)))
+    let clickedDay = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 5, day: 9)))
+    let currentPointerDay = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 5, day: 16)))
+
+    let resolution = try XCTUnwrap(
+      ScheduleMonthDragTargetResolution.localMonthTarget(
+        originalStartDay: originalStart,
+        startPointerDay: clickedDay,
+        currentPointerDay: currentPointerDay,
+        calendar: calendar
+      )
+    )
+
+    let expectedDay = try XCTUnwrap(
+      calendar.date(from: DateComponents(year: 2026, month: 5, day: 14))
+    )
+    XCTAssertEqual(resolution.target, .monthDay(expectedDay))
+    XCTAssertEqual(resolution.highlightDay, currentPointerDay)
+  }
+
+  func testMonthLocalDragSessionCarriesCommonTargetAndPointerAnchor() throws {
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+    let originalStart = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 5, day: 7)))
+    let clickedDay = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 5, day: 9)))
+    let currentPointerDay = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 5, day: 16)))
+
+    let session = try XCTUnwrap(
+      ScheduleMonthDragSessionState.local(
+        originalStartDay: originalStart,
+        startPointerDay: clickedDay,
+        currentPointerDay: currentPointerDay,
+        calendar: calendar
+      )
+    )
+
+    let expectedDay = try XCTUnwrap(
+      calendar.date(from: DateComponents(year: 2026, month: 5, day: 14))
+    )
+    XCTAssertEqual(session.startPointerDay, clickedDay)
+    XCTAssertEqual(session.target, .monthDay(expectedDay))
+    XCTAssertEqual(session.highlightDay, currentPointerDay)
+  }
+
+  func testMonthExternalDragSessionUsesCommonMonthTargetWithoutHighlight() throws {
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+    let targetDay = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 5, day: 12)))
+
+    let session = ScheduleMonthDragSessionState.external(
+      targetDay: targetDay,
+      calendar: calendar
+    )
+
+    XCTAssertNil(session.startPointerDay)
+    XCTAssertNil(session.highlightDay)
+    XCTAssertEqual(session.target, .monthDay(targetDay))
+  }
+
   func testScheduleMonthDragPayloadRoundTripsTaskAndCalendarEventItems() {
     let taskID = UUID()
     let calendarEventID = "calendar/event:2026-05-10"
@@ -477,6 +539,146 @@ final class ScheduleMonthModelTests: XCTestCase {
     XCTAssertEqual(updatedState.timeContentMinYInPanel, -180)
     XCTAssertEqual(preview.timeMinutes, 14 * 60 + 30)
     XCTAssertEqual(preview.durationMinutes, 30)
+  }
+
+  func testDayPanelMoveTargetUsesCommonInteractionTarget() throws {
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+    let targetDay = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 5, day: 12)))
+    let item = makeMonthItem(
+      id: "timed-task",
+      source: .workspaceTask(taskID: UUID(), projectID: UUID()),
+      startDate: try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 5, day: 12, hour: 9))),
+      endDate: try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 5, day: 12, hour: 10))),
+      isAllDay: false
+    )
+    var state = ScheduleMonthDayItemDragState(
+      itemID: item.id,
+      originalItem: item,
+      originalTimeMinutes: 9 * 60,
+      originalDurationMinutes: 60,
+      originalPointerScheduleY: 9 * 60,
+      originalTopScheduleY: 9 * 60,
+      originalX: nil,
+      originalWidth: nil,
+      allDayBoundaryYInPanel: 120,
+      timeContentMinYInPanel: 0,
+      isInAllDayZone: false
+    )
+    state.currentPointerPanelY = 11 * 60 + 6
+
+    let metrics = ScheduleMonthDayInteractionAdapter.metrics(
+      hourHeight: 60,
+      minimumDurationMinutes: 30
+    )
+    let target = ScheduleMonthDayInteractionAdapter.moveTarget(
+      for: state,
+      targetDay: targetDay,
+      calendar: calendar,
+      metrics: metrics
+    )
+
+    XCTAssertEqual(
+      ScheduleInteractionEngine.movePreview(
+        originalTimeMinutes: state.originalTimeMinutes,
+        originalDurationMinutes: state.originalDurationMinutes,
+        target: target,
+        metrics: metrics
+      ),
+      ScheduleMonthDayInteractionAdapter.movePreview(
+        for: state,
+        targetDay: targetDay,
+        calendar: calendar,
+        metrics: metrics
+      ).interactionPreview
+    )
+  }
+
+  func testDayPanelMoveTargetReturnsAllDayTargetInAllDayZone() throws {
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+    let targetDay = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 5, day: 12)))
+    let item = makeMonthItem(
+      id: "timed-task",
+      source: .workspaceTask(taskID: UUID(), projectID: UUID()),
+      startDate: try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 5, day: 12, hour: 9))),
+      endDate: try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 5, day: 12, hour: 10))),
+      isAllDay: false
+    )
+    let state = ScheduleMonthDayItemDragState(
+      itemID: item.id,
+      originalItem: item,
+      originalTimeMinutes: 9 * 60,
+      originalDurationMinutes: 60,
+      originalPointerScheduleY: 9 * 60,
+      originalTopScheduleY: 9 * 60,
+      originalX: nil,
+      originalWidth: nil,
+      allDayBoundaryYInPanel: 120,
+      timeContentMinYInPanel: 0,
+      isInAllDayZone: true
+    )
+
+    let target = ScheduleMonthDayInteractionAdapter.moveTarget(
+      for: state,
+      targetDay: targetDay,
+      calendar: calendar,
+      metrics: ScheduleMonthDayInteractionAdapter.metrics(
+        hourHeight: 60,
+        minimumDurationMinutes: 30
+      )
+    )
+
+    XCTAssertEqual(target, .allDay(targetDay))
+  }
+
+  func testDayPanelExternalMonthDropPreviewUsesCommonMonthTarget() throws {
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+    let targetDay = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 5, day: 14)))
+    let item = makeMonthItem(
+      id: "timed-task",
+      source: .workspaceTask(taskID: UUID(), projectID: UUID()),
+      startDate: try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 5, day: 12, hour: 9))),
+      endDate: try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 5, day: 12, hour: 10, minute: 30))),
+      isAllDay: false
+    )
+    let state = ScheduleMonthDayItemDragState(
+      itemID: item.id,
+      originalItem: item,
+      originalTimeMinutes: 9 * 60,
+      originalDurationMinutes: 90,
+      originalPointerScheduleY: 9 * 60,
+      originalTopScheduleY: 9 * 60,
+      originalX: nil,
+      originalWidth: nil,
+      allDayBoundaryYInPanel: 120,
+      timeContentMinYInPanel: 0,
+      isInAllDayZone: false
+    )
+    let metrics = ScheduleMonthDayInteractionAdapter.metrics(
+      hourHeight: 60,
+      minimumDurationMinutes: 30
+    )
+    let target = ScheduleMonthDragSessionState.external(
+      targetDay: targetDay,
+      calendar: calendar
+    ).target
+
+    XCTAssertEqual(
+      ScheduleMonthDayInteractionAdapter.externalMonthDropPreview(
+        for: state,
+        targetDay: targetDay,
+        calendar: calendar,
+        metrics: metrics
+      ).interactionPreview,
+      ScheduleInteractionEngine.movePreview(
+        originalTimeMinutes: state.originalTimeMinutes,
+        originalDurationMinutes: state.originalDurationMinutes,
+        target: target,
+        metrics: metrics
+      )
+    )
   }
 
   func testScheduleMonthDropTargetResolverMapsGlobalPointToDay() throws {

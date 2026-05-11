@@ -43,31 +43,60 @@ enum ScheduleMonthDayInteractionAdapter {
     calendar: Calendar,
     metrics: ScheduleInteractionMetrics
   ) -> ScheduleMonthDayScheduleMutationPreview {
+    let target = moveTarget(
+      for: state,
+      targetDay: targetDay,
+      calendar: calendar,
+      metrics: metrics
+    )
+    return (
+      ScheduleInteractionEngine.movePreview(
+        originalTimeMinutes: state.originalTimeMinutes,
+        originalDurationMinutes: state.originalDurationMinutes,
+        target: target,
+        metrics: metrics
+      ) ?? ScheduleInteractionPreview(day: targetDay, timeMinutes: nil, durationMinutes: nil)
+    ).monthDayPreview(itemID: state.itemID, fallbackDay: targetDay)
+  }
+
+  static func moveTarget(
+    for state: ScheduleMonthDayItemDragState,
+    targetDay: Date,
+    calendar: Calendar,
+    metrics: ScheduleInteractionMetrics
+  ) -> ScheduleInteractionTarget {
     if state.isInAllDayZone {
-      return (
-        ScheduleInteractionEngine.movePreview(
-          originalTimeMinutes: state.originalTimeMinutes,
-          originalDurationMinutes: state.originalDurationMinutes,
-          target: .allDay(targetDay),
-          metrics: metrics
-        ) ?? ScheduleInteractionPreview(day: targetDay, timeMinutes: nil, durationMinutes: nil)
-      ).monthDayPreview(itemID: state.itemID, fallbackDay: targetDay)
+      return .allDay(targetDay)
     }
 
     let currentPointerScheduleY = currentPointerScheduleY(for: state)
     let projectedTopY = currentPointerScheduleY - (state.originalPointerScheduleY - state.originalTopScheduleY)
-    let preview = ScheduleInteractionEngine.movePreview(
-      originalTimeMinutes: state.originalTimeMinutes,
-      originalDurationMinutes: state.originalDurationMinutes,
-      target: ScheduleInteractionEngine.timedTarget(
-        visibleDay: targetDay,
-        scheduleY: projectedTopY,
-        metrics: metrics,
-        calendar: calendar
-      ),
-      metrics: metrics
-    ) ?? ScheduleInteractionPreview(day: targetDay, timeMinutes: nil, durationMinutes: nil)
-    return preview.monthDayPreview(itemID: state.itemID, fallbackDay: targetDay)
+    return ScheduleInteractionEngine.timedTarget(
+      visibleDay: targetDay,
+      scheduleY: projectedTopY,
+      metrics: metrics,
+      calendar: calendar
+    )
+  }
+
+  static func externalMonthDropPreview(
+    for state: ScheduleMonthDayItemDragState,
+    targetDay: Date,
+    calendar: Calendar,
+    metrics: ScheduleInteractionMetrics
+  ) -> ScheduleMonthDayScheduleMutationPreview {
+    let target = ScheduleMonthDragSessionState.external(
+      targetDay: targetDay,
+      calendar: calendar
+    ).target
+    return (
+      ScheduleInteractionEngine.movePreview(
+        originalTimeMinutes: state.originalTimeMinutes,
+        originalDurationMinutes: state.originalDurationMinutes,
+        target: target,
+        metrics: metrics
+      ) ?? ScheduleInteractionPreview(day: targetDay, timeMinutes: nil, durationMinutes: nil)
+    ).monthDayPreview(itemID: state.itemID, fallbackDay: targetDay)
   }
 
   static func resizePreview(

@@ -935,11 +935,11 @@ struct ScheduleMonthDaySchedulePanel: View {
     for state: ScheduleMonthDayItemDragState,
     targetDay: Date
   ) -> ScheduleMonthDayScheduleMutationPreview {
-    ScheduleMonthDayScheduleMutationPreview(
-      itemID: state.itemID,
-      day: calendar.startOfDay(for: targetDay),
-      timeMinutes: state.originalTimeMinutes,
-      durationMinutes: state.originalDurationMinutes
+    ScheduleMonthDayInteractionAdapter.externalMonthDropPreview(
+      for: state,
+      targetDay: targetDay,
+      calendar: calendar,
+      metrics: interactionMetrics
     )
   }
 

@@ -1687,11 +1687,10 @@ extension ScheduleBoardView {
     _ = applyTaskInteractionCommand(command, actionName: "일정 배치")
   }
 
-  func moveScheduleMonthItem(_ item: ScheduleMonthDragItem, to targetDay: Date) {
-    let normalizedTargetDay = calendar.startOfDay(for: targetDay)
+  func moveScheduleMonthItem(_ item: ScheduleMonthDragItem, to target: ScheduleInteractionTarget) {
     releaseActiveTextResponderForUndo()
     suppressTaskTap(for: 0.2)
-    guard let command = monthMoveCommand(for: item, to: normalizedTargetDay) else { return }
+    guard let command = monthMoveCommand(for: item, to: target) else { return }
     let commandPreview = command.schedulePreview()
 
     switch item {
@@ -1754,9 +1753,8 @@ extension ScheduleBoardView {
 
   func monthMoveCommand(
     for item: ScheduleMonthDragItem,
-    to targetDay: Date
+    to target: ScheduleInteractionTarget
   ) -> ScheduleInteractionCommand? {
-    let target = ScheduleInteractionTarget.monthDay(calendar.startOfDay(for: targetDay))
     switch item {
     case .task(let taskID):
       guard let taskDescriptor = scheduleTaskDescriptor(for: taskID) else { return nil }

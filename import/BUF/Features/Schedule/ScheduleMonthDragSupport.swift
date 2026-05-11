@@ -101,6 +101,87 @@ struct ScheduleMonthDropTarget: Equatable {
   let frame: CGRect
 }
 
+struct ScheduleMonthDragTargetResolution: Equatable {
+  let target: ScheduleInteractionTarget
+  let highlightDay: Date?
+
+  static func localMonthTarget(
+    originalStartDay: Date,
+    startPointerDay: Date,
+    currentPointerDay: Date,
+    calendar: Calendar
+  ) -> ScheduleMonthDragTargetResolution? {
+    guard
+      let targetDay = ScheduleMonthDragGeometry.movedStartDay(
+        originalStartDay: originalStartDay,
+        startPointerDay: startPointerDay,
+        currentPointerDay: currentPointerDay,
+        calendar: calendar
+      )
+    else {
+      return nil
+    }
+    return ScheduleMonthDragTargetResolution(
+      target: .monthDay(targetDay),
+      highlightDay: calendar.startOfDay(for: currentPointerDay)
+    )
+  }
+
+  static func externalMonthTarget(
+    targetDay: Date,
+    calendar: Calendar
+  ) -> ScheduleMonthDragTargetResolution {
+    ScheduleMonthDragTargetResolution(
+      target: .monthDay(calendar.startOfDay(for: targetDay)),
+      highlightDay: nil
+    )
+  }
+}
+
+struct ScheduleMonthDragSessionState: Equatable {
+  let startPointerDay: Date?
+  let target: ScheduleInteractionTarget
+  let highlightDay: Date?
+
+  static func local(
+    originalStartDay: Date,
+    startPointerDay: Date,
+    currentPointerDay: Date,
+    calendar: Calendar
+  ) -> ScheduleMonthDragSessionState? {
+    guard
+      let resolution = ScheduleMonthDragTargetResolution.localMonthTarget(
+        originalStartDay: originalStartDay,
+        startPointerDay: startPointerDay,
+        currentPointerDay: currentPointerDay,
+        calendar: calendar
+      )
+    else {
+      return nil
+    }
+    return ScheduleMonthDragSessionState(
+      startPointerDay: calendar.startOfDay(for: startPointerDay),
+      target: resolution.target,
+      highlightDay: resolution.highlightDay
+    )
+  }
+
+  static func external(
+    targetDay: Date,
+    calendar: Calendar
+  ) -> ScheduleMonthDragSessionState {
+    let resolution = ScheduleMonthDragTargetResolution.externalMonthTarget(
+      targetDay: targetDay,
+      calendar: calendar
+    )
+    return ScheduleMonthDragSessionState(
+      startPointerDay: nil,
+      target: resolution.target,
+      highlightDay: resolution.highlightDay
+    )
+  }
+}
+
 enum ScheduleScreenPointMapper {
   static func screenPoint(localLocation: CGPoint, in frame: CGRect) -> CGPoint? {
     guard !frame.isNull, frame.width >= 0, frame.height >= 0 else { return nil }

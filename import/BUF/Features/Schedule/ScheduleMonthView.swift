@@ -25,7 +25,7 @@ struct ScheduleMonthView: View {
   let calendar: Calendar
   let onSelectDay: (Date, [ScheduleMonthItem]) -> Void
   let onToggleTaskCompletion: (UUID, UUID, Bool) -> Void
-  let onMoveItem: (ScheduleMonthDragItem, Date) -> Void
+  let onMoveItem: (ScheduleMonthDragItem, ScheduleInteractionTarget) -> Void
   let externalDragTargetDate: Date?
   let externalDayDropTarget: ScheduleMonthDropTarget?
   let onDropTargetsChanged: ([ScheduleMonthDropTarget]) -> Void
@@ -253,7 +253,7 @@ private struct ScheduleMonthWeekRow: View {
   let externalDragTargetDate: Date?
   let onSelectDay: (Date, [ScheduleMonthItem]) -> Void
   let onToggleTaskCompletion: (UUID, UUID, Bool) -> Void
-  let onMoveItem: (ScheduleMonthDragItem, Date) -> Void
+  let onMoveItem: (ScheduleMonthDragItem, ScheduleInteractionTarget) -> Void
   let externalDayDropTarget: ScheduleMonthDropTarget?
   let onRowDropTargetsChanged: (Date, [ScheduleMonthDropTarget]) -> Void
   @State private var rowFrameInScreen: CGRect = .null
@@ -287,9 +287,7 @@ private struct ScheduleMonthWeekRow: View {
               hiddenAllDayItemCount: hiddenAllDayItemCount(on: dayIndex),
               reservedAllDayRowCount: visibleAllDayRowCount(on: dayIndex),
               isSelected: selectedDate.map { calendar.isDate($0, inSameDayAs: dayLayout.day) } ?? false,
-              isDragTarget:
-                activeDragDate.map { calendar.isDate($0, inSameDayAs: dayLayout.day) } ?? false
-                || externalDragTargetDate.map { calendar.isDate($0, inSameDayAs: dayLayout.day) } ?? false,
+              isDragTarget: isDragTarget(dayLayout.day),
               weekStart: layout.weekStart,
               rowSize: rowSize,
               rowCoordinateSpaceName: rowCoordinateSpaceName,
@@ -389,6 +387,11 @@ private struct ScheduleMonthWeekRow: View {
     max(0, visibleItemLimit - visibleAllDayRowCount(on: dayIndex))
   }
 
+  private func isDragTarget(_ day: Date) -> Bool {
+    activeDragDate.map { calendar.isDate($0, inSameDayAs: day) } ?? false
+      || externalDragTargetDate.map { calendar.isDate($0, inSameDayAs: day) } ?? false
+  }
+
   private func visibleAllDayRowCount(on dayIndex: Int) -> Int {
     ScheduleMonthSpanLayout.visibleAllDayRowCount(
       on: dayIndex,
@@ -469,7 +472,7 @@ private struct ScheduleMonthDayCell: View {
   let calendar: Calendar
   let onSelect: () -> Void
   let onToggleTaskCompletion: (UUID, UUID, Bool) -> Void
-  let onMoveItem: (ScheduleMonthDragItem, Date) -> Void
+  let onMoveItem: (ScheduleMonthDragItem, ScheduleInteractionTarget) -> Void
   let externalDayDropTarget: ScheduleMonthDropTarget?
 
   @State private var suppressedSelectUntil: Date = .distantPast
@@ -844,11 +847,10 @@ private struct ScheduleMonthLocalDragModifier: ViewModifier {
   @Binding var activeDragDate: Date?
   @Binding var activeDragFeedback: ScheduleMonthDragFeedback?
   let calendar: Calendar
-  let onMoveItem: (ScheduleMonthDragItem, Date) -> Void
+  let onMoveItem: (ScheduleMonthDragItem, ScheduleInteractionTarget) -> Void
   let externalDayDropTarget: ScheduleMonthDropTarget?
 
-  @State private var startPointerDay: Date?
-  @State private var pendingTargetStartDay: Date?
+  @State private var dragSession: ScheduleMonthDragSessionState?
 
   func body(content: Content) -> some View {
     if let dragItem = ScheduleMonthDragSupport.dragItem(for: item) {
@@ -871,19 +873,23 @@ private struct ScheduleMonthLocalDragModifier: ViewModifier {
   private func updateDrag(_ value: DragGesture.Value, dragItem _: ScheduleMonthDragItem) {
     let originalStartDay = calendar.startOfDay(for: item.startDate)
     if let externalTargetDay = externalDayPanelTargetDay(for: value) {
-      activeDragDate = nil
+      let session = ScheduleMonthDragSessionState.external(
+        targetDay: externalTargetDay,
+        calendar: calendar
+      )
+      activeDragDate = session.highlightDay
       activeDragFeedback = ScheduleMonthDragFeedback(
         item: item,
         weekStart: weekStart,
         location: value.location
       )
-      pendingTargetStartDay = externalTargetDay
+      dragSession = session
       NSCursor.dragCopy.set()
       return
     }
 
     let resolvedStartPointerDay =
-      startPointerDay
+      dragSession?.startPointerDay
       ?? ScheduleMonthDragGeometry.day(
         at: value.startLocation,
         weekStart: weekStart,
@@ -901,34 +907,34 @@ private struct ScheduleMonthLocalDragModifier: ViewModifier {
       return
     }
 
-    startPointerDay = resolvedStartPointerDay
-    activeDragDate = currentPointerDay
+    guard let session = ScheduleMonthDragSessionState.local(
+      originalStartDay: originalStartDay,
+      startPointerDay: resolvedStartPointerDay,
+      currentPointerDay: currentPointerDay,
+      calendar: calendar
+    ) else { return }
+
+    dragSession = session
+    activeDragDate = session.highlightDay
     NSCursor.closedHand.set()
     activeDragFeedback = ScheduleMonthDragFeedback(
       item: item,
       weekStart: weekStart,
       location: value.location
     )
-    pendingTargetStartDay = ScheduleMonthDragGeometry.movedStartDay(
-      originalStartDay: originalStartDay,
-      startPointerDay: resolvedStartPointerDay,
-      currentPointerDay: currentPointerDay,
-      calendar: calendar
-    )
   }
 
   private func finishDrag(_ value: DragGesture.Value, dragItem: ScheduleMonthDragItem) {
     defer { NSCursor.arrow.set() }
     updateDrag(value, dragItem: dragItem)
-    let targetStartDay = pendingTargetStartDay
+    let target = dragSession?.target
 
-    startPointerDay = nil
-    pendingTargetStartDay = nil
+    dragSession = nil
     activeDragDate = nil
     activeDragFeedback = nil
 
-    guard let targetStartDay else { return }
-    onMoveItem(dragItem, targetStartDay)
+    guard let target else { return }
+    onMoveItem(dragItem, target)
   }
 
   private func externalDayPanelTargetDay(for value: DragGesture.Value) -> Date? {
@@ -952,7 +958,7 @@ private struct ScheduleMonthExternalItemDropDelegate: DropDelegate {
   let targetDay: Date
   @Binding var activeDragDate: Date?
   let calendar: Calendar
-  let onMoveItem: (ScheduleMonthDragItem, Date) -> Void
+  let onMoveItem: (ScheduleMonthDragItem, ScheduleInteractionTarget) -> Void
 
   func validateDrop(info: DropInfo) -> Bool {
     dropProvider(in: info) != nil
@@ -979,10 +985,13 @@ private struct ScheduleMonthExternalItemDropDelegate: DropDelegate {
     guard let provider = dropProvider(in: info) else {
       return false
     }
-    let normalizedTargetDay = calendar.startOfDay(for: targetDay)
+    let target = ScheduleMonthDragSessionState.external(
+      targetDay: targetDay,
+      calendar: calendar
+    ).target
     loadDragItem(from: provider) { dragItem in
       guard let dragItem else { return }
-      onMoveItem(dragItem, normalizedTargetDay)
+      onMoveItem(dragItem, target)
     }
     return true
   }

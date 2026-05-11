@@ -1194,8 +1194,8 @@ struct ScheduleBoardView: View {
           registerUndo: true
         )
       },
-      onMoveItem: { item, targetDay in
-        moveScheduleMonthItem(item, to: targetDay)
+      onMoveItem: { item, target in
+        moveScheduleMonthItem(item, to: target)
       },
       externalDragTargetDate: externalMonthDragTargetDate,
       externalDayDropTarget: externalDayDropTarget,
