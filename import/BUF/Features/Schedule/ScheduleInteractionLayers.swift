@@ -24,6 +24,33 @@ struct ScheduleExternalDropMetrics {
 }
 
 enum ScheduleDragDropInteractionLayer {
+  static func initialPointerViewportLocation(
+    currentPointerViewportLocation: CGPoint?,
+    translation: CGSize,
+    originalViewportFrame: CGRect,
+    gestureStartLocation: CGPoint
+  ) -> CGPoint {
+    if let currentPointerViewportLocation {
+      return CGPoint(
+        x: currentPointerViewportLocation.x - translation.width,
+        y: currentPointerViewportLocation.y - translation.height
+      )
+    }
+
+    if gestureStartLocation.x >= 0,
+      gestureStartLocation.y >= 0,
+      gestureStartLocation.x <= originalViewportFrame.width,
+      gestureStartLocation.y <= originalViewportFrame.height
+    {
+      return CGPoint(
+        x: originalViewportFrame.minX + gestureStartLocation.x,
+        y: originalViewportFrame.minY + gestureStartLocation.y
+      )
+    }
+
+    return gestureStartLocation
+  }
+
   static func externalDropPreview(
     at location: CGPoint,
     days: [Date],
@@ -123,10 +150,26 @@ enum ScheduleDragDropInteractionLayer {
     resolvedDropFrame: CGRect?,
     originalViewportFrame: CGRect,
     translation: CGSize,
+    currentPointerViewportLocation: CGPoint? = nil,
+    originalPointerViewportX: CGFloat? = nil,
+    originalPointerViewportY: CGFloat? = nil,
     allowsHorizontalMovement: Bool
   ) -> CGRect {
-    if let resolvedDropFrame {
-      return resolvedDropFrame
+    _ = resolvedDropFrame
+    if let currentPointerViewportLocation,
+      let originalPointerViewportX,
+      let originalPointerViewportY
+    {
+      let grabOffsetX = originalPointerViewportX - originalViewportFrame.minX
+      let grabOffsetY = originalPointerViewportY - originalViewportFrame.minY
+      return CGRect(
+        x: allowsHorizontalMovement
+          ? currentPointerViewportLocation.x - grabOffsetX
+          : originalViewportFrame.minX,
+        y: currentPointerViewportLocation.y - grabOffsetY,
+        width: originalViewportFrame.width,
+        height: originalViewportFrame.height
+      )
     }
 
     return originalViewportFrame.offsetBy(
@@ -234,15 +277,68 @@ enum ScheduleTimeResizingInteractionLayer {
     originalTimeMinutes: Int,
     originalDurationMinutes: Int,
     isStartEdge: Bool,
+    originalPointerScheduleY: CGFloat,
+    originalEdgeScheduleY: CGFloat,
+    currentPointerScheduleY: CGFloat?,
+    fallbackTranslationHeight: CGFloat,
+    metrics: ScheduleInteractionMetrics
+  ) -> ScheduleInteractionPreview {
+    let edgeScheduleY: CGFloat
+    if let currentPointerScheduleY {
+      edgeScheduleY = currentPointerScheduleY - (originalPointerScheduleY - originalEdgeScheduleY)
+    } else {
+      edgeScheduleY = originalEdgeScheduleY + fallbackTranslationHeight
+    }
+
+    return preview(
+      originalDay: originalDay,
+      originalTimeMinutes: originalTimeMinutes,
+      originalDurationMinutes: originalDurationMinutes,
+      isStartEdge: isStartEdge,
+      edgeMinute: snappedMinute(for: edgeScheduleY, metrics: metrics),
+      metrics: metrics
+    )
+  }
+
+  static func preview(
+    originalDay: Date,
+    originalTimeMinutes: Int,
+    originalDurationMinutes: Int,
+    isStartEdge: Bool,
     translationHeight: CGFloat,
     metrics: ScheduleInteractionMetrics
   ) -> ScheduleInteractionPreview {
-    let minuteDelta = snappedMinuteDelta(for: translationHeight, metrics: metrics)
+    let edgeMinute: Int
+    if isStartEdge {
+      edgeMinute = originalTimeMinutes + snappedMinuteDelta(for: translationHeight, metrics: metrics)
+    } else {
+      edgeMinute = originalTimeMinutes + originalDurationMinutes
+        + snappedMinuteDelta(for: translationHeight, metrics: metrics)
+    }
+
+    return preview(
+      originalDay: originalDay,
+      originalTimeMinutes: originalTimeMinutes,
+      originalDurationMinutes: originalDurationMinutes,
+      isStartEdge: isStartEdge,
+      edgeMinute: edgeMinute,
+      metrics: metrics
+    )
+  }
+
+  private static func preview(
+    originalDay: Date,
+    originalTimeMinutes: Int,
+    originalDurationMinutes: Int,
+    isStartEdge: Bool,
+    edgeMinute: Int,
+    metrics: ScheduleInteractionMetrics
+  ) -> ScheduleInteractionPreview {
     let endMinute = originalTimeMinutes + originalDurationMinutes
 
     if isStartEdge {
       let proposedStart = min(
-        max(0, originalTimeMinutes + minuteDelta),
+        max(0, edgeMinute),
         max(0, endMinute - metrics.timedMinimumDurationMinutes)
       )
       return ScheduleInteractionPreview(
@@ -257,7 +353,7 @@ enum ScheduleTimeResizingInteractionLayer {
 
     let proposedDuration = max(
       metrics.timedMinimumDurationMinutes,
-      originalDurationMinutes + minuteDelta
+      edgeMinute - originalTimeMinutes
     )
     return ScheduleInteractionPreview(
       day: originalDay,
@@ -274,5 +370,12 @@ enum ScheduleTimeResizingInteractionLayer {
       for: translationHeight,
       metrics: metrics
     )
+  }
+
+  private static func snappedMinute(
+    for scheduleY: CGFloat,
+    metrics: ScheduleInteractionMetrics
+  ) -> Int {
+    Int((scheduleY / metrics.quarterHourHeight).rounded()) * 15
   }
 }

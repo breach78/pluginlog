@@ -2656,6 +2656,9 @@ extension ScheduleBoardView {
       resolvedDropFrame: dropFrame,
       originalViewportFrame: dragState.originalViewportFrame,
       translation: dragState.translation,
+      currentPointerViewportLocation: dragState.currentPointerViewportLocation,
+      originalPointerViewportX: dragState.originalPointerViewportX,
+      originalPointerViewportY: dragState.originalPointerViewportY,
       allowsHorizontalMovement: !dragState.isPreparationSlot
     )
   }
@@ -2668,6 +2671,9 @@ extension ScheduleBoardView {
       resolvedDropFrame: dropFrame,
       originalViewportFrame: dragState.originalViewportFrame,
       translation: dragState.translation,
+      currentPointerViewportLocation: dragState.currentPointerViewportLocation,
+      originalPointerViewportX: dragState.originalPointerViewportX,
+      originalPointerViewportY: dragState.originalPointerViewportY,
       allowsHorizontalMovement: true
     )
   }

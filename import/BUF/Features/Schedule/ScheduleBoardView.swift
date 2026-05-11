@@ -503,7 +503,10 @@ struct ScheduleTaskResizeState {
   let originalDurationMinutes: Int
   let edge: ScheduleResizeEdge
   let originalViewportFrame: CGRect
+  let originalPointerScheduleY: CGFloat
+  let originalEdgeScheduleY: CGFloat
   var translationHeight: CGFloat = 0
+  var currentPointerViewportLocation: CGPoint?
 }
 
 struct ScheduleCalendarResizeState {
@@ -513,7 +516,10 @@ struct ScheduleCalendarResizeState {
   let originalDurationMinutes: Int
   let edge: ScheduleResizeEdge
   let originalViewportFrame: CGRect
+  let originalPointerScheduleY: CGFloat
+  let originalEdgeScheduleY: CGFloat
   var translationHeight: CGFloat = 0
+  var currentPointerViewportLocation: CGPoint?
 }
 
 struct ScheduleTimedQuickCreateSelection: Equatable {

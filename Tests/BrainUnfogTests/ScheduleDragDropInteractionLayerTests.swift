@@ -243,7 +243,7 @@ final class ScheduleDragDropInteractionLayerTests: XCTestCase {
     XCTAssertEqual(y, 136)
   }
 
-  func testDragGhostUsesResolvedDropFrameWhenAvailable() {
+  func testDragGhostFollowsPointerInsteadOfResolvedDropFrame() {
     let originalFrame = CGRect(x: 180, y: 420, width: 160, height: 240)
     let dropFrame = CGRect(x: 760, y: 180, width: 150, height: 120)
 
@@ -254,7 +254,7 @@ final class ScheduleDragDropInteractionLayerTests: XCTestCase {
       allowsHorizontalMovement: true
     )
 
-    XCTAssertEqual(ghostFrame, dropFrame)
+    XCTAssertEqual(ghostFrame, originalFrame.offsetBy(dx: -280, dy: 90))
   }
 
   func testDragGhostFallsBackToTranslationWithoutResolvedDropFrame() {
@@ -268,6 +268,61 @@ final class ScheduleDragDropInteractionLayerTests: XCTestCase {
     )
 
     XCTAssertEqual(ghostFrame, originalFrame.offsetBy(dx: -80, dy: 90))
+  }
+
+  func testDragGhostUsesCurrentPointerWhenAvailable() {
+    let originalFrame = CGRect(x: 180, y: 420, width: 160, height: 240)
+
+    let ghostFrame = ScheduleDragDropInteractionLayer.dragGhostViewportFrame(
+      resolvedDropFrame: nil,
+      originalViewportFrame: originalFrame,
+      translation: CGSize(width: -80, height: 90),
+      currentPointerViewportLocation: CGPoint(x: 310, y: 700),
+      originalPointerViewportX: 220,
+      originalPointerViewportY: 500,
+      allowsHorizontalMovement: true
+    )
+
+    XCTAssertEqual(ghostFrame, CGRect(x: 270, y: 620, width: 160, height: 240))
+  }
+
+  func testInitialPointerViewportLocationUsesCurrentPointerMinusTranslation() {
+    let originalFrame = CGRect(x: 180, y: 420, width: 160, height: 240)
+
+    let point = ScheduleDragDropInteractionLayer.initialPointerViewportLocation(
+      currentPointerViewportLocation: CGPoint(x: 310, y: 700),
+      translation: CGSize(width: 90, height: 200),
+      originalViewportFrame: originalFrame,
+      gestureStartLocation: CGPoint(x: 40, y: 80)
+    )
+
+    XCTAssertEqual(point, CGPoint(x: 220, y: 500))
+  }
+
+  func testInitialPointerViewportLocationKeepsOffsetGestureCoordinatesFromDoubleAdding() {
+    let originalFrame = CGRect(x: 180, y: 420, width: 160, height: 240)
+
+    let point = ScheduleDragDropInteractionLayer.initialPointerViewportLocation(
+      currentPointerViewportLocation: nil,
+      translation: .zero,
+      originalViewportFrame: originalFrame,
+      gestureStartLocation: CGPoint(x: 220, y: 500)
+    )
+
+    XCTAssertEqual(point, CGPoint(x: 220, y: 500))
+  }
+
+  func testInitialPointerViewportLocationSupportsLocalGestureCoordinates() {
+    let originalFrame = CGRect(x: 180, y: 420, width: 160, height: 240)
+
+    let point = ScheduleDragDropInteractionLayer.initialPointerViewportLocation(
+      currentPointerViewportLocation: nil,
+      translation: .zero,
+      originalViewportFrame: originalFrame,
+      gestureStartLocation: CGPoint(x: 40, y: 80)
+    )
+
+    XCTAssertEqual(point, CGPoint(x: 220, y: 500))
   }
 
   func testDragTopScheduleYUsesCurrentPointerAndGrabOffset() {
@@ -290,5 +345,39 @@ final class ScheduleDragDropInteractionLayerTests: XCTestCase {
     )
 
     XCTAssertEqual(topY, 700)
+  }
+
+  func testEndResizeUsesCurrentPointerAndGrabOffset() {
+    let preview = ScheduleTimeResizingInteractionLayer.preview(
+      originalDay: Date(timeIntervalSince1970: 0),
+      originalTimeMinutes: 9 * 60,
+      originalDurationMinutes: 120,
+      isStartEdge: false,
+      originalPointerScheduleY: 665,
+      originalEdgeScheduleY: 660,
+      currentPointerScheduleY: 725,
+      fallbackTranslationHeight: 0,
+      metrics: metrics
+    )
+
+    XCTAssertEqual(preview.timeMinutes, 9 * 60)
+    XCTAssertEqual(preview.durationMinutes, 180)
+  }
+
+  func testStartResizeUsesCurrentPointerAndGrabOffset() {
+    let preview = ScheduleTimeResizingInteractionLayer.preview(
+      originalDay: Date(timeIntervalSince1970: 0),
+      originalTimeMinutes: 9 * 60,
+      originalDurationMinutes: 120,
+      isStartEdge: true,
+      originalPointerScheduleY: 545,
+      originalEdgeScheduleY: 540,
+      currentPointerScheduleY: 605,
+      fallbackTranslationHeight: 0,
+      metrics: metrics
+    )
+
+    XCTAssertEqual(preview.timeMinutes, 10 * 60)
+    XCTAssertEqual(preview.durationMinutes, 60)
   }
 }

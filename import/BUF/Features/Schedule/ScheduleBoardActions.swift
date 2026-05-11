@@ -575,13 +575,53 @@ extension ScheduleBoardView {
       )
   }
 
+  func resizePointerViewportLocation(
+    originalViewportFrame: CGRect,
+    edge: ScheduleResizeEdge,
+    value: DragGesture.Value
+  ) -> CGPoint {
+    scrollViewportState.pointerViewportLocation()
+      ?? CGPoint(
+        x: originalViewportFrame.midX,
+        y: (edge == .start ? originalViewportFrame.minY : originalViewportFrame.maxY)
+          + value.translation.height
+      )
+  }
+
+  func resizeEdgeScheduleY(
+    originalTimeMinutes: Int,
+    originalDurationMinutes: Int,
+    edge: ScheduleResizeEdge
+  ) -> CGFloat {
+    let edgeMinutes = edge == .start
+      ? originalTimeMinutes
+      : originalTimeMinutes + originalDurationMinutes
+    return CGFloat(edgeMinutes) / 60 * hourHeight
+  }
+
+  func resizeOriginalPointerScheduleY(
+    currentPointerViewportLocation: CGPoint,
+    value: DragGesture.Value
+  ) -> CGFloat {
+    currentPointerViewportLocation.y - value.translation.height - headerHeight + currentScrollOffsetY
+  }
+
+  func resizeCurrentPointerScheduleY(_ pointerViewportLocation: CGPoint?) -> CGFloat? {
+    pointerViewportLocation.map { $0.y - headerHeight + currentScrollOffsetY }
+  }
+
   func preview(for resizeState: ScheduleTaskResizeState) -> ScheduleInteractionPreview {
     ScheduleTimeResizingInteractionLayer.preview(
       originalDay: resizeState.originalDay,
       originalTimeMinutes: resizeState.originalTimeMinutes,
       originalDurationMinutes: resizeState.originalDurationMinutes,
       isStartEdge: resizeState.edge == .start,
-      translationHeight: resizeState.translationHeight,
+      originalPointerScheduleY: resizeState.originalPointerScheduleY,
+      originalEdgeScheduleY: resizeState.originalEdgeScheduleY,
+      currentPointerScheduleY: resizeCurrentPointerScheduleY(
+        resizeState.currentPointerViewportLocation
+      ),
+      fallbackTranslationHeight: resizeState.translationHeight,
       metrics: interactionMetrics
     )
   }
@@ -592,7 +632,12 @@ extension ScheduleBoardView {
       originalTimeMinutes: resizeState.originalTimeMinutes,
       originalDurationMinutes: resizeState.originalDurationMinutes,
       isStartEdge: resizeState.edge == .start,
-      translationHeight: resizeState.translationHeight,
+      originalPointerScheduleY: resizeState.originalPointerScheduleY,
+      originalEdgeScheduleY: resizeState.originalEdgeScheduleY,
+      currentPointerScheduleY: resizeCurrentPointerScheduleY(
+        resizeState.currentPointerViewportLocation
+      ),
+      fallbackTranslationHeight: resizeState.translationHeight,
       metrics: interactionMetrics
     )
   }
@@ -634,6 +679,15 @@ extension ScheduleBoardView {
               width: itemFrame.width,
               height: itemFrame.height
             )
+          let originalPointerViewportLocation = ScheduleDragDropInteractionLayer
+            .initialPointerViewportLocation(
+              currentPointerViewportLocation: scrollViewportState.pointerViewportLocation(),
+              translation: value.translation,
+              originalViewportFrame: originalViewportFrame,
+              gestureStartLocation: value.startLocation
+            )
+          let originalPointerGrabOffsetY =
+            originalPointerViewportLocation.y - originalViewportFrame.minY
           dragState = ScheduleTaskDragState(
             entryID: entryID,
             taskID: taskID,
@@ -643,9 +697,9 @@ extension ScheduleBoardView {
             originalTimeMinutes: originalTimeMinutes,
             originalDurationMinutes: originalDurationMinutes,
             originalViewportFrame: originalViewportFrame,
-            originalPointerViewportX: originalViewportFrame.minX + value.startLocation.x,
-            originalPointerViewportY: originalViewportFrame.minY + value.startLocation.y,
-            originalPointerScheduleY: originalScheduleY + value.startLocation.y,
+            originalPointerViewportX: originalPointerViewportLocation.x,
+            originalPointerViewportY: originalPointerViewportLocation.y,
+            originalPointerScheduleY: originalScheduleY + originalPointerGrabOffsetY,
             originalTopScheduleY: originalScheduleY
           )
         }
@@ -788,15 +842,24 @@ extension ScheduleBoardView {
               width: itemFrame.width,
               height: itemFrame.height
             )
+          let originalPointerViewportLocation = ScheduleDragDropInteractionLayer
+            .initialPointerViewportLocation(
+              currentPointerViewportLocation: scrollViewportState.pointerViewportLocation(),
+              translation: value.translation,
+              originalViewportFrame: originalViewportFrame,
+              gestureStartLocation: value.startLocation
+            )
+          let originalPointerGrabOffsetY =
+            originalPointerViewportLocation.y - originalViewportFrame.minY
           dragState = ScheduleCalendarDragState(
             eventID: event.id,
             originalDay: calendar.startOfDay(for: event.startDate),
             originalTimeMinutes: event.isAllDay ? nil : timeMinutes(for: event.startDate),
             originalDurationMinutes: durationMinutes(for: event),
             originalViewportFrame: originalViewportFrame,
-            originalPointerViewportX: originalViewportFrame.minX + value.startLocation.x,
-            originalPointerViewportY: originalViewportFrame.minY + value.startLocation.y,
-            originalPointerScheduleY: originalScheduleY + value.startLocation.y,
+            originalPointerViewportX: originalPointerViewportLocation.x,
+            originalPointerViewportY: originalPointerViewportLocation.y,
+            originalPointerScheduleY: originalScheduleY + originalPointerGrabOffsetY,
             originalTopScheduleY: originalScheduleY
           )
         }
@@ -873,6 +936,11 @@ extension ScheduleBoardView {
         }
 
         if activeTaskResize?.entryID != entryID || activeTaskResize?.edge != edge {
+          let pointerViewportLocation = resizePointerViewportLocation(
+            originalViewportFrame: originalViewportFrame,
+            edge: edge,
+            value: value
+          )
           activeTaskResize = ScheduleTaskResizeState(
             entryID: entryID,
             taskID: taskID,
@@ -882,11 +950,26 @@ extension ScheduleBoardView {
             originalTimeMinutes: originalTimeMinutes,
             originalDurationMinutes: originalDurationMinutes,
             edge: edge,
-            originalViewportFrame: originalViewportFrame
+            originalViewportFrame: originalViewportFrame,
+            originalPointerScheduleY: resizeOriginalPointerScheduleY(
+              currentPointerViewportLocation: pointerViewportLocation,
+              value: value
+            ),
+            originalEdgeScheduleY: resizeEdgeScheduleY(
+              originalTimeMinutes: originalTimeMinutes,
+              originalDurationMinutes: originalDurationMinutes,
+              edge: edge
+            ),
+            currentPointerViewportLocation: pointerViewportLocation
           )
           selectedScheduleTaskID = taskID
         }
         suppressTaskTap()
+        activeTaskResize?.currentPointerViewportLocation = resizePointerViewportLocation(
+          originalViewportFrame: originalViewportFrame,
+          edge: edge,
+          value: value
+        )
         activeTaskResize?.translationHeight = value.translation.height
       }
       .onEnded { _ in
@@ -929,16 +1012,36 @@ extension ScheduleBoardView {
         }
 
         if activeCalendarResize?.eventID != event.id || activeCalendarResize?.edge != edge {
+          let pointerViewportLocation = resizePointerViewportLocation(
+            originalViewportFrame: originalViewportFrame,
+            edge: edge,
+            value: value
+          )
           activeCalendarResize = ScheduleCalendarResizeState(
             eventID: event.id,
             originalDay: originalDay,
             originalTimeMinutes: originalTimeMinutes,
             originalDurationMinutes: originalDurationMinutes,
             edge: edge,
-            originalViewportFrame: originalViewportFrame
+            originalViewportFrame: originalViewportFrame,
+            originalPointerScheduleY: resizeOriginalPointerScheduleY(
+              currentPointerViewportLocation: pointerViewportLocation,
+              value: value
+            ),
+            originalEdgeScheduleY: resizeEdgeScheduleY(
+              originalTimeMinutes: originalTimeMinutes,
+              originalDurationMinutes: originalDurationMinutes,
+              edge: edge
+            ),
+            currentPointerViewportLocation: pointerViewportLocation
           )
         }
         suppressTaskTap()
+        activeCalendarResize?.currentPointerViewportLocation = resizePointerViewportLocation(
+          originalViewportFrame: originalViewportFrame,
+          edge: edge,
+          value: value
+        )
         activeCalendarResize?.translationHeight = value.translation.height
       }
       .onEnded { _ in
