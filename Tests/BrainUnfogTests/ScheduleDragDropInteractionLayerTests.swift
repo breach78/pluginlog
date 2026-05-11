@@ -207,6 +207,115 @@ final class ScheduleDragDropInteractionLayerTests: XCTestCase {
     )
   }
 
+  func testInteractionSessionBuildsMovePreviewAndCommandFromSameTarget() throws {
+    let taskID = UUID()
+    let day = Date(timeIntervalSince1970: 0)
+    let session = try XCTUnwrap(ScheduleInteractionSession.move(
+      identity: .task(taskID),
+      originalTimeMinutes: 8 * 60,
+      originalDurationMinutes: 75,
+      target: .timed(day: day, minute: 11 * 60),
+      metrics: metrics
+    ))
+
+    XCTAssertEqual(
+      session.preview,
+      ScheduleInteractionPreview(
+        day: day,
+        timeMinutes: 11 * 60,
+        durationMinutes: 75
+      )
+    )
+    XCTAssertEqual(
+      session.command,
+      .moveTask(
+        taskID: taskID,
+        day: day,
+        timeMinutes: 11 * 60,
+        durationMinutes: 75
+      )
+    )
+  }
+
+  func testInteractionSessionBuildsResizePreviewAndCommandFromSameGeometry() throws {
+    let taskID = UUID()
+    let day = Date(timeIntervalSince1970: 0)
+    let target = ScheduleInteractionEngine.timedTarget(
+      visibleDay: day,
+      scheduleY: 9 * 60,
+      metrics: metrics,
+      calendar: Calendar(identifier: .gregorian)
+    )
+    let session = try XCTUnwrap(ScheduleInteractionSession.resize(
+      identity: .task(taskID),
+      originalDay: day,
+      originalTimeMinutes: 10 * 60,
+      originalDurationMinutes: 120,
+      isStartEdge: true,
+      target: target,
+      metrics: metrics,
+      calendar: Calendar(identifier: .gregorian)
+    ))
+
+    XCTAssertEqual(
+      session.preview,
+      ScheduleInteractionPreview(
+        day: day,
+        timeMinutes: 9 * 60,
+        durationMinutes: 180
+      )
+    )
+    XCTAssertEqual(
+      session.command,
+      .resizeTask(
+        taskID: taskID,
+        day: day,
+        timeMinutes: 9 * 60,
+        durationMinutes: 180
+      )
+    )
+  }
+
+  func testResizeSessionBuildsPreviewAndCommandFromCommonTarget() throws {
+    let taskID = UUID()
+    let day = Date(timeIntervalSince1970: 0)
+    let target = ScheduleInteractionEngine.timedTarget(
+      visibleDay: day,
+      scheduleY: 9 * 60,
+      metrics: metrics,
+      calendar: Calendar(identifier: .gregorian)
+    )
+
+    let session = try XCTUnwrap(ScheduleInteractionSession.resize(
+      identity: .task(taskID),
+      originalDay: day,
+      originalTimeMinutes: 10 * 60,
+      originalDurationMinutes: 120,
+      isStartEdge: true,
+      target: target,
+      metrics: metrics,
+      calendar: Calendar(identifier: .gregorian)
+    ))
+
+    XCTAssertEqual(
+      session.preview,
+      ScheduleInteractionPreview(
+        day: day,
+        timeMinutes: 9 * 60,
+        durationMinutes: 180
+      )
+    )
+    XCTAssertEqual(
+      session.command,
+      .resizeTask(
+        taskID: taskID,
+        day: day,
+        timeMinutes: 9 * 60,
+        durationMinutes: 180
+      )
+    )
+  }
+
   func testMoveTaskCommandFromTimedTargetPreservesExistingDuration() {
     let taskID = UUID()
     let day = Date(timeIntervalSince1970: 0)

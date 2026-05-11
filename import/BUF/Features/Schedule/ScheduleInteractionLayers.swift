@@ -7,7 +7,7 @@ struct ScheduleInteractionPreview: Equatable, Sendable {
   let durationMinutes: Int?
 }
 
-struct ScheduleInteractionMetrics {
+struct ScheduleInteractionMetrics: Equatable, Sendable {
   let dayColumnWidth: CGFloat
   let hourHeight: CGFloat
   let quarterHourHeight: CGFloat
@@ -57,6 +57,28 @@ enum ScheduleDragDropInteractionLayer {
     externalMetrics: ScheduleExternalDropMetrics,
     interactionMetrics: ScheduleInteractionMetrics
   ) -> ScheduleInteractionPreview? {
+    guard
+      let target = externalDropTarget(
+        at: location,
+        days: days,
+        externalMetrics: externalMetrics,
+        interactionMetrics: interactionMetrics
+      )
+    else { return nil }
+    return ScheduleInteractionEngine.movePreview(
+      originalTimeMinutes: nil,
+      originalDurationMinutes: nil,
+      target: target,
+      metrics: interactionMetrics
+    )
+  }
+
+  static func externalDropTarget(
+    at location: CGPoint,
+    days: [Date],
+    externalMetrics: ScheduleExternalDropMetrics,
+    interactionMetrics: ScheduleInteractionMetrics
+  ) -> ScheduleInteractionTarget? {
     guard !days.isEmpty, location.y >= 0 else { return nil }
 
     guard
@@ -70,16 +92,12 @@ enum ScheduleDragDropInteractionLayer {
     else { return nil }
 
     if location.y < externalMetrics.headerHeight {
-      return ScheduleInteractionPreview(day: day, timeMinutes: nil, durationMinutes: nil)
+      return .allDay(day)
     }
 
     let scheduleY = location.y - externalMetrics.headerHeight + externalMetrics.scrollOffsetY
     let timeMinutes = snappedTimeMinutes(for: scheduleY, metrics: interactionMetrics)
-    return ScheduleInteractionPreview(
-      day: day,
-      timeMinutes: timeMinutes,
-      durationMinutes: interactionMetrics.timedMinimumDurationMinutes
-    )
+    return .timed(day: day, minute: timeMinutes)
   }
 
   static func dayForPointerViewportX(
@@ -208,6 +226,48 @@ enum ScheduleDragDropInteractionLayer {
     metrics: ScheduleInteractionMetrics,
     calendar: Calendar = .autoupdatingCurrent
   ) -> ScheduleInteractionPreview {
+    let target = moveTarget(
+      originalDay: originalDay,
+      originalTimeMinutes: originalTimeMinutes,
+      translation: translation,
+      originalPointerScheduleY: originalPointerScheduleY,
+      originalTopScheduleY: originalTopScheduleY,
+      currentPointerScheduleY: currentPointerScheduleY,
+      currentTopScheduleY: currentTopScheduleY,
+      forceAllDay: forceAllDay,
+      allowsDayChange: allowsDayChange,
+      allowsAllDay: allowsAllDay,
+      targetDay: targetDay,
+      metrics: metrics,
+      calendar: calendar
+    )
+    return ScheduleInteractionEngine.movePreview(
+      originalTimeMinutes: originalTimeMinutes,
+      originalDurationMinutes: originalDurationMinutes,
+      target: target,
+      metrics: metrics
+    ) ?? ScheduleInteractionPreview(
+      day: targetDay ?? originalDay,
+      timeMinutes: originalTimeMinutes,
+      durationMinutes: originalDurationMinutes
+    )
+  }
+
+  static func moveTarget(
+    originalDay: Date,
+    originalTimeMinutes: Int?,
+    translation: CGSize,
+    originalPointerScheduleY: CGFloat,
+    originalTopScheduleY: CGFloat,
+    currentPointerScheduleY: CGFloat? = nil,
+    currentTopScheduleY: CGFloat? = nil,
+    forceAllDay: Bool = false,
+    allowsDayChange: Bool = true,
+    allowsAllDay: Bool = true,
+    targetDay: Date? = nil,
+    metrics: ScheduleInteractionMetrics,
+    calendar: Calendar = .autoupdatingCurrent
+  ) -> ScheduleInteractionTarget {
     let dayDelta = allowsDayChange ? Int((translation.width / metrics.dayColumnWidth).rounded()) : 0
     let day =
       calendar.date(byAdding: .day, value: dayDelta, to: originalDay)
@@ -216,48 +276,29 @@ enum ScheduleDragDropInteractionLayer {
     let pointerScheduleY = currentPointerScheduleY ?? (originalPointerScheduleY + translation.height)
     let topScheduleY = currentTopScheduleY ?? (originalTopScheduleY + translation.height)
     if allowsAllDay && forceAllDay {
-      return ScheduleInteractionEngine.movePreview(
-        originalTimeMinutes: originalTimeMinutes,
-        originalDurationMinutes: originalDurationMinutes,
-        target: .allDay(visibleTargetDay),
-        metrics: metrics
-      ) ?? ScheduleInteractionPreview(day: visibleTargetDay, timeMinutes: nil, durationMinutes: nil)
+      return .allDay(visibleTargetDay)
     }
 
     if originalTimeMinutes != nil {
-      return ScheduleInteractionEngine.movePreview(
-        originalTimeMinutes: originalTimeMinutes,
-        originalDurationMinutes: originalDurationMinutes,
-        target: ScheduleInteractionEngine.timedTarget(
-          visibleDay: visibleTargetDay,
-          scheduleY: topScheduleY,
-          metrics: metrics,
-          calendar: calendar
-        ),
-        metrics: metrics
-      ) ?? ScheduleInteractionPreview(day: day, timeMinutes: originalTimeMinutes, durationMinutes: originalDurationMinutes)
+      return ScheduleInteractionEngine.timedTarget(
+        visibleDay: visibleTargetDay,
+        scheduleY: topScheduleY,
+        metrics: metrics,
+        calendar: calendar
+      )
     }
 
     let allDayOriginTimedY = max(0, pointerScheduleY)
     if pointerScheduleY >= 0 || topScheduleY >= 0 {
-      return ScheduleInteractionEngine.movePreview(
-        originalTimeMinutes: originalTimeMinutes,
-        originalDurationMinutes: originalDurationMinutes,
-        target: ScheduleInteractionEngine.timedTarget(
-          visibleDay: visibleTargetDay,
-          scheduleY: allDayOriginTimedY,
-          metrics: metrics,
-          calendar: calendar
-        ),
-        metrics: metrics
-      ) ?? ScheduleInteractionPreview(
-        day: visibleTargetDay,
-        timeMinutes: nil,
-        durationMinutes: nil
+      return ScheduleInteractionEngine.timedTarget(
+        visibleDay: visibleTargetDay,
+        scheduleY: allDayOriginTimedY,
+        metrics: metrics,
+        calendar: calendar
       )
     }
 
-    return ScheduleInteractionPreview(day: visibleTargetDay, timeMinutes: nil, durationMinutes: nil)
+    return .allDay(visibleTargetDay)
   }
 
   static func snappedTimeMinutes(
@@ -300,22 +341,28 @@ enum ScheduleTimeResizingInteractionLayer {
     calendar: Calendar = .autoupdatingCurrent,
     metrics: ScheduleInteractionMetrics
   ) -> ScheduleInteractionPreview {
-    let edgeScheduleY: CGFloat
-    if let currentPointerScheduleY {
-      edgeScheduleY = currentPointerScheduleY - (originalPointerScheduleY - originalEdgeScheduleY)
-    } else {
-      edgeScheduleY = originalEdgeScheduleY + fallbackTranslationHeight
-    }
-
-    return preview(
+    let target = resizeTarget(
+      isStartEdge: isStartEdge,
+      originalPointerScheduleY: originalPointerScheduleY,
+      originalEdgeScheduleY: originalEdgeScheduleY,
+      currentPointerScheduleY: currentPointerScheduleY,
+      fallbackTranslationHeight: fallbackTranslationHeight,
+      targetDay: targetDay ?? originalDay,
+      calendar: calendar,
+      metrics: metrics
+    )
+    return ScheduleInteractionEngine.resizePreview(
       originalDay: originalDay,
       originalTimeMinutes: originalTimeMinutes,
       originalDurationMinutes: originalDurationMinutes,
       isStartEdge: isStartEdge,
-      edgeScheduleY: edgeScheduleY,
-      targetDay: targetDay ?? originalDay,
-      calendar: calendar,
-      metrics: metrics
+      target: target,
+      metrics: metrics,
+      calendar: calendar
+    ) ?? ScheduleInteractionPreview(
+      day: originalDay,
+      timeMinutes: originalTimeMinutes,
+      durationMinutes: originalDurationMinutes
     )
   }
 
@@ -329,6 +376,39 @@ enum ScheduleTimeResizingInteractionLayer {
     calendar: Calendar = .autoupdatingCurrent,
     metrics: ScheduleInteractionMetrics
   ) -> ScheduleInteractionPreview {
+    let target = resizeTarget(
+      originalTimeMinutes: originalTimeMinutes,
+      originalDurationMinutes: originalDurationMinutes,
+      isStartEdge: isStartEdge,
+      translationHeight: translationHeight,
+      targetDay: targetDay ?? originalDay,
+      calendar: calendar,
+      metrics: metrics
+    )
+    return ScheduleInteractionEngine.resizePreview(
+      originalDay: originalDay,
+      originalTimeMinutes: originalTimeMinutes,
+      originalDurationMinutes: originalDurationMinutes,
+      isStartEdge: isStartEdge,
+      target: target,
+      metrics: metrics,
+      calendar: calendar
+    ) ?? ScheduleInteractionPreview(
+      day: originalDay,
+      timeMinutes: originalTimeMinutes,
+      durationMinutes: originalDurationMinutes
+    )
+  }
+
+  static func resizeTarget(
+    originalTimeMinutes: Int,
+    originalDurationMinutes: Int,
+    isStartEdge: Bool,
+    translationHeight: CGFloat,
+    targetDay: Date,
+    calendar: Calendar = .autoupdatingCurrent,
+    metrics: ScheduleInteractionMetrics
+  ) -> ScheduleInteractionTarget {
     let edgeScheduleY: CGFloat
     if isStartEdge {
       edgeScheduleY = CGFloat(originalTimeMinutes) / 15 * metrics.quarterHourHeight + translationHeight
@@ -337,35 +417,48 @@ enum ScheduleTimeResizingInteractionLayer {
         * metrics.quarterHourHeight + translationHeight
     }
 
-    return preview(
-      originalDay: originalDay,
-      originalTimeMinutes: originalTimeMinutes,
-      originalDurationMinutes: originalDurationMinutes,
-      isStartEdge: isStartEdge,
+    return resizeTarget(
       edgeScheduleY: edgeScheduleY,
-      targetDay: targetDay ?? originalDay,
+      targetDay: targetDay,
       calendar: calendar,
       metrics: metrics
     )
   }
 
-  private static func preview(
-    originalDay: Date,
-    originalTimeMinutes: Int,
-    originalDurationMinutes: Int,
-    isStartEdge: Bool,
+  static func resizeTarget(
+    isStartEdge _: Bool,
+    originalPointerScheduleY: CGFloat,
+    originalEdgeScheduleY: CGFloat,
+    currentPointerScheduleY: CGFloat?,
+    fallbackTranslationHeight: CGFloat,
+    targetDay: Date,
+    calendar: Calendar = .autoupdatingCurrent,
+    metrics: ScheduleInteractionMetrics
+  ) -> ScheduleInteractionTarget {
+    let edgeScheduleY: CGFloat
+    if let currentPointerScheduleY {
+      edgeScheduleY = currentPointerScheduleY - (originalPointerScheduleY - originalEdgeScheduleY)
+    } else {
+      edgeScheduleY = originalEdgeScheduleY + fallbackTranslationHeight
+    }
+
+    return resizeTarget(
+      edgeScheduleY: edgeScheduleY,
+      targetDay: targetDay,
+      calendar: calendar,
+      metrics: metrics
+    )
+  }
+
+  private static func resizeTarget(
     edgeScheduleY: CGFloat,
     targetDay: Date,
     calendar: Calendar,
     metrics: ScheduleInteractionMetrics
-  ) -> ScheduleInteractionPreview {
-    ScheduleInteractionEngine.resizePreview(
-      originalDay: originalDay,
-      originalTimeMinutes: originalTimeMinutes,
-      originalDurationMinutes: originalDurationMinutes,
-      isStartEdge: isStartEdge,
-      edgeScheduleY: edgeScheduleY,
-      targetDay: targetDay,
+  ) -> ScheduleInteractionTarget {
+    ScheduleInteractionEngine.timedTarget(
+      visibleDay: targetDay,
+      scheduleY: edgeScheduleY,
       metrics: metrics,
       calendar: calendar
     )

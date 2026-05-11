@@ -98,11 +98,11 @@ enum ScheduleInteractionEngine {
     originalTimeMinutes: Int,
     originalDurationMinutes: Int,
     isStartEdge: Bool,
-    edgeScheduleY: CGFloat,
-    targetDay: Date,
+    target: ScheduleInteractionTarget,
     metrics: ScheduleInteractionMetrics,
     calendar: Calendar
-  ) -> ScheduleInteractionPreview {
+  ) -> ScheduleInteractionPreview? {
+    guard case .timed(let targetDay, let targetMinute) = target else { return nil }
     let startDate = date(
       day: originalDay,
       minute: originalTimeMinutes,
@@ -114,11 +114,7 @@ enum ScheduleInteractionEngine {
         value: originalDurationMinutes,
         to: startDate
       ) ?? startDate
-    let edgeDate = date(
-      visibleDay: targetDay,
-      relativeMinute: snappedRelativeMinutes(for: edgeScheduleY, metrics: metrics),
-      calendar: calendar
-    )
+    let edgeDate = date(day: targetDay, minute: targetMinute, calendar: calendar)
 
     let proposedStart: Date
     let proposedEnd: Date
@@ -253,6 +249,90 @@ enum ScheduleInteractionEngine {
 enum ScheduleInteractionOperation: Equatable, Sendable {
   case move
   case resize
+}
+
+struct ScheduleInteractionSession: Equatable, Sendable {
+  let identity: ScheduleInteractionItemIdentity
+  let operation: ScheduleInteractionOperation
+  let target: ScheduleInteractionTarget
+  let preview: ScheduleInteractionPreview
+
+  private init(
+    identity: ScheduleInteractionItemIdentity,
+    operation: ScheduleInteractionOperation,
+    target: ScheduleInteractionTarget,
+    preview: ScheduleInteractionPreview
+  ) {
+    self.identity = identity
+    self.operation = operation
+    self.target = target
+    self.preview = preview
+  }
+
+  var command: ScheduleInteractionCommand? {
+    ScheduleInteractionEngine.command(
+      for: identity,
+      operation: operation,
+      preview: preview
+    )
+  }
+
+  static func move(
+    identity: ScheduleInteractionItemIdentity,
+    originalTimeMinutes: Int?,
+    originalDurationMinutes: Int?,
+    target: ScheduleInteractionTarget,
+    metrics: ScheduleInteractionMetrics
+  ) -> ScheduleInteractionSession? {
+    guard
+      let preview = ScheduleInteractionEngine.movePreview(
+        originalTimeMinutes: originalTimeMinutes,
+        originalDurationMinutes: originalDurationMinutes,
+        target: target,
+        metrics: metrics
+      )
+    else {
+      return nil
+    }
+    return ScheduleInteractionSession(
+      identity: identity,
+      operation: .move,
+      target: target,
+      preview: preview
+    )
+  }
+
+  static func resize(
+    identity: ScheduleInteractionItemIdentity,
+    originalDay: Date,
+    originalTimeMinutes: Int,
+    originalDurationMinutes: Int,
+    isStartEdge: Bool,
+    target: ScheduleInteractionTarget,
+    metrics: ScheduleInteractionMetrics,
+    calendar: Calendar
+  ) -> ScheduleInteractionSession? {
+    guard
+      let preview = ScheduleInteractionEngine.resizePreview(
+        originalDay: originalDay,
+        originalTimeMinutes: originalTimeMinutes,
+        originalDurationMinutes: originalDurationMinutes,
+        isStartEdge: isStartEdge,
+        target: target,
+        metrics: metrics,
+        calendar: calendar
+      )
+    else {
+      return nil
+    }
+    return ScheduleInteractionSession(
+      identity: identity,
+      operation: .resize,
+      target: target,
+      preview: preview
+    )
+  }
+
 }
 
 extension ScheduleInteractionCommand {

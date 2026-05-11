@@ -85,10 +85,10 @@ enum ScheduleMonthDayInteractionAdapter {
     calendar: Calendar,
     metrics: ScheduleInteractionMetrics
   ) -> ScheduleMonthDayScheduleMutationPreview {
-    let target = ScheduleMonthDragSessionState.external(
+    let target = externalMonthDropTarget(
       targetDay: targetDay,
       calendar: calendar
-    ).target
+    )
     return (
       ScheduleInteractionEngine.movePreview(
         originalTimeMinutes: state.originalTimeMinutes,
@@ -99,6 +99,16 @@ enum ScheduleMonthDayInteractionAdapter {
     ).monthDayPreview(itemID: state.itemID, fallbackDay: targetDay)
   }
 
+  static func externalMonthDropTarget(
+    targetDay: Date,
+    calendar: Calendar
+  ) -> ScheduleInteractionTarget {
+    ScheduleMonthDragSessionState.external(
+      targetDay: targetDay,
+      calendar: calendar
+    ).target
+  }
+
   static func resizePreview(
     for state: ScheduleMonthDayItemResizeState,
     currentPointerPanelY: CGFloat,
@@ -106,19 +116,47 @@ enum ScheduleMonthDayInteractionAdapter {
     calendar: Calendar,
     metrics: ScheduleInteractionMetrics
   ) -> ScheduleMonthDayScheduleMutationPreview {
-    let currentPointerScheduleY = currentPointerPanelY - state.timeContentMinYInPanel
-    let edgeY = currentPointerScheduleY - (state.originalPointerScheduleY - state.originalEdgeScheduleY)
+    let target = resizeTarget(
+      for: state,
+      currentPointerPanelY: currentPointerPanelY,
+      targetDay: targetDay,
+      calendar: calendar,
+      metrics: metrics
+    )
     let preview = ScheduleInteractionEngine.resizePreview(
       originalDay: calendar.startOfDay(for: state.originalItem.startDate),
       originalTimeMinutes: state.originalTimeMinutes,
       originalDurationMinutes: state.originalDurationMinutes,
       isStartEdge: state.edge == .start,
-      edgeScheduleY: edgeY,
-      targetDay: targetDay,
+      target: target,
       metrics: metrics,
       calendar: calendar
+    ) ?? ScheduleInteractionPreview(
+      day: calendar.startOfDay(for: state.originalItem.startDate),
+      timeMinutes: state.originalTimeMinutes,
+      durationMinutes: state.originalDurationMinutes
     )
     return preview.monthDayPreview(itemID: state.itemID, fallbackDay: targetDay)
+  }
+
+  static func resizeTarget(
+    for state: ScheduleMonthDayItemResizeState,
+    currentPointerPanelY: CGFloat,
+    targetDay: Date,
+    calendar: Calendar,
+    metrics: ScheduleInteractionMetrics
+  ) -> ScheduleInteractionTarget {
+    let currentPointerScheduleY = currentPointerPanelY - state.timeContentMinYInPanel
+    return ScheduleTimeResizingInteractionLayer.resizeTarget(
+      isStartEdge: state.edge == .start,
+      originalPointerScheduleY: state.originalPointerScheduleY,
+      originalEdgeScheduleY: state.originalEdgeScheduleY,
+      currentPointerScheduleY: currentPointerScheduleY,
+      fallbackTranslationHeight: 0,
+      targetDay: targetDay,
+      calendar: calendar,
+      metrics: metrics
+    )
   }
 
   static func snappedTimeMinutes(

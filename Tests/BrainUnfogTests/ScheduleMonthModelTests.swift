@@ -970,6 +970,75 @@ final class ScheduleMonthModelTests: XCTestCase {
     XCTAssertEqual(preview.durationMinutes, 7 * 60)
   }
 
+  func testDayPanelResizeTargetFeedsCommonSessionPreviewAndCommand() throws {
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+    let taskID = UUID()
+    let may7 = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 5, day: 7, hour: 10)))
+    let may7Noon = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 5, day: 7, hour: 12)))
+    let item = makeMonthItem(
+      id: "resized-task",
+      source: .workspaceTask(taskID: taskID, projectID: UUID()),
+      startDate: may7,
+      endDate: may7Noon,
+      isAllDay: false
+    )
+    let state = ScheduleMonthDayItemResizeState(
+      itemID: item.id,
+      originalItem: item,
+      originalTimeMinutes: 10 * 60,
+      originalDurationMinutes: 120,
+      originalPointerScheduleY: 10 * 60,
+      originalEdgeScheduleY: 10 * 60,
+      originalX: 0,
+      originalWidth: 100,
+      timeContentMinYInPanel: 0,
+      edge: .start
+    )
+    let metrics = ScheduleMonthDayInteractionAdapter.metrics(
+      hourHeight: 60,
+      minimumDurationMinutes: 30
+    )
+    let targetDay = calendar.startOfDay(for: may7)
+    let target = ScheduleMonthDayInteractionAdapter.resizeTarget(
+      for: state,
+      currentPointerPanelY: 9 * 60,
+      targetDay: targetDay,
+      calendar: calendar,
+      metrics: metrics
+    )
+    let session = try XCTUnwrap(ScheduleInteractionSession.resize(
+      identity: .task(taskID),
+      originalDay: targetDay,
+      originalTimeMinutes: state.originalTimeMinutes,
+      originalDurationMinutes: state.originalDurationMinutes,
+      isStartEdge: true,
+      target: target,
+      metrics: metrics,
+      calendar: calendar
+    ))
+
+    XCTAssertEqual(
+      session.preview,
+      ScheduleMonthDayInteractionAdapter.resizePreview(
+        for: state,
+        currentPointerPanelY: 9 * 60,
+        targetDay: targetDay,
+        calendar: calendar,
+        metrics: metrics
+      ).interactionPreview
+    )
+    XCTAssertEqual(
+      session.command,
+      .resizeTask(
+        taskID: taskID,
+        day: targetDay,
+        timeMinutes: 9 * 60,
+        durationMinutes: 180
+      )
+    )
+  }
+
   private func makeMonthItem(
     id: String,
     source: ScheduleMonthItemSource,
