@@ -349,6 +349,30 @@ final class AppOwnedWorkspaceStoreTests: XCTestCase {
     XCTAssertTrue(emptyListSnapshot.tasks.isEmpty)
   }
 
+  func testEmptyFullReminderSnapshotDoesNotDeleteExistingAppOwnedStore() async throws {
+    let store = AppOwnedWorkspaceStore(containerRootURL: try makeTemporaryDirectory())
+    let importedAt = Date(timeIntervalSinceReferenceDate: 203)
+    let projectID = RetainedProjectionBuilder.derivedProjectID(for: "list-1")
+    let taskID = ReminderProjectionIdentity.taskID(for: "task-1")
+
+    try await store.replaceReminderSnapshot(
+      Self.batch(taskExternalIdentifiers: ["task-1"], createdAt: importedAt),
+      importedAt: importedAt,
+      coverage: .full
+    )
+
+    try await store.replaceReminderSnapshot(
+      ReminderImportSnapshotBatch(lists: [], itemsByListIdentifier: [:]),
+      importedAt: importedAt.addingTimeInterval(10),
+      coverage: .full
+    )
+
+    let snapshot = try await store.loadRetainedWorkspaceSnapshot(projectIDs: [])
+    let project = try XCTUnwrap(snapshot.projects.first)
+    XCTAssertEqual(project.identity.projectID, projectID)
+    XCTAssertEqual(project.tasks.map(\.identity.taskID), [taskID])
+  }
+
   func testNonDestructiveReminderImportPreservesExistingRowsAndAppOwnedMetadata()
     async throws
   {

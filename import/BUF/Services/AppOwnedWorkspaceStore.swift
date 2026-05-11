@@ -148,7 +148,11 @@ actor AppOwnedWorkspaceStore {
     let db = try openDatabase()
     defer { sqlite3_close(db) }
     try migrate(db)
-    return try scalarInt(db, sql: "SELECT COUNT(*) FROM app_projects;") > 0
+    return try hasImportedWorkspace(db)
+  }
+
+  private func hasImportedWorkspace(_ db: OpaquePointer) throws -> Bool {
+    try scalarInt(db, sql: "SELECT COUNT(*) FROM app_projects;") > 0
   }
 
   func setProjectionReadEnabled(_ isEnabled: Bool) throws {
@@ -192,6 +196,14 @@ actor AppOwnedWorkspaceStore {
     try migrate(db)
     try exec(db, "BEGIN IMMEDIATE TRANSACTION;")
     do {
+      if coverage == .full,
+        batch.lists.isEmpty,
+        batch.itemsByListIdentifier.values.allSatisfy(\.isEmpty),
+        try hasImportedWorkspace(db)
+      {
+        try exec(db, "COMMIT;")
+        return
+      }
       let preservedProjectSupplements = try loadProjectSupplements(db, preservesImportedColor: true)
       let preservedTaskSupplements = try loadTaskSupplements(db)
       let preservedCompletedRecurringOccurrences = try loadLocalCompletedRecurringOccurrenceRows(db)
