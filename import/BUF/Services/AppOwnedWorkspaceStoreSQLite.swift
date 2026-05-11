@@ -30,7 +30,7 @@ extension AppOwnedWorkspaceStore {
 
   func migrate(_ db: OpaquePointer) throws {
     try exec(db, "PRAGMA foreign_keys = ON;")
-    if try schemaVersion(db) == "4" {
+    if try schemaVersion(db) == "5" {
       return
     }
     try exec(
@@ -86,6 +86,7 @@ extension AppOwnedWorkspaceStore {
         scheduled_duration_minutes INTEGER,
         priority INTEGER NOT NULL,
         recurrence_rule_raw TEXT,
+        completed_recurring_signature_rule_raw TEXT,
         is_flagged INTEGER NOT NULL,
         required_work_days INTEGER NOT NULL,
         attachment_count INTEGER NOT NULL,
@@ -96,6 +97,7 @@ extension AppOwnedWorkspaceStore {
       );
       """
     )
+    try addColumnIfMissing(db, table: "app_tasks", definition: "completed_recurring_signature_rule_raw TEXT")
     try exec(db, "CREATE INDEX IF NOT EXISTS idx_app_tasks_project_order ON app_tasks(project_id, row_order);")
     try exec(
       db,
@@ -133,7 +135,7 @@ extension AppOwnedWorkspaceStore {
     )
     try seedTaskSupplements(db)
     try seedProjectSupplements(db)
-    try upsertMetadata(db, key: "schema_version", value: "4")
+    try upsertMetadata(db, key: "schema_version", value: "5")
   }
 
   func execute(_ db: OpaquePointer, _ sql: String, bindings: [Binding]) throws {

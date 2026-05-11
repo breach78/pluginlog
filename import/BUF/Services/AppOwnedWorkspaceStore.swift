@@ -708,6 +708,7 @@ actor AppOwnedWorkspaceStore {
     hasExplicitTime: Bool,
     durationMinutes: Int?,
     recurrenceRuleRaw: String? = nil,
+    completedRecurringSignatureRuleRaw: String? = nil,
     priority: Int = 0,
     modifiedAt: Date,
     appendIfMissing: Bool = true
@@ -731,8 +732,9 @@ actor AppOwnedWorkspaceStore {
         id, project_id, reminder_identifier, reminder_external_identifier, parent_task_id,
         title, note_text, is_completed, completion_date, start_date, due_date,
         schedule_has_explicit_time, scheduled_duration_minutes, priority, recurrence_rule_raw,
-        is_flagged, required_work_days, attachment_count, created_at, modified_at, row_order
-      ) VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, 0, 0, 0, ?, ?, ?);
+        completed_recurring_signature_rule_raw, is_flagged, required_work_days, attachment_count,
+        created_at, modified_at, row_order
+      ) VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, 0, 0, 0, ?, ?, ?);
       """,
       bindings: [
         .text(taskID.uuidString),
@@ -748,6 +750,7 @@ actor AppOwnedWorkspaceStore {
         .optionalInt(durationMinutes),
         .int(priority),
         .optionalText(normalized(recurrenceRuleRaw)),
+        .optionalText(normalized(completedRecurringSignatureRuleRaw)),
         .double(modifiedAt.timeIntervalSinceReferenceDate),
         .double(modifiedAt.timeIntervalSinceReferenceDate),
         .int(rowOrder),
@@ -849,6 +852,7 @@ actor AppOwnedWorkspaceStore {
       hasExplicitTime: sourceTask.hasExplicitTime,
       durationMinutes: sourceTask.durationMinutes,
       recurrenceRuleRaw: nil,
+      completedRecurringSignatureRuleRaw: sourceTask.recurrenceRuleRaw,
       priority: sourceTask.priority,
       modifiedAt: modifiedAt,
       appendIfMissing: true
@@ -1380,6 +1384,7 @@ actor AppOwnedWorkspaceStore {
     let dueDate: Date?
     let hasExplicitTime: Bool
     let durationMinutes: Int?
+    let signatureRecurrenceRuleRaw: String?
     let priority: Int
     let isFlagged: Bool
     let requiredWorkDays: Int
@@ -1387,6 +1392,19 @@ actor AppOwnedWorkspaceStore {
     let createdAt: Date
     let modifiedAt: Date
     let rowOrder: Int
+  }
+
+  private struct LocalCompletedRecurringRestoreIdentity {
+    let taskID: String
+    let reminderIdentifier: String
+    let reminderExternalIdentifier: String
+    let signatureRecurrenceRuleRaw: String?
+  }
+
+  private struct ActiveRecurringTaskMatch {
+    let externalIdentifier: String
+    let recurrenceRuleRaw: String
+    let anchorPhaseRaw: String?
   }
 
   private struct TaskIdentityResolver {
@@ -1416,7 +1434,10 @@ actor AppOwnedWorkspaceStore {
             projectID: projectID,
             title: item.title,
             noteText: item.notes,
-            recurrenceRuleRaw: recurrenceRuleRaw
+            recurrenceRuleRaw: recurrenceRuleRaw,
+            startDate: item.startDate,
+            dueDate: item.dueDate,
+            hasExplicitTime: item.scheduleHasExplicitTime
           )
         ]
       {
@@ -1440,12 +1461,27 @@ actor AppOwnedWorkspaceStore {
     let title: String
     let noteText: String
     let recurrenceRuleRaw: String
+    let anchorPhaseRaw: String?
 
-    init(projectID: UUID, title: String, noteText: String, recurrenceRuleRaw: String) {
+    init(
+      projectID: UUID,
+      title: String,
+      noteText: String,
+      recurrenceRuleRaw: String,
+      startDate: Date?,
+      dueDate: Date?,
+      hasExplicitTime: Bool
+    ) {
       self.projectID = projectID
       self.title = Self.normalizedText(title)
       self.noteText = Self.normalizedText(noteText)
       self.recurrenceRuleRaw = Self.normalizedText(recurrenceRuleRaw)
+      self.anchorPhaseRaw = Self.anchorPhaseRaw(
+        recurrenceRuleRaw: recurrenceRuleRaw,
+        startDate: startDate,
+        dueDate: dueDate,
+        hasExplicitTime: hasExplicitTime
+      )
     }
 
     private static func normalizedText(_ value: String) -> String {
@@ -1454,6 +1490,49 @@ actor AppOwnedWorkspaceStore {
         .replacingOccurrences(of: "\r", with: "\n")
         .trimmingCharacters(in: .whitespacesAndNewlines)
     }
+
+    static func anchorPhaseRaw(
+      recurrenceRuleRaw: String,
+      startDate: Date?,
+      dueDate: Date?,
+      hasExplicitTime _: Bool
+    ) -> String? {
+      guard let anchorDate = dueDate ?? startDate else { return nil }
+      let parts = normalizedText(recurrenceRuleRaw)
+        .lowercased()
+        .split(separator: "|", omittingEmptySubsequences: false)
+      let frequency = parts.first.map(String.init) ?? ""
+      let interval = max(1, parts.dropFirst().first.flatMap { Int($0) } ?? 1)
+
+      switch frequency {
+      case "daily":
+        let dayIndex = Int(floor(anchorCalendar.startOfDay(for: anchorDate).timeIntervalSinceReferenceDate / 86_400))
+        return "daily|\(interval)|\(positiveModulo(dayIndex, interval))"
+      case "weekly":
+        let weekIndex = Int(floor(anchorCalendar.startOfDay(for: anchorDate).timeIntervalSinceReferenceDate / (7 * 86_400)))
+        return "weekly|\(interval)|\(positiveModulo(weekIndex, interval))"
+      case "monthly":
+        let components = anchorCalendar.dateComponents([.year, .month], from: anchorDate)
+        guard let year = components.year, let month = components.month else { return nil }
+        return "monthly|\(interval)|\(positiveModulo(year * 12 + month, interval))"
+      case "yearly":
+        let year = anchorCalendar.component(.year, from: anchorDate)
+        return "yearly|\(interval)|\(positiveModulo(year, interval))"
+      default:
+        return nil
+      }
+    }
+
+    private static func positiveModulo(_ value: Int, _ modulus: Int) -> Int {
+      let remainder = value % modulus
+      return remainder >= 0 ? remainder : remainder + modulus
+    }
+
+    private static let anchorCalendar: Calendar = {
+      var calendar = Calendar(identifier: .gregorian)
+      calendar.timeZone = .autoupdatingCurrent
+      return calendar
+    }()
   }
 
   private func loadTaskIdentityResolver(_ db: OpaquePointer) throws -> TaskIdentityResolver {
@@ -1461,7 +1540,7 @@ actor AppOwnedWorkspaceStore {
       db,
       """
       SELECT id, project_id, reminder_identifier, reminder_external_identifier, title, note_text, is_completed,
-        recurrence_rule_raw
+        recurrence_rule_raw, start_date, due_date, schedule_has_explicit_time
       FROM app_tasks
       ORDER BY is_completed ASC, modified_at DESC;
       """
@@ -1473,13 +1552,20 @@ actor AppOwnedWorkspaceStore {
       }
       let identifier = normalized(columnText(statement, 2))
       let externalIdentifier = normalized(columnText(statement, 3))
+      let isCompleted = columnInt(statement, 6) == 1
       let recurrenceRuleRaw = normalized(columnText(statement, 7))
-      let signature = recurrenceRuleRaw.map { recurrenceRuleRaw in
+      let startDate = columnDouble(statement, 8).map(Date.init(timeIntervalSinceReferenceDate:))
+      let dueDate = columnDouble(statement, 9).map(Date.init(timeIntervalSinceReferenceDate:))
+      let hasExplicitTime = columnInt(statement, 10) == 1
+      let signature = (!isCompleted ? recurrenceRuleRaw : nil).map { recurrenceRuleRaw in
         RecurringTaskSignature(
           projectID: projectID,
           title: columnText(statement, 4) ?? "",
           noteText: columnText(statement, 5) ?? "",
-          recurrenceRuleRaw: recurrenceRuleRaw
+          recurrenceRuleRaw: recurrenceRuleRaw,
+          startDate: startDate,
+          dueDate: dueDate,
+          hasExplicitTime: hasExplicitTime
         )
       }
       return (taskID, projectID, identifier, externalIdentifier, signature)
@@ -1546,8 +1632,8 @@ actor AppOwnedWorkspaceStore {
       """
       SELECT id, project_id, reminder_identifier, reminder_external_identifier, title, note_text,
         completion_date, start_date, due_date, schedule_has_explicit_time,
-        scheduled_duration_minutes, priority, is_flagged, required_work_days, attachment_count,
-        created_at, modified_at, row_order
+        scheduled_duration_minutes, completed_recurring_signature_rule_raw, priority, is_flagged,
+        required_work_days, attachment_count, created_at, modified_at, row_order
       FROM app_tasks
       WHERE is_completed = 1
         AND reminder_external_identifier LIKE \(sqlStringLiteral("%\(Self.localCompletedRecurringMarker)%"));
@@ -1565,13 +1651,14 @@ actor AppOwnedWorkspaceStore {
         dueDate: columnDouble(statement, 8).map(Date.init(timeIntervalSinceReferenceDate:)),
         hasExplicitTime: columnInt(statement, 9) == 1,
         durationMinutes: columnInt(statement, 10).flatMap { $0 > 0 ? $0 : nil },
-        priority: columnInt(statement, 11) ?? 0,
-        isFlagged: columnInt(statement, 12) == 1,
-        requiredWorkDays: columnInt(statement, 13) ?? 0,
-        attachmentCount: columnInt(statement, 14) ?? 0,
-        createdAt: Date(timeIntervalSinceReferenceDate: columnDouble(statement, 15) ?? 0),
-        modifiedAt: Date(timeIntervalSinceReferenceDate: columnDouble(statement, 16) ?? 0),
-        rowOrder: columnInt(statement, 17) ?? 0
+        signatureRecurrenceRuleRaw: normalized(columnText(statement, 11)),
+        priority: columnInt(statement, 12) ?? 0,
+        isFlagged: columnInt(statement, 13) == 1,
+        requiredWorkDays: columnInt(statement, 14) ?? 0,
+        attachmentCount: columnInt(statement, 15) ?? 0,
+        createdAt: Date(timeIntervalSinceReferenceDate: columnDouble(statement, 16) ?? 0),
+        modifiedAt: Date(timeIntervalSinceReferenceDate: columnDouble(statement, 17) ?? 0),
+        rowOrder: columnInt(statement, 18) ?? 0
       )
     }
   }
@@ -1581,16 +1668,15 @@ actor AppOwnedWorkspaceStore {
     rows: [LocalCompletedRecurringOccurrenceRow]
   ) throws {
     for row in rows {
-      guard let baseExternalIdentifier = Self.localCompletedRecurringBaseIdentifier(
-        from: row.reminderExternalIdentifier
-      ),
-        try hasActiveRecurringTask(
-          db,
-          projectID: row.projectID,
-          externalIdentifier: baseExternalIdentifier
-        )
-      else {
+      guard let restoreIdentity = try localCompletedRecurringRestoreIdentity(db, row: row) else {
         continue
+      }
+      if restoreIdentity.taskID != row.taskID {
+        try execute(
+          db,
+          "DELETE FROM app_tasks WHERE id = ?;",
+          bindings: [.text(row.taskID)]
+        )
       }
       try execute(
         db,
@@ -1599,14 +1685,15 @@ actor AppOwnedWorkspaceStore {
           id, project_id, reminder_identifier, reminder_external_identifier, parent_task_id,
           title, note_text, is_completed, completion_date, start_date, due_date,
           schedule_has_explicit_time, scheduled_duration_minutes, priority, recurrence_rule_raw,
-          is_flagged, required_work_days, attachment_count, created_at, modified_at, row_order
-        ) VALUES (?, ?, ?, ?, NULL, ?, ?, 1, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?);
+          completed_recurring_signature_rule_raw, is_flagged, required_work_days, attachment_count,
+          created_at, modified_at, row_order
+        ) VALUES (?, ?, ?, ?, NULL, ?, ?, 1, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?);
         """,
         bindings: [
-          .text(row.taskID),
+          .text(restoreIdentity.taskID),
           .text(row.projectID),
-          .text(row.reminderIdentifier),
-          .text(row.reminderExternalIdentifier),
+          .text(restoreIdentity.reminderIdentifier),
+          .text(restoreIdentity.reminderExternalIdentifier),
           .text(row.title),
           .text(row.noteText),
           .optionalDouble(row.completionDate?.timeIntervalSinceReferenceDate),
@@ -1615,6 +1702,7 @@ actor AppOwnedWorkspaceStore {
           .int(row.hasExplicitTime ? 1 : 0),
           .optionalInt(row.durationMinutes),
           .int(row.priority),
+          .optionalText(restoreIdentity.signatureRecurrenceRuleRaw),
           .int(row.isFlagged ? 1 : 0),
           .int(row.requiredWorkDays),
           .int(row.attachmentCount),
@@ -1626,21 +1714,163 @@ actor AppOwnedWorkspaceStore {
     }
   }
 
-  private func hasActiveRecurringTask(
+  private func localCompletedRecurringRestoreIdentity(
+    _ db: OpaquePointer,
+    row: LocalCompletedRecurringOccurrenceRow
+  ) throws -> LocalCompletedRecurringRestoreIdentity? {
+    guard let activeMatch = try activeRecurringTaskMatch(db, matching: row),
+      let reminderExternalIdentifier = Self.localCompletedRecurringExternalIdentifier(
+        baseExternalIdentifier: activeMatch.externalIdentifier,
+        dueDate: row.dueDate,
+        hasExplicitTime: row.hasExplicitTime
+      )
+    else {
+      return nil
+    }
+    return LocalCompletedRecurringRestoreIdentity(
+      taskID: ReminderProjectionIdentity.taskID(for: reminderExternalIdentifier).uuidString,
+      reminderIdentifier: "app-completed:\(reminderExternalIdentifier)",
+      reminderExternalIdentifier: reminderExternalIdentifier,
+      signatureRecurrenceRuleRaw: row.signatureRecurrenceRuleRaw ?? activeMatch.recurrenceRuleRaw
+    )
+  }
+
+  private func activeRecurringTaskMatch(
+    _ db: OpaquePointer,
+    matching row: LocalCompletedRecurringOccurrenceRow
+  ) throws -> ActiveRecurringTaskMatch? {
+    if let baseExternalIdentifier = Self.localCompletedRecurringBaseIdentifier(
+      from: row.reminderExternalIdentifier
+    ),
+      let exactMatch = try activeRecurringTaskMatch(
+        db,
+        projectID: row.projectID,
+        externalIdentifier: baseExternalIdentifier
+      )
+    {
+      return exactMatch
+    }
+    guard let recurrenceRuleRaw = row.signatureRecurrenceRuleRaw else { return nil }
+    let anchorPhaseRaw = RecurringTaskSignature.anchorPhaseRaw(
+      recurrenceRuleRaw: recurrenceRuleRaw,
+      startDate: row.startDate,
+      dueDate: row.dueDate,
+      hasExplicitTime: row.hasExplicitTime
+    )
+    if let exactSignatureMatch = try uniqueActiveRecurringTaskMatch(
+      db,
+      projectID: row.projectID,
+      title: row.title,
+      noteText: row.noteText,
+      recurrenceRuleRaw: recurrenceRuleRaw,
+      anchorPhaseRaw: anchorPhaseRaw,
+      requiresNoteMatch: true
+    ) {
+      return exactSignatureMatch
+    }
+    return try uniqueActiveRecurringTaskMatch(
+      db,
+      projectID: row.projectID,
+      title: row.title,
+      noteText: row.noteText,
+      recurrenceRuleRaw: recurrenceRuleRaw,
+      anchorPhaseRaw: anchorPhaseRaw,
+      requiresNoteMatch: false
+    )
+  }
+
+  private func activeRecurringTaskMatch(
     _ db: OpaquePointer,
     projectID: String,
     externalIdentifier: String
-  ) throws -> Bool {
-    try scalarInt(
+  ) throws -> ActiveRecurringTaskMatch? {
+    try query(
       db,
-      sql: """
-      SELECT COUNT(*) FROM app_tasks
+      """
+      SELECT reminder_external_identifier, recurrence_rule_raw, start_date, due_date,
+        schedule_has_explicit_time
+      FROM app_tasks
       WHERE project_id = \(sqlStringLiteral(projectID))
         AND reminder_external_identifier = \(sqlStringLiteral(externalIdentifier))
         AND is_completed = 0
-        AND recurrence_rule_raw IS NOT NULL;
+        AND recurrence_rule_raw IS NOT NULL
+      LIMIT 1;
       """
-    ) > 0
+    ) { statement -> ActiveRecurringTaskMatch? in
+      guard let externalIdentifier = normalized(columnText(statement, 0)),
+        let recurrenceRuleRaw = normalized(columnText(statement, 1))
+      else {
+        return nil
+      }
+      let startDate = columnDouble(statement, 2).map(Date.init(timeIntervalSinceReferenceDate:))
+      let dueDate = columnDouble(statement, 3).map(Date.init(timeIntervalSinceReferenceDate:))
+      let hasExplicitTime = columnInt(statement, 4) == 1
+      return ActiveRecurringTaskMatch(
+        externalIdentifier: externalIdentifier,
+        recurrenceRuleRaw: recurrenceRuleRaw,
+        anchorPhaseRaw: RecurringTaskSignature.anchorPhaseRaw(
+          recurrenceRuleRaw: recurrenceRuleRaw,
+          startDate: startDate,
+          dueDate: dueDate,
+          hasExplicitTime: hasExplicitTime
+        )
+      )
+    }.compactMap { $0 }.first
+  }
+
+  private func uniqueActiveRecurringTaskMatch(
+    _ db: OpaquePointer,
+    projectID: String,
+    title: String,
+    noteText: String,
+    recurrenceRuleRaw: String,
+    anchorPhaseRaw: String?,
+    requiresNoteMatch: Bool
+  ) throws -> ActiveRecurringTaskMatch? {
+    let noteClause = requiresNoteMatch
+      ? "AND note_text = \(sqlStringLiteral(noteText))"
+      : ""
+    let rows = try query(
+      db,
+      """
+      SELECT reminder_external_identifier, recurrence_rule_raw, start_date, due_date,
+        schedule_has_explicit_time
+      FROM app_tasks
+      WHERE project_id = \(sqlStringLiteral(projectID))
+        AND title = \(sqlStringLiteral(title))
+        \(noteClause)
+        AND recurrence_rule_raw = \(sqlStringLiteral(recurrenceRuleRaw))
+        AND reminder_external_identifier IS NOT NULL
+        AND is_completed = 0;
+      """
+    ) { statement -> ActiveRecurringTaskMatch? in
+      guard let externalIdentifier = normalized(columnText(statement, 0)),
+        let recurrenceRuleRaw = normalized(columnText(statement, 1))
+      else {
+        return nil
+      }
+      let startDate = columnDouble(statement, 2).map(Date.init(timeIntervalSinceReferenceDate:))
+      let dueDate = columnDouble(statement, 3).map(Date.init(timeIntervalSinceReferenceDate:))
+      let hasExplicitTime = columnInt(statement, 4) == 1
+      return ActiveRecurringTaskMatch(
+        externalIdentifier: externalIdentifier,
+        recurrenceRuleRaw: recurrenceRuleRaw,
+        anchorPhaseRaw: RecurringTaskSignature.anchorPhaseRaw(
+          recurrenceRuleRaw: recurrenceRuleRaw,
+          startDate: startDate,
+          dueDate: dueDate,
+          hasExplicitTime: hasExplicitTime
+        )
+      )
+    }
+    let matches = rows
+      .compactMap { $0 }
+      .filter { match in
+        guard let anchorPhaseRaw else { return true }
+        return match.anchorPhaseRaw == anchorPhaseRaw
+      }
+    guard matches.count == 1 else { return nil }
+    return matches[0]
   }
 
   private func loadProjects(

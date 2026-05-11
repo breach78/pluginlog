@@ -1948,6 +1948,248 @@ final class AppOwnedWorkspaceStoreTests: XCTestCase {
     )
   }
 
+  func testRecurringExternalIdentifierChangeRekeysLocalCompletedOccurrence()
+    async throws
+  {
+    let containerRoot = try makeTemporaryDirectory()
+    let importedAt = Date(timeIntervalSinceReferenceDate: 645)
+    let dueDate = try XCTUnwrap(Self.calendar.date(from: DateComponents(year: 2026, month: 5, day: 11, hour: 9)))
+    let projectID = RetainedProjectionBuilder.derivedProjectID(for: "list-1")
+    let activeTaskID = ReminderProjectionIdentity.taskID(for: "recurring-old")
+    let initial = Self.reminderItem(
+      identifier: "recurring-old",
+      title: "Recurring",
+      notes: "same note",
+      dueDate: dueDate,
+      scheduleHasExplicitTime: true,
+      recurrenceRuleRaw: "daily",
+      createdAt: importedAt
+    )
+    let changed = Self.reminderItem(
+      identifier: "recurring-new",
+      title: "Recurring",
+      notes: "same note",
+      dueDate: dueDate.addingTimeInterval(86_400),
+      scheduleHasExplicitTime: true,
+      recurrenceRuleRaw: "daily",
+      createdAt: importedAt.addingTimeInterval(10)
+    )
+    let store = AppOwnedWorkspaceStore(containerRootURL: containerRoot)
+
+    try await store.replaceReminderSnapshot(
+      Self.batch(items: [initial], createdAt: importedAt),
+      importedAt: importedAt,
+      coverage: .full
+    )
+    let sourceTask = try await store.taskReference(projectID: projectID, taskID: activeTaskID)
+    _ = try await store.upsertLocalCompletedRecurringOccurrence(
+      projectID: projectID,
+      sourceTask: sourceTask,
+      completionDate: dueDate,
+      modifiedAt: importedAt.addingTimeInterval(1)
+    )
+
+    try await store.replaceReminderSnapshot(
+      Self.batch(items: [changed], createdAt: importedAt.addingTimeInterval(10)),
+      importedAt: importedAt.addingTimeInterval(10),
+      coverage: .full
+    )
+    let completedRows = try localCompletedRecurringRows(containerRoot: containerRoot)
+
+    XCTAssertEqual(completedRows.count, 1)
+    let completedRow = try XCTUnwrap(completedRows.first)
+    XCTAssertTrue(completedRow.externalIdentifier.hasPrefix("recurring-new::app-completed::"))
+    XCTAssertEqual(completedRow.taskID, ReminderProjectionIdentity.taskID(for: completedRow.externalIdentifier))
+    XCTAssertEqual(completedRow.recurrenceRuleRaw, "daily")
+  }
+
+  func testLegacyLocalCompletedOccurrenceBackfillsSignatureBeforeExternalIdentifierChange()
+    async throws
+  {
+    let containerRoot = try makeTemporaryDirectory()
+    let importedAt = Date(timeIntervalSinceReferenceDate: 646)
+    let dueDate = try XCTUnwrap(Self.calendar.date(from: DateComponents(year: 2026, month: 5, day: 11, hour: 9)))
+    let projectID = RetainedProjectionBuilder.derivedProjectID(for: "list-1")
+    let activeTaskID = ReminderProjectionIdentity.taskID(for: "recurring-old")
+    let initial = Self.reminderItem(
+      identifier: "recurring-old",
+      title: "Recurring",
+      notes: "same note",
+      dueDate: dueDate,
+      scheduleHasExplicitTime: true,
+      recurrenceRuleRaw: "daily",
+      createdAt: importedAt
+    )
+    let changed = Self.reminderItem(
+      identifier: "recurring-new",
+      title: "Recurring",
+      notes: "same note",
+      dueDate: dueDate.addingTimeInterval(86_400),
+      scheduleHasExplicitTime: true,
+      recurrenceRuleRaw: "daily",
+      createdAt: importedAt.addingTimeInterval(20)
+    )
+    let store = AppOwnedWorkspaceStore(containerRootURL: containerRoot)
+
+    try await store.replaceReminderSnapshot(
+      Self.batch(items: [initial], createdAt: importedAt),
+      importedAt: importedAt,
+      coverage: .full
+    )
+    let sourceTask = try await store.taskReference(projectID: projectID, taskID: activeTaskID)
+    _ = try await store.upsertLocalCompletedRecurringOccurrence(
+      projectID: projectID,
+      sourceTask: sourceTask,
+      completionDate: dueDate,
+      modifiedAt: importedAt.addingTimeInterval(1)
+    )
+    try clearLocalCompletedRecurringSignatureRules(containerRoot: containerRoot)
+
+    try await store.replaceReminderSnapshot(
+      Self.batch(items: [initial], createdAt: importedAt.addingTimeInterval(10)),
+      importedAt: importedAt.addingTimeInterval(10),
+      coverage: .full
+    )
+    try await store.replaceReminderSnapshot(
+      Self.batch(items: [changed], createdAt: importedAt.addingTimeInterval(20)),
+      importedAt: importedAt.addingTimeInterval(20),
+      coverage: .full
+    )
+    let completedRows = try localCompletedRecurringRows(containerRoot: containerRoot)
+
+    XCTAssertEqual(completedRows.count, 1)
+    let completedRow = try XCTUnwrap(completedRows.first)
+    XCTAssertTrue(completedRow.externalIdentifier.hasPrefix("recurring-new::app-completed::"))
+    XCTAssertEqual(completedRow.recurrenceRuleRaw, "daily")
+  }
+
+  func testRecurringIdentityResolverUsesAnchorPhaseWhenExternalIdentifiersChange()
+    async throws
+  {
+    let store = AppOwnedWorkspaceStore(containerRootURL: try makeTemporaryDirectory())
+    let importedAt = Date(timeIntervalSinceReferenceDate: 647)
+    let firstDate = try XCTUnwrap(Self.calendar.date(from: DateComponents(year: 2026, month: 5, day: 2, hour: 9)))
+    let secondDate = try XCTUnwrap(Self.calendar.date(from: DateComponents(year: 2026, month: 5, day: 3, hour: 9)))
+    let firstTaskID = ReminderProjectionIdentity.taskID(for: "first-old")
+    let secondTaskID = ReminderProjectionIdentity.taskID(for: "second-old")
+    let initial = [
+      Self.reminderItem(
+        identifier: "first-old",
+        title: "Recurring",
+        notes: "same note",
+        dueDate: firstDate,
+        scheduleHasExplicitTime: true,
+        recurrenceRuleRaw: "daily|3",
+        createdAt: importedAt
+      ),
+      Self.reminderItem(
+        identifier: "second-old",
+        title: "Recurring",
+        notes: "same note",
+        dueDate: secondDate,
+        scheduleHasExplicitTime: true,
+        recurrenceRuleRaw: "daily|3",
+        createdAt: importedAt
+      ),
+    ]
+    let changed = [
+      Self.reminderItem(
+        identifier: "first-new",
+        title: "Recurring",
+        notes: "same note",
+        dueDate: firstDate.addingTimeInterval(3 * 86_400),
+        scheduleHasExplicitTime: true,
+        recurrenceRuleRaw: "daily|3",
+        createdAt: importedAt.addingTimeInterval(10)
+      ),
+      Self.reminderItem(
+        identifier: "second-new",
+        title: "Recurring",
+        notes: "same note",
+        dueDate: secondDate.addingTimeInterval(3 * 86_400),
+        scheduleHasExplicitTime: true,
+        recurrenceRuleRaw: "daily|3",
+        createdAt: importedAt.addingTimeInterval(10)
+      ),
+    ]
+
+    try await store.replaceReminderSnapshot(Self.batch(items: initial, createdAt: importedAt), importedAt: importedAt, coverage: .full)
+    try await store.replaceReminderSnapshot(
+      Self.batch(items: changed, createdAt: importedAt.addingTimeInterval(10)),
+      importedAt: importedAt.addingTimeInterval(10),
+      coverage: .full
+    )
+    let snapshot = try await store.loadRetainedWorkspaceSnapshot(projectIDs: [])
+    let tasksByExternalIdentifier = Dictionary(uniqueKeysWithValues: snapshot.tasks.compactMap { task in
+      task.identity.reminderExternalIdentifier.map { ($0, task) }
+    })
+
+    XCTAssertEqual(tasksByExternalIdentifier["first-new"]?.identity.taskID, firstTaskID)
+    XCTAssertEqual(tasksByExternalIdentifier["second-new"]?.identity.taskID, secondTaskID)
+  }
+
+  func testCompletedRecurringRestoreDoesNotRekeyToDifferentAnchorPhase()
+    async throws
+  {
+    let containerRoot = try makeTemporaryDirectory()
+    let importedAt = Date(timeIntervalSinceReferenceDate: 648)
+    let firstDate = try XCTUnwrap(Self.calendar.date(from: DateComponents(year: 2026, month: 5, day: 2, hour: 9)))
+    let secondDate = try XCTUnwrap(Self.calendar.date(from: DateComponents(year: 2026, month: 5, day: 3, hour: 9)))
+    let projectID = RetainedProjectionBuilder.derivedProjectID(for: "list-1")
+    let firstTaskID = ReminderProjectionIdentity.taskID(for: "first-old")
+    let initial = [
+      Self.reminderItem(
+        identifier: "first-old",
+        title: "Recurring",
+        notes: "same note",
+        dueDate: firstDate,
+        scheduleHasExplicitTime: true,
+        recurrenceRuleRaw: "daily|3",
+        createdAt: importedAt
+      ),
+      Self.reminderItem(
+        identifier: "second-old",
+        title: "Recurring",
+        notes: "same note",
+        dueDate: secondDate,
+        scheduleHasExplicitTime: true,
+        recurrenceRuleRaw: "daily|3",
+        createdAt: importedAt
+      ),
+    ]
+    let remainingDifferentPhase = Self.reminderItem(
+      identifier: "second-new",
+      title: "Recurring",
+      notes: "same note",
+      dueDate: secondDate.addingTimeInterval(3 * 86_400),
+      scheduleHasExplicitTime: true,
+      recurrenceRuleRaw: "daily|3",
+      createdAt: importedAt.addingTimeInterval(10)
+    )
+    let store = AppOwnedWorkspaceStore(containerRootURL: containerRoot)
+
+    try await store.replaceReminderSnapshot(Self.batch(items: initial, createdAt: importedAt), importedAt: importedAt, coverage: .full)
+    let sourceTask = try await store.taskReference(projectID: projectID, taskID: firstTaskID)
+    _ = try await store.upsertLocalCompletedRecurringOccurrence(
+      projectID: projectID,
+      sourceTask: sourceTask,
+      completionDate: firstDate,
+      modifiedAt: importedAt.addingTimeInterval(1)
+    )
+
+    try await store.replaceReminderSnapshot(
+      Self.batch(items: [remainingDifferentPhase], createdAt: importedAt.addingTimeInterval(10)),
+      importedAt: importedAt.addingTimeInterval(10),
+      coverage: .full
+    )
+    let completedRows = try localCompletedRecurringRows(containerRoot: containerRoot)
+
+    XCTAssertEqual(completedRows.count, 1)
+    let completedRow = try XCTUnwrap(completedRows.first)
+    XCTAssertTrue(completedRow.externalIdentifier.hasPrefix("first-old::app-completed::"))
+    XCTAssertFalse(completedRow.externalIdentifier.hasPrefix("second-new::app-completed::"))
+  }
+
   func testRecurringIdentityResolverDoesNotMergeDuplicateTitleRecurringTasks()
     async throws
   {
@@ -2135,6 +2377,69 @@ final class AppOwnedWorkspaceStoreTests: XCTestCase {
     defer { sqlite3_close(db) }
     XCTAssertEqual(
       sqlite3_exec(db, "UPDATE app_projects SET progress_stage = 'do';", nil, nil, nil),
+      SQLITE_OK
+    )
+  }
+
+  private func localCompletedRecurringRows(containerRoot: URL) throws -> [
+    (taskID: UUID, externalIdentifier: String, recurrenceRuleRaw: String?)
+  ] {
+    let sqliteURL = ContainerPaths(root: containerRoot).sqliteURL
+    var db: OpaquePointer?
+    XCTAssertEqual(sqlite3_open(sqliteURL.path, &db), SQLITE_OK)
+    defer { sqlite3_close(db) }
+    var statement: OpaquePointer?
+    XCTAssertEqual(
+      sqlite3_prepare_v2(
+        db,
+        """
+        SELECT id, reminder_external_identifier, completed_recurring_signature_rule_raw
+        FROM app_tasks
+        WHERE is_completed = 1
+          AND reminder_external_identifier LIKE '%::app-completed::%'
+        ORDER BY reminder_external_identifier;
+        """,
+        -1,
+        &statement,
+        nil
+      ),
+      SQLITE_OK
+    )
+    defer { sqlite3_finalize(statement) }
+    var rows: [(taskID: UUID, externalIdentifier: String, recurrenceRuleRaw: String?)] = []
+    while sqlite3_step(statement) == SQLITE_ROW {
+      guard
+        let taskIDText = sqlite3_column_text(statement, 0).map({ String(cString: $0) }),
+        let taskID = UUID(uuidString: taskIDText),
+        let externalIdentifier = sqlite3_column_text(statement, 1).map({ String(cString: $0) })
+      else {
+        XCTFail("invalid local completed recurring row")
+        continue
+      }
+      let recurrenceRuleRaw = sqlite3_column_text(statement, 2).map { String(cString: $0) }
+      rows.append((taskID: taskID, externalIdentifier: externalIdentifier, recurrenceRuleRaw: recurrenceRuleRaw))
+    }
+    return rows
+  }
+
+  private func clearLocalCompletedRecurringSignatureRules(containerRoot: URL) throws {
+    let sqliteURL = ContainerPaths(root: containerRoot).sqliteURL
+    var db: OpaquePointer?
+    XCTAssertEqual(sqlite3_open(sqliteURL.path, &db), SQLITE_OK)
+    defer { sqlite3_close(db) }
+    XCTAssertEqual(
+      sqlite3_exec(
+        db,
+        """
+        UPDATE app_tasks
+        SET completed_recurring_signature_rule_raw = NULL
+        WHERE is_completed = 1
+          AND reminder_external_identifier LIKE '%::app-completed::%';
+        """,
+        nil,
+        nil,
+        nil
+      ),
       SQLITE_OK
     )
   }
