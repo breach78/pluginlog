@@ -109,7 +109,7 @@ extension AppState {
         )
     }
     let store = AppOwnedWorkspaceStore(containerRootURL: containerRootURL)
-    try await store.replaceReminderSnapshot(batch, importedAt: importedAt)
+    try await store.replaceReminderSnapshot(batch, importedAt: importedAt, coverage: .full)
     try await runLegacyObsidianProjectMigrationsIfNeeded(store: store)
     try await store.setProjectionReadEnabled(true)
     return store

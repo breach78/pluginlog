@@ -24,9 +24,10 @@ enum AppOwnedWorkspaceStoreError: LocalizedError {
 actor AppOwnedWorkspaceStore {
   private static let localCompletedRecurringMarker = "::app-completed::"
 
-  enum ReminderSnapshotReplacementScope: Sendable {
-    case allProjects
+  enum ReminderImportCoverage: Sendable {
+    case full
     case listedProjectsOnly
+    case nonDestructive
   }
 
   struct ProjectReference: Equatable, Sendable {
@@ -94,6 +95,26 @@ actor AppOwnedWorkspaceStore {
       self.durationMinutes = durationMinutes
       self.rowOrder = rowOrder
     }
+  }
+
+  private struct ReminderImportPlan {
+    let projectsToUpsert: [ProjectUpsert]
+    let tasksToUpsert: [TaskUpsert]
+    let taskIDsToDelete: Set<UUID>
+    let projectIDsToDelete: Set<UUID>
+  }
+
+  private struct ProjectUpsert {
+    let list: ReminderListImportSnapshot
+    let projectID: UUID
+  }
+
+  private struct TaskUpsert {
+    let item: ReminderItemImportSnapshot
+    let list: ReminderListImportSnapshot
+    let projectID: UUID
+    let taskID: UUID
+    let rowOrder: Int
   }
 
   let sqliteURL: URL
@@ -164,7 +185,7 @@ actor AppOwnedWorkspaceStore {
   func replaceReminderSnapshot(
     _ batch: ReminderImportSnapshotBatch,
     importedAt: Date = .now,
-    scope: ReminderSnapshotReplacementScope = .allProjects
+    coverage: ReminderImportCoverage = .nonDestructive
   ) throws {
     let db = try openDatabase()
     defer { sqlite3_close(db) }
@@ -175,59 +196,29 @@ actor AppOwnedWorkspaceStore {
       let preservedTaskSupplements = try loadTaskSupplements(db)
       let preservedCompletedRecurringOccurrences = try loadLocalCompletedRecurringOccurrenceRows(db)
       let taskIdentityResolver = try loadTaskIdentityResolver(db)
-      var importedProjectIDs = Set<UUID>()
-      var importedTaskIDsByProjectID: [UUID: Set<UUID>] = [:]
+      let plan = try buildReminderImportPlan(
+        db,
+        batch: batch,
+        coverage: coverage,
+        taskIdentityResolver: taskIdentityResolver
+      )
       try upsertMetadata(db, key: "last_reminders_import_at", value: String(importedAt.timeIntervalSinceReferenceDate))
 
-      let listsByIdentifier = Dictionary(uniqueKeysWithValues: batch.lists.map { ($0.identifier, $0) })
-      for list in batch.lists {
-        let projectID = try insertProject(db, list: list, importedAt: importedAt)
-        importedProjectIDs.insert(projectID)
-        importedTaskIDsByProjectID[projectID] = importedTaskIDsByProjectID[projectID] ?? []
-        let items = batch.itemsByListIdentifier[list.identifier] ?? []
-        for (index, item) in items.enumerated() {
-          let taskID = try insertTask(
-            db,
-            item: item,
-            list: list,
-            rowOrder: index,
-            taskIdentityResolver: taskIdentityResolver
-          )
-          importedTaskIDsByProjectID[projectID, default: []].insert(taskID)
-        }
+      for project in plan.projectsToUpsert {
+        _ = try insertProject(db, list: project.list, importedAt: importedAt)
       }
-
-      for (listIdentifier, items) in batch.itemsByListIdentifier where listsByIdentifier[listIdentifier] == nil {
-        let fallbackList = ReminderListImportSnapshot(
-          identifier: listIdentifier,
-          externalIdentifier: listIdentifier,
-          title: items.first?.sourceListTitle ?? "Imported Reminders",
-          colorHex: nil
-        )
-        let projectID = try insertProject(db, list: fallbackList, importedAt: importedAt)
-        importedProjectIDs.insert(projectID)
-        importedTaskIDsByProjectID[projectID] = importedTaskIDsByProjectID[projectID] ?? []
-        for (index, item) in items.enumerated() {
-          let taskID = try insertTask(
-            db,
-            item: item,
-            list: fallbackList,
-            rowOrder: index,
-            taskIdentityResolver: taskIdentityResolver
-          )
-          importedTaskIDsByProjectID[projectID, default: []].insert(taskID)
-        }
-      }
-      try deleteTasksMissingFromReminderSnapshot(
-        db,
-        importedTaskIDsByProjectID: importedTaskIDsByProjectID
-      )
-      if scope == .allProjects {
-        try deleteProjectsMissingFromReminderSnapshot(
+      for task in plan.tasksToUpsert {
+        _ = try insertTask(
           db,
-          importedProjectIDs: importedProjectIDs
+          item: task.item,
+          list: task.list,
+          rowOrder: task.rowOrder,
+          taskIdentityResolver: taskIdentityResolver,
+          resolvedTaskID: task.taskID
         )
       }
+      try deleteTasks(db, taskIDs: plan.taskIDsToDelete)
+      try deleteProjects(db, projectIDs: plan.projectIDsToDelete)
       try mergeProjectSupplements(
         db,
         supplements: preservedProjectSupplements,
@@ -978,13 +969,98 @@ actor AppOwnedWorkspaceStore {
     }
   }
 
+  private func buildReminderImportPlan(
+    _ db: OpaquePointer,
+    batch: ReminderImportSnapshotBatch,
+    coverage: ReminderImportCoverage,
+    taskIdentityResolver: TaskIdentityResolver
+  ) throws -> ReminderImportPlan {
+    var projectsToUpsert: [ProjectUpsert] = []
+    var tasksToUpsert: [TaskUpsert] = []
+    var importedProjectIDs = Set<UUID>()
+    var importedTaskIDsByProjectID: [UUID: Set<UUID>] = [:]
+
+    func appendList(_ list: ReminderListImportSnapshot, items: [ReminderItemImportSnapshot]) {
+      let projectID = projectID(for: list)
+      projectsToUpsert.append(ProjectUpsert(list: list, projectID: projectID))
+      importedProjectIDs.insert(projectID)
+      importedTaskIDsByProjectID[projectID] = importedTaskIDsByProjectID[projectID] ?? []
+      for (index, item) in items.enumerated() {
+        let taskIdentity = normalized(item.externalIdentifier) ?? item.identifier
+        let taskID = taskIdentityResolver.taskID(
+          for: item,
+          projectID: projectID,
+          fallbackIdentity: taskIdentity
+        )
+        tasksToUpsert.append(
+          TaskUpsert(
+            item: item,
+            list: list,
+            projectID: projectID,
+            taskID: taskID,
+            rowOrder: index
+          )
+        )
+        importedTaskIDsByProjectID[projectID, default: []].insert(taskID)
+      }
+    }
+
+    let listsByIdentifier = Dictionary(uniqueKeysWithValues: batch.lists.map { ($0.identifier, $0) })
+    for list in batch.lists {
+      appendList(list, items: batch.itemsByListIdentifier[list.identifier] ?? [])
+    }
+    for (listIdentifier, items) in batch.itemsByListIdentifier where listsByIdentifier[listIdentifier] == nil {
+      let fallbackList = ReminderListImportSnapshot(
+        identifier: listIdentifier,
+        externalIdentifier: listIdentifier,
+        title: items.first?.sourceListTitle ?? "Imported Reminders",
+        colorHex: nil
+      )
+      appendList(fallbackList, items: items)
+    }
+
+    let taskIDsToDelete: Set<UUID>
+    let projectIDsToDelete: Set<UUID>
+    switch coverage {
+    case .full:
+      taskIDsToDelete = try taskIDsMissingFromReminderSnapshot(
+        db,
+        importedTaskIDsByProjectID: importedTaskIDsByProjectID
+      )
+      projectIDsToDelete = try projectIDsMissingFromReminderSnapshot(
+        db,
+        importedProjectIDs: importedProjectIDs
+      )
+    case .listedProjectsOnly:
+      taskIDsToDelete = try taskIDsMissingFromReminderSnapshot(
+        db,
+        importedTaskIDsByProjectID: importedTaskIDsByProjectID
+      )
+      projectIDsToDelete = []
+    case .nonDestructive:
+      taskIDsToDelete = []
+      projectIDsToDelete = []
+    }
+
+    return ReminderImportPlan(
+      projectsToUpsert: projectsToUpsert,
+      tasksToUpsert: tasksToUpsert,
+      taskIDsToDelete: taskIDsToDelete,
+      projectIDsToDelete: projectIDsToDelete
+    )
+  }
+
+  private func projectID(for list: ReminderListImportSnapshot) -> UUID {
+    let identity = normalized(list.externalIdentifier) ?? list.identifier
+    return RetainedProjectionBuilder.derivedProjectID(for: identity)
+  }
+
   private func insertProject(
     _ db: OpaquePointer,
     list: ReminderListImportSnapshot,
     importedAt: Date
   ) throws -> UUID {
-    let identity = normalized(list.externalIdentifier) ?? list.identifier
-    let projectID = RetainedProjectionBuilder.derivedProjectID(for: identity)
+    let projectID = projectID(for: list)
     try execute(
       db,
       """
@@ -1015,12 +1091,13 @@ actor AppOwnedWorkspaceStore {
     item: ReminderItemImportSnapshot,
     list: ReminderListImportSnapshot,
     rowOrder: Int,
-    taskIdentityResolver: TaskIdentityResolver
+    taskIdentityResolver: TaskIdentityResolver,
+    resolvedTaskID: UUID? = nil
   ) throws -> UUID {
     let projectIdentity = normalized(list.externalIdentifier) ?? list.identifier
     let projectID = RetainedProjectionBuilder.derivedProjectID(for: projectIdentity)
     let taskIdentity = normalized(item.externalIdentifier) ?? item.identifier
-    let taskID = taskIdentityResolver.taskID(
+    let taskID = resolvedTaskID ?? taskIdentityResolver.taskID(
       for: item,
       projectID: projectID,
       fallbackIdentity: taskIdentity
@@ -1085,43 +1162,71 @@ actor AppOwnedWorkspaceStore {
     return taskID
   }
 
-  private func deleteTasksMissingFromReminderSnapshot(
+  private func taskIDsMissingFromReminderSnapshot(
     _ db: OpaquePointer,
     importedTaskIDsByProjectID: [UUID: Set<UUID>]
-  ) throws {
+  ) throws -> Set<UUID> {
+    var taskIDsToDelete = Set<UUID>()
     for (projectID, taskIDs) in importedTaskIDsByProjectID {
-      let missingTaskClause: String
-      if taskIDs.isEmpty {
-        missingTaskClause = ""
-      } else {
-        missingTaskClause = """
-          AND id NOT IN (\(taskIDs.map { sqlStringLiteral($0.uuidString) }.sorted().joined(separator: ", ")))
-        """
-      }
-      try exec(
+      let existingTaskIDs = try query(
         db,
         """
-        DELETE FROM app_tasks
+        SELECT id
+        FROM app_tasks
         WHERE project_id = \(sqlStringLiteral(projectID.uuidString))
-          \(missingTaskClause)
           AND (
             reminder_external_identifier IS NULL
             OR reminder_external_identifier NOT LIKE \(sqlStringLiteral("%\(Self.localCompletedRecurringMarker)%"))
           );
         """
-      )
+      ) { statement -> UUID in
+        guard let taskID = UUID(uuidString: columnText(statement, 0) ?? "") else {
+          throw AppOwnedWorkspaceStoreError.invalidSQLiteValue("invalid task id")
+        }
+        return taskID
+      }
+      taskIDsToDelete.formUnion(Set(existingTaskIDs).subtracting(taskIDs))
     }
+    return taskIDsToDelete
   }
 
-  private func deleteProjectsMissingFromReminderSnapshot(
+  private func projectIDsMissingFromReminderSnapshot(
     _ db: OpaquePointer,
     importedProjectIDs: Set<UUID>
-  ) throws {
-    if importedProjectIDs.isEmpty {
-      try exec(db, "DELETE FROM app_projects;")
-      return
+  ) throws -> Set<UUID> {
+    let existingProjectIDs = try query(
+      db,
+      """
+      SELECT id
+      FROM app_projects;
+      """
+    ) { statement -> UUID in
+      guard let projectID = UUID(uuidString: columnText(statement, 0) ?? "") else {
+        throw AppOwnedWorkspaceStoreError.invalidSQLiteValue("invalid project id")
+      }
+      return projectID
     }
-    let keptProjectIDs = importedProjectIDs
+    return Set(existingProjectIDs).subtracting(importedProjectIDs)
+  }
+
+  private func deleteTasks(_ db: OpaquePointer, taskIDs: Set<UUID>) throws {
+    guard !taskIDs.isEmpty else { return }
+    let deletedTaskIDs = taskIDs
+      .map { sqlStringLiteral($0.uuidString) }
+      .sorted()
+      .joined(separator: ", ")
+    try exec(
+      db,
+      """
+      DELETE FROM app_tasks
+      WHERE id IN (\(deletedTaskIDs));
+      """
+    )
+  }
+
+  private func deleteProjects(_ db: OpaquePointer, projectIDs: Set<UUID>) throws {
+    guard !projectIDs.isEmpty else { return }
+    let deletedProjectIDs = projectIDs
       .map { sqlStringLiteral($0.uuidString) }
       .sorted()
       .joined(separator: ", ")
@@ -1129,7 +1234,7 @@ actor AppOwnedWorkspaceStore {
       db,
       """
       DELETE FROM app_projects
-      WHERE id NOT IN (\(keptProjectIDs));
+      WHERE id IN (\(deletedProjectIDs));
       """
     )
   }
@@ -1305,9 +1410,14 @@ actor AppOwnedWorkspaceStore {
         return existingID
       }
       if !item.isCompleted,
-        normalizedValue(item.recurrenceRuleRaw) != nil,
+        let recurrenceRuleRaw = normalizedValue(item.recurrenceRuleRaw),
         let existingID = recurringIDsBySignature[
-          RecurringTaskSignature(projectID: projectID, title: item.title, noteText: item.notes)
+          RecurringTaskSignature(
+            projectID: projectID,
+            title: item.title,
+            noteText: item.notes,
+            recurrenceRuleRaw: recurrenceRuleRaw
+          )
         ]
       {
         return existingID
@@ -1329,11 +1439,13 @@ actor AppOwnedWorkspaceStore {
     let projectID: UUID
     let title: String
     let noteText: String
+    let recurrenceRuleRaw: String
 
-    init(projectID: UUID, title: String, noteText: String) {
+    init(projectID: UUID, title: String, noteText: String, recurrenceRuleRaw: String) {
       self.projectID = projectID
       self.title = Self.normalizedText(title)
       self.noteText = Self.normalizedText(noteText)
+      self.recurrenceRuleRaw = Self.normalizedText(recurrenceRuleRaw)
     }
 
     private static func normalizedText(_ value: String) -> String {
@@ -1362,11 +1474,12 @@ actor AppOwnedWorkspaceStore {
       let identifier = normalized(columnText(statement, 2))
       let externalIdentifier = normalized(columnText(statement, 3))
       let recurrenceRuleRaw = normalized(columnText(statement, 7))
-      let signature = recurrenceRuleRaw.map { _ in
+      let signature = recurrenceRuleRaw.map { recurrenceRuleRaw in
         RecurringTaskSignature(
           projectID: projectID,
           title: columnText(statement, 4) ?? "",
-          noteText: columnText(statement, 5) ?? ""
+          noteText: columnText(statement, 5) ?? "",
+          recurrenceRuleRaw: recurrenceRuleRaw
         )
       }
       return (taskID, projectID, identifier, externalIdentifier, signature)

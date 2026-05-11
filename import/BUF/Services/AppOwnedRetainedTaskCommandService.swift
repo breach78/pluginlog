@@ -423,7 +423,7 @@ enum AppOwnedRetainedTaskCommandService {
     try await store.replaceReminderSnapshot(
       batch,
       importedAt: .now,
-      scope: .listedProjectsOnly
+      coverage: .listedProjectsOnly
     )
 
     let refreshedTask: AppOwnedWorkspaceStore.TaskReference

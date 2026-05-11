@@ -233,7 +233,8 @@ enum AppUITestRuntime {
             )
           }
         )
-      )
+      ),
+      coverage: .full
     )
     try await store.setProjectionReadEnabled(true)
   }
