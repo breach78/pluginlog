@@ -681,6 +681,76 @@ final class ScheduleMonthModelTests: XCTestCase {
     )
   }
 
+  func testUserFlowMonthToDayPanelMoveUsesSamePreviewAndCommit() throws {
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+    let taskID = UUID()
+    let projectID = UUID()
+    let sourceStart = try XCTUnwrap(
+      calendar.date(from: DateComponents(year: 2026, month: 5, day: 12, hour: 9))
+    )
+    let sourceEnd = try XCTUnwrap(
+      calendar.date(from: DateComponents(year: 2026, month: 5, day: 12, hour: 10, minute: 30))
+    )
+    let targetDay = try XCTUnwrap(
+      calendar.date(from: DateComponents(year: 2026, month: 5, day: 14))
+    )
+    let item = makeMonthItem(
+      id: "timed-task",
+      source: .workspaceTask(taskID: taskID, projectID: projectID),
+      startDate: sourceStart,
+      endDate: sourceEnd,
+      isAllDay: false
+    )
+    let state = ScheduleMonthDayItemDragState(
+      itemID: item.id,
+      originalItem: item,
+      originalTimeMinutes: 9 * 60,
+      originalDurationMinutes: 90,
+      originalPointerScheduleY: 9 * 60,
+      originalTopScheduleY: 9 * 60,
+      originalX: nil,
+      originalWidth: nil,
+      allDayBoundaryYInPanel: 120,
+      timeContentMinYInPanel: 0,
+      isInAllDayZone: false
+    )
+    let metrics = ScheduleMonthDayInteractionAdapter.metrics(
+      hourHeight: 60,
+      minimumDurationMinutes: 30
+    )
+    let target = ScheduleMonthDragSessionState.external(
+      targetDay: targetDay,
+      calendar: calendar
+    ).target
+    let preview = ScheduleMonthDayInteractionAdapter.externalMonthDropPreview(
+      for: state,
+      targetDay: targetDay,
+      calendar: calendar,
+      metrics: metrics
+    ).interactionPreview
+    let session = try XCTUnwrap(
+      ScheduleInteractionSession.move(
+        identity: .task(taskID),
+        originalTimeMinutes: state.originalTimeMinutes,
+        originalDurationMinutes: state.originalDurationMinutes,
+        target: target,
+        metrics: metrics
+      )
+    )
+
+    XCTAssertEqual(session.preview, preview)
+    XCTAssertEqual(
+      session.command,
+      .moveTask(
+        taskID: taskID,
+        day: calendar.startOfDay(for: targetDay),
+        timeMinutes: 9 * 60,
+        durationMinutes: 90
+      )
+    )
+  }
+
   func testScheduleMonthDropTargetResolverMapsGlobalPointToDay() throws {
     var calendar = Calendar(identifier: .gregorian)
     calendar.timeZone = TimeZone(secondsFromGMT: 0)!

@@ -1860,6 +1860,75 @@ final class AppOwnedWorkspaceStoreTests: XCTestCase {
     )
   }
 
+  func testUserFlowProjectStageOrderAndTaskOrderSurviveRelaunch() async throws {
+    let containerRoot = try makeTemporaryDirectory()
+    let importedAt = Date(timeIntervalSinceReferenceDate: 621)
+    let firstProjectID = RetainedProjectionBuilder.derivedProjectID(for: "list-1")
+    let secondProjectID = RetainedProjectionBuilder.derivedProjectID(for: "list-2")
+    let firstTaskID = ReminderProjectionIdentity.taskID(for: "task-1")
+    let secondTaskID = ReminderProjectionIdentity.taskID(for: "task-2")
+    let batch = ReminderImportSnapshotBatch(
+      lists: [
+        ReminderListImportSnapshot(
+          identifier: "list-1",
+          externalIdentifier: "list-1",
+          title: "First",
+          colorHex: nil
+        ),
+        ReminderListImportSnapshot(
+          identifier: "list-2",
+          externalIdentifier: "list-2",
+          title: "Second",
+          colorHex: nil
+        ),
+      ],
+      itemsByListIdentifier: [
+        "list-1": [
+          Self.reminderItem(
+            identifier: "task-1",
+            title: "First task",
+            createdAt: importedAt
+          ),
+          Self.reminderItem(
+            identifier: "task-2",
+            title: "Second task",
+            createdAt: importedAt
+          ),
+        ]
+      ]
+    )
+    var store = AppOwnedWorkspaceStore(containerRootURL: containerRoot)
+
+    try await store.replaceReminderSnapshot(batch, importedAt: importedAt, coverage: .full)
+    try await store.updateProjectStage(
+      projectID: firstProjectID,
+      stage: .area,
+      modifiedAt: importedAt.addingTimeInterval(1)
+    )
+    try await store.updateProjectBoardOrders([
+      firstProjectID: 2,
+      secondProjectID: 1,
+    ])
+    try await store.reorderOpenTasks(
+      projectID: firstProjectID,
+      orderedTaskIDs: [secondTaskID, firstTaskID]
+    )
+
+    store = AppOwnedWorkspaceStore(containerRootURL: containerRoot)
+    let snapshot = try await store.loadRetainedWorkspaceSnapshot(projectIDs: [])
+    let projectsByID = Dictionary(uniqueKeysWithValues: snapshot.projects.map {
+      ($0.identity.projectID, $0)
+    })
+
+    XCTAssertEqual(projectsByID[firstProjectID]?.progressStage, .area)
+    XCTAssertEqual(projectsByID[firstProjectID]?.boardOrder, 2)
+    XCTAssertEqual(projectsByID[secondProjectID]?.boardOrder, 1)
+    XCTAssertEqual(projectsByID[firstProjectID]?.tasks.map(\.identity.taskID), [
+      secondTaskID,
+      firstTaskID,
+    ])
+  }
+
   func testLocalCompletedRecurringOccurrenceSurvivesStoreRecreationAndReminderImport()
     async throws
   {

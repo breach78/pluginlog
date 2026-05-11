@@ -967,6 +967,37 @@ final class TimelineBoardReadPathTests: XCTestCase {
     XCTAssertTrue(todayTasks.contains { $0.taskID == completedTaskID && $0.isCompleted })
   }
 
+  func testUserFlowCompletedScheduledTaskRemainsVisibleUntilScheduledDayPasses() {
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+    let today = calendar.date(from: DateComponents(year: 2026, month: 5, day: 10))!
+    let yesterday = calendar.date(from: DateComponents(year: 2026, month: 5, day: 9, hour: 9))!
+    let todayTaskDate = calendar.date(from: DateComponents(year: 2026, month: 5, day: 10, hour: 9))!
+    let tomorrow = calendar.date(from: DateComponents(year: 2026, month: 5, day: 11, hour: 9))!
+
+    XCTAssertTrue(
+      ScheduleBoardReadPath.shouldDisplayWorkspaceTask(
+        makeTaskRow(reminderDate: todayTaskDate, isCompleted: true),
+        today: today,
+        calendar: calendar
+      )
+    )
+    XCTAssertTrue(
+      ScheduleBoardReadPath.shouldDisplayWorkspaceTask(
+        makeTaskRow(reminderDate: tomorrow, isCompleted: true),
+        today: today,
+        calendar: calendar
+      )
+    )
+    XCTAssertFalse(
+      ScheduleBoardReadPath.shouldDisplayWorkspaceTask(
+        makeTaskRow(reminderDate: yesterday, isCompleted: true),
+        today: today,
+        calendar: calendar
+      )
+    )
+  }
+
   func testDayHeaderSectionsKeepStableTaskOrderForOverdueTasks() {
     let projectID = UUID()
     let olderTaskID = UUID()
@@ -1334,6 +1365,34 @@ final class TimelineBoardReadPathTests: XCTestCase {
       isArchived: isArchived,
       localUpdatedAt: .distantPast,
       createdAt: .distantPast
+    )
+  }
+
+  private func makeTaskRow(
+    reminderDate: Date?,
+    isCompleted: Bool,
+    isArchived: Bool = false
+  ) -> TaskRowSnapshot {
+    TaskRowSnapshot(
+      id: UUID(),
+      title: "Task",
+      reminderDate: reminderDate,
+      scheduleHasExplicitTime: reminderDate != nil,
+      scheduledDurationMinutes: 60,
+      isCompleted: isCompleted,
+      completionDate: isCompleted ? .distantPast : nil,
+      recurrenceRuleRaw: nil,
+      isLocalCompletedRecurringOccurrence: false,
+      attachmentCount: 0,
+      hasReminderNoteContent: false,
+      reminderNoteText: "",
+      requiredWorkDays: 0,
+      completedWorkUnits: 0,
+      completedWorkUnitDates: [],
+      preparationScheduleOverridesRaw: "",
+      rowOrder: 0,
+      createdAt: .distantPast,
+      isArchived: isArchived
     )
   }
 

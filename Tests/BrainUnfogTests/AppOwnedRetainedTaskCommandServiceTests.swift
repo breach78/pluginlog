@@ -117,6 +117,65 @@ final class AppOwnedRetainedTaskCommandServiceTests: XCTestCase {
   }
 
   @MainActor
+  func testUserFlowDurationEditSurvivesRelaunchAndReminderRefresh() async throws {
+    let start = try XCTUnwrap(
+      Self.calendar.date(from: DateComponents(year: 2026, month: 5, day: 2, hour: 9, minute: 30))
+    )
+    let fixture = try await makeEnabledStoreFixture(
+      taskExternalIdentifier: "task-1",
+      dueDate: start,
+      scheduleHasExplicitTime: true,
+      scheduledDurationMinutes: 30
+    )
+    let provider = FakeAppOwnedReminderProjectProvider()
+    let taskID = ReminderProjectionIdentity.taskID(for: "task-1")
+    let day = Self.calendar.startOfDay(for: start)
+
+    _ = try await RetainedTaskCommandFacade.updateTaskEditFields(
+      vaultRootURL: fixture.vaultRoot,
+      projectID: fixture.projectID,
+      taskID: taskID,
+      fields: RetainedTaskEditFields(
+        title: "Task",
+        noteText: "",
+        day: day,
+        timeMinutes: 9 * 60 + 30,
+        durationMinutes: 105
+      ),
+      calendar: Self.calendar,
+      reminderProjectProvider: provider
+    )
+
+    let reloadedStore = AppOwnedWorkspaceStore(
+      containerRootURL: ObsidianVaultLayout(vaultRootURL: fixture.vaultRoot).sidecarRootURL
+    )
+    var snapshot = try await reloadedStore.loadRetainedWorkspaceSnapshot(
+      projectIDs: [fixture.projectID]
+    )
+    XCTAssertEqual(snapshot.projects.first?.tasks.first?.schedule.durationMinutes, 105)
+
+    try await reloadedStore.replaceReminderSnapshot(
+      reminderImportBatch(
+        item: reminderImportItem(
+          identifier: "task-identifier",
+          externalIdentifier: "task-1",
+          title: "Task",
+          dueDate: start,
+          scheduleHasExplicitTime: true,
+          scheduledDurationMinutes: nil,
+          modifiedAt: Date(timeIntervalSinceReferenceDate: 402)
+        )
+      ),
+      importedAt: Date(timeIntervalSinceReferenceDate: 402)
+    )
+    snapshot = try await reloadedStore.loadRetainedWorkspaceSnapshot(projectIDs: [fixture.projectID])
+
+    XCTAssertNil(provider.scheduleUpdate)
+    XCTAssertEqual(snapshot.projects.first?.tasks.first?.schedule.parsedDate, start)
+    XCTAssertEqual(snapshot.projects.first?.tasks.first?.schedule.durationMinutes, 105)
+  }
+
+  @MainActor
   func testObsidianProjectTitleRoutesToAppOwnedStoreWhenEnabled() async throws {
     let fixture = try await makeEnabledStoreFixture()
     let provider = FakeAppOwnedReminderProjectProvider()
@@ -395,6 +454,48 @@ final class AppOwnedRetainedTaskCommandServiceTests: XCTestCase {
     XCTAssertEqual(provider.scheduleUpdate?.1, true)
     XCTAssertEqual(task.schedule.parsedDate, expectedDate)
     XCTAssertEqual(task.schedule.durationMinutes, 90)
+  }
+
+  @MainActor
+  func testUserFlowRecurringTaskDateChangeSurvivesRelaunch() async throws {
+    let start = try XCTUnwrap(
+      Self.calendar.date(from: DateComponents(year: 2026, month: 5, day: 2, hour: 9, minute: 30))
+    )
+    let moved = try XCTUnwrap(
+      Self.calendar.date(from: DateComponents(year: 2026, month: 5, day: 6, hour: 15, minute: 15))
+    )
+    let fixture = try await makeEnabledStoreFixture(
+      taskExternalIdentifier: "task-1",
+      taskTitle: "Recurring",
+      dueDate: start,
+      scheduleHasExplicitTime: true,
+      scheduledDurationMinutes: 45,
+      recurrenceRuleRaw: "daily"
+    )
+    let provider = FakeAppOwnedReminderProjectProvider()
+    let taskID = ReminderProjectionIdentity.taskID(for: "task-1")
+
+    _ = try await RetainedTaskCommandFacade.setTaskSchedule(
+      vaultRootURL: fixture.vaultRoot,
+      projectID: fixture.projectID,
+      taskID: taskID,
+      day: Self.calendar.startOfDay(for: moved),
+      timeMinutes: 15 * 60 + 15,
+      durationMinutes: 80,
+      calendar: Self.calendar,
+      reminderProjectProvider: provider
+    )
+    let reloadedStore = AppOwnedWorkspaceStore(
+      containerRootURL: ObsidianVaultLayout(vaultRootURL: fixture.vaultRoot).sidecarRootURL
+    )
+    let snapshot = try await reloadedStore.loadRetainedWorkspaceSnapshot(projectIDs: [fixture.projectID])
+    let task = try XCTUnwrap(snapshot.projects.first?.tasks.first)
+
+    XCTAssertEqual(provider.scheduleUpdate?.0, moved)
+    XCTAssertEqual(provider.scheduleUpdate?.1, true)
+    XCTAssertEqual(task.schedule.parsedDate, moved)
+    XCTAssertEqual(task.schedule.durationMinutes, 80)
+    XCTAssertEqual(task.schedule.rawRepeatRule, "daily")
   }
 
   @MainActor
@@ -881,6 +982,59 @@ final class AppOwnedRetainedTaskCommandServiceTests: XCTestCase {
     calendar.timeZone = TimeZone(secondsFromGMT: 0)!
     return calendar
   }()
+
+  private func reminderImportBatch(
+    item: ReminderItemImportSnapshot,
+    listIdentifier: String = "list-1",
+    listExternalIdentifier: String = "list-1",
+    listTitle: String = "Project"
+  ) -> ReminderImportSnapshotBatch {
+    ReminderImportSnapshotBatch(
+      lists: [
+        ReminderListImportSnapshot(
+          identifier: listIdentifier,
+          externalIdentifier: listExternalIdentifier,
+          title: listTitle,
+          colorHex: nil
+        )
+      ],
+      itemsByListIdentifier: [listIdentifier: [item]]
+    )
+  }
+
+  private func reminderImportItem(
+    identifier: String,
+    externalIdentifier: String,
+    title: String,
+    dueDate: Date?,
+    scheduleHasExplicitTime: Bool,
+    scheduledDurationMinutes: Int?,
+    recurrenceRuleRaw: String? = nil,
+    modifiedAt: Date
+  ) -> ReminderItemImportSnapshot {
+    ReminderItemImportSnapshot(
+      identifier: identifier,
+      externalIdentifier: externalIdentifier,
+      parentExternalIdentifier: nil,
+      sourceListIdentifier: "list-1",
+      sourceListTitle: "Project",
+      title: title,
+      notes: "",
+      attachmentCount: 0,
+      isCompleted: false,
+      completionDate: nil,
+      startDate: nil,
+      dueDate: dueDate,
+      scheduleHasExplicitTime: scheduleHasExplicitTime,
+      scheduledDurationMinutes: scheduledDurationMinutes,
+      priority: 0,
+      recurrenceRuleRaw: recurrenceRuleRaw,
+      isFlagged: false,
+      requiredWorkDays: 0,
+      createdAt: modifiedAt,
+      modifiedAt: modifiedAt
+    )
+  }
 
   @MainActor
   private func makeEnabledStoreFixture(
