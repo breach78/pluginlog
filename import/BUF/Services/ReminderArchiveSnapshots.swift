@@ -503,7 +503,7 @@ struct ReminderArchiveTaskDetailSnapshot: Codable, Equatable, Sendable {
   }
 }
 
-struct ObsidianReminderArchiveSnapshot: Codable, Equatable, Sendable {
+struct ReminderArchiveSnapshot: Codable, Equatable, Sendable {
   let schemaVersion: Int
   let archivedAt: Date
   let sourceVaultRelativePath: String
@@ -532,20 +532,20 @@ struct ObsidianReminderArchiveSnapshot: Codable, Equatable, Sendable {
 }
 
 @MainActor
-struct ObsidianReminderArchiveSnapshotBuilder {
+struct ReminderArchiveSnapshotBuilder {
   let gateway: ReminderGateway
 
   func snapshot(
     forListIdentifier listIdentifier: String,
     archivedAt: Date,
     sourceVaultRelativePath: String
-  ) async throws -> ObsidianReminderArchiveSnapshot? {
+  ) async throws -> ReminderArchiveSnapshot? {
     guard let calendar = gateway.calendar(withIdentifier: listIdentifier) else { return nil }
     let importProvider = ReminderGatewayImportSnapshotProvider(gateway: gateway)
     let batch = try await importProvider.fetchBatch(forListIdentifiers: [listIdentifier])
     let list = batch.lists.first ?? importProvider.listSnapshot(for: calendar)
     let reminders = try await gateway.fetchReminders(in: calendar, scope: .all)
-    return ObsidianReminderArchiveSnapshot(
+    return ReminderArchiveSnapshot(
       archivedAt: archivedAt,
       sourceVaultRelativePath: sourceVaultRelativePath,
       listDetail: ReminderArchiveListDetailSnapshot(calendar: calendar, colorHex: list.colorHex),
@@ -561,70 +561,6 @@ struct ObsidianReminderArchiveSnapshotBuilder {
       }
     )
   }
-}
-
-struct ObsidianReminderArchiveStore {
-  let vaultRootURL: URL
-  let fileManager: FileManager
-
-  init(vaultRootURL: URL, fileManager: FileManager = .default) {
-    self.vaultRootURL = vaultRootURL.standardizedFileURL
-    self.fileManager = fileManager
-  }
-
-  var archiveRootURL: URL {
-    ObsidianVaultLayout(vaultRootURL: vaultRootURL, fileManager: fileManager)
-      .sidecarRootURL
-      .appendingPathComponent("archive-snapshots", isDirectory: true)
-  }
-
-  func save(
-    _ snapshot: ObsidianReminderArchiveSnapshot,
-    forListIdentifier listIdentifier: String
-  ) throws {
-    try fileManager.createDirectory(at: archiveRootURL, withIntermediateDirectories: true)
-    let data = try Self.encoder.encode(snapshot)
-    try data.write(to: fileURL(forListIdentifier: listIdentifier), options: .atomic)
-  }
-
-  func load(forListIdentifier listIdentifier: String) throws -> ObsidianReminderArchiveSnapshot? {
-    let url = fileURL(forListIdentifier: listIdentifier)
-    guard fileManager.fileExists(atPath: url.path) else { return nil }
-    let data = try Data(contentsOf: url)
-    return try Self.decoder.decode(ObsidianReminderArchiveSnapshot.self, from: data)
-  }
-
-  func remove(forListIdentifier listIdentifier: String) throws {
-    let url = fileURL(forListIdentifier: listIdentifier)
-    guard fileManager.fileExists(atPath: url.path) else { return }
-    try fileManager.removeItem(at: url)
-  }
-
-  private func fileURL(forListIdentifier listIdentifier: String) -> URL {
-    archiveRootURL.appendingPathComponent("\(stableHash(listIdentifier)).json", isDirectory: false)
-  }
-
-  private func stableHash(_ value: String) -> String {
-    var hash: UInt64 = 0xcbf29ce484222325
-    for byte in value.utf8 {
-      hash ^= UInt64(byte)
-      hash &*= 0x100000001b3
-    }
-    return String(format: "%016llx", hash)
-  }
-
-  private static let encoder: JSONEncoder = {
-    let encoder = JSONEncoder()
-    encoder.dateEncodingStrategy = .iso8601
-    encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-    return encoder
-  }()
-
-  private static let decoder: JSONDecoder = {
-    let decoder = JSONDecoder()
-    decoder.dateDecodingStrategy = .iso8601
-    return decoder
-  }()
 }
 
 private extension Array {

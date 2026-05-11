@@ -229,6 +229,6 @@ enum RetainedSurfaceMutationGate {
     case .schedule:
       surfaceName = "Schedule"
     }
-    return "\(surfaceName) \(feature) is not available in the retained Obsidian workspace."
+    return "\(surfaceName) \(feature) is not available in the app-owned retained workspace."
   }
 }

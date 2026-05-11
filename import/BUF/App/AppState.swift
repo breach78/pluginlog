@@ -11,11 +11,6 @@ enum AppRuntimeEnvironment {
   }
 }
 
-struct ObsidianArchiveConfirmationRequest: Equatable, Sendable {
-  let projectTitle: String
-  let vaultRelativePath: String
-}
-
 @MainActor
 final class AppState: ObservableObject {
   static let includeCompletedSyncEnabledKey = "sync.includeCompletedRemindersEnabled"
@@ -55,7 +50,6 @@ final class AppState: ObservableObject {
   @Published var hasInitialSyncConsent = false
   @Published var hasSyncConsentDecision = false
   @Published var obsidianVaultRootURL: URL?
-  @Published var obsidianHelperPluginInstallStatus: String?
   @Published var containerRootURL: URL?
   @Published var timelineDayColumnWidth: CGFloat = 44
   @Published var isEditorActive = false
@@ -88,17 +82,6 @@ final class AppState: ObservableObject {
   var reminderSourceObserver: ReminderSourceObserver?
   var pendingReminderSourceRefreshReason: SyncReason?
   private var undoRedoDepth = 0
-  var confirmObsidianArchive: (ObsidianArchiveConfirmationRequest) -> Bool = { request in
-    let alert = NSAlert()
-    alert.messageText = "프로젝트를 아카이브할까요?"
-    alert.informativeText =
-      "'\(request.projectTitle)' 프로젝트의 Reminders 리스트와 할일이 백업 후 Reminders에서 제거됩니다."
-    alert.alertStyle = .warning
-    alert.addButton(withTitle: "아카이브")
-    alert.addButton(withTitle: "취소")
-    return alert.runModal() == .alertFirstButtonReturn
-  }
-
   let storageCoordinator: LocalStorageCoordinator
   let platformUIFoundation: PlatformUIFoundation
   let calendarServiceRegistry: AppStateCalendarServiceRegistry

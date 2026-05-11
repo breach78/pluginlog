@@ -673,7 +673,7 @@ protocol ReminderProjectProvider: AnyObject {
     forListIdentifier identifier: String,
     archivedAt: Date,
     sourceVaultRelativePath: String
-  ) async throws -> ObsidianReminderArchiveSnapshot?
+  ) async throws -> ReminderArchiveSnapshot?
   func createProjectList(title: String) throws -> ReminderProjectListSnapshot
   func removeProjectList(identifier: String) throws
   func setProjectTitle(identifier: String, title: String) throws -> ReminderProjectListSnapshot?
@@ -758,9 +758,9 @@ extension ReminderProjectProvider {
     forListIdentifier identifier: String,
     archivedAt: Date,
     sourceVaultRelativePath: String
-  ) async throws -> ObsidianReminderArchiveSnapshot? {
+  ) async throws -> ReminderArchiveSnapshot? {
     if let gateway = reminderGateway {
-      return try await ObsidianReminderArchiveSnapshotBuilder(gateway: gateway).snapshot(
+      return try await ReminderArchiveSnapshotBuilder(gateway: gateway).snapshot(
         forListIdentifier: identifier,
         archivedAt: archivedAt,
         sourceVaultRelativePath: sourceVaultRelativePath
@@ -776,7 +776,7 @@ extension ReminderProjectProvider {
       return nil
     }
 
-    return ObsidianReminderArchiveSnapshot(
+    return ReminderArchiveSnapshot(
       archivedAt: archivedAt,
       sourceVaultRelativePath: sourceVaultRelativePath,
       list: list,

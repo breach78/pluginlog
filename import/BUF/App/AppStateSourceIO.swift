@@ -3,7 +3,7 @@ import SwiftData
 
 extension AppState {
   func prepareProjectNoteStore() async {
-    // Project/task runtime state is app-owned; legacy raw/projects watching is disabled.
+    // Project/task runtime state is app-owned; legacy project-file watching is disabled.
   }
 
   func configureReminderSourceObservation() {
@@ -71,7 +71,7 @@ extension AppState {
           from: retainedSnapshot,
           importedAt: importedAt
         )
-        replaceObsidianBridgeRecords(projects: records.projects, tasks: records.tasks)
+        replaceReminderBridgeRecords(projects: records.projects, tasks: records.tasks)
         syncStatus = "Imported app-owned \(records.projects.count) lists / \(records.tasks.count) tasks"
         bumpWorkspaceTreeRevision()
         return
@@ -104,16 +104,6 @@ extension AppState {
     return store
   }
 
-  func handleObsidianProjectDirectoryChange(_ changedFiles: [URL]) async {
-    AppLogger.sync.info(
-      "obsidian project note change ignored files=\(changedFiles.count, privacy: .public)"
-    )
-    guard !changedFiles.isEmpty else {
-      return
-    }
-    syncStatus = "Obsidian file changes ignored"
-  }
-
   func persistAppOwnedProjectTaskOrder(projectID: UUID, orderedTaskIDs: [UUID]) async {
     do {
       guard let store = try await AppOwnedRetainedTaskCommandService.enabledStore(
@@ -128,7 +118,7 @@ extension AppState {
     }
   }
 
-  func replaceObsidianBridgeRecords(
+  func replaceReminderBridgeRecords(
     projects: [ProjectIdentityBridgeRecord],
     tasks: [TaskIdentityBridgeRecord]
   ) {

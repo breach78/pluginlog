@@ -63,9 +63,8 @@ final class RetainedSetupFlowTests: XCTestCase {
     let helperPluginRoot = vaultRoot
       .appendingPathComponent(".obsidian", isDirectory: true)
       .appendingPathComponent("plugins", isDirectory: true)
-      .appendingPathComponent(ObsidianHelperPluginInstaller.pluginIdentifier, isDirectory: true)
+      .appendingPathComponent("brain-unfog-helper", isDirectory: true)
     XCTAssertFalse(FileManager.default.fileExists(atPath: helperPluginRoot.path))
-    XCTAssertNil(appState.obsidianHelperPluginInstallStatus)
     XCTAssertFalse(
       FileManager.default.fileExists(
         atPath: vaultRoot
@@ -241,104 +240,6 @@ final class RetainedSetupFlowTests: XCTestCase {
     XCTAssertEqual(afterMarkdown, localOnlyMarkdown)
     XCTAssertFalse(afterMarkdown.contains("reminder_list_external_id"))
     XCTAssertFalse(afterMarkdown.contains("reminder_external_id"))
-    XCTAssertEqual(gateway.writeCallCount, 0)
-  }
-
-  func testObsidianProjectFileChangeDoesNotTreatArchiveFlagAsReminderCommand()
-    async throws
-  {
-    let vaultRoot = try makeVaultRoot()
-    let gateway = SetupReminderGateway()
-    let taskIdentifier = try XCTUnwrap(
-      gateway.reminder.calendarItemExternalIdentifier ?? gateway.reminder.calendarItemIdentifier
-    )
-    let projectsRoot = vaultRoot
-      .appendingPathComponent("raw", isDirectory: true)
-      .appendingPathComponent("projects", isDirectory: true)
-    try FileManager.default.createDirectory(at: projectsRoot, withIntermediateDirectories: true)
-    let noteURL = projectsRoot.appendingPathComponent("Imported list.md", isDirectory: false)
-    try """
-      ---
-      reminder_list_external_id: \(gateway.calendar.calendarIdentifier)
-      아카이브: true
-      ---
-      - [ ] Imported task
-        %% brain-unfog: {"reminder_external_id":"\(taskIdentifier)"} %%
-
-      """.write(to: noteURL, atomically: true, encoding: .utf8)
-    let appState = makeAppState(reminderGateway: gateway)
-    appState.obsidianVaultRootURL = vaultRoot
-    var confirmationRequests: [ObsidianArchiveConfirmationRequest] = []
-    appState.confirmObsidianArchive = { request in
-      confirmationRequests.append(request)
-      return false
-    }
-
-    await appState.handleObsidianProjectDirectoryChange([noteURL])
-
-    let afterMarkdown = try String(contentsOf: noteURL, encoding: .utf8)
-    XCTAssertTrue(confirmationRequests.isEmpty)
-    XCTAssertTrue(afterMarkdown.contains("아카이브: true"))
-    XCTAssertEqual(gateway.writeCallCount, 0)
-  }
-
-  func testConfirmedObsidianArchiveFileChangeIsIgnoredByAppOwnedStorePolicy()
-    async throws
-  {
-    let vaultRoot = try makeVaultRoot()
-    let gateway = SetupReminderGateway(allowsProjectRemoval: true)
-    let listIdentifier = gateway.calendar.calendarIdentifier
-    let projectID = RetainedProjectionBuilder.derivedProjectID(for: listIdentifier)
-    let taskIdentifier = try XCTUnwrap(
-      gateway.reminder.calendarItemExternalIdentifier ?? gateway.reminder.calendarItemIdentifier
-    )
-    let taskID = ReminderProjectionIdentity.taskID(for: taskIdentifier)
-    let projectsRoot = vaultRoot
-      .appendingPathComponent("raw", isDirectory: true)
-      .appendingPathComponent("projects", isDirectory: true)
-    try FileManager.default.createDirectory(at: projectsRoot, withIntermediateDirectories: true)
-    let noteURL = projectsRoot.appendingPathComponent("Imported list.md", isDirectory: false)
-    let markdown = """
-      ---
-      reminder_list_external_id: \(listIdentifier)
-      아카이브: true
-      ---
-      - [ ] Imported task
-        %% brain-unfog: {"reminder_external_id":"\(taskIdentifier)"} %%
-
-      """
-    try markdown.write(to: noteURL, atomically: true, encoding: .utf8)
-    let appState = makeAppState(reminderGateway: gateway)
-    appState.obsidianVaultRootURL = vaultRoot
-    TaskIdentityBridgeStore.upsertProject(
-      projectID: projectID,
-      title: "Imported list",
-      reminderListExternalIdentifier: listIdentifier
-    )
-    TaskIdentityBridgeStore.upsertTask(
-      taskID: taskID,
-      title: "Imported task",
-      reminderExternalIdentifier: taskIdentifier,
-      ownerProjectID: projectID
-    )
-    var confirmationRequests: [ObsidianArchiveConfirmationRequest] = []
-    appState.confirmObsidianArchive = { request in
-      confirmationRequests.append(request)
-      return true
-    }
-
-    await appState.handleObsidianProjectDirectoryChange([noteURL])
-
-    let archiveURL = vaultRoot
-      .appendingPathComponent("raw", isDirectory: true)
-      .appendingPathComponent("archive", isDirectory: true)
-      .appendingPathComponent("Imported list.md", isDirectory: false)
-    XCTAssertTrue(confirmationRequests.isEmpty)
-    XCTAssertTrue(FileManager.default.fileExists(atPath: noteURL.path))
-    XCTAssertFalse(FileManager.default.fileExists(atPath: archiveURL.path))
-    XCTAssertEqual(try String(contentsOf: noteURL, encoding: .utf8), markdown)
-    XCTAssertEqual(TaskIdentityBridgeStore.projectTitle(for: projectID), "Imported list")
-    XCTAssertEqual(TaskIdentityBridgeStore.projectID(for: taskID), projectID)
     XCTAssertEqual(gateway.writeCallCount, 0)
   }
 

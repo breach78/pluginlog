@@ -12,7 +12,7 @@ final class AppOwnedRetainedTaskCommandServiceTests: XCTestCase {
       modifiedAt: Date(timeIntervalSinceReferenceDate: 500)
     )
 
-    let result = try await ObsidianRetainedTaskCommandService.createTask(
+    let result = try await RetainedTaskCommandFacade.createTask(
       vaultRootURL: fixture.vaultRoot,
       projectID: fixture.projectID,
       title: "Created",
@@ -45,7 +45,7 @@ final class AppOwnedRetainedTaskCommandServiceTests: XCTestCase {
     )
     let taskID = ReminderProjectionIdentity.taskID(for: "task-1")
 
-    _ = try await ObsidianRetainedTaskCommandService.updateTaskEditFields(
+    _ = try await RetainedTaskCommandFacade.updateTaskEditFields(
       vaultRootURL: fixture.vaultRoot,
       projectID: fixture.projectID,
       taskID: taskID,
@@ -59,7 +59,7 @@ final class AppOwnedRetainedTaskCommandServiceTests: XCTestCase {
       calendar: Self.calendar,
       reminderProjectProvider: provider
     )
-    let fields = try await ObsidianRetainedTaskCommandService.taskEditFields(
+    let fields = try await RetainedTaskCommandFacade.taskEditFields(
       vaultRootURL: fixture.vaultRoot,
       projectID: fixture.projectID,
       taskID: taskID,
@@ -87,7 +87,7 @@ final class AppOwnedRetainedTaskCommandServiceTests: XCTestCase {
     let taskID = ReminderProjectionIdentity.taskID(for: "task-1")
     let day = Self.calendar.startOfDay(for: start)
 
-    _ = try await ObsidianRetainedTaskCommandService.updateTaskEditFields(
+    _ = try await RetainedTaskCommandFacade.updateTaskEditFields(
       vaultRootURL: fixture.vaultRoot,
       projectID: fixture.projectID,
       taskID: taskID,
@@ -102,7 +102,7 @@ final class AppOwnedRetainedTaskCommandServiceTests: XCTestCase {
       reminderProjectProvider: provider
     )
 
-    let fields = try await ObsidianRetainedTaskCommandService.taskEditFields(
+    let fields = try await RetainedTaskCommandFacade.taskEditFields(
       vaultRootURL: fixture.vaultRoot,
       projectID: fixture.projectID,
       taskID: taskID,
@@ -121,7 +121,7 @@ final class AppOwnedRetainedTaskCommandServiceTests: XCTestCase {
     let fixture = try await makeEnabledStoreFixture()
     let provider = FakeAppOwnedReminderProjectProvider()
 
-    let result = try await ObsidianRetainedProjectCommandService.setProjectTitle(
+    let result = try await RetainedProjectCommandFacade.setProjectTitle(
       vaultRootURL: fixture.vaultRoot,
       projectID: fixture.projectID,
       title: "Renamed Project",
@@ -160,13 +160,13 @@ final class AppOwnedRetainedTaskCommandServiceTests: XCTestCase {
     let fixture = try await makeEnabledStoreFixture()
     let provider = FakeAppOwnedReminderProjectProvider()
 
-    _ = try await ObsidianRetainedProjectCommandService.setProjectColor(
+    _ = try await RetainedProjectCommandFacade.setProjectColor(
       vaultRootURL: fixture.vaultRoot,
       projectID: fixture.projectID,
       colorHex: "#112233",
       reminderProjectProvider: provider
     )
-    _ = try await ObsidianRetainedProjectCommandService.setProjectStage(
+    _ = try await RetainedProjectCommandFacade.setProjectStage(
       vaultRootURL: fixture.vaultRoot,
       projectID: fixture.projectID,
       stage: .later
@@ -191,7 +191,7 @@ final class AppOwnedRetainedTaskCommandServiceTests: XCTestCase {
       modifiedAt: Date(timeIntervalSinceReferenceDate: 720)
     )
 
-    let savedNote = try await ObsidianRetainedProjectCommandService.setProjectNote(
+    let savedNote = try await RetainedProjectCommandFacade.setProjectNote(
       vaultRootURL: fixture.vaultRoot,
       projectID: fixture.projectID,
       noteText: "목록 핵심",
@@ -253,7 +253,7 @@ final class AppOwnedRetainedTaskCommandServiceTests: XCTestCase {
       modifiedAt: Date(timeIntervalSinceReferenceDate: 731)
     )
 
-    _ = try await ObsidianRetainedProjectCommandService.setProjectNote(
+    _ = try await RetainedProjectCommandFacade.setProjectNote(
       vaultRootURL: fixture.vaultRoot,
       projectID: fixture.projectID,
       noteText: "new",
@@ -272,7 +272,7 @@ final class AppOwnedRetainedTaskCommandServiceTests: XCTestCase {
     let taskID = ReminderProjectionIdentity.taskID(for: "task-1")
     let day = try XCTUnwrap(Self.calendar.date(from: DateComponents(year: 2026, month: 5, day: 2)))
 
-    _ = try await ObsidianRetainedTaskCommandService.setTaskSchedule(
+    _ = try await RetainedTaskCommandFacade.setTaskSchedule(
       vaultRootURL: fixture.vaultRoot,
       projectID: fixture.projectID,
       taskID: taskID,
@@ -304,7 +304,7 @@ final class AppOwnedRetainedTaskCommandServiceTests: XCTestCase {
     let taskID = ReminderProjectionIdentity.taskID(for: "task-1")
     let day = Self.calendar.startOfDay(for: start)
 
-    _ = try await ObsidianRetainedTaskCommandService.setTaskSchedule(
+    _ = try await RetainedTaskCommandFacade.setTaskSchedule(
       vaultRootURL: fixture.vaultRoot,
       projectID: fixture.projectID,
       taskID: taskID,
@@ -378,7 +378,7 @@ final class AppOwnedRetainedTaskCommandServiceTests: XCTestCase {
     let provider = FakeAppOwnedReminderProjectProvider()
     let taskID = ReminderProjectionIdentity.taskID(for: "task-1")
 
-    _ = try await ObsidianRetainedTaskCommandService.setTaskSchedule(
+    _ = try await RetainedTaskCommandFacade.setTaskSchedule(
       vaultRootURL: fixture.vaultRoot,
       projectID: fixture.projectID,
       taskID: taskID,
@@ -458,7 +458,7 @@ final class AppOwnedRetainedTaskCommandServiceTests: XCTestCase {
     )
     let taskID = ReminderProjectionIdentity.taskID(for: "task-1")
 
-    _ = try await ObsidianRetainedTaskCommandService.setTaskSchedule(
+    _ = try await RetainedTaskCommandFacade.setTaskSchedule(
       vaultRootURL: fixture.vaultRoot,
       projectID: fixture.projectID,
       taskID: taskID,
@@ -674,7 +674,7 @@ final class AppOwnedRetainedTaskCommandServiceTests: XCTestCase {
       ]
     )
 
-    _ = try await ObsidianRetainedTaskCommandService.setTaskSchedule(
+    _ = try await RetainedTaskCommandFacade.setTaskSchedule(
       vaultRootURL: vaultRoot,
       projectID: firstProjectID,
       taskID: firstTaskID,
@@ -748,7 +748,7 @@ final class AppOwnedRetainedTaskCommandServiceTests: XCTestCase {
     )
     let taskID = ReminderProjectionIdentity.taskID(for: "task-1")
 
-    _ = try await ObsidianRetainedTaskCommandService.setTaskCompletion(
+    _ = try await RetainedTaskCommandFacade.setTaskCompletion(
       vaultRootURL: fixture.vaultRoot,
       projectID: fixture.projectID,
       taskID: taskID,
@@ -823,7 +823,7 @@ final class AppOwnedRetainedTaskCommandServiceTests: XCTestCase {
       modifiedAt: Date(timeIntervalSinceReferenceDate: 850)
     )
 
-    _ = try await ObsidianRetainedTaskCommandService.setTaskSchedule(
+    _ = try await RetainedTaskCommandFacade.setTaskSchedule(
       vaultRootURL: fixture.vaultRoot,
       projectID: fixture.projectID,
       taskID: taskID,
@@ -858,7 +858,7 @@ final class AppOwnedRetainedTaskCommandServiceTests: XCTestCase {
     let vaultRoot = try makeTemporaryDirectory()
 
     do {
-      _ = try await ObsidianRetainedTaskCommandService.taskEditFields(
+      _ = try await RetainedTaskCommandFacade.taskEditFields(
         vaultRootURL: vaultRoot,
         projectID: UUID(),
         taskID: UUID(),
@@ -866,7 +866,7 @@ final class AppOwnedRetainedTaskCommandServiceTests: XCTestCase {
       )
       XCTFail("Expected disabled legacy Obsidian markdown storage to fail")
     } catch RetainedTaskCommandError.retainedProjectionFailed(let message) {
-      XCTAssertTrue(message.contains("legacy Obsidian project/task markdown storage is disabled"))
+      XCTAssertTrue(message.contains("app-owned workspace storage is unavailable"))
     }
   }
 

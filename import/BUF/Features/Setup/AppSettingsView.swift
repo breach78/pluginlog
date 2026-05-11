@@ -34,24 +34,6 @@ struct AppSettingsView: View {
             }
           }
 
-          Divider()
-
-          VStack(alignment: .leading, spacing: 8) {
-            Label("Helper plugin 비활성화됨", systemImage: "pause.circle")
-              .foregroundStyle(.secondary)
-
-            Text("Obsidian helper plugin은 설치/업데이트하지 않고, 헬퍼 전용 포커스 링크도 호출하지 않습니다.")
-              .font(.footnote)
-              .foregroundStyle(.secondary)
-
-            if let status = appState.obsidianHelperPluginInstallStatus {
-              SettingsStatusText(
-                status,
-                isError: status.contains("실패")
-              )
-            }
-          }
-
           Text("프로젝트와 할일 상태는 앱 지원 저장소가 사용하며, Obsidian 프로젝트 마크다운은 읽거나 쓰지 않습니다.")
             .font(.footnote)
             .foregroundStyle(.secondary)

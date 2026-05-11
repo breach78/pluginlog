@@ -230,7 +230,6 @@ extension AppState {
       modelContainer = try ModelContainer(for: Schema([]), configurations: [])
       if shouldRefreshHealth { await refreshHealth() }
       await prepareProjectNoteStore()
-      await runLegacyProjectMigrationsAfterSetupIfNeeded()
       reminderSourceObserver?.stop()
       reminderSourceObserver = nil
       if hasInitialSyncConsent {
@@ -244,21 +243,6 @@ extension AppState {
     } catch {
       reportError(error, logMessage: "prepareWorkspaceIfSetupComplete failed")
       syncStatus = "Setup failed"
-    }
-  }
-
-  private func runLegacyProjectMigrationsAfterSetupIfNeeded() async {
-    do {
-      try await LegacyObsidianProjectMigrationRunner.runIfNeeded(
-        containerRootURL: storageCoordinator.paths?.root,
-        vaultRootURL: obsidianVaultRootURL
-      )
-      bumpWorkspaceTreeRevision()
-    } catch {
-      reportError(
-        error,
-        logMessage: "runLegacyProjectMigrationsAfterSetupIfNeeded failed"
-      )
     }
   }
 }

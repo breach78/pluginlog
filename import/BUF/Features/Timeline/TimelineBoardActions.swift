@@ -191,7 +191,7 @@ extension TimelineBoardView {
     guard !title.isEmpty else { return nil }
 
     do {
-      let result = try await ObsidianRetainedTaskCommandService.createTask(
+      let result = try await RetainedTaskCommandFacade.createTask(
         vaultRootURL: appState.obsidianVaultRootURL,
         projectID: projectID,
         title: title,
@@ -245,7 +245,7 @@ extension TimelineBoardView {
     fields.title = title
 
     do {
-      let result = try await ObsidianRetainedTaskCommandService.updateTaskEditFields(
+      let result = try await RetainedTaskCommandFacade.updateTaskEditFields(
         vaultRootURL: appState.obsidianVaultRootURL,
         projectID: projectID,
         taskID: taskID,
@@ -313,7 +313,7 @@ extension TimelineBoardView {
   ) async -> Bool {
     let undoSnapshot = scheduleEntry(taskID: taskID, projectID: projectID).map(taskUndoSnapshot)
     do {
-      _ = try await ObsidianRetainedTaskCommandService.deleteTask(
+      _ = try await RetainedTaskCommandFacade.deleteTask(
         vaultRootURL: appState.obsidianVaultRootURL,
         projectID: projectID,
         taskID: taskID,
@@ -392,7 +392,7 @@ extension TimelineBoardView {
     }
 
     do {
-      let result = try await ObsidianRetainedTaskCommandService.updateTaskEditFields(
+      let result = try await RetainedTaskCommandFacade.updateTaskEditFields(
         vaultRootURL: appState.obsidianVaultRootURL,
         projectID: projectID,
         taskID: created.id,
@@ -502,7 +502,7 @@ extension TimelineBoardView {
     projectID: UUID
   ) async -> String? {
     do {
-      let savedNote = try await ObsidianRetainedProjectCommandService.setProjectNote(
+      let savedNote = try await RetainedProjectCommandFacade.setProjectNote(
         vaultRootURL: appState.obsidianVaultRootURL,
         projectID: projectID,
         noteText: noteText,
@@ -630,7 +630,7 @@ extension TimelineBoardView {
     fallback: RetainedTaskEditFields
   ) async -> RetainedTaskEditFields {
     do {
-      return try await ObsidianRetainedTaskCommandService.taskEditFields(
+      return try await RetainedTaskCommandFacade.taskEditFields(
         vaultRootURL: appState.obsidianVaultRootURL,
         projectID: projectID,
         taskID: taskID,
@@ -684,7 +684,7 @@ extension TimelineBoardView {
     if let undoFields {
       previousFields = undoFields
     } else {
-      previousFields = try? await ObsidianRetainedTaskCommandService.taskEditFields(
+      previousFields = try? await RetainedTaskCommandFacade.taskEditFields(
         vaultRootURL: appState.obsidianVaultRootURL,
         projectID: projectID,
         taskID: taskID,
@@ -692,7 +692,7 @@ extension TimelineBoardView {
       )
     }
     do {
-      let result = try await ObsidianRetainedTaskCommandService.updateTaskEditFields(
+      let result = try await RetainedTaskCommandFacade.updateTaskEditFields(
         vaultRootURL: appState.obsidianVaultRootURL,
         projectID: projectID,
         taskID: taskID,
@@ -830,7 +830,7 @@ extension TimelineBoardView {
       )
       var result: RetainedTaskCommandResult?
       if mutationPlan.writesCompletion {
-        result = try await ObsidianRetainedTaskCommandService.setTaskCompletion(
+        result = try await RetainedTaskCommandFacade.setTaskCompletion(
           vaultRootURL: appState.obsidianVaultRootURL,
           projectID: projectID,
           taskID: taskID,
@@ -842,7 +842,7 @@ extension TimelineBoardView {
         )
       }
       if mutationPlan.restoresSchedule {
-        result = try await ObsidianRetainedTaskCommandService.setTaskSchedule(
+        result = try await RetainedTaskCommandFacade.setTaskSchedule(
           vaultRootURL: appState.obsidianVaultRootURL,
           projectID: projectID,
           taskID: taskID,
@@ -943,7 +943,7 @@ extension TimelineBoardView {
     guard allowTimelineRetainedWrite("project-color") else { return }
     Task { @MainActor in
       do {
-        _ = try await ObsidianRetainedProjectCommandService.setProjectColor(
+        _ = try await RetainedProjectCommandFacade.setProjectColor(
           vaultRootURL: appState.obsidianVaultRootURL,
           projectID: projectID,
           colorHex: hex,
@@ -969,7 +969,7 @@ extension TimelineBoardView {
     applyTimelineProjectStageLocally(projectID: projectID, stage: stage)
     Task { @MainActor in
       do {
-        _ = try await ObsidianRetainedProjectCommandService.setProjectStage(
+        _ = try await RetainedProjectCommandFacade.setProjectStage(
           vaultRootURL: appState.obsidianVaultRootURL,
           projectID: projectID,
           stage: stage

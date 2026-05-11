@@ -219,7 +219,7 @@ extension AppState {
           )
         } ?? (previousIsCompleted != isCompleted)
       if shouldWriteCompletion {
-        _ = try await ObsidianRetainedTaskCommandService.setTaskCompletion(
+        _ = try await RetainedTaskCommandFacade.setTaskCompletion(
           vaultRootURL: obsidianVaultRootURL,
           projectID: projectID,
           taskID: taskID,
@@ -231,7 +231,7 @@ extension AppState {
       if let fields = restoreScheduleFields,
         shouldRestoreSchedule
       {
-        _ = try await ObsidianRetainedTaskCommandService.setTaskSchedule(
+        _ = try await RetainedTaskCommandFacade.setTaskSchedule(
           vaultRootURL: obsidianVaultRootURL,
           projectID: projectID,
           taskID: taskID,
@@ -277,7 +277,7 @@ extension AppState {
   ) async -> Bool {
     _ = context
     do {
-      _ = try await ObsidianRetainedTaskCommandService.setTaskSchedule(
+      _ = try await RetainedTaskCommandFacade.setTaskSchedule(
         vaultRootURL: obsidianVaultRootURL,
         projectID: projectID,
         taskID: taskID,

@@ -1,7 +1,7 @@
 import Foundation
 
 @MainActor
-enum ObsidianRetainedTaskCommandService {
+enum RetainedTaskCommandFacade {
   private static let mutationGate = RetainedTaskCommandMutationGate()
 
   private static func appOwnedStore(vaultRootURL: URL?) async throws -> AppOwnedWorkspaceStore {
@@ -9,7 +9,7 @@ enum ObsidianRetainedTaskCommandService {
       return store
     }
     throw RetainedTaskCommandError.retainedProjectionFailed(
-      "legacy Obsidian project/task markdown storage is disabled"
+      "app-owned workspace storage is unavailable"
     )
   }
 

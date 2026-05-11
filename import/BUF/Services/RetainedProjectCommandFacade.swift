@@ -1,7 +1,7 @@
 import Foundation
 
 @MainActor
-enum ObsidianRetainedProjectCommandService {
+enum RetainedProjectCommandFacade {
   static func setProjectTitle(
     vaultRootURL: URL?,
     projectID: UUID,
@@ -16,7 +16,7 @@ enum ObsidianRetainedProjectCommandService {
         reminderProjectProvider: reminderProjectProvider
       )
     }
-    throw legacyObsidianStorageDisabled()
+    throw appOwnedWorkspaceStorageUnavailable()
   }
 
   static func setProjectStage(
@@ -31,7 +31,7 @@ enum ObsidianRetainedProjectCommandService {
         stage: stage
       )
     }
-    throw legacyObsidianStorageDisabled()
+    throw appOwnedWorkspaceStorageUnavailable()
   }
 
   static func setProjectNote(
@@ -67,12 +67,12 @@ enum ObsidianRetainedProjectCommandService {
         reminderProjectProvider: reminderProjectProvider
       )
     }
-    throw legacyObsidianStorageDisabled()
+    throw appOwnedWorkspaceStorageUnavailable()
   }
 
-  private static func legacyObsidianStorageDisabled() -> RetainedTaskCommandError {
+  private static func appOwnedWorkspaceStorageUnavailable() -> RetainedTaskCommandError {
     RetainedTaskCommandError.retainedProjectionFailed(
-      "legacy Obsidian project/task markdown storage is disabled"
+      "app-owned workspace storage is unavailable"
     )
   }
 }

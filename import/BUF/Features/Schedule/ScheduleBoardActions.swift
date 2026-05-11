@@ -1339,7 +1339,7 @@ extension ScheduleBoardView {
     Task { @MainActor in
       do {
         let fullUndoFields =
-          (try? await ObsidianRetainedTaskCommandService.taskEditFields(
+          (try? await RetainedTaskCommandFacade.taskEditFields(
             vaultRootURL: appState.obsidianVaultRootURL,
             projectID: taskDescriptor.projectID,
             taskID: taskID,
@@ -1350,7 +1350,7 @@ extension ScheduleBoardView {
           isCompleted: undoSnapshot.isCompleted,
           completionDate: undoSnapshot.completionDate
         )
-        _ = try await ObsidianRetainedTaskCommandService.deleteTask(
+        _ = try await RetainedTaskCommandFacade.deleteTask(
           vaultRootURL: appState.obsidianVaultRootURL,
           projectID: taskDescriptor.projectID,
           taskID: taskID,
@@ -1532,7 +1532,7 @@ extension ScheduleBoardView {
     optimisticScheduleTaskScheduleByID[taskID] = nextSchedule
     Task { @MainActor in
       do {
-        let result = try await ObsidianRetainedTaskCommandService.setTaskSchedule(
+        let result = try await RetainedTaskCommandFacade.setTaskSchedule(
           vaultRootURL: appState.obsidianVaultRootURL,
           projectID: projectID,
           taskID: taskID,
@@ -1828,7 +1828,7 @@ extension ScheduleBoardView {
     scheduleTaskWriteNotice = nil
     Task { @MainActor in
       do {
-        let result = try await ObsidianRetainedTaskCommandService.createTask(
+        let result = try await RetainedTaskCommandFacade.createTask(
           vaultRootURL: appState.obsidianVaultRootURL,
           projectID: projectID,
           title: normalizedTitle,
@@ -1860,7 +1860,7 @@ extension ScheduleBoardView {
     registerUndo: Bool = true
   ) async -> UUID? {
     do {
-      let result = try await ObsidianRetainedTaskCommandService.createTask(
+      let result = try await RetainedTaskCommandFacade.createTask(
         vaultRootURL: appState.obsidianVaultRootURL,
         projectID: projectID,
         title: snapshot.fields.title,
@@ -1870,7 +1870,7 @@ extension ScheduleBoardView {
         calendar: calendar,
         reminderProjectProvider: appState.reminderProjectProvider
       )
-      _ = try await ObsidianRetainedTaskCommandService.updateTaskEditFields(
+      _ = try await RetainedTaskCommandFacade.updateTaskEditFields(
         vaultRootURL: appState.obsidianVaultRootURL,
         projectID: projectID,
         taskID: result.taskID,
@@ -1879,7 +1879,7 @@ extension ScheduleBoardView {
         reminderProjectProvider: appState.reminderProjectProvider
       )
       if snapshot.isCompleted {
-        _ = try await ObsidianRetainedTaskCommandService.setTaskCompletion(
+        _ = try await RetainedTaskCommandFacade.setTaskCompletion(
           vaultRootURL: appState.obsidianVaultRootURL,
           projectID: projectID,
           taskID: result.taskID,
@@ -2180,7 +2180,7 @@ extension ScheduleBoardView {
         )
         var result: RetainedTaskCommandResult?
         if mutationPlan.writesCompletion {
-          result = try await ObsidianRetainedTaskCommandService.setTaskCompletion(
+          result = try await RetainedTaskCommandFacade.setTaskCompletion(
             vaultRootURL: appState.obsidianVaultRootURL,
             projectID: projectID,
             taskID: taskID,
@@ -2192,7 +2192,7 @@ extension ScheduleBoardView {
           )
         }
         if mutationPlan.restoresSchedule {
-          result = try await ObsidianRetainedTaskCommandService.setTaskSchedule(
+          result = try await RetainedTaskCommandFacade.setTaskSchedule(
             vaultRootURL: appState.obsidianVaultRootURL,
             projectID: projectID,
             taskID: taskID,

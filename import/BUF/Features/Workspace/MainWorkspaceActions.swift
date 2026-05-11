@@ -94,7 +94,7 @@ extension MainWorkspaceView {
         appState.registerUndo(with: undoManager, actionName: "할일 추가") {
           Task { @MainActor in
             do {
-              _ = try await ObsidianRetainedTaskCommandService.deleteTask(
+              _ = try await RetainedTaskCommandFacade.deleteTask(
                 vaultRootURL: appState.obsidianVaultRootURL,
                 projectID: projectID,
                 taskID: taskID,
@@ -146,7 +146,7 @@ extension MainWorkspaceView {
       var appliedCount = 0
       do {
         for target in targets {
-          _ = try await ObsidianRetainedTaskCommandService.setTaskSchedule(
+          _ = try await RetainedTaskCommandFacade.setTaskSchedule(
             vaultRootURL: appState.obsidianVaultRootURL,
             projectID: target.projectID,
             taskID: target.taskID,
@@ -369,7 +369,7 @@ extension MainWorkspaceView {
     projectID: UUID
   ) async -> String? {
     do {
-      let savedNote = try await ObsidianRetainedProjectCommandService.setProjectNote(
+      let savedNote = try await RetainedProjectCommandFacade.setProjectNote(
         vaultRootURL: appState.obsidianVaultRootURL,
         projectID: projectID,
         noteText: noteText,
@@ -393,7 +393,7 @@ extension MainWorkspaceView {
     guard !title.isEmpty else { return nil }
 
     do {
-      let result = try await ObsidianRetainedTaskCommandService.createTask(
+      let result = try await RetainedTaskCommandFacade.createTask(
         vaultRootURL: appState.obsidianVaultRootURL,
         projectID: projectID,
         title: title,
@@ -443,7 +443,7 @@ extension MainWorkspaceView {
     fields.title = title
 
     do {
-      _ = try await ObsidianRetainedTaskCommandService.updateTaskEditFields(
+      _ = try await RetainedTaskCommandFacade.updateTaskEditFields(
         vaultRootURL: appState.obsidianVaultRootURL,
         projectID: projectID,
         taskID: taskID,
@@ -540,7 +540,7 @@ extension MainWorkspaceView {
 
     do {
       if shouldWriteCompletion {
-        _ = try await ObsidianRetainedTaskCommandService.setTaskCompletion(
+        _ = try await RetainedTaskCommandFacade.setTaskCompletion(
           vaultRootURL: appState.obsidianVaultRootURL,
           projectID: projectID,
           taskID: taskID,
@@ -550,7 +550,7 @@ extension MainWorkspaceView {
         )
       }
       if shouldRestoreSchedule {
-        _ = try await ObsidianRetainedTaskCommandService.setTaskSchedule(
+        _ = try await RetainedTaskCommandFacade.setTaskSchedule(
           vaultRootURL: appState.obsidianVaultRootURL,
           projectID: projectID,
           taskID: taskID,
@@ -600,7 +600,7 @@ extension MainWorkspaceView {
       taskID: taskID
     ).map(workspaceTaskUndoSnapshot)
     do {
-      _ = try await ObsidianRetainedTaskCommandService.deleteTask(
+      _ = try await RetainedTaskCommandFacade.deleteTask(
         vaultRootURL: appState.obsidianVaultRootURL,
         projectID: projectID,
         taskID: taskID,
@@ -635,7 +635,7 @@ extension MainWorkspaceView {
     guard sourceProjectID != targetProjectID else { return false }
 
     do {
-      _ = try await ObsidianRetainedTaskCommandService.moveTask(
+      _ = try await RetainedTaskCommandFacade.moveTask(
         vaultRootURL: appState.obsidianVaultRootURL,
         taskID: taskID,
         sourceProjectID: sourceProjectID,
@@ -677,7 +677,7 @@ extension MainWorkspaceView {
     }
 
     do {
-      _ = try await ObsidianRetainedTaskCommandService.updateTaskEditFields(
+      _ = try await RetainedTaskCommandFacade.updateTaskEditFields(
         vaultRootURL: appState.obsidianVaultRootURL,
         projectID: projectID,
         taskID: created.id,
@@ -910,7 +910,7 @@ extension MainWorkspaceView {
     appState.registerUndo(with: undoManager, actionName: "할일 추가") {
       Task { @MainActor in
         do {
-          _ = try await ObsidianRetainedTaskCommandService.deleteTask(
+          _ = try await RetainedTaskCommandFacade.deleteTask(
             vaultRootURL: appState.obsidianVaultRootURL,
             projectID: projectID,
             taskID: taskID,
@@ -1009,7 +1009,7 @@ extension MainWorkspaceView {
     let previousDuration = item.durationMinutes
 
     do {
-      _ = try await ObsidianRetainedTaskCommandService.setTaskSchedule(
+      _ = try await RetainedTaskCommandFacade.setTaskSchedule(
         vaultRootURL: appState.obsidianVaultRootURL,
         projectID: projectID,
         taskID: taskID,
@@ -1023,7 +1023,7 @@ extension MainWorkspaceView {
       appState.registerUndo(with: undoManager, actionName: "일정 변경") {
         Task { @MainActor in
           do {
-            _ = try await ObsidianRetainedTaskCommandService.setTaskSchedule(
+            _ = try await RetainedTaskCommandFacade.setTaskSchedule(
               vaultRootURL: appState.obsidianVaultRootURL,
               projectID: projectID,
               taskID: taskID,
@@ -1234,7 +1234,7 @@ extension MainWorkspaceView {
     fallback: RetainedTaskEditFields
   ) async -> RetainedTaskEditFields {
     do {
-      return try await ObsidianRetainedTaskCommandService.taskEditFields(
+      return try await RetainedTaskCommandFacade.taskEditFields(
         vaultRootURL: appState.obsidianVaultRootURL,
         projectID: projectID,
         taskID: taskID,
@@ -1261,7 +1261,7 @@ extension MainWorkspaceView {
     if let undoFields {
       previousFields = undoFields
     } else {
-      previousFields = try? await ObsidianRetainedTaskCommandService.taskEditFields(
+      previousFields = try? await RetainedTaskCommandFacade.taskEditFields(
         vaultRootURL: appState.obsidianVaultRootURL,
         projectID: projectID,
         taskID: taskID,
@@ -1269,7 +1269,7 @@ extension MainWorkspaceView {
       )
     }
     do {
-      _ = try await ObsidianRetainedTaskCommandService.updateTaskEditFields(
+      _ = try await RetainedTaskCommandFacade.updateTaskEditFields(
         vaultRootURL: appState.obsidianVaultRootURL,
         projectID: projectID,
         taskID: taskID,

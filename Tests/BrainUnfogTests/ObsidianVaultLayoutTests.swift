@@ -15,7 +15,10 @@ final class ObsidianVaultLayoutTests: XCTestCase {
 
     XCTAssertTrue(FileManager.default.fileExists(atPath: layout.sidecarRootURL.path))
     XCTAssertTrue(FileManager.default.fileExists(atPath: layout.rawJournalsRootURL.path))
-    XCTAssertFalse(FileManager.default.fileExists(atPath: layout.rawProjectsRootURL.path))
+    let rawProjectsRootURL = vaultURL
+      .appendingPathComponent("raw", isDirectory: true)
+      .appendingPathComponent("projects", isDirectory: true)
+    XCTAssertFalse(FileManager.default.fileExists(atPath: rawProjectsRootURL.path))
     var isDirectory: ObjCBool = false
     XCTAssertTrue(
       FileManager.default.fileExists(
@@ -60,7 +63,10 @@ final class ObsidianVaultLayoutTests: XCTestCase {
       )
     }
     XCTAssertFalse(FileManager.default.fileExists(atPath: layout.sidecarRootURL.path))
-    XCTAssertFalse(FileManager.default.fileExists(atPath: layout.rawProjectsRootURL.path))
+    let rawProjectsRootURL = vaultURL
+      .appendingPathComponent("raw", isDirectory: true)
+      .appendingPathComponent("projects", isDirectory: true)
+    XCTAssertFalse(FileManager.default.fileExists(atPath: rawProjectsRootURL.path))
     XCTAssertFalse(FileManager.default.fileExists(atPath: layout.rawJournalsRootURL.path))
     XCTAssertFalse(FileManager.default.fileExists(atPath: layout.obsidianConfigURL.path))
   }
