@@ -100,8 +100,8 @@ struct ScheduleBoardRuntimeNotice: Identifiable, Equatable {
 }
 
 struct ScheduleExternalTaskDropDelegate: DropDelegate {
-  let resolvePreview: (CGPoint) -> ScheduleInteractionPreview?
-  let onPerformTaskDrop: (UUID, ScheduleInteractionPreview) -> Void
+  let resolveTarget: (CGPoint) -> ScheduleInteractionTarget?
+  let onPerformTaskDrop: (UUID, ScheduleInteractionTarget) -> Void
   let onInvalidDrop: (CGPoint, ScheduleInvalidDropReason) -> Void
 
   func validateDrop(info: DropInfo) -> Bool {
@@ -109,13 +109,13 @@ struct ScheduleExternalTaskDropDelegate: DropDelegate {
   }
 
   func dropUpdated(info: DropInfo) -> DropProposal? {
-    guard resolvePreview(info.location) != nil else { return nil }
+    guard resolveTarget(info.location) != nil else { return nil }
     return DropProposal(operation: .move)
   }
 
   func performDrop(info: DropInfo) -> Bool {
     let dropLocation = info.location
-    guard let preview = resolvePreview(dropLocation) else {
+    guard let target = resolveTarget(dropLocation) else {
       onInvalidDrop(dropLocation, .externalPreviewUnavailable)
       return false
     }
@@ -134,7 +134,7 @@ struct ScheduleExternalTaskDropDelegate: DropDelegate {
         return
       }
       Task { @MainActor in
-        onPerformTaskDrop(taskID, preview)
+        onPerformTaskDrop(taskID, target)
       }
     }
     return true
@@ -1302,8 +1302,8 @@ struct ScheduleBoardView: View {
     .onDrop(
       of: [TaskDragPayload.textTypeIdentifier],
       delegate: ScheduleExternalTaskDropDelegate(
-        resolvePreview: externalTaskDropPreview(at:),
-        onPerformTaskDrop: applyExternalTaskDrop(taskID:preview:),
+        resolveTarget: externalTaskDropTarget(at:),
+        onPerformTaskDrop: applyExternalTaskDrop(taskID:target:),
         onInvalidDrop: logScheduleInvalidDrop(at:reason:)
       )
     )

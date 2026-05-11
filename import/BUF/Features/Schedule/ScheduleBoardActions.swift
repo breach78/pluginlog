@@ -468,6 +468,14 @@ extension ScheduleBoardView {
   }
 
   func preview(for dragState: ScheduleTaskDragState) -> ScheduleInteractionPreview {
+    moveSession(for: dragState)?.preview ?? ScheduleInteractionPreview(
+      day: dragState.originalDay,
+      timeMinutes: dragState.originalTimeMinutes,
+      durationMinutes: dragState.originalDurationMinutes
+    )
+  }
+
+  func moveTarget(for dragState: ScheduleTaskDragState) -> ScheduleInteractionTarget {
     let currentPointerScheduleY = dragState.currentPointerViewportLocation.map {
       $0.y - headerHeight + currentScrollOffsetY
     }
@@ -482,10 +490,9 @@ extension ScheduleBoardView {
 
     let allowsDayChange = !dragState.isPreparationSlot
     let allowsTranslationDateSnap = allowsScheduleDragDateSnapping && allowsDayChange
-    return ScheduleDragDropInteractionLayer.preview(
+    return ScheduleDragDropInteractionLayer.moveTarget(
       originalDay: dragState.originalDay,
       originalTimeMinutes: dragState.originalTimeMinutes,
-      originalDurationMinutes: dragState.originalDurationMinutes,
       translation: dragState.translation,
       originalPointerScheduleY: dragState.originalPointerScheduleY,
       originalTopScheduleY: dragState.originalTopScheduleY,
@@ -504,6 +511,14 @@ extension ScheduleBoardView {
   }
 
   func preview(for dragState: ScheduleCalendarDragState) -> ScheduleInteractionPreview {
+    moveSession(for: dragState)?.preview ?? ScheduleInteractionPreview(
+      day: dragState.originalDay,
+      timeMinutes: dragState.originalTimeMinutes,
+      durationMinutes: dragState.originalDurationMinutes
+    )
+  }
+
+  func moveTarget(for dragState: ScheduleCalendarDragState) -> ScheduleInteractionTarget {
     let currentPointerScheduleY = dragState.currentPointerViewportLocation.map {
       $0.y - headerHeight + currentScrollOffsetY
     }
@@ -516,10 +531,9 @@ extension ScheduleBoardView {
         : nil
     )
 
-    let preview = ScheduleDragDropInteractionLayer.preview(
+    return ScheduleDragDropInteractionLayer.moveTarget(
       originalDay: dragState.originalDay,
       originalTimeMinutes: dragState.originalTimeMinutes,
-      originalDurationMinutes: dragState.originalDurationMinutes,
       translation: dragState.translation,
       originalPointerScheduleY: dragState.originalPointerScheduleY,
       originalTopScheduleY: dragState.originalTopScheduleY,
@@ -534,21 +548,12 @@ extension ScheduleBoardView {
       metrics: interactionMetrics,
       calendar: calendar
     )
-    guard let timeMinutes = preview.timeMinutes else {
-      return preview
-    }
-    guard dragState.originalTimeMinutes != nil else {
-      return ScheduleInteractionPreview(
-        day: preview.day,
-        timeMinutes: timeMinutes,
-        durationMinutes: timedMinimumDuration
-      )
-    }
-    return ScheduleInteractionPreview(
-      day: preview.day,
-      timeMinutes: timeMinutes,
-      durationMinutes: dragState.originalDurationMinutes
-    )
+  }
+
+  private func calendarDragDurationForTimedPreview(
+    _ dragState: ScheduleCalendarDragState
+  ) -> Int? {
+    dragState.originalTimeMinutes == nil ? nil : dragState.originalDurationMinutes
   }
 
   func interactionTargetDay(
@@ -601,10 +606,23 @@ extension ScheduleBoardView {
   }
 
   func preview(for resizeState: ScheduleTaskResizeState) -> ScheduleInteractionPreview {
-    ScheduleTimeResizingInteractionLayer.preview(
-      originalDay: resizeState.originalDay,
-      originalTimeMinutes: resizeState.originalTimeMinutes,
-      originalDurationMinutes: resizeState.originalDurationMinutes,
+    resizeSession(for: resizeState)?.preview ?? ScheduleInteractionPreview(
+      day: resizeState.originalDay,
+      timeMinutes: resizeState.originalTimeMinutes,
+      durationMinutes: resizeState.originalDurationMinutes
+    )
+  }
+
+  func preview(for resizeState: ScheduleCalendarResizeState) -> ScheduleInteractionPreview {
+    resizeSession(for: resizeState)?.preview ?? ScheduleInteractionPreview(
+      day: resizeState.originalDay,
+      timeMinutes: resizeState.originalTimeMinutes,
+      durationMinutes: resizeState.originalDurationMinutes
+    )
+  }
+
+  func resizeTarget(for resizeState: ScheduleTaskResizeState) -> ScheduleInteractionTarget {
+    ScheduleTimeResizingInteractionLayer.resizeTarget(
       isStartEdge: resizeState.edge == .start,
       originalPointerScheduleY: resizeState.originalPointerScheduleY,
       originalEdgeScheduleY: resizeState.originalEdgeScheduleY,
@@ -615,17 +633,14 @@ extension ScheduleBoardView {
       targetDay: interactionTargetDay(
         pointerViewportLocation: resizeState.currentPointerViewportLocation,
         allowsDayChange: true
-      ),
+      ) ?? resizeState.originalDay,
       calendar: calendar,
       metrics: interactionMetrics
     )
   }
 
-  func preview(for resizeState: ScheduleCalendarResizeState) -> ScheduleInteractionPreview {
-    ScheduleTimeResizingInteractionLayer.preview(
-      originalDay: resizeState.originalDay,
-      originalTimeMinutes: resizeState.originalTimeMinutes,
-      originalDurationMinutes: resizeState.originalDurationMinutes,
+  func resizeTarget(for resizeState: ScheduleCalendarResizeState) -> ScheduleInteractionTarget {
+    ScheduleTimeResizingInteractionLayer.resizeTarget(
       isStartEdge: resizeState.edge == .start,
       originalPointerScheduleY: resizeState.originalPointerScheduleY,
       originalEdgeScheduleY: resizeState.originalEdgeScheduleY,
@@ -636,9 +651,55 @@ extension ScheduleBoardView {
       targetDay: interactionTargetDay(
         pointerViewportLocation: resizeState.currentPointerViewportLocation,
         allowsDayChange: true
-      ),
+      ) ?? resizeState.originalDay,
       calendar: calendar,
       metrics: interactionMetrics
+    )
+  }
+
+  func moveSession(for dragState: ScheduleTaskDragState) -> ScheduleInteractionSession? {
+    ScheduleInteractionSession.move(
+      identity: .task(dragState.taskID),
+      originalTimeMinutes: dragState.originalTimeMinutes,
+      originalDurationMinutes: dragState.originalDurationMinutes,
+      target: moveTarget(for: dragState),
+      metrics: interactionMetrics
+    )
+  }
+
+  func moveSession(for dragState: ScheduleCalendarDragState) -> ScheduleInteractionSession? {
+    ScheduleInteractionSession.move(
+      identity: .calendarEvent(dragState.eventID),
+      originalTimeMinutes: dragState.originalTimeMinutes,
+      originalDurationMinutes: calendarDragDurationForTimedPreview(dragState),
+      target: moveTarget(for: dragState),
+      metrics: interactionMetrics
+    )
+  }
+
+  func resizeSession(for resizeState: ScheduleTaskResizeState) -> ScheduleInteractionSession? {
+    ScheduleInteractionSession.resize(
+      identity: .task(resizeState.taskID),
+      originalDay: resizeState.originalDay,
+      originalTimeMinutes: resizeState.originalTimeMinutes,
+      originalDurationMinutes: resizeState.originalDurationMinutes,
+      isStartEdge: resizeState.edge == .start,
+      target: resizeTarget(for: resizeState),
+      metrics: interactionMetrics,
+      calendar: calendar
+    )
+  }
+
+  func resizeSession(for resizeState: ScheduleCalendarResizeState) -> ScheduleInteractionSession? {
+    ScheduleInteractionSession.resize(
+      identity: .calendarEvent(resizeState.eventID),
+      originalDay: resizeState.originalDay,
+      originalTimeMinutes: resizeState.originalTimeMinutes,
+      originalDurationMinutes: resizeState.originalDurationMinutes,
+      isStartEdge: resizeState.edge == .start,
+      target: resizeTarget(for: resizeState),
+      metrics: interactionMetrics,
+      calendar: calendar
     )
   }
 
@@ -748,7 +809,8 @@ extension ScheduleBoardView {
           onTaskDragProjectionChanged?(nil, nil)
           return
         }
-        let resolvedPreview = preview(for: resolvedDragState)
+        let resolvedSession = moveSession(for: resolvedDragState)
+        let resolvedPreview = resolvedSession?.preview ?? preview(for: resolvedDragState)
         if let dropFrame = dragDropTargetViewportFrame(for: resolvedDragState, preview: resolvedPreview) {
           committedTaskDrop = CommittedTaskDropState(
             originalFrame: dragState.originalViewportFrame,
@@ -769,10 +831,10 @@ extension ScheduleBoardView {
             actionName: "예상 일정 이동"
           )
         } else {
-          applyPreview(
-            resolvedPreview,
+          guard let resolvedSession else { return }
+          applyInteractionSession(
+            resolvedSession,
             to: taskDescriptor,
-            operation: .move,
             actionName: "일정 이동"
           )
         }
@@ -897,10 +959,10 @@ extension ScheduleBoardView {
           pointerViewportLocation: pointerViewportLocation,
           wasInAllDayZone: dragState.isInAllDayZone
         )
-        commitCalendarPreview(
-          preview(for: resolvedDragState),
+        guard let session = moveSession(for: resolvedDragState) else { return }
+        commitCalendarSession(
+          session,
           for: event,
-          operation: .move,
           actionName: "캘린더 일정 이동"
         )
       }
@@ -987,10 +1049,10 @@ extension ScheduleBoardView {
             actionName: "예상 일정 길이 조절"
           )
         } else {
-          applyPreview(
-            preview(for: resizeState),
+          guard let session = resizeSession(for: resizeState) else { return }
+          applyInteractionSession(
+            session,
             to: taskDescriptor,
-            operation: .resize,
             actionName: "일정 길이 조절"
           )
         }
@@ -1051,29 +1113,22 @@ extension ScheduleBoardView {
         guard let resizeState = activeCalendarResize, resizeState.eventID == event.id else { return }
         suppressTaskTap()
         activeCalendarResize = nil
-        commitCalendarPreview(
-          preview(for: resizeState),
+        guard let session = resizeSession(for: resizeState) else { return }
+        commitCalendarSession(
+          session,
           for: event,
-          operation: .resize,
           actionName: "캘린더 일정 길이 조절"
         )
       }
   }
 
-  func applyPreview(
-    _ preview: ScheduleInteractionPreview,
+  func applyInteractionSession(
+    _ session: ScheduleInteractionSession,
     to taskDescriptor: WorkspaceScheduleTaskDescriptor,
-    operation: ScheduleInteractionOperation = .move,
     actionName: String
   ) {
     let taskRow = taskDescriptor.taskRow
-    guard
-      let command = ScheduleInteractionEngine.command(
-        for: .task(taskRow.id),
-        operation: operation,
-        preview: preview
-      )
-    else { return }
+    guard let command = session.command else { return }
     let commandPreview = command.schedulePreview()
     let previousDay = WorkspaceTaskScheduleEventStore.scheduledDay(for: taskRow, calendar: calendar)
     let previousTime = WorkspaceTaskScheduleEventStore.scheduledTimeMinutes(for: taskRow, calendar: calendar)
@@ -1138,19 +1193,12 @@ extension ScheduleBoardView {
     )
   }
 
-  func commitCalendarPreview(
-    _ preview: ScheduleInteractionPreview,
+  func commitCalendarSession(
+    _ session: ScheduleInteractionSession,
     for event: ScheduleCalendarEvent,
-    operation: ScheduleInteractionOperation = .move,
     actionName: String
   ) {
-    guard
-      let command = ScheduleInteractionEngine.command(
-        for: .calendarEvent(event.id),
-        operation: operation,
-        preview: preview
-      )
-    else { return }
+    guard let command = session.command else { return }
     _ = applyCalendarInteractionCommand(command, actionName: actionName)
   }
 
@@ -1664,7 +1712,17 @@ extension ScheduleBoardView {
   }
 
   func externalTaskDropPreview(at location: CGPoint) -> ScheduleInteractionPreview? {
-    ScheduleDragDropInteractionLayer.externalDropPreview(
+    guard let target = externalTaskDropTarget(at: location) else { return nil }
+    return ScheduleInteractionEngine.movePreview(
+      originalTimeMinutes: nil,
+      originalDurationMinutes: nil,
+      target: target,
+      metrics: interactionMetrics
+    )
+  }
+
+  func externalTaskDropTarget(at location: CGPoint) -> ScheduleInteractionTarget? {
+    ScheduleDragDropInteractionLayer.externalDropTarget(
       at: location,
       days: days,
       externalMetrics: ScheduleExternalDropMetrics(
@@ -1678,8 +1736,8 @@ extension ScheduleBoardView {
     )
   }
 
-  func applyExternalTaskDrop(taskID: UUID, preview: ScheduleInteractionPreview) {
-    guard let command = externalTaskDropCommand(taskID: taskID, preview: preview) else { return }
+  func applyExternalTaskDrop(taskID: UUID, target: ScheduleInteractionTarget) {
+    guard let command = externalTaskDropCommand(taskID: taskID, target: target) else { return }
 
     releaseActiveTextResponderForUndo()
     suppressTaskTap(for: 0.2)
@@ -1729,16 +1787,14 @@ extension ScheduleBoardView {
 
   func externalTaskDropCommand(
     taskID: UUID,
-    preview: ScheduleInteractionPreview
+    target: ScheduleInteractionTarget
   ) -> ScheduleInteractionCommand? {
-    guard let taskDescriptor = scheduleTaskDescriptor(for: taskID),
-      let target = interactionTarget(for: preview)
-    else {
+    guard let taskDescriptor = scheduleTaskDescriptor(for: taskID) else {
       return nil
     }
 
-    return ScheduleInteractionEngine.moveCommand(
-      for: .task(taskID),
+    return ScheduleInteractionSession.move(
+      identity: .task(taskID),
       originalTimeMinutes: WorkspaceTaskScheduleEventStore.scheduledTimeMinutes(
         for: taskDescriptor.taskRow,
         calendar: calendar
@@ -1748,7 +1804,7 @@ extension ScheduleBoardView {
       ),
       target: target,
       metrics: interactionMetrics
-    )
+    )?.command
   }
 
   func monthMoveCommand(
@@ -1759,8 +1815,8 @@ extension ScheduleBoardView {
     case .task(let taskID):
       guard let taskDescriptor = scheduleTaskDescriptor(for: taskID) else { return nil }
       guard !taskDescriptor.taskRow.isLocalCompletedRecurringOccurrence else { return nil }
-      return ScheduleInteractionEngine.moveCommand(
-        for: item.interactionIdentity,
+      return ScheduleInteractionSession.move(
+        identity: item.interactionIdentity,
         originalTimeMinutes: WorkspaceTaskScheduleEventStore.scheduledTimeMinutes(
           for: taskDescriptor.taskRow,
           calendar: calendar
@@ -1770,7 +1826,7 @@ extension ScheduleBoardView {
         ),
         target: target,
         metrics: interactionMetrics
-      )
+      )?.command
 
     case .calendarEvent(let eventID):
       guard let event = appState.resolvedScheduleCalendarEvent(eventID: eventID),
@@ -1778,22 +1834,14 @@ extension ScheduleBoardView {
       else {
         return nil
       }
-      return ScheduleInteractionEngine.moveCommand(
-        for: item.interactionIdentity,
+      return ScheduleInteractionSession.move(
+        identity: item.interactionIdentity,
         originalTimeMinutes: event.isAllDay ? nil : timeMinutes(for: event.startDate),
         originalDurationMinutes: event.isAllDay ? nil : durationMinutes(for: event),
         target: target,
         metrics: interactionMetrics
-      )
+      )?.command
     }
-  }
-
-  private func interactionTarget(for preview: ScheduleInteractionPreview) -> ScheduleInteractionTarget? {
-    guard let day = preview.day else { return nil }
-    if let timeMinutes = preview.timeMinutes {
-      return .timed(day: day, minute: timeMinutes)
-    }
-    return .allDay(day)
   }
 
   private func calendarEvent(

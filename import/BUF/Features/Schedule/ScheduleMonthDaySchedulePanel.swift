@@ -633,31 +633,20 @@ struct ScheduleMonthDaySchedulePanel: View {
     }
   }
 
-  private func commitMutationPreview(
-    _ preview: ScheduleMonthDayScheduleMutationPreview,
+  private func commitMutationSession(
+    _ session: ScheduleInteractionSession,
     item: ScheduleMonthItem,
-    operation: ScheduleInteractionOperation = .move
+    itemID: String
   ) {
     activeMutationPreview = nil
     activeItemDragState = nil
     activeItemResizeState = nil
     guard canUpdateSchedule(for: item) else { return }
     guard !savingItemIDs.contains(item.id) else { return }
-    guard
-      let identity = interactionIdentity(for: item),
-      let command = ScheduleInteractionEngine.command(
-        for: identity,
-        operation: operation,
-        preview: ScheduleInteractionPreview(
-          day: preview.day,
-          timeMinutes: preview.timeMinutes,
-          durationMinutes: preview.durationMinutes
-        )
-      )
-    else { return }
+    guard let command = session.command else { return }
     let commandPreview = command
       .schedulePreview(fallbackDay: calendar.startOfDay(for: target.date))
-      .monthDayPreview(itemID: preview.itemID, fallbackDay: calendar.startOfDay(for: target.date))
+      .monthDayPreview(itemID: itemID, fallbackDay: calendar.startOfDay(for: target.date))
     let updated = item.applyingSchedulePreview(commandPreview, calendar: calendar)
     guard updated.startDate != item.startDate
       || updated.endDate != item.endDate
@@ -719,7 +708,7 @@ struct ScheduleMonthDaySchedulePanel: View {
     }
     onExternalMonthDragTargetChanged(nil)
     updateMoveCursor(isExternalDrop: false, externalDropDay: nil)
-    activeMutationPreview = movePreview(for: state)
+    activeMutationPreview = moveMutationPreview(for: state)
   }
 
   private func finishMovePreview(
@@ -752,13 +741,17 @@ struct ScheduleMonthDaySchedulePanel: View {
         activeItemDragState = nil
         return
       }
-      let preview = externalMonthDropPreview(for: state, targetDay: targetDay)
-      commitMutationPreview(preview, item: state.originalItem, operation: .move)
+      guard let session = externalMonthDropSession(for: state, targetDay: targetDay) else {
+        activeMutationPreview = nil
+        activeItemDragState = nil
+        return
+      }
+      commitMutationSession(session, item: state.originalItem, itemID: state.itemID)
       return
     }
     onExternalMonthDragTargetChanged(nil)
-    let preview = movePreview(for: state)
-    commitMutationPreview(preview, item: state.originalItem, operation: .move)
+    guard let session = moveSession(for: state) else { return }
+    commitMutationSession(session, item: state.originalItem, itemID: state.itemID)
   }
 
   private func updateResizePreview(
@@ -769,7 +762,7 @@ struct ScheduleMonthDaySchedulePanel: View {
     let item = layout.item
     guard canResizeSchedule(for: item) else { return }
     let state = resizeState(for: layout, edge: edge, drag: drag)
-    activeMutationPreview = resizePreview(for: state, currentPointerPanelY: drag.location.y)
+    activeMutationPreview = resizeMutationPreview(for: state, currentPointerPanelY: drag.location.y)
   }
 
   private func finishResizePreview(
@@ -780,9 +773,9 @@ struct ScheduleMonthDaySchedulePanel: View {
     let item = layout.item
     guard canResizeSchedule(for: item) else { return }
     let state = resizeState(for: layout, edge: edge, drag: drag)
-    let preview = resizePreview(for: state, currentPointerPanelY: drag.location.y)
+    guard let session = resizeSession(for: state, currentPointerPanelY: drag.location.y) else { return }
     let blockedItemID = state.itemID
-    commitMutationPreview(preview, item: state.originalItem, operation: .resize)
+    commitMutationSession(session, item: state.originalItem, itemID: state.itemID)
     DispatchQueue.main.async {
       if resizeBlockedMoveItemID == blockedItemID {
         resizeBlockedMoveItemID = nil
@@ -920,25 +913,47 @@ struct ScheduleMonthDaySchedulePanel: View {
     return item.startDate < nextDay && item.endDate > day
   }
 
-  private func movePreview(
+  private func moveMutationPreview(
     for state: ScheduleMonthDayItemDragState
-  ) -> ScheduleMonthDayScheduleMutationPreview {
-    ScheduleMonthDayInteractionAdapter.movePreview(
-      for: state,
-      targetDay: calendar.startOfDay(for: target.date),
-      calendar: calendar,
+  ) -> ScheduleMonthDayScheduleMutationPreview? {
+    moveSession(for: state)?.preview.monthDayPreview(
+      itemID: state.itemID,
+      fallbackDay: calendar.startOfDay(for: target.date)
+    )
+  }
+
+  private func moveSession(
+    for state: ScheduleMonthDayItemDragState
+  ) -> ScheduleInteractionSession? {
+    guard let identity = interactionIdentity(for: state.originalItem) else { return nil }
+    let targetDay = calendar.startOfDay(for: target.date)
+    return ScheduleInteractionSession.move(
+      identity: identity,
+      originalTimeMinutes: state.originalTimeMinutes,
+      originalDurationMinutes: state.originalDurationMinutes,
+      target: ScheduleMonthDayInteractionAdapter.moveTarget(
+        for: state,
+        targetDay: targetDay,
+        calendar: calendar,
+        metrics: interactionMetrics
+      ),
       metrics: interactionMetrics
     )
   }
 
-  private func externalMonthDropPreview(
+  private func externalMonthDropSession(
     for state: ScheduleMonthDayItemDragState,
     targetDay: Date
-  ) -> ScheduleMonthDayScheduleMutationPreview {
-    ScheduleMonthDayInteractionAdapter.externalMonthDropPreview(
-      for: state,
-      targetDay: targetDay,
-      calendar: calendar,
+  ) -> ScheduleInteractionSession? {
+    guard let identity = interactionIdentity(for: state.originalItem) else { return nil }
+    return ScheduleInteractionSession.move(
+      identity: identity,
+      originalTimeMinutes: state.originalTimeMinutes,
+      originalDurationMinutes: state.originalDurationMinutes,
+      target: ScheduleMonthDayInteractionAdapter.externalMonthDropTarget(
+        targetDay: targetDay,
+        calendar: calendar
+      ),
       metrics: interactionMetrics
     )
   }
@@ -978,16 +993,37 @@ struct ScheduleMonthDaySchedulePanel: View {
     }
   }
 
-  private func resizePreview(
+  private func resizeMutationPreview(
     for state: ScheduleMonthDayItemResizeState,
     currentPointerPanelY: CGFloat
-  ) -> ScheduleMonthDayScheduleMutationPreview {
-    ScheduleMonthDayInteractionAdapter.resizePreview(
-      for: state,
-      currentPointerPanelY: currentPointerPanelY,
-      targetDay: calendar.startOfDay(for: target.date),
-      calendar: calendar,
-      metrics: interactionMetrics
+  ) -> ScheduleMonthDayScheduleMutationPreview? {
+    resizeSession(for: state, currentPointerPanelY: currentPointerPanelY)?.preview.monthDayPreview(
+      itemID: state.itemID,
+      fallbackDay: calendar.startOfDay(for: target.date)
+    )
+  }
+
+  private func resizeSession(
+    for state: ScheduleMonthDayItemResizeState,
+    currentPointerPanelY: CGFloat
+  ) -> ScheduleInteractionSession? {
+    guard let identity = interactionIdentity(for: state.originalItem) else { return nil }
+    let targetDay = calendar.startOfDay(for: target.date)
+    return ScheduleInteractionSession.resize(
+      identity: identity,
+      originalDay: calendar.startOfDay(for: state.originalItem.startDate),
+      originalTimeMinutes: state.originalTimeMinutes,
+      originalDurationMinutes: state.originalDurationMinutes,
+      isStartEdge: state.edge == .start,
+      target: ScheduleMonthDayInteractionAdapter.resizeTarget(
+        for: state,
+        currentPointerPanelY: currentPointerPanelY,
+        targetDay: targetDay,
+        calendar: calendar,
+        metrics: interactionMetrics
+      ),
+      metrics: interactionMetrics,
+      calendar: calendar
     )
   }
 
