@@ -308,13 +308,12 @@ extension AppState {
         return false
       }
       let updatedSnapshot = try await AppOwnedRetainedProjectCommandService.setProjectTitle(
-        vaultRootURL: obsidianVaultRootURL,
         store: store,
         projectID: projectID,
         title: title,
         reminderProjectProvider: reminderProjectProvider
       )
-      let reminderListExternalIdentifier = updatedSnapshot.note.reminderListExternalIdentifier
+      let reminderListExternalIdentifier = updatedSnapshot.reminderListExternalIdentifier
         ?? previousRecord?.reminderListExternalIdentifier
       TaskIdentityBridgeStore.upsertProject(
         projectID: projectID,

@@ -86,7 +86,6 @@ final class AppState: ObservableObject {
   var reminderSyncEditGate: ReminderSyncEditGate?
   var reminderSyncRecoveryJournal: ReminderSyncRecoveryJournalStore?
   var reminderSourceObserver: ReminderSourceObserver?
-  var obsidianProjectDirectoryWatcher: ObsidianProjectDirectoryWatcher?
   var pendingReminderSourceRefreshReason: SyncReason?
   private var undoRedoDepth = 0
   var confirmObsidianArchive: (ObsidianArchiveConfirmationRequest) -> Bool = { request in
@@ -236,7 +235,6 @@ final class AppState: ObservableObject {
     editorMotionReleaseTask?.cancel()
     scheduleCalendarOverlayProjectionCancellable?.cancel()
     scheduleCalendarOwnedEventInvalidationCancellable?.cancel()
-    obsidianProjectDirectoryWatcher?.stop()
     editorStateChangeContinuations.values.forEach { $0.finish() }
   }
 

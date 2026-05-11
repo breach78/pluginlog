@@ -132,8 +132,27 @@ final class AppOwnedRetainedTaskCommandServiceTests: XCTestCase {
 
     XCTAssertEqual(provider.projectTitleUpdate?.0, "list-1")
     XCTAssertEqual(provider.projectTitleUpdate?.1, "Renamed Project")
-    XCTAssertEqual(result.note.reminderListExternalIdentifier, "list-1")
+    XCTAssertEqual(result.reminderListExternalIdentifier, "list-1")
     XCTAssertEqual(project.title, "Renamed Project")
+    assertRawProjectsDoesNotExist(in: fixture.vaultRoot)
+  }
+
+  @MainActor
+  func testAppOwnedProjectTitleReturnsNeutralSnapshotWithoutRawProjects() async throws {
+    let fixture = try await makeEnabledStoreFixture()
+    let provider = FakeAppOwnedReminderProjectProvider()
+
+    let result = try await AppOwnedRetainedProjectCommandService.setProjectTitle(
+      store: fixture.store,
+      projectID: fixture.projectID,
+      title: "Renamed Project",
+      reminderProjectProvider: provider
+    )
+
+    XCTAssertEqual(result.projectID, fixture.projectID)
+    XCTAssertEqual(result.reminderListExternalIdentifier, "list-1")
+    XCTAssertEqual(result.title, "Renamed Project")
+    assertRawProjectsDoesNotExist(in: fixture.vaultRoot)
   }
 
   @MainActor
@@ -159,6 +178,7 @@ final class AppOwnedRetainedTaskCommandServiceTests: XCTestCase {
     XCTAssertEqual(provider.projectColorUpdate?.1, "#112233")
     XCTAssertEqual(project.colorHex, "#112233")
     XCTAssertEqual(project.progressStage, .later)
+    assertRawProjectsDoesNotExist(in: fixture.vaultRoot)
   }
 
   @MainActor
@@ -186,6 +206,25 @@ final class AppOwnedRetainedTaskCommandServiceTests: XCTestCase {
     XCTAssertEqual(provider.presentationUpdates, ["note-external": 9])
     XCTAssertEqual(project.noteMarkdown, "목록 핵심")
     XCTAssertTrue(project.tasks.isEmpty)
+    assertRawProjectsDoesNotExist(in: fixture.vaultRoot)
+  }
+
+  @MainActor
+  func testAppOwnedProjectAndTaskOrderingDoNotCreateRawProjects() async throws {
+    let fixture = try await makeEnabledStoreFixture(taskExternalIdentifier: "task-1")
+    let taskID = ReminderProjectionIdentity.taskID(for: "task-1")
+
+    try await fixture.store.updateProjectBoardOrders([fixture.projectID: 3])
+    try await fixture.store.reorderOpenTasks(
+      projectID: fixture.projectID,
+      orderedTaskIDs: [taskID]
+    )
+    let snapshot = try await fixture.store.loadRetainedWorkspaceSnapshot(projectIDs: [fixture.projectID])
+    let project = try XCTUnwrap(snapshot.projects.first)
+
+    XCTAssertEqual(project.boardOrder, 3)
+    XCTAssertEqual(project.tasks.map(\.identity.taskID), [taskID])
+    assertRawProjectsDoesNotExist(in: fixture.vaultRoot)
   }
 
   @MainActor
@@ -916,6 +955,17 @@ final class AppOwnedRetainedTaskCommandServiceTests: XCTestCase {
       .appendingPathComponent("AppOwnedRetainedTaskCommandServiceTests-\(UUID().uuidString)", isDirectory: true)
     try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
     return url
+  }
+
+  private func assertRawProjectsDoesNotExist(
+    in vaultRoot: URL,
+    file: StaticString = #filePath,
+    line: UInt = #line
+  ) {
+    let rawProjectsURL = vaultRoot
+      .appendingPathComponent("raw", isDirectory: true)
+      .appendingPathComponent("projects", isDirectory: true)
+    XCTAssertFalse(FileManager.default.fileExists(atPath: rawProjectsURL.path), file: file, line: line)
   }
 }
 

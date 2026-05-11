@@ -3,12 +3,7 @@ import SwiftData
 
 extension AppState {
   func prepareProjectNoteStore() async {
-    stopObsidianProjectDirectoryWatcher()
-  }
-
-  func configureObsidianProjectDirectoryWatcher() {
-    obsidianProjectDirectoryWatcher?.stop()
-    obsidianProjectDirectoryWatcher = nil
+    // Project/task runtime state is app-owned; legacy raw/projects watching is disabled.
   }
 
   func configureReminderSourceObservation() {
@@ -29,11 +24,6 @@ extension AppState {
     Task { @MainActor [weak observer] in
       await observer?.startObserving()
     }
-  }
-
-  func stopObsidianProjectDirectoryWatcher() {
-    obsidianProjectDirectoryWatcher?.stop()
-    obsidianProjectDirectoryWatcher = nil
   }
 
   func loadProjectNoteFromSource(projectID: UUID, context: ModelContext) async -> String? {
@@ -110,38 +100,8 @@ extension AppState {
     }
     let store = AppOwnedWorkspaceStore(containerRootURL: containerRootURL)
     try await store.replaceReminderSnapshot(batch, importedAt: importedAt, coverage: .full)
-    try await runLegacyObsidianProjectMigrationsIfNeeded(store: store)
     try await store.setProjectionReadEnabled(true)
     return store
-  }
-
-  func runLegacyObsidianProjectMigrationsIfNeeded() async {
-    do {
-      guard let containerRootURL = storageCoordinator.paths?.root else { return }
-      let store = AppOwnedWorkspaceStore(containerRootURL: containerRootURL)
-      guard try await store.hasImportedWorkspace() else { return }
-      try await runLegacyObsidianProjectMigrationsIfNeeded(store: store)
-      bumpWorkspaceTreeRevision()
-    } catch {
-      reportError(
-        error,
-        logMessage: "runLegacyObsidianProjectMigrationsIfNeeded failed"
-      )
-    }
-  }
-
-  private func runLegacyObsidianProjectMigrationsIfNeeded(
-    store: AppOwnedWorkspaceStore
-  ) async throws {
-    guard let obsidianVaultRootURL else { return }
-    try await LegacyObsidianProjectTaskDurationMigration.runIfNeeded(
-      store: store,
-      vaultRootURL: obsidianVaultRootURL
-    )
-    try await LegacyObsidianProjectStageMigration.runIfNeeded(
-      store: store,
-      vaultRootURL: obsidianVaultRootURL
-    )
   }
 
   func handleObsidianProjectDirectoryChange(_ changedFiles: [URL]) async {

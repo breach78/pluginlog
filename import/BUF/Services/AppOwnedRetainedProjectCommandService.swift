@@ -1,14 +1,26 @@
 import Foundation
 
+struct AppOwnedProjectSnapshot: Equatable {
+  let projectID: UUID
+  let reminderListExternalIdentifier: String?
+  let title: String
+  let noteMarkdown: String
+  let colorHex: String?
+  let progressStage: ProjectProgressStage
+  let localStartDate: Date?
+  let localDeadline: Date?
+  let isArchived: Bool
+  let updatedAt: Date
+}
+
 @MainActor
 enum AppOwnedRetainedProjectCommandService {
   static func setProjectTitle(
-    vaultRootURL: URL?,
     store: AppOwnedWorkspaceStore,
     projectID: UUID,
     title rawTitle: String,
     reminderProjectProvider: ReminderProjectProvider
-  ) async throws -> ObsidianProjectMarkdownStore.Snapshot {
+  ) async throws -> AppOwnedProjectSnapshot {
     let title = rawTitle.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !title.isEmpty else {
       throw RetainedTaskCommandError.retainedProjectionFailed("empty project title")
@@ -25,35 +37,30 @@ enum AppOwnedRetainedProjectCommandService {
       title: resolvedTitle,
       reminderListExternalIdentifier: project.reminderListExternalIdentifier ?? project.reminderListIdentifier
     )
-    return try await syntheticSnapshot(
-      vaultRootURL: vaultRootURL,
+    return try await projectSnapshot(
       store: store,
       projectID: projectID
     )
   }
 
   static func setProjectStage(
-    vaultRootURL: URL?,
     store: AppOwnedWorkspaceStore,
     projectID: UUID,
     stage: ProjectProgressStage
-  ) async throws -> ObsidianProjectMarkdownStore.Snapshot {
+  ) async throws -> AppOwnedProjectSnapshot {
     try await store.updateProjectStage(projectID: projectID, stage: stage, modifiedAt: .now)
-    return try await syntheticSnapshot(
-      vaultRootURL: vaultRootURL,
+    return try await projectSnapshot(
       store: store,
       projectID: projectID
     )
   }
 
   static func setProjectNote(
-    vaultRootURL: URL?,
     store: AppOwnedWorkspaceStore,
     projectID: UUID,
     noteText: String,
     reminderProjectProvider: ReminderProjectProvider
   ) async throws -> String {
-    _ = vaultRootURL
     let normalizedNoteText = ReminderNoteSourceCodec.normalize(noteText)
     let project = try await store.projectReference(projectID: projectID)
 
@@ -81,12 +88,11 @@ enum AppOwnedRetainedProjectCommandService {
   }
 
   static func setProjectColor(
-    vaultRootURL: URL?,
     store: AppOwnedWorkspaceStore,
     projectID: UUID,
     colorHex: String?,
     reminderProjectProvider: ReminderProjectProvider
-  ) async throws -> ObsidianProjectMarkdownStore.Snapshot {
+  ) async throws -> AppOwnedProjectSnapshot {
     let project = try await store.projectReference(projectID: projectID)
     let remote = try reminderProjectProvider.setProjectColor(
       identifier: project.reminderListIdentifier,
@@ -94,8 +100,7 @@ enum AppOwnedRetainedProjectCommandService {
     )
     let resolvedColor = normalized(remote?.colorHex) ?? normalized(colorHex)
     try await store.updateProjectColor(projectID: projectID, colorHex: resolvedColor, modifiedAt: .now)
-    return try await syntheticSnapshot(
-      vaultRootURL: vaultRootURL,
+    return try await projectSnapshot(
       store: store,
       projectID: projectID
     )
@@ -237,44 +242,25 @@ enum AppOwnedRetainedProjectCommandService {
     )
   }
 
-  private static func syntheticSnapshot(
-    vaultRootURL: URL?,
+  private static func projectSnapshot(
     store: AppOwnedWorkspaceStore,
     projectID: UUID
-  ) async throws -> ObsidianProjectMarkdownStore.Snapshot {
-    guard let vaultRootURL else {
-      throw RetainedTaskCommandError.obsidianVaultNotConfigured
-    }
+  ) async throws -> AppOwnedProjectSnapshot {
     let workspace = try await store.loadRetainedWorkspaceSnapshot(projectIDs: [projectID])
     guard let project = workspace.projects.first(where: { $0.identity.projectID == projectID }) else {
       throw RetainedTaskCommandError.projectNotFound(projectID)
     }
-    let sqliteURL = ContainerPaths(
-      root: AppOwnedWorkspaceStore.containerRootURL(forVaultRootURL: vaultRootURL)
-    ).sqliteURL
-    let frontmatter = ObsidianProjectFrontmatter(
-      tags: ["프로젝트"],
+    return AppOwnedProjectSnapshot(
+      projectID: project.identity.projectID,
       reminderListExternalIdentifier: project.identity.reminderListExternalIdentifier,
+      title: project.title,
+      noteMarkdown: project.noteMarkdown,
       colorHex: project.colorHex,
-      projectStage: project.progressStage,
-      startDate: ReminderScheduleMetadataCodec.encodeDate(project.localStartDate, hasExplicitTime: false),
-      deadline: ReminderScheduleMetadataCodec.encodeDate(project.localDeadline, hasExplicitTime: false),
-      preservedLines: [],
-      isArchived: project.isArchived
-    )
-    let note = ObsidianProjectNote(
-      frontmatter: frontmatter,
-      bodyMarkdown: project.noteMarkdown,
-      tasks: [],
-      diagnostics: [],
-      normalizedContentHash: "app-owned:\(projectID.uuidString):\(project.updatedAt.timeIntervalSinceReferenceDate)"
-    )
-    return ObsidianProjectMarkdownStore.Snapshot(
-      fileURL: sqliteURL,
-      vaultRelativePath: ".buf/data/main.sqlite",
-      note: note,
-      rawMarkdown: "",
-      contentModificationDate: project.updatedAt
+      progressStage: project.progressStage,
+      localStartDate: project.localStartDate,
+      localDeadline: project.localDeadline,
+      isArchived: project.isArchived,
+      updatedAt: project.updatedAt
     )
   }
 

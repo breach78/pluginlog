@@ -122,6 +122,44 @@ final class LegacyObsidianProjectStageMigrationTests: XCTestCase {
     XCTAssertEqual(metadataValue, LegacyObsidianProjectStageMigration.completedValue)
   }
 
+  func testRunIfNeededDoesNotReadLegacyFilesAfterCompletionMetadataExists() async throws {
+    let vaultRoot = try makeTemporaryDirectory()
+    let store = AppOwnedWorkspaceStore(containerRootURL: try makeTemporaryDirectory())
+    let projectID = RetainedProjectionBuilder.derivedProjectID(for: "list-1")
+    try await store.replaceReminderSnapshot(
+      ReminderImportSnapshotBatch(
+        lists: [
+          ReminderListImportSnapshot(
+            identifier: "list-1",
+            externalIdentifier: "list-1",
+            title: "Project",
+            colorHex: nil
+          )
+        ],
+        itemsByListIdentifier: [:]
+      ),
+      importedAt: Date(timeIntervalSinceReferenceDate: 250)
+    )
+    try await store.setMetadataValue(
+      LegacyObsidianProjectStageMigration.completedValue,
+      forKey: LegacyObsidianProjectStageMigration.metadataKey
+    )
+    try writeLegacyProject(
+      vaultRoot: vaultRoot,
+      listIdentifier: "list-1",
+      stage: .later
+    )
+
+    try await LegacyObsidianProjectStageMigration.runIfNeeded(
+      store: store,
+      vaultRootURL: vaultRoot
+    )
+
+    let snapshot = try await store.loadRetainedWorkspaceSnapshot(projectIDs: [projectID])
+    let project = try XCTUnwrap(snapshot.projects.first)
+    XCTAssertEqual(project.progressStage, .do)
+  }
+
   private func writeLegacyProject(
     vaultRoot: URL,
     listIdentifier: String,

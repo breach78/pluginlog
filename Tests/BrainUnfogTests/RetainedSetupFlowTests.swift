@@ -75,7 +75,6 @@ final class RetainedSetupFlowTests: XCTestCase {
       )
     )
     XCTAssertNotNil(appState.reminderSourceObserver)
-    XCTAssertNil(appState.obsidianProjectDirectoryWatcher)
     XCTAssertTrue(appState.hasCompletedInitialSetup)
     XCTAssertTrue(appState.syncStarted)
     XCTAssertTrue(appState.didAutoBootstrapSync)
