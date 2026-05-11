@@ -311,6 +311,26 @@ enum ScheduleHiddenTimedItemIndicatorPolicy {
     return min(24 * 60, max(0, rawMinute))
   }
 
+  static func hasHiddenTimedItem(
+    visibleStartMinute: Int,
+    endMinutes: [Int]
+  ) -> Bool {
+    guard visibleStartMinute > 0 else { return false }
+    return endMinutes.contains { $0 <= visibleStartMinute }
+  }
+
+  static func earliestHiddenStartMinute(
+    visibleStartMinute: Int,
+    intervals: [(startMinute: Int, endMinute: Int)]
+  ) -> Int? {
+    guard visibleStartMinute > 0 else { return nil }
+
+    return intervals
+      .filter { $0.endMinute <= visibleStartMinute }
+      .map(\.startMinute)
+      .min()
+  }
+
   static func hiddenDayIndexes(
     layouts: [ScheduleTimedBlockLayout],
     visibleStartMinute: Int
@@ -332,13 +352,17 @@ enum ScheduleHiddenTimedItemIndicatorPolicy {
   ) -> Int? {
     guard visibleStartMinute > 0 else { return nil }
 
-    return layouts
-      .filter { layout in
+    let intervals = layouts
+      .compactMap { layout -> (startMinute: Int, endMinute: Int)? in
         let entry = layout.entry
-        return entry.dayIndex == dayIndex && entry.endMinute <= visibleStartMinute
+        guard entry.dayIndex == dayIndex else { return nil }
+        return (entry.startMinute, entry.endMinute)
       }
-      .map(\.entry.startMinute)
-      .min()
+
+    return earliestHiddenStartMinute(
+      visibleStartMinute: visibleStartMinute,
+      intervals: intervals
+    )
   }
 }
 

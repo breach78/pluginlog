@@ -43,6 +43,34 @@ final class ScheduleHiddenTimedItemIndicatorPolicyTests: XCTestCase {
     XCTAssertEqual(startMinute, 2 * 60)
   }
 
+  func testSingleDayHiddenIndicatorIgnoresPartiallyVisibleItems() {
+    XCTAssertTrue(
+      ScheduleHiddenTimedItemIndicatorPolicy.hasHiddenTimedItem(
+        visibleStartMinute: 6 * 60,
+        endMinutes: [5 * 60, 7 * 60]
+      )
+    )
+    XCTAssertFalse(
+      ScheduleHiddenTimedItemIndicatorPolicy.hasHiddenTimedItem(
+        visibleStartMinute: 6 * 60,
+        endMinutes: [6 * 60 + 1, 7 * 60]
+      )
+    )
+  }
+
+  func testSingleDayEarliestHiddenStartMinuteFindsOnlyHiddenIntervals() {
+    let startMinute = ScheduleHiddenTimedItemIndicatorPolicy.earliestHiddenStartMinute(
+      visibleStartMinute: 6 * 60,
+      intervals: [
+        (startMinute: 5 * 60, endMinute: 6 * 60),
+        (startMinute: 3 * 60, endMinute: 4 * 60),
+        (startMinute: 5 * 60 + 30, endMinute: 6 * 60 + 30)
+      ]
+    )
+
+    XCTAssertEqual(startMinute, 3 * 60)
+  }
+
   private func makeLayout(
     dayIndex: Int,
     startMinute: Int,

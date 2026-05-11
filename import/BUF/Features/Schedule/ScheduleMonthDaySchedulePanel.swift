@@ -64,26 +64,30 @@ struct ScheduleMonthDaySchedulePanel: View {
       Divider()
 
       ScrollViewReader { proxy in
-        ScrollView {
-          VStack(spacing: 0) {
-            Color.clear
-              .frame(height: 1)
-              .id(Self.topScrollID)
+        ZStack(alignment: .topLeading) {
+          ScrollView {
+            VStack(spacing: 0) {
+              Color.clear
+                .frame(height: 1)
+                .id(Self.topScrollID)
 
-            timedSchedule
+              timedSchedule
 
-            Color.clear
-              .frame(height: 1)
-              .id(Self.bottomScrollID)
+              Color.clear
+                .frame(height: 1)
+                .id(Self.bottomScrollID)
+            }
           }
-        }
-        .scrollIndicators(.visible)
-        .id(timeScrollResetID)
-        .onAppear {
-          scrollTimeGridToInitialPosition(proxy)
-        }
-        .onChange(of: timeScrollResetID) { _, _ in
-          scrollTimeGridToInitialPosition(proxy)
+          .scrollIndicators(.visible)
+          .id(timeScrollResetID)
+          .onAppear {
+            scrollTimeGridToInitialPosition(proxy)
+          }
+          .onChange(of: timeScrollResetID) { _, _ in
+            scrollTimeGridToInitialPosition(proxy)
+          }
+
+          hiddenTimedItemsIndicator(proxy: proxy)
         }
       }
       .background(Color(nsColor: .textBackgroundColor))
@@ -373,16 +377,47 @@ struct ScheduleMonthDaySchedulePanel: View {
   }
 
   private var timeScrollAnchorLayer: some View {
-    VStack(spacing: 0) {
-      Color.clear
-        .frame(height: CGFloat(Self.initialVisibleHour) * Self.hourHeight)
-      Color.clear
-        .frame(height: 1)
-        .id(Self.nightScrollID)
-      Spacer(minLength: 0)
+    ZStack(alignment: .topLeading) {
+      VStack(spacing: 0) {
+        Color.clear
+          .frame(height: CGFloat(Self.initialVisibleHour) * Self.hourHeight)
+        Color.clear
+          .frame(height: 1)
+          .id(Self.nightScrollID)
+        Spacer(minLength: 0)
+      }
+      .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+
+      ForEach(0...96, id: \.self) { quarter in
+        Color.clear
+          .frame(width: 1, height: 1)
+          .offset(y: CGFloat(quarter) * Self.quarterHourHeight)
+          .id(Self.timeScrollID(forQuarter: quarter))
+      }
     }
     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
     .allowsHitTesting(false)
+  }
+
+  @ViewBuilder
+  private func hiddenTimedItemsIndicator(proxy: ScrollViewProxy) -> some View {
+    if hasHiddenTimedItemsAboveVisibleStart {
+      Button {
+        revealHiddenTimedItems(proxy: proxy)
+      } label: {
+        Image(systemName: "arrowtriangle.up.fill")
+          .font(.system(size: 8.4, weight: .bold))
+          .foregroundStyle(Color.secondary.opacity(0.68))
+          .frame(width: 18, height: 12)
+      }
+      .buttonStyle(.plain)
+      .help("위쪽 숨겨진 시간대에 항목 있음")
+      .padding(.leading, Self.timeGutterWidth)
+      .frame(height: 12, alignment: .topLeading)
+      .frame(maxWidth: .infinity, alignment: .topLeading)
+      .offset(y: 4)
+      .zIndex(30)
+    }
   }
 
   private var timeAxis: some View {
@@ -423,6 +458,22 @@ struct ScheduleMonthDaySchedulePanel: View {
       .sorted { lhs, rhs in
         itemSortKey(lhs, calendar: calendar) < itemSortKey(rhs, calendar: calendar)
       }
+  }
+
+  private var visibleStartMinute: Int {
+    let scrollOffsetY = max(0, allDaySectionHeight + Self.dividerHeight - timeContentMinYInPanel)
+    return ScheduleHiddenTimedItemIndicatorPolicy.visibleStartMinute(
+      scrollOffsetY: scrollOffsetY,
+      hourHeight: Self.hourHeight
+    )
+  }
+
+  private var hasHiddenTimedItemsAboveVisibleStart: Bool {
+    let intervals = timedItems.compactMap(timedInterval)
+    return ScheduleHiddenTimedItemIndicatorPolicy.hasHiddenTimedItem(
+      visibleStartMinute: visibleStartMinute,
+      endMinutes: intervals.map(\.endMinute)
+    )
   }
 
   private var displayedItems: [ScheduleMonthItem] {
@@ -527,6 +578,25 @@ struct ScheduleMonthDaySchedulePanel: View {
       y: min(Self.timeGridHeight - 86, max(86, y(forMinute: preview.timeMinutes) + 76))
     )
     .zIndex(20)
+  }
+
+  private func revealHiddenTimedItems(proxy: ScrollViewProxy) {
+    let intervals = timedItems.compactMap(timedInterval)
+    let policyIntervals = intervals.map { interval in
+      (startMinute: interval.startMinute, endMinute: interval.endMinute)
+    }
+    guard let targetMinute = ScheduleHiddenTimedItemIndicatorPolicy.earliestHiddenStartMinute(
+      visibleStartMinute: visibleStartMinute,
+      intervals: policyIntervals
+    ) else {
+      return
+    }
+
+    let revealMinute = max(0, targetMinute - 15)
+    let quarter = min(96, max(0, Int(floor(Double(revealMinute) / 15.0))))
+    withAnimation(.easeOut(duration: 0.16)) {
+      proxy.scrollTo(Self.timeScrollID(forQuarter: quarter), anchor: .top)
+    }
   }
 
   private func toggleCompletion(for item: ScheduleMonthItem) {
@@ -993,6 +1063,10 @@ struct ScheduleMonthDaySchedulePanel: View {
   private static let panelCoordinateSpaceName = "schedule-month-detail-panel"
   private static var quarterHourHeight: CGFloat { hourHeight / 4 }
   private static var timeGridHeight: CGFloat { hourHeight * 24 }
+
+  private static func timeScrollID(forQuarter quarter: Int) -> String {
+    "schedule-month-detail-time-quarter-\(quarter)"
+  }
 }
 
 private struct ScheduleMonthDayCurrentTimeIndicator: View {
