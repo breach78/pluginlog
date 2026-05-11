@@ -24,6 +24,11 @@ enum AppOwnedWorkspaceStoreError: LocalizedError {
 actor AppOwnedWorkspaceStore {
   private static let localCompletedRecurringMarker = "::app-completed::"
 
+  enum ReminderSnapshotReplacementScope: Sendable {
+    case allProjects
+    case listedProjectsOnly
+  }
+
   struct ProjectReference: Equatable, Sendable {
     let projectID: UUID
     let reminderListIdentifier: String
@@ -158,7 +163,8 @@ actor AppOwnedWorkspaceStore {
 
   func replaceReminderSnapshot(
     _ batch: ReminderImportSnapshotBatch,
-    importedAt: Date = .now
+    importedAt: Date = .now,
+    scope: ReminderSnapshotReplacementScope = .allProjects
   ) throws {
     let db = try openDatabase()
     defer { sqlite3_close(db) }
@@ -169,22 +175,25 @@ actor AppOwnedWorkspaceStore {
       let preservedTaskSupplements = try loadTaskSupplements(db)
       let preservedCompletedRecurringOccurrences = try loadLocalCompletedRecurringOccurrenceRows(db)
       let taskIdentityResolver = try loadTaskIdentityResolver(db)
-      try exec(db, "DELETE FROM app_tasks;")
-      try exec(db, "DELETE FROM app_projects;")
+      var importedProjectIDs = Set<UUID>()
+      var importedTaskIDsByProjectID: [UUID: Set<UUID>] = [:]
       try upsertMetadata(db, key: "last_reminders_import_at", value: String(importedAt.timeIntervalSinceReferenceDate))
 
       let listsByIdentifier = Dictionary(uniqueKeysWithValues: batch.lists.map { ($0.identifier, $0) })
       for list in batch.lists {
-        try insertProject(db, list: list, importedAt: importedAt)
+        let projectID = try insertProject(db, list: list, importedAt: importedAt)
+        importedProjectIDs.insert(projectID)
+        importedTaskIDsByProjectID[projectID] = importedTaskIDsByProjectID[projectID] ?? []
         let items = batch.itemsByListIdentifier[list.identifier] ?? []
         for (index, item) in items.enumerated() {
-          try insertTask(
+          let taskID = try insertTask(
             db,
             item: item,
             list: list,
             rowOrder: index,
             taskIdentityResolver: taskIdentityResolver
           )
+          importedTaskIDsByProjectID[projectID, default: []].insert(taskID)
         }
       }
 
@@ -195,16 +204,29 @@ actor AppOwnedWorkspaceStore {
           title: items.first?.sourceListTitle ?? "Imported Reminders",
           colorHex: nil
         )
-        try insertProject(db, list: fallbackList, importedAt: importedAt)
+        let projectID = try insertProject(db, list: fallbackList, importedAt: importedAt)
+        importedProjectIDs.insert(projectID)
+        importedTaskIDsByProjectID[projectID] = importedTaskIDsByProjectID[projectID] ?? []
         for (index, item) in items.enumerated() {
-          try insertTask(
+          let taskID = try insertTask(
             db,
             item: item,
             list: fallbackList,
             rowOrder: index,
             taskIdentityResolver: taskIdentityResolver
           )
+          importedTaskIDsByProjectID[projectID, default: []].insert(taskID)
         }
+      }
+      try deleteTasksMissingFromReminderSnapshot(
+        db,
+        importedTaskIDsByProjectID: importedTaskIDsByProjectID
+      )
+      if scope == .allProjects {
+        try deleteProjectsMissingFromReminderSnapshot(
+          db,
+          importedProjectIDs: importedProjectIDs
+        )
       }
       try mergeProjectSupplements(
         db,
@@ -960,15 +982,21 @@ actor AppOwnedWorkspaceStore {
     _ db: OpaquePointer,
     list: ReminderListImportSnapshot,
     importedAt: Date
-  ) throws {
+  ) throws -> UUID {
     let identity = normalized(list.externalIdentifier) ?? list.identifier
     let projectID = RetainedProjectionBuilder.derivedProjectID(for: identity)
     try execute(
       db,
       """
-      INSERT OR REPLACE INTO app_projects (
+      INSERT INTO app_projects (
         id, reminder_list_identifier, reminder_list_external_identifier, title, color_hex, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?);
+      ) VALUES (?, ?, ?, ?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET
+        reminder_list_identifier = excluded.reminder_list_identifier,
+        reminder_list_external_identifier = excluded.reminder_list_external_identifier,
+        title = excluded.title,
+        color_hex = COALESCE(excluded.color_hex, app_projects.color_hex),
+        updated_at = excluded.updated_at;
       """,
       bindings: [
         .text(projectID.uuidString),
@@ -979,6 +1007,7 @@ actor AppOwnedWorkspaceStore {
         .double(importedAt.timeIntervalSinceReferenceDate),
       ]
     )
+    return projectID
   }
 
   private func insertTask(
@@ -987,7 +1016,7 @@ actor AppOwnedWorkspaceStore {
     list: ReminderListImportSnapshot,
     rowOrder: Int,
     taskIdentityResolver: TaskIdentityResolver
-  ) throws {
+  ) throws -> UUID {
     let projectIdentity = normalized(list.externalIdentifier) ?? list.identifier
     let projectID = RetainedProjectionBuilder.derivedProjectID(for: projectIdentity)
     let taskIdentity = normalized(item.externalIdentifier) ?? item.identifier
@@ -1000,12 +1029,34 @@ actor AppOwnedWorkspaceStore {
     try execute(
       db,
       """
-      INSERT OR REPLACE INTO app_tasks (
+      INSERT INTO app_tasks (
         id, project_id, reminder_identifier, reminder_external_identifier, parent_task_id,
         title, note_text, is_completed, completion_date, start_date, due_date,
         schedule_has_explicit_time, scheduled_duration_minutes, priority, recurrence_rule_raw,
         is_flagged, required_work_days, attachment_count, created_at, modified_at, row_order
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET
+        project_id = excluded.project_id,
+        reminder_identifier = excluded.reminder_identifier,
+        reminder_external_identifier = excluded.reminder_external_identifier,
+        parent_task_id = excluded.parent_task_id,
+        title = excluded.title,
+        note_text = excluded.note_text,
+        is_completed = excluded.is_completed,
+        completion_date = excluded.completion_date,
+        start_date = excluded.start_date,
+        due_date = excluded.due_date,
+        schedule_has_explicit_time = excluded.schedule_has_explicit_time,
+        scheduled_duration_minutes = COALESCE(
+          excluded.scheduled_duration_minutes,
+          app_tasks.scheduled_duration_minutes
+        ),
+        priority = excluded.priority,
+        recurrence_rule_raw = excluded.recurrence_rule_raw,
+        is_flagged = excluded.is_flagged,
+        required_work_days = excluded.required_work_days,
+        attachment_count = excluded.attachment_count,
+        modified_at = excluded.modified_at;
       """,
       bindings: [
         .text(taskID.uuidString),
@@ -1030,6 +1081,56 @@ actor AppOwnedWorkspaceStore {
         .double(item.modifiedAt.timeIntervalSinceReferenceDate),
         .int(rowOrder),
       ]
+    )
+    return taskID
+  }
+
+  private func deleteTasksMissingFromReminderSnapshot(
+    _ db: OpaquePointer,
+    importedTaskIDsByProjectID: [UUID: Set<UUID>]
+  ) throws {
+    for (projectID, taskIDs) in importedTaskIDsByProjectID {
+      let missingTaskClause: String
+      if taskIDs.isEmpty {
+        missingTaskClause = ""
+      } else {
+        missingTaskClause = """
+          AND id NOT IN (\(taskIDs.map { sqlStringLiteral($0.uuidString) }.sorted().joined(separator: ", ")))
+        """
+      }
+      try exec(
+        db,
+        """
+        DELETE FROM app_tasks
+        WHERE project_id = \(sqlStringLiteral(projectID.uuidString))
+          \(missingTaskClause)
+          AND (
+            reminder_external_identifier IS NULL
+            OR reminder_external_identifier NOT LIKE \(sqlStringLiteral("%\(Self.localCompletedRecurringMarker)%"))
+          );
+        """
+      )
+    }
+  }
+
+  private func deleteProjectsMissingFromReminderSnapshot(
+    _ db: OpaquePointer,
+    importedProjectIDs: Set<UUID>
+  ) throws {
+    if importedProjectIDs.isEmpty {
+      try exec(db, "DELETE FROM app_projects;")
+      return
+    }
+    let keptProjectIDs = importedProjectIDs
+      .map { sqlStringLiteral($0.uuidString) }
+      .sorted()
+      .joined(separator: ", ")
+    try exec(
+      db,
+      """
+      DELETE FROM app_projects
+      WHERE id NOT IN (\(keptProjectIDs));
+      """
     )
   }
 

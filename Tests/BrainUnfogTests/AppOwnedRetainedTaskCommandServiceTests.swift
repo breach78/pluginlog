@@ -441,6 +441,245 @@ final class AppOwnedRetainedTaskCommandServiceTests: XCTestCase {
   }
 
   @MainActor
+  func testAppOwnedPartialReminderRefreshPreservesOtherProjectStorageInvariants()
+    async throws
+  {
+    let start = try XCTUnwrap(
+      Self.calendar.date(from: DateComponents(year: 2026, month: 5, day: 2, hour: 9, minute: 30))
+    )
+    let expectedDate = try XCTUnwrap(
+      Self.calendar.date(from: DateComponents(year: 2026, month: 5, day: 2, hour: 11, minute: 15))
+    )
+    let recurringActiveDate = try XCTUnwrap(
+      Self.calendar.date(from: DateComponents(year: 2026, month: 5, day: 9))
+    )
+    let recurringCompletedDate = try XCTUnwrap(
+      Self.calendar.date(from: DateComponents(year: 2026, month: 5, day: 2, hour: 8))
+    )
+    let vaultRoot = try makeTemporaryDirectory()
+    try FileManager.default.createDirectory(
+      at: vaultRoot.appendingPathComponent(".obsidian", isDirectory: true),
+      withIntermediateDirectories: true
+    )
+    let store = AppOwnedWorkspaceStore.storeForVaultRootURL(vaultRoot)
+    let firstProjectID = RetainedProjectionBuilder.derivedProjectID(for: "list-1")
+    let secondProjectID = RetainedProjectionBuilder.derivedProjectID(for: "list-2")
+    let firstTaskID = ReminderProjectionIdentity.taskID(for: "task-1")
+    let secondFirstTaskID = ReminderProjectionIdentity.taskID(for: "task-2-a")
+    let secondSecondTaskID = ReminderProjectionIdentity.taskID(for: "task-2-b")
+    let recurringTaskID = ReminderProjectionIdentity.taskID(for: "task-2-recurring")
+    let importedAt = Date(timeIntervalSinceReferenceDate: 800)
+
+    func item(
+      identifier: String,
+      externalIdentifier: String,
+      listIdentifier: String,
+      title: String,
+      dueDate: Date? = nil,
+      hasExplicitTime: Bool = false,
+      durationMinutes: Int? = nil,
+      recurrenceRuleRaw: String? = nil,
+      modifiedAt: Date = importedAt
+    ) -> ReminderItemImportSnapshot {
+      ReminderItemImportSnapshot(
+        identifier: identifier,
+        externalIdentifier: externalIdentifier,
+        parentExternalIdentifier: nil,
+        sourceListIdentifier: listIdentifier,
+        sourceListTitle: listIdentifier == "list-1" ? "Focus" : "Backlog",
+        title: title,
+        notes: "",
+        attachmentCount: 0,
+        isCompleted: false,
+        completionDate: nil,
+        startDate: nil,
+        dueDate: dueDate,
+        scheduleHasExplicitTime: hasExplicitTime,
+        scheduledDurationMinutes: durationMinutes,
+        priority: 0,
+        recurrenceRuleRaw: recurrenceRuleRaw,
+        isFlagged: false,
+        requiredWorkDays: 0,
+        createdAt: importedAt,
+        modifiedAt: modifiedAt
+      )
+    }
+
+    let initialBatch = ReminderImportSnapshotBatch(
+      lists: [
+        ReminderListImportSnapshot(
+          identifier: "list-1",
+          externalIdentifier: "list-1",
+          title: "Focus",
+          colorHex: nil
+        ),
+        ReminderListImportSnapshot(
+          identifier: "list-2",
+          externalIdentifier: "list-2",
+          title: "Backlog",
+          colorHex: nil
+        ),
+      ],
+      itemsByListIdentifier: [
+        "list-1": [
+          item(
+            identifier: "task-1-identifier",
+            externalIdentifier: "task-1",
+            listIdentifier: "list-1",
+            title: "Editable",
+            dueDate: start,
+            hasExplicitTime: true,
+            durationMinutes: 90
+          )
+        ],
+        "list-2": [
+          item(
+            identifier: "task-2-a-identifier",
+            externalIdentifier: "task-2-a",
+            listIdentifier: "list-2",
+            title: "Second A",
+            dueDate: start,
+            hasExplicitTime: true
+          ),
+          item(
+            identifier: "task-2-b-identifier",
+            externalIdentifier: "task-2-b",
+            listIdentifier: "list-2",
+            title: "Second B"
+          ),
+          item(
+            identifier: "task-2-recurring-identifier",
+            externalIdentifier: "task-2-recurring",
+            listIdentifier: "list-2",
+            title: "Recurring",
+            dueDate: recurringActiveDate,
+            recurrenceRuleRaw: "daily"
+          ),
+        ],
+      ]
+    )
+    try await store.replaceReminderSnapshot(initialBatch, importedAt: importedAt)
+    try await store.setProjectionReadEnabled(true)
+    try await store.updateProjectStage(
+      projectID: secondProjectID,
+      stage: .later,
+      modifiedAt: importedAt.addingTimeInterval(1)
+    )
+    try await store.updateProjectBoardOrders([
+      firstProjectID: 1,
+      secondProjectID: 0,
+    ])
+    try await store.mergeTaskSupplements([
+      AppOwnedWorkspaceStore.TaskSupplement(taskID: secondFirstTaskID, durationMinutes: 75)
+    ])
+    try await store.reorderOpenTasks(
+      projectID: secondProjectID,
+      orderedTaskIDs: [secondSecondTaskID, secondFirstTaskID, recurringTaskID]
+    )
+    let recurringTask = try await store.taskReference(
+      projectID: secondProjectID,
+      taskID: recurringTaskID
+    )
+    _ = try await store.upsertLocalCompletedRecurringOccurrence(
+      projectID: secondProjectID,
+      sourceTask: AppOwnedWorkspaceStore.TaskReference(
+        projectID: secondProjectID,
+        taskID: recurringTaskID,
+        reminderIdentifier: recurringTask.reminderIdentifier,
+        reminderExternalIdentifier: recurringTask.reminderExternalIdentifier,
+        title: recurringTask.title,
+        noteText: recurringTask.noteText,
+        isCompleted: false,
+        completionDate: nil,
+        dueDate: recurringCompletedDate,
+        hasExplicitTime: true,
+        durationMinutes: 45,
+        recurrenceRuleRaw: recurringTask.recurrenceRuleRaw,
+        priority: recurringTask.priority
+      ),
+      completionDate: recurringCompletedDate,
+      modifiedAt: importedAt.addingTimeInterval(2)
+    )
+
+    let provider = FakeAppOwnedReminderProjectProvider()
+    provider.scheduleMetadataResults = [
+      nil,
+      ReminderTaskRemoteMetadata(
+        identifier: "fresh-task-1-identifier",
+        externalIdentifier: "task-1",
+        modifiedAt: importedAt.addingTimeInterval(20)
+      ),
+    ]
+    provider.fetchedImportSnapshotBatch = ReminderImportSnapshotBatch(
+      lists: [
+        ReminderListImportSnapshot(
+          identifier: "list-1",
+          externalIdentifier: "list-1",
+          title: "Focus",
+          colorHex: nil
+        )
+      ],
+      itemsByListIdentifier: [
+        "list-1": [
+          item(
+            identifier: "fresh-task-1-identifier",
+            externalIdentifier: "task-1",
+            listIdentifier: "list-1",
+            title: "Editable",
+            dueDate: start,
+            hasExplicitTime: true,
+            durationMinutes: nil,
+            modifiedAt: importedAt.addingTimeInterval(10)
+          )
+        ]
+      ]
+    )
+
+    _ = try await ObsidianRetainedTaskCommandService.setTaskSchedule(
+      vaultRootURL: vaultRoot,
+      projectID: firstProjectID,
+      taskID: firstTaskID,
+      day: Self.calendar.startOfDay(for: start),
+      timeMinutes: 11 * 60 + 15,
+      durationMinutes: nil,
+      calendar: Self.calendar,
+      reminderProjectProvider: provider
+    )
+    let reloadedStore = AppOwnedWorkspaceStore.storeForVaultRootURL(vaultRoot)
+    let snapshot = try await reloadedStore.loadRetainedWorkspaceSnapshot(projectIDs: [])
+    let projectsByID = Dictionary(uniqueKeysWithValues: snapshot.projects.map {
+      ($0.identity.projectID, $0)
+    })
+    let refreshedTask = try await reloadedStore.taskReference(
+      projectID: firstProjectID,
+      taskID: firstTaskID
+    )
+    let secondProject = try XCTUnwrap(projectsByID[secondProjectID])
+    let secondOpenTasks = secondProject.tasks.filter { !$0.isCompleted }
+    let completedOccurrence = try XCTUnwrap(secondProject.tasks.first { $0.isCompleted })
+
+    XCTAssertEqual(provider.scheduleTaskReferences.map(\.reminderIdentifier), [
+      "task-1-identifier",
+      "fresh-task-1-identifier",
+    ])
+    XCTAssertEqual(refreshedTask.dueDate, expectedDate)
+    XCTAssertEqual(refreshedTask.durationMinutes, 90)
+    XCTAssertEqual(secondProject.progressStage, .later)
+    XCTAssertEqual(projectsByID[firstProjectID]?.boardOrder, 1)
+    XCTAssertEqual(secondProject.boardOrder, 0)
+    XCTAssertEqual(
+      secondOpenTasks.map(\.identity.taskID),
+      [secondSecondTaskID, secondFirstTaskID, recurringTaskID]
+    )
+    XCTAssertEqual(
+      secondOpenTasks.first { $0.identity.taskID == secondFirstTaskID }?.schedule.durationMinutes,
+      75
+    )
+    XCTAssertEqual(completedOccurrence.schedule.parsedDate, recurringCompletedDate)
+    XCTAssertEqual(completedOccurrence.schedule.durationMinutes, 45)
+  }
+
+  @MainActor
   func testAppOwnedRecurringCompletionUsesAdvancedReminderSnapshotAndClearsTime() async throws {
     let dueDate = try XCTUnwrap(Self.calendar.date(from: DateComponents(year: 2026, month: 5, day: 2, hour: 2)))
     let nextDueDate = try XCTUnwrap(Self.calendar.date(from: DateComponents(year: 2026, month: 5, day: 9, hour: 2)))

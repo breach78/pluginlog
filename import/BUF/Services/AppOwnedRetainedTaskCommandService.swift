@@ -420,7 +420,11 @@ enum AppOwnedRetainedTaskCommandService {
       return .unresolved
     }
 
-    try await store.replaceReminderSnapshot(batch, importedAt: .now)
+    try await store.replaceReminderSnapshot(
+      batch,
+      importedAt: .now,
+      scope: .listedProjectsOnly
+    )
 
     let refreshedTask: AppOwnedWorkspaceStore.TaskReference
     do {
