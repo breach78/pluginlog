@@ -316,6 +316,84 @@ final class ScheduleDragDropInteractionLayerTests: XCTestCase {
     )
   }
 
+  func testViewportProjectionUsesCommittedPreviewDayForResizeFrame() throws {
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+    let may12 = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 5, day: 12)))
+    let may13 = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 5, day: 13)))
+    let preview = ScheduleInteractionPreview(
+      day: may13,
+      timeMinutes: 11 * 60,
+      durationMinutes: 90
+    )
+    let projectionMetrics = ScheduleInteractionViewportProjectionMetrics(
+      titleColumnWidth: 76,
+      dayColumnWidth: 120,
+      hourHeight: 60,
+      quarterHourHeight: 15,
+      currentScrollOffsetX: 0,
+      currentScrollOffsetY: 0,
+      dateHeaderHeight: 32,
+      allDayRailPadding: 6,
+      allDayRailVisibleHeight: 48,
+      allDayRowHeight: 24,
+      allDayChipHorizontalInset: 5,
+      timedBlockInset: 4,
+      timedMinimumDurationMinutes: 30
+    )
+    let dayIndexByDate = [may12: 0, may13: 1]
+
+    let frame = ScheduleInteractionViewportProjection.timedFrame(
+      for: preview,
+      dayIndexByDate: dayIndexByDate,
+      metrics: projectionMetrics,
+      xOffsetWithinDay: 10,
+      width: 84
+    )
+
+    XCTAssertEqual(
+      frame,
+      CGRect(x: 76 + 120 + 10, y: 32 + 48 + 11 * 60, width: 84, height: 90)
+    )
+  }
+
+  func testViewportProjectionKeepsCommittedDurationPastMidnight() throws {
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+    let may12 = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 5, day: 12)))
+    let preview = ScheduleInteractionPreview(
+      day: may12,
+      timeMinutes: 23 * 60,
+      durationMinutes: 6 * 60
+    )
+    let projectionMetrics = ScheduleInteractionViewportProjectionMetrics(
+      titleColumnWidth: 76,
+      dayColumnWidth: 120,
+      hourHeight: 60,
+      quarterHourHeight: 15,
+      currentScrollOffsetX: 0,
+      currentScrollOffsetY: 0,
+      dateHeaderHeight: 32,
+      allDayRailPadding: 6,
+      allDayRailVisibleHeight: 48,
+      allDayRowHeight: 24,
+      allDayChipHorizontalInset: 5,
+      timedBlockInset: 4,
+      timedMinimumDurationMinutes: 30
+    )
+
+    let frame = ScheduleInteractionViewportProjection.dragDropFrame(
+      for: preview,
+      dayIndexByDate: [may12: 0],
+      metrics: projectionMetrics
+    )
+
+    XCTAssertEqual(
+      frame,
+      CGRect(x: 76 + 4, y: 32 + 48 + 23 * 60, width: 120 - 8, height: 6 * 60)
+    )
+  }
+
   func testMoveTaskCommandFromTimedTargetPreservesExistingDuration() {
     let taskID = UUID()
     let day = Date(timeIntervalSince1970: 0)

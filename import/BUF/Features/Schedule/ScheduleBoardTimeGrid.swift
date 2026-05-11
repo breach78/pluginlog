@@ -2544,16 +2544,10 @@ extension ScheduleBoardView {
     for resizeState: ScheduleTaskResizeState,
     preview: ScheduleInteractionPreview
   ) -> CGRect {
-    guard let timeMinutes = preview.timeMinutes else {
-      return resizeState.originalViewportFrame
-    }
-
-    let durationMinutes = preview.durationMinutes ?? timedMinimumDuration
-    return CGRect(
-      x: resizeState.originalViewportFrame.minX,
-      y: headerHeight + CGFloat(timeMinutes) / 60 * hourHeight - currentScrollOffsetY,
-      width: resizeState.originalViewportFrame.width,
-      height: max(quarterHourHeight, CGFloat(durationMinutes) / 60 * hourHeight)
+    resizePreviewViewportFrame(
+      originalDay: resizeState.originalDay,
+      originalViewportFrame: resizeState.originalViewportFrame,
+      preview: preview
     )
   }
 
@@ -2561,16 +2555,57 @@ extension ScheduleBoardView {
     for resizeState: ScheduleCalendarResizeState,
     preview: ScheduleInteractionPreview
   ) -> CGRect {
-    guard let timeMinutes = preview.timeMinutes else {
-      return resizeState.originalViewportFrame
-    }
+    resizePreviewViewportFrame(
+      originalDay: resizeState.originalDay,
+      originalViewportFrame: resizeState.originalViewportFrame,
+      preview: preview
+    )
+  }
 
-    let durationMinutes = preview.durationMinutes ?? timedMinimumDuration
-    return CGRect(
-      x: resizeState.originalViewportFrame.minX,
-      y: headerHeight + CGFloat(timeMinutes) / 60 * hourHeight - currentScrollOffsetY,
-      width: resizeState.originalViewportFrame.width,
-      height: max(quarterHourHeight, CGFloat(durationMinutes) / 60 * hourHeight)
+  func resizePreviewViewportFrame(
+    originalDay: Date,
+    originalViewportFrame: CGRect,
+    preview: ScheduleInteractionPreview
+  ) -> CGRect {
+    guard let timeMinutes = preview.timeMinutes else {
+      return originalViewportFrame
+    }
+    let day = preview.day ?? originalDay
+    let xOffsetWithinDay = ScheduleInteractionViewportProjection.xOffsetWithinDay(
+      for: originalViewportFrame,
+      day: originalDay,
+      dayIndexByDate: dayIndexByDate,
+      metrics: interactionViewportProjectionMetrics
+    ) ?? timedBlockInset
+
+    return ScheduleInteractionViewportProjection.timedFrame(
+      for: ScheduleInteractionPreview(
+        day: day,
+        timeMinutes: timeMinutes,
+        durationMinutes: preview.durationMinutes
+      ),
+      dayIndexByDate: dayIndexByDate,
+      metrics: interactionViewportProjectionMetrics,
+      xOffsetWithinDay: xOffsetWithinDay,
+      width: originalViewportFrame.width
+    ) ?? originalViewportFrame
+  }
+
+  var interactionViewportProjectionMetrics: ScheduleInteractionViewportProjectionMetrics {
+    ScheduleInteractionViewportProjectionMetrics(
+      titleColumnWidth: titleColumnWidth,
+      dayColumnWidth: dayColumnWidth,
+      hourHeight: hourHeight,
+      quarterHourHeight: quarterHourHeight,
+      currentScrollOffsetX: currentScrollOffsetX,
+      currentScrollOffsetY: currentScrollOffsetY,
+      dateHeaderHeight: dateHeaderHeight,
+      allDayRailPadding: allDayRailPadding,
+      allDayRailVisibleHeight: allDayRailVisibleHeight,
+      allDayRowHeight: allDayRowHeight,
+      allDayChipHorizontalInset: allDayChipHorizontalInset,
+      timedBlockInset: timedBlockInset,
+      timedMinimumDurationMinutes: timedMinimumDuration
     )
   }
 
@@ -2591,18 +2626,8 @@ extension ScheduleBoardView {
     for dragState: ScheduleCalendarDragState,
     preview: ScheduleInteractionPreview
   ) -> CGRect? {
-    let visualPreview: ScheduleInteractionPreview
-    if let timeMinutes = preview.timeMinutes, let durationMinutes = preview.durationMinutes {
-      visualPreview = ScheduleInteractionPreview(
-        day: preview.day,
-        timeMinutes: timeMinutes,
-        durationMinutes: min(durationMinutes, max(timedMinimumDuration, (24 * 60) - timeMinutes))
-      )
-    } else {
-      visualPreview = preview
-    }
     return dragDropTargetViewportFrame(
-      for: visualPreview,
+      for: preview,
       allDayViewportY: allDayPreviewViewportY(for: dragState, preview: preview)
     )
   }
@@ -2611,22 +2636,12 @@ extension ScheduleBoardView {
     for preview: ScheduleInteractionPreview,
     allDayViewportY: CGFloat? = nil
   ) -> CGRect? {
-    guard let day = preview.day,
-      let dayIndex = dayIndexByDate[day]
-    else {
-      return nil
-    }
-
-    if let timeMinutes = preview.timeMinutes {
-      let durationMinutes = preview.durationMinutes ?? timedMinimumDuration
-      return snappedTimedDragPreviewFrame(
-        dayIndex: dayIndex,
-        timeMinutes: timeMinutes,
-        durationMinutes: durationMinutes
-      )
-    }
-
-    return snappedAllDayDragPreviewFrame(dayIndex: dayIndex, viewportY: allDayViewportY)
+    ScheduleInteractionViewportProjection.dragDropFrame(
+      for: preview,
+      dayIndexByDate: dayIndexByDate,
+      metrics: interactionViewportProjectionMetrics,
+      allDayViewportY: allDayViewportY
+    )
   }
 
   func allDayPreviewViewportY(
