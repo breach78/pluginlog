@@ -400,6 +400,38 @@ actor AppOwnedWorkspaceStore {
     }
   }
 
+  func restoreLegacyProjectStagesIfDefault(_ stagesByProjectID: [UUID: ProjectProgressStage]) throws {
+    guard !stagesByProjectID.isEmpty else { return }
+    let db = try openDatabase()
+    defer { sqlite3_close(db) }
+    try migrate(db)
+    try exec(db, "BEGIN IMMEDIATE TRANSACTION;")
+    do {
+      let modifiedAt = Date().timeIntervalSinceReferenceDate
+      for (projectID, stage) in stagesByProjectID {
+        try execute(
+          db,
+          """
+          UPDATE app_projects
+          SET progress_stage = ?, updated_at = ?
+          WHERE id = ? AND (progress_stage = ? OR lower(progress_stage) = ?);
+          """,
+          bindings: [
+            .text(stage.storageRawValue),
+            .double(modifiedAt),
+            .text(projectID.uuidString),
+            .text(ProjectProgressStage.do.storageRawValue),
+            .text(ProjectProgressStage.do.title.lowercased()),
+          ]
+        )
+      }
+      try exec(db, "COMMIT;")
+    } catch {
+      try? exec(db, "ROLLBACK;")
+      throw error
+    }
+  }
+
   private func mergeProjectSupplements(
     _ db: OpaquePointer,
     supplements: [ProjectSupplement],

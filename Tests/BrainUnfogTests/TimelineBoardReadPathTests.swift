@@ -739,6 +739,49 @@ final class TimelineBoardReadPathTests: XCTestCase {
     )
   }
 
+  func testManualProjectListDropMutationPersistsStageChangeAcrossStageBoundary() {
+    let draggedID = UUID()
+    let doID = UUID()
+    let targetID = UUID()
+    let bars = [
+      makeBar(projectID: draggedID, title: "Dragged"),
+      makeBar(projectID: doID, title: "Do"),
+      makeBar(projectID: targetID, title: "Target"),
+    ]
+    let stages: [UUID: ProjectProgressStage] = [
+      draggedID: .do,
+      doID: .do,
+      targetID: .decide,
+    ]
+
+    let mutation = TimelineProjectListDropPlanner.mutation(
+      bars: bars,
+      mode: .manual,
+      draggedID: draggedID,
+      targetID: targetID,
+      placement: .after,
+      currentManualOrder: [
+        draggedID: 0,
+        doID: 1,
+        targetID: 2,
+      ],
+      stageForBar: { stages[$0.projectID] ?? .do }
+    )
+
+    XCTAssertEqual(
+      mutation?.manualOrderByProjectID.filter { stages[$0.key] != nil },
+      [
+        doID: 0,
+        targetID: 1,
+        draggedID: 2,
+      ]
+    )
+    XCTAssertEqual(
+      mutation?.stageChange,
+      TimelineProjectStageChange(projectID: draggedID, stage: .decide)
+    )
+  }
+
   func testPinnedTopSignatureChangesWhenScrollSuppressionEnds() {
     let anchorDate = Date(timeIntervalSince1970: 1_000)
 

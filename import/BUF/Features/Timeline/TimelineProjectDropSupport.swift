@@ -90,7 +90,7 @@ enum TimelineProjectListDropPlanner {
     }
 
     let stageChange =
-      mode == .manual || draggedStage == targetStage
+      draggedStage == targetStage
       ? nil
       : TimelineProjectStageChange(projectID: draggedID, stage: targetStage)
     return TimelineProjectListDropMutation(

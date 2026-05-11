@@ -232,7 +232,7 @@ extension AppState {
       modelContainer = try ModelContainer(for: Schema([]), configurations: [])
       if shouldRefreshHealth { await refreshHealth() }
       await prepareProjectNoteStore()
-      await runLegacyObsidianProjectTaskDurationMigrationIfNeeded()
+      await runLegacyObsidianProjectMigrationsIfNeeded()
       reminderSourceObserver?.stop()
       reminderSourceObserver = nil
       if hasInitialSyncConsent {

@@ -110,31 +110,35 @@ extension AppState {
     }
     let store = AppOwnedWorkspaceStore(containerRootURL: containerRootURL)
     try await store.replaceReminderSnapshot(batch, importedAt: importedAt)
-    try await runLegacyObsidianProjectTaskDurationMigrationIfNeeded(store: store)
+    try await runLegacyObsidianProjectMigrationsIfNeeded(store: store)
     try await store.setProjectionReadEnabled(true)
     return store
   }
 
-  func runLegacyObsidianProjectTaskDurationMigrationIfNeeded() async {
+  func runLegacyObsidianProjectMigrationsIfNeeded() async {
     do {
       guard let containerRootURL = storageCoordinator.paths?.root else { return }
       let store = AppOwnedWorkspaceStore(containerRootURL: containerRootURL)
       guard try await store.hasImportedWorkspace() else { return }
-      try await runLegacyObsidianProjectTaskDurationMigrationIfNeeded(store: store)
+      try await runLegacyObsidianProjectMigrationsIfNeeded(store: store)
       bumpWorkspaceTreeRevision()
     } catch {
       reportError(
         error,
-        logMessage: "runLegacyObsidianProjectTaskDurationMigrationIfNeeded failed"
+        logMessage: "runLegacyObsidianProjectMigrationsIfNeeded failed"
       )
     }
   }
 
-  private func runLegacyObsidianProjectTaskDurationMigrationIfNeeded(
+  private func runLegacyObsidianProjectMigrationsIfNeeded(
     store: AppOwnedWorkspaceStore
   ) async throws {
     guard let obsidianVaultRootURL else { return }
     try await LegacyObsidianProjectTaskDurationMigration.runIfNeeded(
+      store: store,
+      vaultRootURL: obsidianVaultRootURL
+    )
+    try await LegacyObsidianProjectStageMigration.runIfNeeded(
       store: store,
       vaultRootURL: obsidianVaultRootURL
     )
