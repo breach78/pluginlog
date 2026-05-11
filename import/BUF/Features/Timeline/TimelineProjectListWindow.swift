@@ -370,6 +370,7 @@ struct TimelineProjectListContent: View {
   @State private var expandedTaskID: UUID?
   @State private var expandedTaskCloseRequestID = 0
   @State private var pendingExpandedTaskIDAfterClose: UUID?
+  @State private var pendingTaskOpenTask: Task<Void, Never>?
   @State private var projectNoteText: String
   @State private var projectNoteHeight: CGFloat = 0
   @State private var lastCommittedProjectNoteText: String
@@ -453,6 +454,7 @@ struct TimelineProjectListContent: View {
       scheduleProjectNoteAutoSave()
     }
     .onDisappear {
+      cancelPendingTaskOpen()
       flushProjectNoteOnDisappear()
     }
   }
@@ -647,6 +649,10 @@ struct TimelineProjectListContent: View {
               TimelineProjectListOutsideClickMonitor {
                 requestExpandedTaskEditorClose()
               }
+            } else if session.editingTaskID == task.id {
+              TimelineProjectListOutsideClickMonitor {
+                finishInlineTitleEditingFromOutside(for: task)
+              }
             }
           }
           dropLine(for: task, placement: .after)
@@ -698,7 +704,13 @@ struct TimelineProjectListContent: View {
       } else {
         taskTitleContent(task)
           .contentShape(Rectangle())
-          .gesture(taskTitleClickGesture(for: task))
+          .onTapGesture(count: 2) {
+            cancelPendingTaskOpen()
+            startEditing(task)
+          }
+          .onTapGesture(count: 1) {
+            scheduleTaskOpen(task)
+          }
       }
     }
     .padding(.horizontal, 18)
@@ -828,22 +840,6 @@ struct TimelineProjectListContent: View {
     }
   }
 
-  private func taskTitleClickGesture(
-    for task: TimelineProjectListWindowSnapshot.Task
-  ) -> some Gesture {
-    TapGesture(count: 2)
-      .onEnded {
-        startEditing(task)
-      }
-      .exclusively(
-        before: TapGesture(count: 1)
-          .onEnded {
-            cancelInlineEditing()
-            openTask(task)
-          }
-      )
-  }
-
   @ViewBuilder
   private func inlineTaskEditor(
     for task: TimelineProjectListWindowSnapshot.Task
@@ -884,6 +880,7 @@ struct TimelineProjectListContent: View {
   }
 
   private func openTask(_ task: TimelineProjectListWindowSnapshot.Task) {
+    cancelPendingTaskOpen()
     if inlineEditorConfiguration != nil {
       cancelDraftIfEmpty()
       if expandedTaskID == nil {
@@ -896,6 +893,22 @@ struct TimelineProjectListContent: View {
       return
     }
     actions.onEditTask(task.id)
+  }
+
+  private func scheduleTaskOpen(_ task: TimelineProjectListWindowSnapshot.Task) {
+    cancelPendingTaskOpen()
+    pendingTaskOpenTask = Task { @MainActor in
+      try? await Task.sleep(nanoseconds: Self.taskOpenDelayNanoseconds)
+      guard !Task.isCancelled else { return }
+      guard session.editingTaskID != task.id else { return }
+      cancelInlineEditing()
+      openTask(task)
+    }
+  }
+
+  private func cancelPendingTaskOpen() {
+    pendingTaskOpenTask?.cancel()
+    pendingTaskOpenTask = nil
   }
 
   private func requestExpandedTaskEditorClose(nextExpandedTaskID: UUID? = nil) {
@@ -1202,6 +1215,7 @@ struct TimelineProjectListContent: View {
 
   private func startEditing(_ task: TimelineProjectListWindowSnapshot.Task) {
     guard !isRenamingTask, !isCreatingTask else { return }
+    cancelPendingTaskOpen()
     updateSession { session in
       session.startEditing(task)
     }
@@ -1298,6 +1312,18 @@ struct TimelineProjectListContent: View {
     guard let editingTaskID = session.editingTaskID,
       let task = session.tasks.first(where: { $0.id == editingTaskID })
     else {
+      cancelInlineEditing()
+      return
+    }
+    submitInlineTitle(for: task, createDraftBelow: false)
+  }
+
+  private func finishInlineTitleEditingFromOutside(
+    for task: TimelineProjectListWindowSnapshot.Task
+  ) {
+    guard session.editingTaskID == task.id else { return }
+    let title = session.editingTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !title.isEmpty else {
       cancelInlineEditing()
       return
     }
@@ -1584,6 +1610,7 @@ struct TimelineProjectListContent: View {
   private static let focusedTaskScrollAnchor = UnitPoint(x: 0.5, y: 0.18)
   private static let focusedDraftScrollAnchor = UnitPoint(x: 0.5, y: 0.88)
   private static let projectNoteAutoSaveDelayNanoseconds: UInt64 = 650_000_000
+  private static let taskOpenDelayNanoseconds: UInt64 = 240_000_000
 }
 
 private struct TimelineProjectListOutsideClickMonitor: NSViewRepresentable {

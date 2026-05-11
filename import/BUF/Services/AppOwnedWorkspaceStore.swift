@@ -139,6 +139,23 @@ actor AppOwnedWorkspaceStore {
     return try scalarText(db, sql: "SELECT value FROM app_metadata WHERE key = 'projection_read_enabled';") == "1"
   }
 
+  func metadataValue(forKey key: String) throws -> String? {
+    let db = try openDatabase()
+    defer { sqlite3_close(db) }
+    try migrate(db)
+    return try scalarText(
+      db,
+      sql: "SELECT value FROM app_metadata WHERE key = \(sqlStringLiteral(key));"
+    )
+  }
+
+  func setMetadataValue(_ value: String, forKey key: String) throws {
+    let db = try openDatabase()
+    defer { sqlite3_close(db) }
+    try migrate(db)
+    try upsertMetadata(db, key: key, value: value)
+  }
+
   func replaceReminderSnapshot(
     _ batch: ReminderImportSnapshotBatch,
     importedAt: Date = .now
@@ -228,6 +245,20 @@ actor AppOwnedWorkspaceStore {
       db,
       supplements: supplements,
       durationAssignmentSQL: "scheduled_duration_minutes = COALESCE(?, scheduled_duration_minutes)",
+      rowOrderAssignmentSQL: "row_order = COALESCE(?, row_order)"
+    )
+  }
+
+  func fillMissingTaskDurations(_ supplements: [TaskSupplement]) throws {
+    let durationSupplements = supplements.filter { $0.durationMinutes != nil }
+    guard !durationSupplements.isEmpty else { return }
+    let db = try openDatabase()
+    defer { sqlite3_close(db) }
+    try migrate(db)
+    try mergeTaskSupplements(
+      db,
+      supplements: durationSupplements,
+      durationAssignmentSQL: "scheduled_duration_minutes = COALESCE(scheduled_duration_minutes, ?)",
       rowOrderAssignmentSQL: "row_order = COALESCE(?, row_order)"
     )
   }

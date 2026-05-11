@@ -121,6 +121,7 @@ enum AppOwnedRetainedTaskCommandService {
     let task = try await store.taskReference(projectID: projectID, taskID: taskID)
     let dueDate = scheduledDate(day: rawFields.day, timeMinutes: rawFields.timeMinutes, calendar: calendar)
     let hasExplicitTime = dueDate != nil && rawFields.timeMinutes != nil
+    let effectiveDurationMinutes = hasExplicitTime ? (rawFields.durationMinutes ?? task.durationMinutes) : nil
     let reference = reminderReference(task)
     var latestModifiedAt: Date?
 
@@ -156,7 +157,7 @@ enum AppOwnedRetainedTaskCommandService {
       completionDate: task.completionDate,
       dueDate: dueDate,
       hasExplicitTime: hasExplicitTime,
-      durationMinutes: hasExplicitTime ? rawFields.durationMinutes : nil,
+      durationMinutes: effectiveDurationMinutes,
       recurrenceRuleRaw: task.recurrenceRuleRaw,
       priority: task.priority,
       modifiedAt: modifiedAt,
@@ -317,6 +318,7 @@ enum AppOwnedRetainedTaskCommandService {
     let task = try await store.taskReference(projectID: projectID, taskID: taskID)
     let dueDate = scheduledDate(day: day, timeMinutes: timeMinutes, calendar: calendar)
     let hasExplicitTime = dueDate != nil && timeMinutes != nil
+    let effectiveDurationMinutes = hasExplicitTime ? (durationMinutes ?? task.durationMinutes) : nil
     if resetRecurringAnchor, normalized(task.recurrenceRuleRaw) != nil {
       let project = try await store.projectReference(projectID: projectID)
       return try await recreateRecurringReminderAnchor(
@@ -325,7 +327,7 @@ enum AppOwnedRetainedTaskCommandService {
         task: task,
         dueDate: dueDate,
         hasExplicitTime: hasExplicitTime,
-        durationMinutes: durationMinutes,
+        durationMinutes: effectiveDurationMinutes,
         reminderProjectProvider: reminderProjectProvider
       )
     }
@@ -363,7 +365,7 @@ enum AppOwnedRetainedTaskCommandService {
       completionDate: task.completionDate,
       dueDate: dueDate,
       hasExplicitTime: hasExplicitTime,
-      durationMinutes: durationMinutes,
+      durationMinutes: effectiveDurationMinutes,
       recurrenceRuleRaw: task.recurrenceRuleRaw,
       priority: task.priority,
       modifiedAt: modifiedAt,

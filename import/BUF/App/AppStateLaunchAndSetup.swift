@@ -232,6 +232,7 @@ extension AppState {
       modelContainer = try ModelContainer(for: Schema([]), configurations: [])
       if shouldRefreshHealth { await refreshHealth() }
       await prepareProjectNoteStore()
+      await repairLegacyTaskDurationsInAppOwnedStoreIfNeeded()
       reminderSourceObserver?.stop()
       reminderSourceObserver = nil
       if hasInitialSyncConsent {

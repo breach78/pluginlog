@@ -54,6 +54,27 @@ final class ReminderGatewayImportSnapshotProviderTests: XCTestCase {
     XCTAssertEqual(firstListItems.filter { $0.title == "Active recurring" }.count, 1)
   }
 
+  func testFetchItemsByListPreservesCompletedOccurrenceDateWhenDueDateWasLost()
+    async throws
+  {
+    let gateway = BatchImportSnapshotGateway(includeCompletedOccurrenceWithoutDueDate: true)
+    let provider = ReminderGatewayImportSnapshotProvider(gateway: gateway)
+    let lists = try await provider.fetchAllLists()
+
+    let itemsByList = try await provider.fetchItemsByList(for: lists)
+    let firstListItems = try XCTUnwrap(itemsByList[gateway.firstCalendar.calendarIdentifier])
+    let completedOccurrence = try XCTUnwrap(firstListItems.first {
+      $0.title == "Due-less recurring" && $0.isCompleted
+    })
+    let expectedDate = try XCTUnwrap(Calendar(identifier: .gregorian).date(
+      from: DateComponents(year: 2026, month: 5, day: 2, hour: 9, minute: 30)
+    ))
+
+    XCTAssertEqual(firstListItems.filter { $0.title == "Due-less recurring" }.count, 2)
+    XCTAssertEqual(completedOccurrence.dueDate, expectedDate)
+    XCTAssertTrue(completedOccurrence.scheduleHasExplicitTime)
+  }
+
   func testFetchItemsByListDropsCompletedOccurrenceAfterRestoredActiveAnchor() async throws {
     let gateway = BatchImportSnapshotGateway(includeCompletedOccurrenceAfterActiveAnchor: true)
     let provider = ReminderGatewayImportSnapshotProvider(gateway: gateway)
@@ -101,7 +122,8 @@ private final class BatchImportSnapshotGateway: ReminderGateway {
   init(
     includeCompletedRecurringReminder: Bool = false,
     includeCompletedOccurrenceWithoutRecurrence: Bool = false,
-    includeCompletedOccurrenceAfterActiveAnchor: Bool = false
+    includeCompletedOccurrenceAfterActiveAnchor: Bool = false,
+    includeCompletedOccurrenceWithoutDueDate: Bool = false
   ) {
     firstCalendar = EKCalendar(for: .reminder, eventStore: eventStore)
     firstCalendar.title = "A"
@@ -169,6 +191,32 @@ private final class BatchImportSnapshotGateway: ReminderGateway {
       )
       completedOccurrence.isCompleted = true
       completedOccurrence.completionDate = Date(timeIntervalSinceReferenceDate: 700)
+      primaryReminders.append(activeRecurring)
+      primaryReminders.append(completedOccurrence)
+    }
+    if includeCompletedOccurrenceWithoutDueDate {
+      let activeRecurring = EKReminder(eventStore: eventStore)
+      activeRecurring.calendar = firstCalendar
+      activeRecurring.title = "Due-less recurring"
+      activeRecurring.dueDateComponents = DateComponents(
+        calendar: Calendar(identifier: .gregorian),
+        year: 2026,
+        month: 5,
+        day: 5,
+        hour: 9,
+        minute: 30
+      )
+      activeRecurring.addRecurrenceRule(
+        EKRecurrenceRule(recurrenceWith: .daily, interval: 3, end: nil)
+      )
+      let completedOccurrence = EKReminder(eventStore: eventStore)
+      completedOccurrence.calendar = firstCalendar
+      completedOccurrence.title = activeRecurring.title
+      completedOccurrence.isCompleted = true
+      completedOccurrence.completionDate = Calendar(identifier: .gregorian).date(
+        from: DateComponents(year: 2026, month: 5, day: 2, hour: 9, minute: 30)
+      )
+      completedOccurrence.notes = activeRecurring.notes
       primaryReminders.append(activeRecurring)
       primaryReminders.append(completedOccurrence)
     }

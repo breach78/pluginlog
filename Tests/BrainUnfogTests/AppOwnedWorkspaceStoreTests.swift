@@ -535,6 +535,32 @@ final class AppOwnedWorkspaceStoreTests: XCTestCase {
     XCTAssertEqual(task.schedule.durationMinutes, 90)
   }
 
+  func testFillMissingTaskDurationsDoesNotOverwriteExistingDuration() async throws {
+    let store = AppOwnedWorkspaceStore(containerRootURL: try makeTemporaryDirectory())
+    let createdAt = Date(timeIntervalSinceReferenceDate: 307)
+    let projectID = RetainedProjectionBuilder.derivedProjectID(for: "list-1")
+    let existingTaskID = ReminderProjectionIdentity.taskID(for: "existing-task")
+    let missingTaskID = ReminderProjectionIdentity.taskID(for: "missing-task")
+
+    try await store.replaceReminderSnapshot(
+      Self.batch(taskExternalIdentifiers: ["existing-task", "missing-task"], createdAt: createdAt),
+      importedAt: createdAt
+    )
+    try await store.mergeTaskSupplements([
+      AppOwnedWorkspaceStore.TaskSupplement(taskID: existingTaskID, durationMinutes: 90)
+    ])
+    try await store.fillMissingTaskDurations([
+      AppOwnedWorkspaceStore.TaskSupplement(taskID: existingTaskID, durationMinutes: 120),
+      AppOwnedWorkspaceStore.TaskSupplement(taskID: missingTaskID, durationMinutes: 60),
+    ])
+
+    let existingTask = try await store.taskReference(projectID: projectID, taskID: existingTaskID)
+    let missingTask = try await store.taskReference(projectID: projectID, taskID: missingTaskID)
+
+    XCTAssertEqual(existingTask.durationMinutes, 90)
+    XCTAssertEqual(missingTask.durationMinutes, 60)
+  }
+
   func testReplaceReminderSnapshotKeepsTaskDurationWhenExternalIdentifierChanges() async throws {
     let store = AppOwnedWorkspaceStore(containerRootURL: try makeTemporaryDirectory())
     let createdAt = Date(timeIntervalSinceReferenceDate: 310)

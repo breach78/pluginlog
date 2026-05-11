@@ -64,11 +64,15 @@ extension TimelineBoardView {
   ) -> Bool {
     guard !didReconcileTimelineProjectBoardOrder else { return false }
     let persistedOrders = projectSnapshots.compactMapValues(\.boardOrder)
-    guard !persistedOrders.isEmpty else { return false }
     didReconcileTimelineProjectBoardOrder = true
-    var nextOrder = timelineProjectManualOrder
-    for (projectID, boardOrder) in persistedOrders {
-      nextOrder[projectID] = Int64(boardOrder)
+    let reconciliation = TimelineProjectManualOrderStore.reconciledOrder(
+      localOrder: timelineProjectManualOrder,
+      persistedBoardOrder: persistedOrders,
+      availableProjectIDs: Array(projectSnapshots.keys)
+    )
+    let nextOrder = reconciliation.order
+    if reconciliation.shouldPersistLocalOrder {
+      persistTimelineProjectManualOrder(nextOrder)
     }
     guard nextOrder != timelineProjectManualOrder else { return false }
     timelineProjectManualOrder = nextOrder

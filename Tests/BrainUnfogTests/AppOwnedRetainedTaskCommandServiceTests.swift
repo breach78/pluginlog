@@ -323,6 +323,42 @@ final class AppOwnedRetainedTaskCommandServiceTests: XCTestCase {
   }
 
   @MainActor
+  func testAppOwnedScheduleEditPreservesStoredDurationWhenCallerOmitsDuration() async throws {
+    let start = try XCTUnwrap(
+      Self.calendar.date(from: DateComponents(year: 2026, month: 5, day: 2, hour: 9, minute: 30))
+    )
+    let expectedDate = try XCTUnwrap(
+      Self.calendar.date(from: DateComponents(year: 2026, month: 5, day: 2, hour: 10, minute: 30))
+    )
+    let fixture = try await makeEnabledStoreFixture(
+      taskExternalIdentifier: "task-1",
+      dueDate: start,
+      scheduleHasExplicitTime: true,
+      scheduledDurationMinutes: 90
+    )
+    let provider = FakeAppOwnedReminderProjectProvider()
+    let taskID = ReminderProjectionIdentity.taskID(for: "task-1")
+
+    _ = try await ObsidianRetainedTaskCommandService.setTaskSchedule(
+      vaultRootURL: fixture.vaultRoot,
+      projectID: fixture.projectID,
+      taskID: taskID,
+      day: Self.calendar.startOfDay(for: start),
+      timeMinutes: 10 * 60 + 30,
+      durationMinutes: nil,
+      calendar: Self.calendar,
+      reminderProjectProvider: provider
+    )
+    let snapshot = try await fixture.store.loadRetainedWorkspaceSnapshot(projectIDs: [fixture.projectID])
+    let task = try XCTUnwrap(snapshot.projects.first?.tasks.first)
+
+    XCTAssertEqual(provider.scheduleUpdate?.0, expectedDate)
+    XCTAssertEqual(provider.scheduleUpdate?.1, true)
+    XCTAssertEqual(task.schedule.parsedDate, expectedDate)
+    XCTAssertEqual(task.schedule.durationMinutes, 90)
+  }
+
+  @MainActor
   func testAppOwnedRecurringCompletionUsesAdvancedReminderSnapshotAndClearsTime() async throws {
     let dueDate = try XCTUnwrap(Self.calendar.date(from: DateComponents(year: 2026, month: 5, day: 2, hour: 2)))
     let nextDueDate = try XCTUnwrap(Self.calendar.date(from: DateComponents(year: 2026, month: 5, day: 9, hour: 2)))

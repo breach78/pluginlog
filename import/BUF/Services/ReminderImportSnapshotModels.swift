@@ -144,11 +144,20 @@ struct ReminderGatewayImportSnapshotProvider {
       }
     }
 
-    let reminders = try await fetchImportReminders(in: calendars)
+    let importSelection = try await fetchImportReminders(in: calendars)
+    let reminders = importSelection.reminders
     for reminder in reminders {
       let listIdentifier = reminder.calendar.calendarIdentifier
       guard let list = listsByIdentifier[listIdentifier] else { continue }
-      itemsByListIdentifier[listIdentifier, default: []].append(snapshot(for: reminder, list: list))
+      itemsByListIdentifier[listIdentifier, default: []].append(
+        snapshot(
+          for: reminder,
+          list: list,
+          fallbackDueDate: importSelection.fallbackDueDatesByReminderIdentifier[
+            reminder.calendarItemIdentifier
+          ]
+        )
+      )
     }
 
     for list in lists {
@@ -159,9 +168,26 @@ struct ReminderGatewayImportSnapshotProvider {
     return itemsByListIdentifier
   }
 
-  private func fetchImportReminders(in calendars: [EKCalendar]) async throws -> [EKReminder] {
+  private struct ImportReminderSelection {
+    let reminders: [EKReminder]
+    let fallbackDueDatesByReminderIdentifier: [String: Date]
+  }
+
+  private func fetchImportReminders(in calendars: [EKCalendar]) async throws -> ImportReminderSelection {
     let primaryReminders = try await gateway.fetchReminders(in: calendars, scope: .all)
-    return primaryReminders.filter { shouldImportReminder($0, in: primaryReminders) }
+    let fallbackDueDatesByReminderIdentifier = completedOccurrenceFallbackDueDates(
+      in: primaryReminders
+    )
+    return ImportReminderSelection(
+      reminders: primaryReminders.filter {
+        shouldImportReminder(
+          $0,
+          in: primaryReminders,
+          fallbackDueDate: fallbackDueDatesByReminderIdentifier[$0.calendarItemIdentifier]
+        )
+      },
+      fallbackDueDatesByReminderIdentifier: fallbackDueDatesByReminderIdentifier
+    )
   }
 
   func fetchBatch(
@@ -225,13 +251,17 @@ struct ReminderGatewayImportSnapshotProvider {
 
   private func snapshot(
     for reminder: EKReminder,
-    list: ReminderListImportSnapshot
+    list: ReminderListImportSnapshot,
+    fallbackDueDate: Date? = nil
   ) -> ReminderItemImportSnapshot {
     let dueDate = reminder.dueDateComponents.flatMap { Calendar.current.date(from: $0) }
+      ?? fallbackDueDate
     let completionDate = reminder.completionDate
     let recurrenceRuleRaw = encodedRecurrence(reminder.recurrenceRules?.first)
 
-    let hasExplicitTime = reminder.dueDateComponents.map(hasExplicitTime(in:)) ?? false
+    let hasExplicitTime = reminder.dueDateComponents.map(hasExplicitTime(in:))
+      ?? fallbackDueDate.map(hasExplicitTime(in:))
+      ?? false
     return ReminderItemImportSnapshot(
       identifier: reminder.calendarItemIdentifier,
       externalIdentifier: importedExternalIdentifier(
@@ -278,6 +308,13 @@ struct ReminderGatewayImportSnapshotProvider {
     components.hour != nil || components.minute != nil || components.second != nil
   }
 
+  private func hasExplicitTime(in date: Date) -> Bool {
+    let components = Calendar.current.dateComponents([.hour, .minute, .second], from: date)
+    return (components.hour ?? 0) != 0
+      || (components.minute ?? 0) != 0
+      || (components.second ?? 0) != 0
+  }
+
   private func importedExternalIdentifier(
     for reminder: EKReminder,
     dueDate: Date?,
@@ -306,10 +343,17 @@ struct ReminderGatewayImportSnapshotProvider {
     reminder.isCompleted && !(reminder.recurrenceRules?.isEmpty ?? true)
   }
 
-  private func shouldImportReminder(_ reminder: EKReminder, in reminders: [EKReminder]) -> Bool {
+  private func shouldImportReminder(
+    _ reminder: EKReminder,
+    in reminders: [EKReminder],
+    fallbackDueDate: Date?
+  ) -> Bool {
     guard reminder.isCompleted else { return true }
     if isCompletedRecurringReminder(reminder) {
       return false
+    }
+    if fallbackDueDate != nil {
+      return true
     }
     guard let completedCandidate = recurringOccurrenceCandidate(for: reminder) else {
       return true
@@ -362,6 +406,24 @@ struct ReminderGatewayImportSnapshotProvider {
       signature: recurringOccurrenceSignature(for: reminder),
       dueDate: dueDate(for: reminder) ?? reminder.completionDate
     )
+  }
+
+  private func completedOccurrenceFallbackDueDates(in reminders: [EKReminder]) -> [String: Date] {
+    let activeRecurringSignatures = Set(
+      reminders.compactMap { activeRecurringCandidate(for: $0)?.signature }
+    )
+    guard !activeRecurringSignatures.isEmpty else { return [:] }
+
+    return reminders.reduce(into: [String: Date]()) { result, reminder in
+      guard reminder.isCompleted,
+        dueDate(for: reminder) == nil,
+        let completionDate = reminder.completionDate,
+        activeRecurringSignatures.contains(recurringOccurrenceSignature(for: reminder))
+      else {
+        return
+      }
+      result[reminder.calendarItemIdentifier] = completionDate
+    }
   }
 
   private func recurringOccurrenceSignature(for reminder: EKReminder) -> RecurringOccurrenceSignature {

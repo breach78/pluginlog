@@ -239,6 +239,11 @@ struct TimelineProjectBucketOrderUndoSnapshot {
 enum TimelineProjectManualOrderStore {
   private static let storageKey = "workspace.timelineProjectManualOrder.v1"
 
+  struct Reconciliation: Equatable {
+    let order: [UUID: Int64]
+    let shouldPersistLocalOrder: Bool
+  }
+
   static func load(defaults: UserDefaults = .standard) -> [UUID: Int64] {
     guard let data = defaults.data(forKey: storageKey),
       let raw = try? JSONDecoder().decode([String: Int64].self, from: data)
@@ -287,6 +292,48 @@ enum TimelineProjectManualOrderStore {
       existing: load(defaults: defaults),
       reminderOrderedProjectIDs: reminderOrderedProjectIDs,
       availableProjectIDs: availableProjectIDs
+    )
+  }
+
+  static func reconciledOrder(
+    localOrder: [UUID: Int64],
+    persistedBoardOrder: [UUID: Int],
+    availableProjectIDs: [UUID]
+  ) -> Reconciliation {
+    let availableSet = Set(availableProjectIDs)
+    var local = localOrder.filter { availableSet.contains($0.key) }
+    let persisted = persistedBoardOrder.filter { availableSet.contains($0.key) }
+
+    guard !local.isEmpty else {
+      return Reconciliation(
+        order: persisted.mapValues(Int64.init),
+        shouldPersistLocalOrder: false
+      )
+    }
+    guard !persisted.isEmpty else {
+      return Reconciliation(
+        order: local,
+        shouldPersistLocalOrder: true
+      )
+    }
+
+    let knownLocalProjectIDs = Set(local.keys)
+    let missingPersistedProjectIDs = persisted
+      .filter { !knownLocalProjectIDs.contains($0.key) }
+      .sorted { lhs, rhs in
+        if lhs.value != rhs.value { return lhs.value < rhs.value }
+        return lhs.key.uuidString < rhs.key.uuidString
+      }
+      .map(\.key)
+    let maxLocalOrder = local.values.max() ?? -1
+    for (offset, projectID) in missingPersistedProjectIDs.enumerated() {
+      local[projectID] = maxLocalOrder + Int64(offset) + 1
+    }
+
+    let normalizedPersisted = persisted.mapValues(Int64.init)
+    return Reconciliation(
+      order: local,
+      shouldPersistLocalOrder: local != normalizedPersisted
     )
   }
 }

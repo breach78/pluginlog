@@ -400,6 +400,63 @@ final class TimelineBoardReadPathTests: XCTestCase {
     XCTAssertEqual(order[secondID], 2)
   }
 
+  func testTimelineManualOrderReconciliationBackfillsEmptyAppStoreOrder() {
+    let firstID = UUID()
+    let secondID = UUID()
+
+    let reconciliation = TimelineProjectManualOrderStore.reconciledOrder(
+      localOrder: [
+        secondID: 0,
+        firstID: 1,
+      ],
+      persistedBoardOrder: [:],
+      availableProjectIDs: [firstID, secondID]
+    )
+
+    XCTAssertEqual(reconciliation.order[secondID], 0)
+    XCTAssertEqual(reconciliation.order[firstID], 1)
+    XCTAssertTrue(reconciliation.shouldPersistLocalOrder)
+  }
+
+  func testTimelineManualOrderReconciliationKeepsLocalOrderOverStaleAppStoreOrder() {
+    let firstID = UUID()
+    let secondID = UUID()
+
+    let reconciliation = TimelineProjectManualOrderStore.reconciledOrder(
+      localOrder: [
+        secondID: 0,
+        firstID: 1,
+      ],
+      persistedBoardOrder: [
+        firstID: 0,
+        secondID: 1,
+      ],
+      availableProjectIDs: [firstID, secondID]
+    )
+
+    XCTAssertEqual(reconciliation.order[secondID], 0)
+    XCTAssertEqual(reconciliation.order[firstID], 1)
+    XCTAssertTrue(reconciliation.shouldPersistLocalOrder)
+  }
+
+  func testTimelineManualOrderReconciliationUsesAppStoreOrderWhenLocalOrderIsMissing() {
+    let firstID = UUID()
+    let secondID = UUID()
+
+    let reconciliation = TimelineProjectManualOrderStore.reconciledOrder(
+      localOrder: [:],
+      persistedBoardOrder: [
+        firstID: 0,
+        secondID: 1,
+      ],
+      availableProjectIDs: [firstID, secondID]
+    )
+
+    XCTAssertEqual(reconciliation.order[firstID], 0)
+    XCTAssertEqual(reconciliation.order[secondID], 1)
+    XCTAssertFalse(reconciliation.shouldPersistLocalOrder)
+  }
+
   func testTimelineProjectTaskManualOrderPersistsPerProject() throws {
     let suiteName = "TimelineProjectTaskManualOrderStoreTests-\(UUID().uuidString)"
     let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
