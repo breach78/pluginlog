@@ -362,6 +362,12 @@ extension AppState {
       }
       try await store.updateProjectBoardOrders(boardOrdersByProjectID)
       bumpWorkspaceTreeRevision()
+      let nextRevision =
+        UserDefaults.standard.integer(forKey: ProjectProgressStage.boardOrderRevisionStorageKey) + 1
+      UserDefaults.standard.set(
+        nextRevision,
+        forKey: ProjectProgressStage.boardOrderRevisionStorageKey
+      )
       return true
     } catch {
       reportError(error, logMessage: "writeProjectBoardOrders failed")

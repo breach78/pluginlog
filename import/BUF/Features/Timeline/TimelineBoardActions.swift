@@ -47,16 +47,11 @@ extension TimelineBoardView {
     guard timelineProjectManualOrder[projectID] == nil else { return }
     var nextOrder = timelineProjectManualOrder
     nextOrder[projectID] = (nextOrder.values.max() ?? -1) + 1
-    applyTimelineProjectManualOrder(nextOrder)
-    persistTimelineProjectManualOrder(nextOrder)
+    commitTimelineProjectManualOrder(nextOrder, persistBoardOrder: true)
   }
 
   func applyTimelineProjectManualOrder(_ nextOrder: [UUID: Int64]) {
-    guard nextOrder != timelineProjectManualOrder else { return }
-    timelineProjectManualOrder = nextOrder
-    TimelineProjectManualOrderStore.save(nextOrder)
-    invalidateWorkspaceTimelineProjectionCaches()
-    rebuildWorkspaceTimelineProjectionCachesAfterMutation()
+    commitTimelineProjectManualOrder(nextOrder, persistBoardOrder: false)
   }
 
   func reconcileTimelineProjectManualOrderFromPersistedBoardOrder(
@@ -71,13 +66,12 @@ extension TimelineBoardView {
       availableProjectIDs: Array(projectSnapshots.keys)
     )
     let nextOrder = reconciliation.order
-    if reconciliation.shouldPersistLocalOrder {
-      persistTimelineProjectManualOrder(nextOrder)
-    }
-    guard nextOrder != timelineProjectManualOrder else { return false }
-    timelineProjectManualOrder = nextOrder
-    TimelineProjectManualOrderStore.save(nextOrder)
-    return true
+    let didChange = nextOrder != timelineProjectManualOrder
+    commitTimelineProjectManualOrder(
+      nextOrder,
+      persistBoardOrder: reconciliation.shouldPersistLocalOrder
+    )
+    return didChange
   }
 
   func restoreTimelineProjectManualOrder(
@@ -87,8 +81,7 @@ extension TimelineBoardView {
   ) {
     let previousOrder = timelineProjectManualOrder
     guard previousOrder != nextOrder else { return }
-    applyTimelineProjectManualOrder(nextOrder)
-    persistTimelineProjectManualOrder(nextOrder)
+    commitTimelineProjectManualOrder(nextOrder, persistBoardOrder: true)
     guard registerUndo else { return }
     appState.registerUndo(with: undoManager, actionName: actionName) {
       self.restoreTimelineProjectManualOrder(
@@ -99,7 +92,22 @@ extension TimelineBoardView {
     }
   }
 
-  func persistTimelineProjectManualOrder(_ order: [UUID: Int64]) {
+  func commitTimelineProjectManualOrder(
+    _ nextOrder: [UUID: Int64],
+    persistBoardOrder: Bool
+  ) {
+    let didChange = nextOrder != timelineProjectManualOrder
+    if didChange {
+      timelineProjectManualOrder = nextOrder
+      invalidateWorkspaceTimelineProjectionCaches()
+      rebuildWorkspaceTimelineProjectionCachesAfterMutation()
+    }
+    TimelineProjectManualOrderStore.save(nextOrder)
+    guard persistBoardOrder else { return }
+    persistTimelineProjectBoardOrder(nextOrder)
+  }
+
+  private func persistTimelineProjectBoardOrder(_ order: [UUID: Int64]) {
     let boardOrders = order.reduce(into: [UUID: Int?]()) { result, item in
       result[item.key] = Int(exactly: item.value)
     }

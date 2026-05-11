@@ -1,7 +1,23 @@
 import Foundation
 
-enum LegacyTaskDurationRepair {
+enum LegacyObsidianProjectTaskDurationMigration {
   static let metadataKey = "legacy_task_duration_repair_v1"
+  static let completedValue = "1"
+
+  static func runIfNeeded(
+    store: AppOwnedWorkspaceStore,
+    vaultRootURL: URL,
+    fileManager: FileManager = .default
+  ) async throws {
+    guard try await store.metadataValue(forKey: metadataKey) != completedValue else {
+      return
+    }
+    let supplements = try taskSupplements(vaultRootURL: vaultRootURL, fileManager: fileManager)
+    if !supplements.isEmpty {
+      try await store.fillMissingTaskDurations(supplements)
+    }
+    try await store.setMetadataValue(completedValue, forKey: metadataKey)
+  }
 
   static func taskSupplements(
     vaultRootURL: URL,

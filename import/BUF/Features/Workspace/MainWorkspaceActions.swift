@@ -1524,7 +1524,6 @@ extension MainWorkspaceView {
     guard orderedProjectIDs.count == reorderedProjects.count else { return }
 
     workspaceSidebarProjects = reorderedProjects
-    projectBoardOrderRevision += 1
 
     let boardOrders = Dictionary(
       uniqueKeysWithValues: orderedProjectIDs.enumerated().map { index, projectID in

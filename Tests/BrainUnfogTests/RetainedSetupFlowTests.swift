@@ -42,7 +42,7 @@ final class RetainedSetupFlowTests: XCTestCase {
     XCTAssertEqual(plist["com.apple.security.personal-information.reminders"], true)
   }
 
-  func testConfigureObsidianVaultCreatesBufRawProjectsWithoutHelperPluginAndRunsReminderFirstBootstrap()
+  func testConfigureObsidianVaultCreatesAppOwnedContainerWithoutRawProjectsAndRunsReminderFirstBootstrap()
     async throws
   {
     let vaultRoot = try makeVaultRoot()
@@ -59,7 +59,7 @@ final class RetainedSetupFlowTests: XCTestCase {
     XCTAssertEqual(appState.obsidianVaultRootURL?.standardizedFileURL, vaultRoot.standardizedFileURL)
     XCTAssertEqual(appState.containerRootURL?.standardizedFileURL, expectedContainerRoot.standardizedFileURL)
     XCTAssertTrue(FileManager.default.fileExists(atPath: expectedContainerRoot.path))
-    XCTAssertTrue(FileManager.default.fileExists(atPath: projectsRoot.path))
+    XCTAssertFalse(FileManager.default.fileExists(atPath: projectsRoot.path))
     let helperPluginRoot = vaultRoot
       .appendingPathComponent(".obsidian", isDirectory: true)
       .appendingPathComponent("plugins", isDirectory: true)
@@ -83,11 +83,6 @@ final class RetainedSetupFlowTests: XCTestCase {
     XCTAssertEqual(gateway.writeCallCount, 0)
     XCTAssertEqual(UserDefaults.standard.string(forKey: AppState.obsidianVaultRootPathKey), vaultRoot.path)
 
-    let projectFiles = try FileManager.default.contentsOfDirectory(
-      at: projectsRoot,
-      includingPropertiesForKeys: nil
-    )
-    XCTAssertNil(projectFiles.first { $0.pathExtension == "md" })
     let taskIdentifier = try XCTUnwrap(
       gateway.reminder.calendarItemExternalIdentifier ?? gateway.reminder.calendarItemIdentifier
     )
@@ -130,7 +125,7 @@ final class RetainedSetupFlowTests: XCTestCase {
     XCTAssertNotNil(appState.errorMessage)
   }
 
-  func testConfigureObsidianVaultReconcilesExistingLocalOnlyProjectNoteWithoutBootstrapAlert()
+  func testConfigureObsidianVaultLeavesExistingLegacyProjectNoteUnchangedWithoutImportingIt()
     async throws
   {
     let vaultRoot = try makeVaultRoot()
@@ -165,7 +160,8 @@ final class RetainedSetupFlowTests: XCTestCase {
       .loadRetainedWorkspaceSnapshot(projectIDs: [])
     let appProject = try XCTUnwrap(appSnapshot.projects.first)
     XCTAssertEqual(afterMarkdown, originalMarkdown)
-    XCTAssertTrue(appProject.noteMarkdown.contains("Local prose that must stay."))
+    XCTAssertFalse(appProject.noteMarkdown.contains("Local prose that must stay."))
+    XCTAssertEqual(appProject.title, "Imported list")
     XCTAssertEqual(appState.obsidianVaultRootURL?.standardizedFileURL, vaultRoot.standardizedFileURL)
     XCTAssertTrue(appState.hasCompletedInitialSetup)
     XCTAssertNil(appState.errorMessage)
@@ -227,6 +223,7 @@ final class RetainedSetupFlowTests: XCTestCase {
     let projectsRoot = vaultRoot
       .appendingPathComponent("raw", isDirectory: true)
       .appendingPathComponent("projects", isDirectory: true)
+    try FileManager.default.createDirectory(at: projectsRoot, withIntermediateDirectories: true)
     let localOnlyURL = projectsRoot.appendingPathComponent("Local only.md", isDirectory: false)
     let localOnlyMarkdown = """
       ---
@@ -361,7 +358,7 @@ final class RetainedSetupFlowTests: XCTestCase {
       appState.containerRootURL?.standardizedFileURL,
       vaultRoot.appendingPathComponent(".buf", isDirectory: true).standardizedFileURL
     )
-    XCTAssertTrue(
+    XCTAssertFalse(
       FileManager.default.fileExists(
         atPath: vaultRoot
           .appendingPathComponent("raw", isDirectory: true)

@@ -245,36 +245,28 @@ final class ObsidianRetainedProjectionAdapterTests: XCTestCase {
     XCTAssertTrue(retained.projects.isEmpty)
   }
 
-  func testSurfaceProjectionLoadsFromObsidianVaultWhenConfigured() async throws {
+  func testSurfaceProjectionDoesNotLoadLegacyObsidianProjectsWithoutAppOwnedImport() async throws {
     let vaultURL = try makeVault()
-    let fileURL = try writeProject(
+    _ = try writeProject(
       projectMarkdown(listID: "LIST-1", taskID: "TASK-1", title: "Obsidian task"),
       named: "Obsidian Project.md",
       in: vaultURL
     )
-    let modificationDate = try XCTUnwrap(
-      FileManager.default.attributesOfItem(atPath: fileURL.path)[.modificationDate] as? Date
-    )
     let projectID = RetainedProjectionBuilder.derivedProjectID(for: "LIST-1")
-    let taskID = ReminderProjectionIdentity.taskID(for: "TASK-1")
 
     let result = await RetainedWorkspaceSurfaceProjectionBuilder.load(
       obsidianVaultRootURL: vaultURL,
       projectIDs: [projectID],
       calendar: Self.calendar
     )
-    let surface = try XCTUnwrap(result.loadedProjection)
 
-    XCTAssertEqual(surface.projectSnapshots[projectID]?.title, "Obsidian Project")
-    XCTAssertEqual(surface.projectSnapshots[projectID]?.updatedAt, modificationDate)
-    XCTAssertEqual(surface.scheduleEntriesByProjectID[projectID]?.first?.taskID, taskID)
     XCTAssertEqual(
-      surface.calendarBridgeDecisionsByTaskID[taskID],
-      RetainedCalendarBridgeDecision.noAction
+      result,
+      .blocked(.loadFailed("App-owned workspace has not imported Reminders yet."))
     )
   }
 
-  func testSurfaceProjectionLoadOnlyParsesRequestedProjectNotes() async throws {
+  func testSurfaceProjectionIgnoresLegacyObsidianProjectNotesWithoutAppOwnedImport() async throws {
     let vaultURL = try makeVault()
     try writeProject(
       projectMarkdown(listID: "LIST-1", taskID: "TASK-SHARED", title: "Requested task"),
@@ -293,11 +285,11 @@ final class ObsidianRetainedProjectionAdapterTests: XCTestCase {
       projectIDs: [requestedProjectID],
       calendar: Self.calendar
     )
-    let surface = try XCTUnwrap(result.loadedProjection)
 
-    XCTAssertEqual(Set(surface.projectSnapshots.keys), [requestedProjectID])
-    XCTAssertEqual(surface.projectSnapshots[requestedProjectID]?.title, "Requested")
-    XCTAssertEqual(surface.scheduleEntriesByProjectID[requestedProjectID]?.first?.title, "Requested task")
+    XCTAssertEqual(
+      result,
+      .blocked(.loadFailed("App-owned workspace has not imported Reminders yet."))
+    )
   }
 
   func testSurfaceProjectionReadDoesNotRewriteObsidianMarkdown() async throws {

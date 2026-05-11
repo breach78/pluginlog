@@ -110,33 +110,34 @@ extension AppState {
     }
     let store = AppOwnedWorkspaceStore(containerRootURL: containerRootURL)
     try await store.replaceReminderSnapshot(batch, importedAt: importedAt)
-    try await repairLegacyTaskDurationsIfNeeded(store: store)
+    try await runLegacyObsidianProjectTaskDurationMigrationIfNeeded(store: store)
     try await store.setProjectionReadEnabled(true)
     return store
   }
 
-  func repairLegacyTaskDurationsInAppOwnedStoreIfNeeded() async {
+  func runLegacyObsidianProjectTaskDurationMigrationIfNeeded() async {
     do {
       guard let containerRootURL = storageCoordinator.paths?.root else { return }
       let store = AppOwnedWorkspaceStore(containerRootURL: containerRootURL)
       guard try await store.hasImportedWorkspace() else { return }
-      try await repairLegacyTaskDurationsIfNeeded(store: store)
+      try await runLegacyObsidianProjectTaskDurationMigrationIfNeeded(store: store)
       bumpWorkspaceTreeRevision()
     } catch {
-      reportError(error, logMessage: "repairLegacyTaskDurationsInAppOwnedStoreIfNeeded failed")
+      reportError(
+        error,
+        logMessage: "runLegacyObsidianProjectTaskDurationMigrationIfNeeded failed"
+      )
     }
   }
 
-  private func repairLegacyTaskDurationsIfNeeded(store: AppOwnedWorkspaceStore) async throws {
+  private func runLegacyObsidianProjectTaskDurationMigrationIfNeeded(
+    store: AppOwnedWorkspaceStore
+  ) async throws {
     guard let obsidianVaultRootURL else { return }
-    guard try await store.metadataValue(forKey: LegacyTaskDurationRepair.metadataKey) != "1" else {
-      return
-    }
-    let supplements = try LegacyTaskDurationRepair.taskSupplements(vaultRootURL: obsidianVaultRootURL)
-    if !supplements.isEmpty {
-      try await store.fillMissingTaskDurations(supplements)
-    }
-    try await store.setMetadataValue("1", forKey: LegacyTaskDurationRepair.metadataKey)
+    try await LegacyObsidianProjectTaskDurationMigration.runIfNeeded(
+      store: store,
+      vaultRootURL: obsidianVaultRootURL
+    )
   }
 
   func handleObsidianProjectDirectoryChange(_ changedFiles: [URL]) async {
