@@ -630,7 +630,7 @@ extension ScheduleBoardView {
             originalTimeMinutes: layout.entry.sourceStartMinute,
             originalDurationMinutes: layout.entry.sourceDurationMinutes,
             itemFrame: frame,
-            originalTopScheduleYOverride: CGFloat(layout.entry.sourceStartMinute) / 60 * hourHeight,
+            originalTopScheduleYOverride: sourceTopScheduleY(for: layout.entry),
             isAllDay: false,
             isPreparationSlot: layout.entry.isPreparationSlot,
             targetCompletedWorkUnits: layout.entry.targetCompletedWorkUnits
@@ -688,7 +688,7 @@ extension ScheduleBoardView {
               eventDragGesture(
                 for: event,
                 itemFrame: frame,
-                originalTopScheduleYOverride: CGFloat(layout.entry.sourceStartMinute) / 60 * hourHeight,
+                originalTopScheduleYOverride: sourceTopScheduleY(for: layout.entry),
                 isAllDay: false
               )
             )
@@ -729,6 +729,16 @@ extension ScheduleBoardView {
         )
       }
     }
+  }
+
+  func sourceTopScheduleY(for entry: ScheduleTimedEntry) -> CGFloat {
+    let visibleDay = days[entry.dayIndex]
+    let dayDelta = calendar.dateComponents(
+      [.day],
+      from: calendar.startOfDay(for: entry.sourceStartDay),
+      to: calendar.startOfDay(for: visibleDay)
+    ).day ?? 0
+    return CGFloat(entry.sourceStartMinute - dayDelta * 24 * 60) / 60 * hourHeight
   }
 
   func scheduleTaskBlock(

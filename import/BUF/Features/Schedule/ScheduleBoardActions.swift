@@ -482,7 +482,7 @@ extension ScheduleBoardView {
 
     let allowsDayChange = !dragState.isPreparationSlot
     let allowsTranslationDateSnap = allowsScheduleDragDateSnapping && allowsDayChange
-    let preview = ScheduleDragDropInteractionLayer.preview(
+    return ScheduleDragDropInteractionLayer.preview(
       originalDay: dragState.originalDay,
       originalTimeMinutes: dragState.originalTimeMinutes,
       originalDurationMinutes: dragState.originalDurationMinutes,
@@ -494,13 +494,12 @@ extension ScheduleBoardView {
       forceAllDay: dragState.isInAllDayZone,
       allowsDayChange: allowsTranslationDateSnap,
       allowsAllDay: true,
+      targetDay: interactionTargetDay(
+        pointerViewportLocation: dragState.currentPointerViewportLocation,
+        allowsDayChange: allowsDayChange
+      ),
       metrics: interactionMetrics,
       calendar: calendar
-    )
-    return previewWithPointerDay(
-      preview,
-      pointerViewportLocation: dragState.currentPointerViewportLocation,
-      allowsDayChange: allowsDayChange
     )
   }
 
@@ -528,6 +527,10 @@ extension ScheduleBoardView {
       currentTopScheduleY: currentTopScheduleY,
       forceAllDay: dragState.isInAllDayZone,
       allowsDayChange: true,
+      targetDay: interactionTargetDay(
+        pointerViewportLocation: dragState.currentPointerViewportLocation,
+        allowsDayChange: true
+      ),
       metrics: interactionMetrics,
       calendar: calendar
     )
@@ -548,15 +551,13 @@ extension ScheduleBoardView {
     )
   }
 
-  func previewWithPointerDay(
-    _ preview: ScheduleInteractionPreview,
+  func interactionTargetDay(
     pointerViewportLocation: CGPoint?,
     allowsDayChange: Bool
-  ) -> ScheduleInteractionPreview {
-    ScheduleDragDropInteractionLayer.previewByApplyingPointerDay(
-      preview,
-      pointerViewportLocation: pointerViewportLocation,
-      allowsDayChange: allowsDayChange,
+  ) -> Date? {
+    guard allowsDayChange, let pointerViewportLocation else { return nil }
+    return ScheduleDragDropInteractionLayer.dayForPointerViewportX(
+      pointerViewportLocation.x,
       titleColumnWidth: titleColumnWidth,
       scrollOffsetX: currentScrollOffsetX,
       days: days,
@@ -588,17 +589,6 @@ extension ScheduleBoardView {
       )
   }
 
-  func resizeEdgeScheduleY(
-    originalTimeMinutes: Int,
-    originalDurationMinutes: Int,
-    edge: ScheduleResizeEdge
-  ) -> CGFloat {
-    let edgeMinutes = edge == .start
-      ? originalTimeMinutes
-      : originalTimeMinutes + originalDurationMinutes
-    return CGFloat(edgeMinutes) / 60 * hourHeight
-  }
-
   func resizeOriginalPointerScheduleY(
     currentPointerViewportLocation: CGPoint,
     value: DragGesture.Value
@@ -622,6 +612,11 @@ extension ScheduleBoardView {
         resizeState.currentPointerViewportLocation
       ),
       fallbackTranslationHeight: resizeState.translationHeight,
+      targetDay: interactionTargetDay(
+        pointerViewportLocation: resizeState.currentPointerViewportLocation,
+        allowsDayChange: true
+      ),
+      calendar: calendar,
       metrics: interactionMetrics
     )
   }
@@ -638,6 +633,11 @@ extension ScheduleBoardView {
         resizeState.currentPointerViewportLocation
       ),
       fallbackTranslationHeight: resizeState.translationHeight,
+      targetDay: interactionTargetDay(
+        pointerViewportLocation: resizeState.currentPointerViewportLocation,
+        allowsDayChange: true
+      ),
+      calendar: calendar,
       metrics: interactionMetrics
     )
   }
@@ -772,6 +772,7 @@ extension ScheduleBoardView {
           applyPreview(
             resolvedPreview,
             to: taskDescriptor,
+            operation: .move,
             actionName: "일정 이동"
           )
         }
@@ -899,6 +900,7 @@ extension ScheduleBoardView {
         commitCalendarPreview(
           preview(for: resolvedDragState),
           for: event,
+          operation: .move,
           actionName: "캘린더 일정 이동"
         )
       }
@@ -941,6 +943,10 @@ extension ScheduleBoardView {
             edge: edge,
             value: value
           )
+          let originalEdgeScheduleY = resizeOriginalPointerScheduleY(
+            currentPointerViewportLocation: pointerViewportLocation,
+            value: value
+          )
           activeTaskResize = ScheduleTaskResizeState(
             entryID: entryID,
             taskID: taskID,
@@ -955,11 +961,7 @@ extension ScheduleBoardView {
               currentPointerViewportLocation: pointerViewportLocation,
               value: value
             ),
-            originalEdgeScheduleY: resizeEdgeScheduleY(
-              originalTimeMinutes: originalTimeMinutes,
-              originalDurationMinutes: originalDurationMinutes,
-              edge: edge
-            ),
+            originalEdgeScheduleY: originalEdgeScheduleY,
             currentPointerViewportLocation: pointerViewportLocation
           )
           selectedScheduleTaskID = taskID
@@ -988,6 +990,7 @@ extension ScheduleBoardView {
           applyPreview(
             preview(for: resizeState),
             to: taskDescriptor,
+            operation: .resize,
             actionName: "일정 길이 조절"
           )
         }
@@ -1017,6 +1020,10 @@ extension ScheduleBoardView {
             edge: edge,
             value: value
           )
+          let originalEdgeScheduleY = resizeOriginalPointerScheduleY(
+            currentPointerViewportLocation: pointerViewportLocation,
+            value: value
+          )
           activeCalendarResize = ScheduleCalendarResizeState(
             eventID: event.id,
             originalDay: originalDay,
@@ -1028,11 +1035,7 @@ extension ScheduleBoardView {
               currentPointerViewportLocation: pointerViewportLocation,
               value: value
             ),
-            originalEdgeScheduleY: resizeEdgeScheduleY(
-              originalTimeMinutes: originalTimeMinutes,
-              originalDurationMinutes: originalDurationMinutes,
-              edge: edge
-            ),
+            originalEdgeScheduleY: originalEdgeScheduleY,
             currentPointerViewportLocation: pointerViewportLocation
           )
         }
@@ -1051,6 +1054,7 @@ extension ScheduleBoardView {
         commitCalendarPreview(
           preview(for: resizeState),
           for: event,
+          operation: .resize,
           actionName: "캘린더 일정 길이 조절"
         )
       }
@@ -1059,16 +1063,25 @@ extension ScheduleBoardView {
   func applyPreview(
     _ preview: ScheduleInteractionPreview,
     to taskDescriptor: WorkspaceScheduleTaskDescriptor,
+    operation: ScheduleInteractionOperation = .move,
     actionName: String
   ) {
     let taskRow = taskDescriptor.taskRow
+    guard
+      let command = ScheduleInteractionEngine.command(
+        for: .task(taskRow.id),
+        operation: operation,
+        preview: preview
+      )
+    else { return }
+    let commandPreview = command.schedulePreview()
     let previousDay = WorkspaceTaskScheduleEventStore.scheduledDay(for: taskRow, calendar: calendar)
     let previousTime = WorkspaceTaskScheduleEventStore.scheduledTimeMinutes(for: taskRow, calendar: calendar)
     let previousDuration = WorkspaceTaskScheduleEventStore.normalizedScheduledDurationMinutes(for: taskRow)
 
-    guard previousDay != preview.day
-      || previousTime != preview.timeMinutes
-      || previousDuration != preview.durationMinutes
+    guard previousDay != commandPreview.day
+      || previousTime != commandPreview.timeMinutes
+      || previousDuration != commandPreview.durationMinutes
     else {
       committedTaskDrop = nil
       return
@@ -1077,9 +1090,9 @@ extension ScheduleBoardView {
     applyScheduleState(
       taskID: taskRow.id,
       projectID: taskDescriptor.projectID,
-      day: preview.day,
-      timeMinutes: preview.timeMinutes,
-      durationMinutes: preview.durationMinutes,
+      day: commandPreview.day,
+      timeMinutes: commandPreview.timeMinutes,
+      durationMinutes: commandPreview.durationMinutes,
       registerUndo: true,
       actionName: actionName
     )
@@ -1136,23 +1149,32 @@ extension ScheduleBoardView {
   func commitCalendarPreview(
     _ preview: ScheduleInteractionPreview,
     for event: ScheduleCalendarEvent,
+    operation: ScheduleInteractionOperation = .move,
     actionName: String
   ) {
-    guard calendarPreviewDiffers(from: event, preview: preview) else {
+    guard
+      let command = ScheduleInteractionEngine.command(
+        for: .calendarEvent(event.id),
+        operation: operation,
+        preview: preview
+      )
+    else { return }
+    let commandPreview = command.schedulePreview()
+    guard calendarPreviewDiffers(from: event, preview: commandPreview) else {
       return
     }
 
     if event.isRecurring {
       pendingCalendarEditAction = PendingScheduleCalendarEditAction(
         eventID: event.id,
-        preview: preview,
+        preview: commandPreview,
         actionName: actionName
       )
       return
     }
 
     applyCalendarPreview(
-      preview,
+      commandPreview,
       to: event,
       scope: .thisEvent,
       actionName: actionName
@@ -1697,6 +1719,7 @@ extension ScheduleBoardView {
       commitCalendarPreview(
         preview,
         for: event,
+        operation: .move,
         actionName: "월간 일정 이동"
       )
       if !event.isRecurring {

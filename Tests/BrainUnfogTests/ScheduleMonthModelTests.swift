@@ -297,6 +297,31 @@ final class ScheduleMonthModelTests: XCTestCase {
     XCTAssertEqual(calendar.component(.day, from: nextWeekDay), 13)
   }
 
+  func testMonthDragGeometryTreatsHorizontalOutsideAsNoTargetDay() throws {
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+    calendar.firstWeekday = 1
+    let weekStart = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 5, day: 3)))
+    let rowSize = CGSize(width: 700, height: 100)
+
+    XCTAssertNil(
+      ScheduleMonthDragGeometry.day(
+        at: CGPoint(x: -1, y: 50),
+        weekStart: weekStart,
+        rowSize: rowSize,
+        calendar: calendar
+      )
+    )
+    XCTAssertNil(
+      ScheduleMonthDragGeometry.day(
+        at: CGPoint(x: 701, y: 50),
+        weekStart: weekStart,
+        rowSize: rowSize,
+        calendar: calendar
+      )
+    )
+  }
+
   func testMonthDragGeometryPreservesClickedOffsetWithinMultiDayItem() throws {
     var calendar = Calendar(identifier: .gregorian)
     calendar.timeZone = TimeZone(secondsFromGMT: 0)!

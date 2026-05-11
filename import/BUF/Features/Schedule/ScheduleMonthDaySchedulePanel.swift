@@ -635,14 +635,30 @@ struct ScheduleMonthDaySchedulePanel: View {
 
   private func commitMutationPreview(
     _ preview: ScheduleMonthDayScheduleMutationPreview,
-    item: ScheduleMonthItem
+    item: ScheduleMonthItem,
+    operation: ScheduleInteractionOperation = .move
   ) {
     activeMutationPreview = nil
     activeItemDragState = nil
     activeItemResizeState = nil
     guard canUpdateSchedule(for: item) else { return }
     guard !savingItemIDs.contains(item.id) else { return }
-    let updated = item.applyingSchedulePreview(preview, calendar: calendar)
+    guard
+      let identity = interactionIdentity(for: item),
+      let command = ScheduleInteractionEngine.command(
+        for: identity,
+        operation: operation,
+        preview: ScheduleInteractionPreview(
+          day: preview.day,
+          timeMinutes: preview.timeMinutes,
+          durationMinutes: preview.durationMinutes
+        )
+      )
+    else { return }
+    let commandPreview = command
+      .schedulePreview(fallbackDay: calendar.startOfDay(for: target.date))
+      .monthDayPreview(itemID: preview.itemID, fallbackDay: calendar.startOfDay(for: target.date))
+    let updated = item.applyingSchedulePreview(commandPreview, calendar: calendar)
     guard updated.startDate != item.startDate
       || updated.endDate != item.endDate
       || updated.isAllDay != item.isAllDay
@@ -657,15 +673,24 @@ struct ScheduleMonthDaySchedulePanel: View {
       guard
         let saved = await onUpdateItemSchedule(
           item,
-          preview.day,
-          preview.timeMinutes,
-          preview.durationMinutes
+          commandPreview.day,
+          commandPreview.timeMinutes,
+          commandPreview.durationMinutes
         )
       else {
         replaceOrRemoveForCurrentDay(item)
         return
       }
       replaceOrRemoveForCurrentDay(saved)
+    }
+  }
+
+  private func interactionIdentity(for item: ScheduleMonthItem) -> ScheduleInteractionItemIdentity? {
+    switch item.source {
+    case .workspaceTask(let taskID, _):
+      return .task(taskID)
+    case .calendarEvent(let eventID):
+      return .calendarEvent(eventID)
     }
   }
 
@@ -728,12 +753,12 @@ struct ScheduleMonthDaySchedulePanel: View {
         return
       }
       let preview = externalMonthDropPreview(for: state, targetDay: targetDay)
-      commitMutationPreview(preview, item: state.originalItem)
+      commitMutationPreview(preview, item: state.originalItem, operation: .move)
       return
     }
     onExternalMonthDragTargetChanged(nil)
     let preview = movePreview(for: state)
-    commitMutationPreview(preview, item: state.originalItem)
+    commitMutationPreview(preview, item: state.originalItem, operation: .move)
   }
 
   private func updateResizePreview(
@@ -757,7 +782,7 @@ struct ScheduleMonthDaySchedulePanel: View {
     let state = resizeState(for: layout, edge: edge, drag: drag)
     let preview = resizePreview(for: state, currentPointerPanelY: drag.location.y)
     let blockedItemID = state.itemID
-    commitMutationPreview(preview, item: state.originalItem)
+    commitMutationPreview(preview, item: state.originalItem, operation: .resize)
     DispatchQueue.main.async {
       if resizeBlockedMoveItemID == blockedItemID {
         resizeBlockedMoveItemID = nil

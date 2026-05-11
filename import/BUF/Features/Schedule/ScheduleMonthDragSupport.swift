@@ -169,6 +169,7 @@ enum ScheduleMonthDragGeometry {
     guard rowSize.width > 0, rowSize.height > 0 else { return nil }
     let columnWidth = rowSize.width / CGFloat(daysPerWeek)
     guard columnWidth > 0 else { return nil }
+    guard location.x >= 0, location.x < rowSize.width else { return nil }
 
     let rawColumn = Int(floor(location.x / columnWidth))
     let column = min(daysPerWeek - 1, max(0, rawColumn))

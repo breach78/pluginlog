@@ -204,6 +204,7 @@ enum ScheduleDragDropInteractionLayer {
     forceAllDay: Bool = false,
     allowsDayChange: Bool = true,
     allowsAllDay: Bool = true,
+    targetDay: Date? = nil,
     metrics: ScheduleInteractionMetrics,
     calendar: Calendar = .autoupdatingCurrent
   ) -> ScheduleInteractionPreview {
@@ -211,38 +212,52 @@ enum ScheduleDragDropInteractionLayer {
     let day =
       calendar.date(byAdding: .day, value: dayDelta, to: originalDay)
       ?? originalDay
+    let visibleTargetDay = targetDay ?? day
     let pointerScheduleY = currentPointerScheduleY ?? (originalPointerScheduleY + translation.height)
     let topScheduleY = currentTopScheduleY ?? (originalTopScheduleY + translation.height)
     if allowsAllDay && forceAllDay {
-      return ScheduleInteractionPreview(day: day, timeMinutes: nil, durationMinutes: nil)
+      return ScheduleInteractionEngine.movePreview(
+        originalTimeMinutes: originalTimeMinutes,
+        originalDurationMinutes: originalDurationMinutes,
+        target: .allDay(visibleTargetDay),
+        metrics: metrics
+      ) ?? ScheduleInteractionPreview(day: visibleTargetDay, timeMinutes: nil, durationMinutes: nil)
     }
 
     if originalTimeMinutes != nil {
-      let timeMinutes = snappedTimeMinutes(
-        for: topScheduleY,
+      return ScheduleInteractionEngine.movePreview(
+        originalTimeMinutes: originalTimeMinutes,
+        originalDurationMinutes: originalDurationMinutes,
+        target: ScheduleInteractionEngine.timedTarget(
+          visibleDay: visibleTargetDay,
+          scheduleY: topScheduleY,
+          metrics: metrics,
+          calendar: calendar
+        ),
         metrics: metrics
-      )
-      return ScheduleInteractionPreview(
-        day: day,
-        timeMinutes: timeMinutes,
-        durationMinutes: max(
-          metrics.timedMinimumDurationMinutes,
-          originalDurationMinutes ?? metrics.timedMinimumDurationMinutes,
-        )
-      )
+      ) ?? ScheduleInteractionPreview(day: day, timeMinutes: originalTimeMinutes, durationMinutes: originalDurationMinutes)
     }
 
     let allDayOriginTimedY = max(0, pointerScheduleY)
     if pointerScheduleY >= 0 || topScheduleY >= 0 {
-      let timeMinutes = snappedTimeMinutes(for: allDayOriginTimedY, metrics: metrics)
-      return ScheduleInteractionPreview(
-        day: day,
-        timeMinutes: timeMinutes,
-        durationMinutes: metrics.timedMinimumDurationMinutes
+      return ScheduleInteractionEngine.movePreview(
+        originalTimeMinutes: originalTimeMinutes,
+        originalDurationMinutes: originalDurationMinutes,
+        target: ScheduleInteractionEngine.timedTarget(
+          visibleDay: visibleTargetDay,
+          scheduleY: allDayOriginTimedY,
+          metrics: metrics,
+          calendar: calendar
+        ),
+        metrics: metrics
+      ) ?? ScheduleInteractionPreview(
+        day: visibleTargetDay,
+        timeMinutes: nil,
+        durationMinutes: nil
       )
     }
 
-    return ScheduleInteractionPreview(day: day, timeMinutes: nil, durationMinutes: nil)
+    return ScheduleInteractionPreview(day: visibleTargetDay, timeMinutes: nil, durationMinutes: nil)
   }
 
   static func snappedTimeMinutes(
@@ -281,6 +296,8 @@ enum ScheduleTimeResizingInteractionLayer {
     originalEdgeScheduleY: CGFloat,
     currentPointerScheduleY: CGFloat?,
     fallbackTranslationHeight: CGFloat,
+    targetDay: Date? = nil,
+    calendar: Calendar = .autoupdatingCurrent,
     metrics: ScheduleInteractionMetrics
   ) -> ScheduleInteractionPreview {
     let edgeScheduleY: CGFloat
@@ -295,7 +312,9 @@ enum ScheduleTimeResizingInteractionLayer {
       originalTimeMinutes: originalTimeMinutes,
       originalDurationMinutes: originalDurationMinutes,
       isStartEdge: isStartEdge,
-      edgeMinute: snappedMinute(for: edgeScheduleY, metrics: metrics),
+      edgeScheduleY: edgeScheduleY,
+      targetDay: targetDay ?? originalDay,
+      calendar: calendar,
       metrics: metrics
     )
   }
@@ -306,14 +325,16 @@ enum ScheduleTimeResizingInteractionLayer {
     originalDurationMinutes: Int,
     isStartEdge: Bool,
     translationHeight: CGFloat,
+    targetDay: Date? = nil,
+    calendar: Calendar = .autoupdatingCurrent,
     metrics: ScheduleInteractionMetrics
   ) -> ScheduleInteractionPreview {
-    let edgeMinute: Int
+    let edgeScheduleY: CGFloat
     if isStartEdge {
-      edgeMinute = originalTimeMinutes + snappedMinuteDelta(for: translationHeight, metrics: metrics)
+      edgeScheduleY = CGFloat(originalTimeMinutes) / 15 * metrics.quarterHourHeight + translationHeight
     } else {
-      edgeMinute = originalTimeMinutes + originalDurationMinutes
-        + snappedMinuteDelta(for: translationHeight, metrics: metrics)
+      edgeScheduleY = CGFloat(originalTimeMinutes + originalDurationMinutes) / 15
+        * metrics.quarterHourHeight + translationHeight
     }
 
     return preview(
@@ -321,7 +342,9 @@ enum ScheduleTimeResizingInteractionLayer {
       originalTimeMinutes: originalTimeMinutes,
       originalDurationMinutes: originalDurationMinutes,
       isStartEdge: isStartEdge,
-      edgeMinute: edgeMinute,
+      edgeScheduleY: edgeScheduleY,
+      targetDay: targetDay ?? originalDay,
+      calendar: calendar,
       metrics: metrics
     )
   }
@@ -331,51 +354,21 @@ enum ScheduleTimeResizingInteractionLayer {
     originalTimeMinutes: Int,
     originalDurationMinutes: Int,
     isStartEdge: Bool,
-    edgeMinute: Int,
+    edgeScheduleY: CGFloat,
+    targetDay: Date,
+    calendar: Calendar,
     metrics: ScheduleInteractionMetrics
   ) -> ScheduleInteractionPreview {
-    let endMinute = originalTimeMinutes + originalDurationMinutes
-
-    if isStartEdge {
-      let proposedStart = min(
-        max(0, edgeMinute),
-        max(0, endMinute - metrics.timedMinimumDurationMinutes)
-      )
-      return ScheduleInteractionPreview(
-        day: originalDay,
-        timeMinutes: proposedStart,
-        durationMinutes: max(
-          metrics.timedMinimumDurationMinutes,
-          endMinute - proposedStart,
-        )
-      )
-    }
-
-    let proposedDuration = max(
-      metrics.timedMinimumDurationMinutes,
-      edgeMinute - originalTimeMinutes
-    )
-    return ScheduleInteractionPreview(
-      day: originalDay,
-      timeMinutes: originalTimeMinutes,
-      durationMinutes: proposedDuration
+    ScheduleInteractionEngine.resizePreview(
+      originalDay: originalDay,
+      originalTimeMinutes: originalTimeMinutes,
+      originalDurationMinutes: originalDurationMinutes,
+      isStartEdge: isStartEdge,
+      edgeScheduleY: edgeScheduleY,
+      targetDay: targetDay,
+      metrics: metrics,
+      calendar: calendar
     )
   }
 
-  private static func snappedMinuteDelta(
-    for translationHeight: CGFloat,
-    metrics: ScheduleInteractionMetrics
-  ) -> Int {
-    ScheduleDragDropInteractionLayer.snappedMinuteDelta(
-      for: translationHeight,
-      metrics: metrics
-    )
-  }
-
-  private static func snappedMinute(
-    for scheduleY: CGFloat,
-    metrics: ScheduleInteractionMetrics
-  ) -> Int {
-    Int((scheduleY / metrics.quarterHourHeight).rounded()) * 15
-  }
 }

@@ -103,6 +103,31 @@ final class ScheduleDragDropInteractionLayerTests: XCTestCase {
     XCTAssertEqual(preview.durationMinutes, 6 * 60)
   }
 
+  func testTimedDragOnLaterVisibleSegmentUsesVisibleTargetDayForSourceStart() throws {
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+    let may7 = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 5, day: 7)))
+    let may8 = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 5, day: 8)))
+
+    let preview = ScheduleDragDropInteractionLayer.preview(
+      originalDay: may7,
+      originalTimeMinutes: 22 * 60,
+      originalDurationMinutes: 6 * 60,
+      translation: CGSize(width: 0, height: 60),
+      originalPointerScheduleY: 0,
+      originalTopScheduleY: -2 * 60,
+      currentPointerScheduleY: 60,
+      currentTopScheduleY: -60,
+      targetDay: may8,
+      metrics: metrics,
+      calendar: calendar
+    )
+
+    XCTAssertEqual(preview.day, may7)
+    XCTAssertEqual(preview.timeMinutes, 23 * 60)
+    XCTAssertEqual(preview.durationMinutes, 6 * 60)
+  }
+
   func testEndResizePreservesDurationPastMidnight() {
     let preview = ScheduleTimeResizingInteractionLayer.preview(
       originalDay: Date(timeIntervalSince1970: 0),
@@ -129,6 +154,57 @@ final class ScheduleDragDropInteractionLayerTests: XCTestCase {
 
     XCTAssertEqual(preview.timeMinutes, 23 * 60)
     XCTAssertEqual(preview.durationMinutes, 3 * 60)
+  }
+
+  func testEndResizeOnLaterVisibleSegmentUsesVisibleTargetDayForSourceStart() throws {
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+    let may7 = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 5, day: 7)))
+    let may8 = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 5, day: 8)))
+
+    let preview = ScheduleTimeResizingInteractionLayer.preview(
+      originalDay: may7,
+      originalTimeMinutes: 22 * 60,
+      originalDurationMinutes: 6 * 60,
+      isStartEdge: false,
+      originalPointerScheduleY: 4 * 60,
+      originalEdgeScheduleY: 4 * 60,
+      currentPointerScheduleY: 5 * 60,
+      fallbackTranslationHeight: 0,
+      targetDay: may8,
+      calendar: calendar,
+      metrics: metrics
+    )
+
+    XCTAssertEqual(preview.day, may7)
+    XCTAssertEqual(preview.timeMinutes, 22 * 60)
+    XCTAssertEqual(preview.durationMinutes, 7 * 60)
+  }
+
+  func testMoveTaskCommandUsesScheduleInteractionPreviewValues() {
+    let taskID = UUID()
+    let day = Date(timeIntervalSince1970: 0)
+    let preview = ScheduleInteractionPreview(
+      day: day,
+      timeMinutes: 9 * 60,
+      durationMinutes: 75
+    )
+
+    let command = ScheduleInteractionEngine.command(
+      for: .task(taskID),
+      operation: .move,
+      preview: preview
+    )
+
+    XCTAssertEqual(
+      command,
+      .moveTask(
+        taskID: taskID,
+        day: day,
+        timeMinutes: 9 * 60,
+        durationMinutes: 75
+      )
+    )
   }
 
   func testPointerViewportXMapsToVisibleDayColumn() {
