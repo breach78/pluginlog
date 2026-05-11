@@ -717,37 +717,38 @@ struct ScheduleBoardView: View {
   @State var isCalendarPickerShown = false
   @State var committedTaskDrop: CommittedTaskDropState?
 
-  let titleColumnWidth: CGFloat = 76
+  let titleColumnWidth: CGFloat = ScheduleUITokens.Board.titleColumnWidth
   let calendarMenuLeadingInset: CGFloat = 18
   let pastDayBuffer = 7
   let defaultVisibleStartDayOffset = 0
   let defaultVisibleStartHour = 3
   let futureDayWindow = 30
-  let dayColumnWidth: CGFloat = 168 * 1.7
-  let dateHeaderHeight: CGFloat = 32
-  let allDayRowHeight: CGFloat = 24
+  let dayColumnWidth: CGFloat = ScheduleUITokens.Board.dayColumnWidth
+  let dateHeaderHeight: CGFloat = ScheduleUITokens.Board.dateHeaderHeight
+  let allDayRowHeight: CGFloat = ScheduleUITokens.Board.allDayRowHeight
   let minimumAllDayVisibleRowCount = 1
   let maximumAllDayVisibleRowCount = 10
 
-  let allDayRailPadding: CGFloat = 6
-  let allDayRailExtraVisibleHeight: CGFloat = 8
-  let hourHeight: CGFloat = 52
+  let allDayRailPadding: CGFloat = ScheduleUITokens.Board.allDayRailPadding
+  let allDayRailExtraVisibleHeight: CGFloat = ScheduleUITokens.Board.allDayRailExtraVisibleHeight
+  let hourHeight: CGFloat = ScheduleUITokens.Board.hourHeight
   let hourCount = 24
-  let timedBlockInset: CGFloat = 4
-  let timedBlockColumnSpacing: CGFloat = 3
-  let allDayChipHorizontalInset: CGFloat = 5
+  let timedBlockInset: CGFloat = ScheduleUITokens.Board.timedBlockInset
+  let timedBlockColumnSpacing: CGFloat = ScheduleUITokens.Board.timedBlockColumnSpacing
+  let allDayChipHorizontalInset: CGFloat = ScheduleUITokens.Board.allDayChipHorizontalInset
   let timedMinimumDuration = WorkspaceTaskScheduleEventStore.defaultScheduledDurationMinutes
-  let dragSourcePlaceholderOpacity = 0.34
-  let dragGhostOpacity = 0.86
-  let dragGhostScale: CGFloat = 1.015
-  let dragGhostShadowRadius: CGFloat = 10
-  let dragGhostShadowYOffset: CGFloat = 4
-  let selectionHighlightColor = Color(red: 1.0, green: 0.93, blue: 0.82)
+  let dragSourcePlaceholderOpacity = ScheduleUITokens.Interaction.dragSourcePlaceholderOpacity
+  let dragGhostOpacity = ScheduleUITokens.Interaction.dragGhostOpacity
+  let dragGhostScale: CGFloat = ScheduleUITokens.Interaction.dragGhostScale
+  let dragGhostShadowRadius: CGFloat = ScheduleUITokens.Interaction.dragGhostShadowRadius
+  let dragGhostShadowYOffset: CGFloat = ScheduleUITokens.Interaction.dragGhostShadowYOffset
+  let selectionHighlightColor = ScheduleUITokens.Board.selectionHighlightColor
   let layoutEngine = ScheduleDayTimelineLayoutEngine()
-  let scheduleDayHeaderOverlayWidth: CGFloat = 260
-  let scheduleDayHeaderShowDelay: TimeInterval = 0.18
-  let scheduleOverlayDetachGraceDelay: TimeInterval = 0.08
-  let scheduleItemFontScale: CGFloat = 1.265
+  let scheduleDayHeaderOverlayWidth: CGFloat = ScheduleUITokens.Board.scheduleDayHeaderOverlayWidth
+  let scheduleDayHeaderShowDelay: TimeInterval = ScheduleUITokens.Board.scheduleDayHeaderShowDelay
+  let scheduleOverlayDetachGraceDelay: TimeInterval =
+    ScheduleUITokens.Board.scheduleOverlayDetachGraceDelay
+  let scheduleItemFontScale: CGFloat = ScheduleUITokens.Board.scheduleItemFontScale
 
   var calendar: Calendar { .autoupdatingCurrent }
   var today: Date { appState.currentDayStart }

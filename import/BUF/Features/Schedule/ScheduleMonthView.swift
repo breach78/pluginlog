@@ -2,13 +2,13 @@ import AppKit
 import SwiftUI
 
 private enum ScheduleMonthLayoutMetrics {
-  static let dayNumberHeight: CGFloat = 24
-  static let dayCellTopPadding: CGFloat = 5
-  static let dayCellHorizontalPadding: CGFloat = 6
-  static let itemRowHeight: CGFloat = 18
-  static let itemRowSpacing: CGFloat = 1
-  static let allDaySpanHeight: CGFloat = 18
-  static let allDaySpanRowHeight: CGFloat = 20
+  static let dayNumberHeight: CGFloat = ScheduleUITokens.Month.dayNumberHeight
+  static let dayCellTopPadding: CGFloat = ScheduleUITokens.Month.dayCellTopPadding
+  static let dayCellHorizontalPadding: CGFloat = ScheduleUITokens.Month.dayCellHorizontalPadding
+  static let itemRowHeight: CGFloat = ScheduleUITokens.Month.itemRowHeight
+  static let itemRowSpacing: CGFloat = ScheduleUITokens.Month.itemRowSpacing
+  static let allDaySpanHeight: CGFloat = ScheduleUITokens.Month.allDaySpanHeight
+  static let allDaySpanRowHeight: CGFloat = ScheduleUITokens.Month.allDaySpanRowHeight
   static let allDaySpanTopOffset: CGFloat = dayCellTopPadding + dayNumberHeight + itemRowSpacing
 }
 
@@ -30,10 +30,10 @@ struct ScheduleMonthView: View {
   let externalDayDropTarget: ScheduleMonthDropTarget?
   let onDropTargetsChanged: ([ScheduleMonthDropTarget]) -> Void
 
-  private let weekdayHeaderHeight: CGFloat = 28
-  private let monthHeaderHeight: CGFloat = 58
-  private let cellMinHeight: CGFloat = 72
-  private let gridLineColor = Color.primary.opacity(0.10)
+  private let weekdayHeaderHeight: CGFloat = ScheduleUITokens.Month.weekdayHeaderHeight
+  private let monthHeaderHeight: CGFloat = ScheduleUITokens.Month.monthHeaderHeight
+  private let cellMinHeight: CGFloat = ScheduleUITokens.Month.cellMinHeight
+  private let gridLineColor = Color.primary.opacity(ScheduleUITokens.Month.gridLineOpacity)
 
   private var gridLineWidth: CGFloat {
     1 / max(displayScale, 1)
@@ -580,7 +580,7 @@ private struct ScheduleMonthDayCell: View {
         .font(.system(size: 13, weight: .bold))
         .foregroundStyle(Color.white)
         .frame(width: 24, height: 24)
-        .background(Circle().fill(Color.red.opacity(0.88)))
+        .background(Circle().fill(Color.red.opacity(ScheduleUITokens.Month.todayBadgeFillOpacity)))
         .accessibilityLabel(number)
     } else {
       Text(number)

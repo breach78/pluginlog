@@ -2,9 +2,10 @@ import AppKit
 import SwiftUI
 
 private enum ScheduleItemVisualStyle {
-  static let titleFontSize: CGFloat = 11.5
-  static let supplementalFontSize = titleFontSize * 0.8
-  static let secondaryTextOpacityMultiplier: Double = 0.6
+  static let titleFontSize: CGFloat = ScheduleUITokens.ScheduleItem.titleFontSize
+  static let supplementalFontSize = ScheduleUITokens.ScheduleItem.supplementalFontSize
+  static let secondaryTextOpacityMultiplier =
+    ScheduleUITokens.ScheduleItem.secondaryTextOpacityMultiplier
 }
 
 struct ScheduleCurrentTimeIndicator: View {
@@ -286,12 +287,12 @@ enum ScheduleTimedBlockHitPriorityPolicy {
 }
 
 enum ScheduleResizePreviewStylePolicy {
-  static let targetBlockOpacity = 0.96
+  static let targetBlockOpacity = ScheduleUITokens.Interaction.resizeTargetBlockOpacity
 
   static func sourceBlockOpacity(
     isResizing: Bool,
     isDragging: Bool,
-    dragPlaceholderOpacity: Double = 0.34
+    dragPlaceholderOpacity: Double = ScheduleUITokens.Interaction.dragSourcePlaceholderOpacity
   ) -> Double {
     if isResizing {
       return 0

@@ -406,9 +406,14 @@ struct ScheduleMonthDaySchedulePanel: View {
         revealHiddenTimedItems(proxy: proxy)
       } label: {
         Image(systemName: "arrowtriangle.up.fill")
-          .font(.system(size: 8.4, weight: .bold))
-          .foregroundStyle(Color.secondary.opacity(0.68))
-          .frame(width: 18, height: 12)
+          .font(.system(size: ScheduleUITokens.MonthDayPanel.hiddenIndicatorFontSize, weight: .bold))
+          .foregroundStyle(
+            Color.secondary.opacity(ScheduleUITokens.MonthDayPanel.hiddenIndicatorOpacity)
+          )
+          .frame(
+            width: ScheduleUITokens.MonthDayPanel.hiddenIndicatorWidth,
+            height: ScheduleUITokens.MonthDayPanel.hiddenIndicatorHeight
+          )
       }
       .buttonStyle(.plain)
       .help("위쪽 숨겨진 시간대에 항목 있음")
@@ -424,7 +429,7 @@ struct ScheduleMonthDaySchedulePanel: View {
     ZStack(alignment: .topTrailing) {
       ForEach(0...24, id: \.self) { hour in
         Text(hour == 24 ? "" : Self.timeLabel(hour: hour))
-          .font(.system(size: 10))
+          .font(.system(size: ScheduleUITokens.MonthDayPanel.timeAxisFontSize))
           .foregroundStyle(.secondary)
           .frame(width: Self.timeGutterWidth - 10, alignment: .trailing)
           .offset(y: hour == 0 ? 2 : CGFloat(hour) * Self.hourHeight - 7)
@@ -437,7 +442,13 @@ struct ScheduleMonthDaySchedulePanel: View {
     ZStack(alignment: .topLeading) {
       ForEach(0...24, id: \.self) { hour in
         Rectangle()
-          .fill(Color(nsColor: .separatorColor).opacity(hour % 6 == 0 ? 0.45 : 0.25))
+          .fill(
+            Color(nsColor: .separatorColor).opacity(
+              hour % 6 == 0
+                ? ScheduleUITokens.MonthDayPanel.majorGridLineOpacity
+                : ScheduleUITokens.MonthDayPanel.minorGridLineOpacity
+            )
+          )
           .frame(height: 1)
           .offset(y: CGFloat(hour) * Self.hourHeight)
       }
@@ -539,10 +550,13 @@ struct ScheduleMonthDaySchedulePanel: View {
     width: CGFloat
   ) -> some View {
     RoundedRectangle(cornerRadius: 7, style: .continuous)
-      .fill(Color.accentColor.opacity(0.18))
+      .fill(Color.accentColor.opacity(ScheduleUITokens.MonthDayPanel.dropTargetFillOpacity))
       .overlay(
         RoundedRectangle(cornerRadius: 7, style: .continuous)
-          .stroke(Color.accentColor.opacity(0.55), style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
+          .stroke(
+            Color.accentColor.opacity(ScheduleUITokens.MonthDayPanel.dropTargetStrokeOpacity),
+            style: StrokeStyle(lineWidth: 1, dash: [4, 3])
+          )
       )
       .frame(width: max(40, width - 12), height: height(forDuration: preview.durationMinutes))
       .offset(x: 6, y: y(forMinute: preview.timeMinutes))
@@ -1114,12 +1128,12 @@ struct ScheduleMonthDaySchedulePanel: View {
     return "오후 \(hour - 12)"
   }
 
-  private static let timeGutterWidth: CGFloat = 64
-  private static let hourHeight: CGFloat = 56
-  private static let allDayRowHeight: CGFloat = 30
-  private static let minimumDurationMinutes = 30
-  private static let dividerHeight: CGFloat = 1
-  private static let initialVisibleHour = 18
+  private static let timeGutterWidth: CGFloat = ScheduleUITokens.MonthDayPanel.timeGutterWidth
+  private static let hourHeight: CGFloat = ScheduleUITokens.MonthDayPanel.hourHeight
+  private static let allDayRowHeight: CGFloat = ScheduleUITokens.MonthDayPanel.allDayRowHeight
+  private static let minimumDurationMinutes = ScheduleUITokens.MonthDayPanel.minimumDurationMinutes
+  private static let dividerHeight: CGFloat = ScheduleUITokens.MonthDayPanel.dividerHeight
+  private static let initialVisibleHour = ScheduleUITokens.MonthDayPanel.initialVisibleHour
   private static let topScrollID = "schedule-month-detail-time-top"
   private static let bottomScrollID = "schedule-month-detail-time-bottom"
   private static let nightScrollID = "schedule-month-detail-time-night"
@@ -1148,12 +1162,12 @@ private struct ScheduleMonthDayCurrentTimeIndicator: View {
           let y = currentTimeY(for: context.date)
 
           Rectangle()
-            .fill(Color.red.opacity(0.78))
+            .fill(Color.red.opacity(ScheduleUITokens.MonthDayPanel.currentTimeLineOpacity))
             .frame(width: width, height: 2)
             .offset(y: y - 1)
 
           Circle()
-            .fill(Color.red.opacity(0.9))
+            .fill(Color.red.opacity(ScheduleUITokens.MonthDayPanel.currentTimeDotOpacity))
             .frame(width: 7, height: 7)
             .offset(x: 1, y: y - 3.5)
         }

@@ -91,9 +91,16 @@ private struct ScheduleHiddenTimedItemsIndicatorRow: View {
               onRevealDay(dayIndex, visibleStartMinute, layouts)
             } label: {
               Image(systemName: "arrowtriangle.up.fill")
-                .font(.system(size: 8.4, weight: .bold))
-                .foregroundStyle(Color.secondary.opacity(0.68))
-                .frame(width: 18, height: 12)
+                .font(
+                  .system(size: ScheduleUITokens.MonthDayPanel.hiddenIndicatorFontSize, weight: .bold)
+                )
+                .foregroundStyle(
+                  Color.secondary.opacity(ScheduleUITokens.MonthDayPanel.hiddenIndicatorOpacity)
+                )
+                .frame(
+                  width: ScheduleUITokens.MonthDayPanel.hiddenIndicatorWidth,
+                  height: ScheduleUITokens.MonthDayPanel.hiddenIndicatorHeight
+                )
             }
             .buttonStyle(.plain)
             .help("위쪽 숨겨진 시간대에 항목 있음")
