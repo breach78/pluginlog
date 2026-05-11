@@ -256,6 +256,7 @@ private struct ScheduleMonthWeekRow: View {
   let onMoveItem: (ScheduleMonthDragItem, Date) -> Void
   let externalDayDropTarget: ScheduleMonthDropTarget?
   let onRowDropTargetsChanged: (Date, [ScheduleMonthDropTarget]) -> Void
+  @State private var rowFrameInScreen: CGRect = .null
 
   private var visibleAllDaySegments: [ScheduleMonthAllDaySpanSegment] {
     layout.allDaySegments.filter { $0.rowIndex < visibleAllDayRowLimit }
@@ -292,6 +293,7 @@ private struct ScheduleMonthWeekRow: View {
               weekStart: layout.weekStart,
               rowSize: rowSize,
               rowCoordinateSpaceName: rowCoordinateSpaceName,
+              rowFrameInScreen: rowFrameInScreen,
               activeDragDate: $activeDragDate,
               activeDragFeedback: $activeDragFeedback,
               calendar: calendar,
@@ -323,6 +325,7 @@ private struct ScheduleMonthWeekRow: View {
                   weekStart: layout.weekStart,
                   rowSize: rowSize,
                   rowCoordinateSpaceName: rowCoordinateSpaceName,
+                  rowFrameInScreen: rowFrameInScreen,
                   activeDragDate: $activeDragDate,
                   activeDragFeedback: $activeDragFeedback,
                   calendar: calendar,
@@ -355,6 +358,7 @@ private struct ScheduleMonthWeekRow: View {
       .coordinateSpace(name: rowCoordinateSpaceName)
       .background(
         ScheduleScreenFrameReporter { frame in
+          rowFrameInScreen = frame
           onRowDropTargetsChanged(layout.weekStart, dropTargets(rowFrame: frame))
         }
       )
@@ -459,6 +463,7 @@ private struct ScheduleMonthDayCell: View {
   let weekStart: Date
   let rowSize: CGSize
   let rowCoordinateSpaceName: String
+  let rowFrameInScreen: CGRect
   @Binding var activeDragDate: Date?
   @Binding var activeDragFeedback: ScheduleMonthDragFeedback?
   let calendar: Calendar
@@ -536,6 +541,7 @@ private struct ScheduleMonthDayCell: View {
             weekStart: weekStart,
             rowSize: rowSize,
             rowCoordinateSpaceName: rowCoordinateSpaceName,
+            rowFrameInScreen: rowFrameInScreen,
             activeDragDate: $activeDragDate,
             activeDragFeedback: $activeDragFeedback,
             calendar: calendar,
@@ -834,6 +840,7 @@ private struct ScheduleMonthLocalDragModifier: ViewModifier {
   let weekStart: Date
   let rowSize: CGSize
   let rowCoordinateSpaceName: String
+  let rowFrameInScreen: CGRect
   @Binding var activeDragDate: Date?
   @Binding var activeDragFeedback: ScheduleMonthDragFeedback?
   let calendar: Calendar
@@ -863,7 +870,7 @@ private struct ScheduleMonthLocalDragModifier: ViewModifier {
 
   private func updateDrag(_ value: DragGesture.Value, dragItem _: ScheduleMonthDragItem) {
     let originalStartDay = calendar.startOfDay(for: item.startDate)
-    if let externalTargetDay = externalDayPanelTargetDay() {
+    if let externalTargetDay = externalDayPanelTargetDay(for: value) {
       activeDragDate = nil
       activeDragFeedback = ScheduleMonthDragFeedback(
         item: item,
@@ -924,9 +931,17 @@ private struct ScheduleMonthLocalDragModifier: ViewModifier {
     onMoveItem(dragItem, targetStartDay)
   }
 
-  private func externalDayPanelTargetDay() -> Date? {
-    ScheduleMonthDropTargetResolver.day(
-      at: NSEvent.mouseLocation,
+  private func externalDayPanelTargetDay(for value: DragGesture.Value) -> Date? {
+    guard
+      let screenPoint = ScheduleScreenPointMapper.screenPoint(
+        localLocation: value.location,
+        in: rowFrameInScreen
+      )
+    else {
+      return nil
+    }
+    return ScheduleMonthDropTargetResolver.day(
+      at: screenPoint,
       target: externalDayDropTarget,
       calendar: calendar
     )

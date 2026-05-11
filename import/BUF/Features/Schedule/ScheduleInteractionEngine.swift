@@ -73,6 +73,26 @@ enum ScheduleInteractionEngine {
     }
   }
 
+  static func moveCommand(
+    for identity: ScheduleInteractionItemIdentity,
+    originalTimeMinutes: Int?,
+    originalDurationMinutes: Int?,
+    target: ScheduleInteractionTarget,
+    metrics: ScheduleInteractionMetrics
+  ) -> ScheduleInteractionCommand? {
+    guard
+      let preview = movePreview(
+        originalTimeMinutes: originalTimeMinutes,
+        originalDurationMinutes: originalDurationMinutes,
+        target: target,
+        metrics: metrics
+      )
+    else {
+      return nil
+    }
+    return command(for: identity, operation: .move, preview: preview)
+  }
+
   static func resizePreview(
     originalDay: Date,
     originalTimeMinutes: Int,

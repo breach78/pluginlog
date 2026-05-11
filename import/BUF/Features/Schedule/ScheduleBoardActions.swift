@@ -1087,15 +1087,7 @@ extension ScheduleBoardView {
       return
     }
 
-    applyScheduleState(
-      taskID: taskRow.id,
-      projectID: taskDescriptor.projectID,
-      day: commandPreview.day,
-      timeMinutes: commandPreview.timeMinutes,
-      durationMinutes: commandPreview.durationMinutes,
-      registerUndo: true,
-      actionName: actionName
-    )
+    _ = applyTaskInteractionCommand(command, actionName: actionName)
   }
 
   func applyPreparationPreview(
@@ -1159,26 +1151,76 @@ extension ScheduleBoardView {
         preview: preview
       )
     else { return }
-    let commandPreview = command.schedulePreview()
-    guard calendarPreviewDiffers(from: event, preview: commandPreview) else {
-      return
+    _ = applyCalendarInteractionCommand(command, actionName: actionName)
+  }
+
+  @discardableResult
+  func applyTaskInteractionCommand(
+    _ command: ScheduleInteractionCommand,
+    actionName: String
+  ) -> Bool {
+    let taskID: UUID
+    switch command {
+    case .moveTask(let id, _, _, _), .resizeTask(let id, _, _, _):
+      taskID = id
+    case .moveCalendarEvent, .resizeCalendarEvent:
+      return false
+    }
+
+    guard let taskDescriptor = scheduleTaskDescriptor(for: taskID) else { return false }
+    let preview = command.schedulePreview()
+    applyScheduleState(
+      taskID: taskID,
+      projectID: taskDescriptor.projectID,
+      day: preview.day,
+      timeMinutes: preview.timeMinutes,
+      durationMinutes: preview.durationMinutes,
+      registerUndo: true,
+      actionName: actionName
+    )
+    return true
+  }
+
+  @discardableResult
+  func applyCalendarInteractionCommand(
+    _ command: ScheduleInteractionCommand,
+    actionName: String
+  ) -> Bool {
+    let eventID: String
+    switch command {
+    case .moveCalendarEvent(let id, _, _, _), .resizeCalendarEvent(let id, _, _, _):
+      eventID = id
+    case .moveTask, .resizeTask:
+      return false
+    }
+
+    guard let event = appState.resolvedScheduleCalendarEvent(eventID: eventID),
+      event.canEditTiming
+    else {
+      return false
+    }
+
+    let preview = command.schedulePreview()
+    guard calendarPreviewDiffers(from: event, preview: preview) else {
+      return false
     }
 
     if event.isRecurring {
       pendingCalendarEditAction = PendingScheduleCalendarEditAction(
         eventID: event.id,
-        preview: commandPreview,
+        preview: preview,
         actionName: actionName
       )
-      return
+      return true
     }
 
     applyCalendarPreview(
-      commandPreview,
+      preview,
       to: event,
       scope: .thisEvent,
       actionName: actionName
     )
+    return true
   }
 
   func commitPendingCalendarEdit(scope: ScheduleCalendarRecurringEditScope) {
@@ -1637,64 +1679,27 @@ extension ScheduleBoardView {
   }
 
   func applyExternalTaskDrop(taskID: UUID, preview: ScheduleInteractionPreview) {
-    guard let taskDescriptor = scheduleTaskDescriptor(for: taskID) else { return }
+    guard let command = externalTaskDropCommand(taskID: taskID, preview: preview) else { return }
 
     releaseActiveTextResponderForUndo()
     suppressTaskTap(for: 0.2)
 
-    let durationMinutes: Int?
-    if preview.timeMinutes != nil {
-      durationMinutes = max(
-        timedMinimumDuration,
-        WorkspaceTaskScheduleEventStore.normalizedScheduledDurationMinutes(for: taskDescriptor.taskRow)
-          ?? timedMinimumDuration
-      )
-    } else {
-      durationMinutes = nil
-    }
-
-    applyScheduleState(
-      taskID: taskID,
-      projectID: taskDescriptor.projectID,
-      day: preview.day,
-      timeMinutes: preview.timeMinutes,
-      durationMinutes: durationMinutes,
-      registerUndo: true,
-      actionName: "일정 배치"
-    )
+    _ = applyTaskInteractionCommand(command, actionName: "일정 배치")
   }
 
   func moveScheduleMonthItem(_ item: ScheduleMonthDragItem, to targetDay: Date) {
     let normalizedTargetDay = calendar.startOfDay(for: targetDay)
     releaseActiveTextResponderForUndo()
     suppressTaskTap(for: 0.2)
+    guard let command = monthMoveCommand(for: item, to: normalizedTargetDay) else { return }
+    let commandPreview = command.schedulePreview()
 
     switch item {
     case .task(let taskID):
       guard let taskDescriptor = scheduleTaskDescriptor(for: taskID) else { return }
       guard !taskDescriptor.taskRow.isLocalCompletedRecurringOccurrence else { return }
 
-      let timeMinutes = WorkspaceTaskScheduleEventStore.scheduledTimeMinutes(
-        for: taskDescriptor.taskRow,
-        calendar: calendar
-      )
-      let durationMinutes = timeMinutes == nil
-        ? nil
-        : (
-          WorkspaceTaskScheduleEventStore.normalizedScheduledDurationMinutes(
-            for: taskDescriptor.taskRow
-          ) ?? WorkspaceTaskScheduleEventStore.defaultScheduledDurationMinutes
-        )
-
-      applyScheduleState(
-        taskID: taskID,
-        projectID: taskDescriptor.projectID,
-        day: normalizedTargetDay,
-        timeMinutes: timeMinutes,
-        durationMinutes: durationMinutes,
-        registerUndo: true,
-        actionName: "월간 일정 이동"
-      )
+      _ = applyTaskInteractionCommand(command, actionName: "월간 일정 이동")
       if let updatedDescriptor = scheduleTaskDescriptor(for: taskID),
         let updatedItem = ScheduleMonthItemFactory.item(
           workspaceTask: updatedDescriptor,
@@ -1711,26 +1716,86 @@ extension ScheduleBoardView {
         return
       }
 
-      let preview = ScheduleInteractionPreview(
-        day: normalizedTargetDay,
-        timeMinutes: event.isAllDay ? nil : timeMinutes(for: event.startDate),
-        durationMinutes: event.isAllDay ? nil : durationMinutes(for: event)
-      )
-      commitCalendarPreview(
-        preview,
-        for: event,
-        operation: .move,
-        actionName: "월간 일정 이동"
-      )
+      _ = applyCalendarInteractionCommand(command, actionName: "월간 일정 이동")
       if !event.isRecurring {
         onMonthItemScheduleChanged(
           ScheduleMonthItemFactory.item(
-            calendarEvent: calendarEvent(applying: preview, to: event),
+            calendarEvent: calendarEvent(applying: commandPreview, to: event),
             isBackgroundCalendar: false
           )
         )
       }
     }
+  }
+
+  func externalTaskDropCommand(
+    taskID: UUID,
+    preview: ScheduleInteractionPreview
+  ) -> ScheduleInteractionCommand? {
+    guard let taskDescriptor = scheduleTaskDescriptor(for: taskID),
+      let target = interactionTarget(for: preview)
+    else {
+      return nil
+    }
+
+    return ScheduleInteractionEngine.moveCommand(
+      for: .task(taskID),
+      originalTimeMinutes: WorkspaceTaskScheduleEventStore.scheduledTimeMinutes(
+        for: taskDescriptor.taskRow,
+        calendar: calendar
+      ),
+      originalDurationMinutes: WorkspaceTaskScheduleEventStore.normalizedScheduledDurationMinutes(
+        for: taskDescriptor.taskRow
+      ),
+      target: target,
+      metrics: interactionMetrics
+    )
+  }
+
+  func monthMoveCommand(
+    for item: ScheduleMonthDragItem,
+    to targetDay: Date
+  ) -> ScheduleInteractionCommand? {
+    let target = ScheduleInteractionTarget.monthDay(calendar.startOfDay(for: targetDay))
+    switch item {
+    case .task(let taskID):
+      guard let taskDescriptor = scheduleTaskDescriptor(for: taskID) else { return nil }
+      guard !taskDescriptor.taskRow.isLocalCompletedRecurringOccurrence else { return nil }
+      return ScheduleInteractionEngine.moveCommand(
+        for: item.interactionIdentity,
+        originalTimeMinutes: WorkspaceTaskScheduleEventStore.scheduledTimeMinutes(
+          for: taskDescriptor.taskRow,
+          calendar: calendar
+        ),
+        originalDurationMinutes: WorkspaceTaskScheduleEventStore.normalizedScheduledDurationMinutes(
+          for: taskDescriptor.taskRow
+        ),
+        target: target,
+        metrics: interactionMetrics
+      )
+
+    case .calendarEvent(let eventID):
+      guard let event = appState.resolvedScheduleCalendarEvent(eventID: eventID),
+        event.canEditTiming
+      else {
+        return nil
+      }
+      return ScheduleInteractionEngine.moveCommand(
+        for: item.interactionIdentity,
+        originalTimeMinutes: event.isAllDay ? nil : timeMinutes(for: event.startDate),
+        originalDurationMinutes: event.isAllDay ? nil : durationMinutes(for: event),
+        target: target,
+        metrics: interactionMetrics
+      )
+    }
+  }
+
+  private func interactionTarget(for preview: ScheduleInteractionPreview) -> ScheduleInteractionTarget? {
+    guard let day = preview.day else { return nil }
+    if let timeMinutes = preview.timeMinutes {
+      return .timed(day: day, minute: timeMinutes)
+    }
+    return .allDay(day)
   }
 
   private func calendarEvent(

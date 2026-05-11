@@ -366,6 +366,31 @@ final class ScheduleMonthModelTests: XCTestCase {
     XCTAssertNil(ScheduleMonthDragPayload.parseItem(from: "buf-project:\(UUID().uuidString)"))
   }
 
+  func testScheduleMonthDragItemMapsToInteractionIdentity() {
+    let taskID = UUID()
+
+    XCTAssertEqual(
+      ScheduleMonthDragItem.task(taskID).interactionIdentity,
+      .task(taskID)
+    )
+    XCTAssertEqual(
+      ScheduleMonthDragItem.calendarEvent("event-1").interactionIdentity,
+      .calendarEvent("event-1")
+    )
+  }
+
+  func testScreenPointMapperConvertsTopLeftLocalPointToScreenPoint() {
+    let frame = CGRect(x: 100, y: 200, width: 300, height: 500)
+
+    XCTAssertEqual(
+      ScheduleScreenPointMapper.screenPoint(
+        localLocation: CGPoint(x: 40, y: 80),
+        in: frame
+      ),
+      CGPoint(x: 140, y: 620)
+    )
+  }
+
   func testScheduleMonthDropAcceptsCustomAndTextPayloads() {
     XCTAssertEqual(
       ScheduleMonthDragPayload.dropTypeIdentifiers,

@@ -207,6 +207,51 @@ final class ScheduleDragDropInteractionLayerTests: XCTestCase {
     )
   }
 
+  func testMoveTaskCommandFromTimedTargetPreservesExistingDuration() {
+    let taskID = UUID()
+    let day = Date(timeIntervalSince1970: 0)
+
+    let command = ScheduleInteractionEngine.moveCommand(
+      for: .task(taskID),
+      originalTimeMinutes: 9 * 60,
+      originalDurationMinutes: 95,
+      target: .timed(day: day, minute: 13 * 60),
+      metrics: metrics
+    )
+
+    XCTAssertEqual(
+      command,
+      .moveTask(
+        taskID: taskID,
+        day: day,
+        timeMinutes: 13 * 60,
+        durationMinutes: 95
+      )
+    )
+  }
+
+  func testMoveCalendarCommandFromMonthTargetPreservesExistingTimedShape() {
+    let day = Date(timeIntervalSince1970: 0)
+
+    let command = ScheduleInteractionEngine.moveCommand(
+      for: .calendarEvent("event-1"),
+      originalTimeMinutes: 15 * 60,
+      originalDurationMinutes: 180,
+      target: .monthDay(day),
+      metrics: metrics
+    )
+
+    XCTAssertEqual(
+      command,
+      .moveCalendarEvent(
+        eventID: "event-1",
+        day: day,
+        timeMinutes: 15 * 60,
+        durationMinutes: 180
+      )
+    )
+  }
+
   func testPointerViewportXMapsToVisibleDayColumn() {
     let calendar = Calendar(identifier: .gregorian)
     let firstDay = Date(timeIntervalSince1970: 0)

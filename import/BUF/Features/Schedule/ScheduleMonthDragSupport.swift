@@ -5,6 +5,15 @@ import UniformTypeIdentifiers
 enum ScheduleMonthDragItem: Equatable, Sendable {
   case task(UUID)
   case calendarEvent(String)
+
+  var interactionIdentity: ScheduleInteractionItemIdentity {
+    switch self {
+    case .task(let taskID):
+      return .task(taskID)
+    case .calendarEvent(let eventID):
+      return .calendarEvent(eventID)
+    }
+  }
 }
 
 enum ScheduleMonthDragPayload {
@@ -90,6 +99,16 @@ struct ScheduleMonthDragFeedback: Equatable {
 struct ScheduleMonthDropTarget: Equatable {
   let day: Date
   let frame: CGRect
+}
+
+enum ScheduleScreenPointMapper {
+  static func screenPoint(localLocation: CGPoint, in frame: CGRect) -> CGPoint? {
+    guard !frame.isNull, frame.width >= 0, frame.height >= 0 else { return nil }
+    return CGPoint(
+      x: frame.minX + localLocation.x,
+      y: frame.maxY - localLocation.y
+    )
+  }
 }
 
 enum ScheduleMonthDropTargetResolver {

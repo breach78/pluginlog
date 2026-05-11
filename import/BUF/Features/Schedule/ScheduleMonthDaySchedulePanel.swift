@@ -947,10 +947,17 @@ struct ScheduleMonthDaySchedulePanel: View {
     isExternal: Bool,
     day: Date?
   ) {
-    let screenPoint = NSEvent.mouseLocation
+    guard
+      let screenPoint = ScheduleScreenPointMapper.screenPoint(
+        localLocation: drag.location,
+        in: panelFrameInScreen
+      )
+    else {
+      return (false, nil)
+    }
     let targetDay = externalMonthDropDay(at: screenPoint)
     let leftPanel = ScheduleMonthDayInteractionAdapter.isExternalMonthDropLocation(
-      locationXInPanel: panelX(forScreenX: screenPoint.x),
+      locationXInPanel: drag.location.x,
       translation: drag.translation
     )
     return (targetDay != nil || leftPanel, targetDay)
@@ -959,11 +966,6 @@ struct ScheduleMonthDaySchedulePanel: View {
   private func externalMonthDropDay(at screenPoint: CGPoint) -> Date? {
     guard !panelFrameInScreen.isNull else { return nil }
     return resolveExternalMonthDropDay(screenPoint)
-  }
-
-  private func panelX(forScreenX x: CGFloat) -> CGFloat {
-    guard !panelFrameInScreen.isNull else { return x }
-    return x - panelFrameInScreen.minX
   }
 
   private func updateMoveCursor(isExternalDrop: Bool, externalDropDay day: Date?) {
