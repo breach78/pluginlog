@@ -111,6 +111,10 @@ extension ScheduleBoardView {
           ))
       )
     }
+    .overlay(alignment: .topLeading) {
+      currentTimeAxisLabel
+        .allowsHitTesting(false)
+    }
     .frame(width: titleColumnWidth, height: boardHeight, alignment: .top)
   }
 
@@ -179,9 +183,20 @@ extension ScheduleBoardView {
     if isActive {
       ScheduleCurrentTimeIndicator(
         dayRange: dayRange,
-        dayColumnWidth: dayColumnWidth,
         totalWidth: dayColumnsWidth,
         totalHeight: timeGridHeight,
+        hourHeight: hourHeight,
+        calendar: calendar
+      )
+    }
+  }
+
+  @ViewBuilder
+  var currentTimeAxisLabel: some View {
+    if isActive {
+      ScheduleCurrentTimeAxisLabel(
+        headerHeight: headerHeight,
+        totalHeight: boardHeight,
         hourHeight: hourHeight,
         calendar: calendar
       )
