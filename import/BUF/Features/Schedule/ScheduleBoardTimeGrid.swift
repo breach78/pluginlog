@@ -29,21 +29,28 @@ struct ScheduleCurrentTimeIndicator: View {
           let startX = CGFloat(dayIndex) * dayColumnWidth
 
           Rectangle()
-            .fill(Color.red.opacity(0.78))
-            .frame(width: dayColumnWidth, height: 2)
-            .offset(x: startX, y: y - 1)
+            .fill(Color.red.opacity(ScheduleUITokens.Board.currentTimeLineOpacity))
+            .frame(width: dayColumnWidth, height: ScheduleUITokens.Board.currentTimeLineHeight)
+            .offset(x: startX, y: y - ScheduleUITokens.Board.currentTimeLineHeight / 2)
 
           Text(currentTimeChipLabel(from: currentDate))
-            .font(.system(size: 9, weight: .semibold, design: .monospaced))
-            .foregroundStyle(Color.red.opacity(0.9))
-            .padding(.horizontal, 4)
-            .padding(.vertical, 1.5)
+            .font(.system(
+              size: ScheduleUITokens.Board.currentTimeChipFontSize,
+              weight: .semibold,
+              design: .monospaced
+            ))
+            .foregroundStyle(Color.red.opacity(ScheduleUITokens.Board.currentTimeChipForegroundOpacity))
+            .padding(.horizontal, ScheduleUITokens.Board.currentTimeChipHorizontalPadding)
+            .padding(.vertical, ScheduleUITokens.Board.currentTimeChipVerticalPadding)
             .background(
               Capsule()
                 .fill(Color(nsColor: .windowBackgroundColor))
             )
             .fixedSize()
-            .offset(x: startX + 2, y: y - 14)
+            .offset(
+              x: startX + ScheduleUITokens.Board.currentTimeChipXOffset,
+              y: y - ScheduleUITokens.Board.currentTimeChipYOffset
+            )
         }
       }
       .frame(width: totalWidth, height: totalHeight, alignment: .topLeading)
@@ -72,18 +79,30 @@ struct SchedulePostponeAffordance: View {
 
   @State var isHovering = false
 
-  var zoneWidth: CGFloat { compact ? 24 : 26 }
-  var buttonSize: CGFloat { compact ? 18 : 20 }
-  var iconSize: CGFloat { compact ? 9 : 10 }
+  var zoneWidth: CGFloat {
+    compact
+      ? ScheduleUITokens.Board.postponeCompactZoneWidth
+      : ScheduleUITokens.Board.postponeRegularZoneWidth
+  }
+  var buttonSize: CGFloat {
+    compact
+      ? ScheduleUITokens.Board.postponeCompactButtonSize
+      : ScheduleUITokens.Board.postponeRegularButtonSize
+  }
+  var iconSize: CGFloat {
+    compact
+      ? ScheduleUITokens.Board.postponeCompactIconSize
+      : ScheduleUITokens.Board.postponeRegularIconSize
+  }
   var hoverAnimation: Animation? {
     MotionSystem.animation(for: .hoverFade, quality: motionQuality)
   }
   var shadowOpacity: Double {
     switch motionQuality {
     case .full:
-      return 0.08
+      return ScheduleUITokens.Board.postponeShadowFullOpacity
     case .reduced:
-      return 0.04
+      return ScheduleUITokens.Board.postponeShadowReducedOpacity
     case .minimal, .disabled:
       return 0
     }
@@ -95,15 +114,22 @@ struct SchedulePostponeAffordance: View {
         Button(action: onTrigger) {
           ZStack {
             Circle()
-              .fill(Color(nsColor: .windowBackgroundColor).opacity(0.96))
+              .fill(Color(nsColor: .windowBackgroundColor).opacity(
+                ScheduleUITokens.Board.postponeBackgroundOpacity
+              ))
 
             Image(systemName: "chevron.right")
               .font(.system(size: iconSize, weight: .bold))
               .foregroundStyle(.secondary)
-              .offset(x: 0.5)
+              .offset(x: ScheduleUITokens.Board.postponeIconXOffset)
           }
           .frame(width: buttonSize, height: buttonSize)
-          .shadow(color: .black.opacity(shadowOpacity), radius: 3, x: 0, y: 1)
+          .shadow(
+            color: .black.opacity(shadowOpacity),
+            radius: ScheduleUITokens.Board.postponeShadowRadius,
+            x: 0,
+            y: ScheduleUITokens.Board.postponeShadowYOffset
+          )
         }
         .buttonStyle(.plain)
         .help("하루 뒤 올데이로 미루기")

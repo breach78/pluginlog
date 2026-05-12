@@ -24,6 +24,22 @@ final class ScheduleUITokensTests: XCTestCase {
     XCTAssertEqual(ScheduleUITokens.Month.gridLineOpacity, 0.10)
   }
 
+  func testCurrentTimeAndGridTokensKeepExistingScheduleScale() {
+    XCTAssertEqual(ScheduleUITokens.Board.gridLineOpacity, 0.08)
+    XCTAssertEqual(ScheduleUITokens.Board.minorGridLineOpacity, 0.02)
+    XCTAssertEqual(ScheduleUITokens.Board.gridLineWidth, 1)
+    XCTAssertEqual(ScheduleUITokens.Board.allDayAxisBackgroundOpacity, 0.96)
+    XCTAssertEqual(ScheduleUITokens.Board.timeAxisBackgroundOpacity, 0.98)
+    XCTAssertEqual(ScheduleUITokens.Board.allDayAxisLabelFontSize, 9)
+    XCTAssertEqual(ScheduleUITokens.Board.timeAxisLabelFontSize, 10)
+    XCTAssertEqual(ScheduleUITokens.Board.currentTimeLineHeight, 2)
+    XCTAssertEqual(ScheduleUITokens.Board.currentTimeChipFontSize, 9)
+    XCTAssertEqual(ScheduleUITokens.Board.currentTimeChipHorizontalPadding, 4)
+    XCTAssertEqual(ScheduleUITokens.Board.postponeRegularZoneWidth, 26)
+    XCTAssertEqual(ScheduleUITokens.MonthDayPanel.currentTimeDotSize, 7)
+    XCTAssertEqual(ScheduleUITokens.MonthDayPanel.currentTimeDotYOffset, 3.5)
+  }
+
   func testInteractionTokensFeedPreviewPolicies() {
     XCTAssertEqual(ScheduleUITokens.Interaction.dragSourcePlaceholderOpacity, 0.34)
     XCTAssertEqual(ScheduleUITokens.Interaction.dragGhostOpacity, 0.86)

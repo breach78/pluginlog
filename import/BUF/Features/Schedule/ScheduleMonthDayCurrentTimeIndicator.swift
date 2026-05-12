@@ -18,13 +18,19 @@ struct ScheduleMonthDayCurrentTimeIndicator: View {
 
           Rectangle()
             .fill(Color.red.opacity(ScheduleUITokens.MonthDayPanel.currentTimeLineOpacity))
-            .frame(width: width, height: 2)
-            .offset(y: y - 1)
+            .frame(width: width, height: ScheduleUITokens.MonthDayPanel.currentTimeLineHeight)
+            .offset(y: y - ScheduleUITokens.MonthDayPanel.currentTimeLineHeight / 2)
 
           Circle()
             .fill(Color.red.opacity(ScheduleUITokens.MonthDayPanel.currentTimeDotOpacity))
-            .frame(width: 7, height: 7)
-            .offset(x: 1, y: y - 3.5)
+            .frame(
+              width: ScheduleUITokens.MonthDayPanel.currentTimeDotSize,
+              height: ScheduleUITokens.MonthDayPanel.currentTimeDotSize
+            )
+            .offset(
+              x: ScheduleUITokens.MonthDayPanel.currentTimeDotXOffset,
+              y: y - ScheduleUITokens.MonthDayPanel.currentTimeDotYOffset
+            )
         }
       }
       .frame(width: width, height: height, alignment: .topLeading)

@@ -63,10 +63,10 @@ extension ScheduleBoardView {
 
         HStack {
           Text("All-day")
-            .font(.system(size: 9, weight: .medium))
+            .font(.system(size: ScheduleUITokens.Board.allDayAxisLabelFontSize, weight: .medium))
             .foregroundStyle(.tertiary)
             .textCase(.uppercase)
-            .padding(.trailing, 6)
+            .padding(.trailing, ScheduleUITokens.Board.axisLabelTrailingPadding)
         }
         .frame(
           maxWidth: .infinity,
@@ -78,17 +78,23 @@ extension ScheduleBoardView {
       }
       .background(
         Rectangle()
-          .fill(Color(nsColor: .windowBackgroundColor).opacity(0.96))
+          .fill(Color(nsColor: .windowBackgroundColor).opacity(
+            ScheduleUITokens.Board.allDayAxisBackgroundOpacity
+          ))
       )
 
       VStack(spacing: 0) {
         ForEach(0..<hourCount, id: \.self) { hour in
           HStack {
             Text(hourLabel(hour))
-              .font(.system(size: 10, weight: .medium, design: .monospaced))
+              .font(.system(
+                size: ScheduleUITokens.Board.timeAxisLabelFontSize,
+                weight: .medium,
+                design: .monospaced
+              ))
               .foregroundStyle(.secondary)
-              .padding(.top, 2)
-              .padding(.trailing, 8)
+              .padding(.top, ScheduleUITokens.Board.timeAxisLabelTopPadding)
+              .padding(.trailing, ScheduleUITokens.Board.timeAxisLabelTrailingPadding)
           }
           .frame(
             maxWidth: .infinity,
@@ -100,7 +106,9 @@ extension ScheduleBoardView {
       }
       .background(
         Rectangle()
-          .fill(Color(nsColor: .windowBackgroundColor).opacity(0.98))
+          .fill(Color(nsColor: .windowBackgroundColor).opacity(
+            ScheduleUITokens.Board.timeAxisBackgroundOpacity
+          ))
       )
     }
     .frame(width: titleColumnWidth, height: boardHeight, alignment: .top)
@@ -138,27 +146,27 @@ extension ScheduleBoardView {
             .offset(x: CGFloat(index) * dayColumnWidth)
 
           Rectangle()
-            .fill(Color.primary.opacity(0.08))
-            .frame(width: 1, height: timeGridHeight)
+            .fill(Color.primary.opacity(ScheduleUITokens.Board.gridLineOpacity))
+            .frame(width: ScheduleUITokens.Board.gridLineWidth, height: timeGridHeight)
             .offset(x: CGFloat(index) * dayColumnWidth)
         }
 
         Rectangle()
-          .fill(Color.primary.opacity(0.08))
-          .frame(width: 1, height: timeGridHeight)
+          .fill(Color.primary.opacity(ScheduleUITokens.Board.gridLineOpacity))
+          .frame(width: ScheduleUITokens.Board.gridLineWidth, height: timeGridHeight)
           .offset(x: dayColumnsWidth - 1)
 
         ForEach(0...hourCount, id: \.self) { hour in
           Rectangle()
-            .fill(Color.primary.opacity(hour == 0 ? 0 : 0.08))
-            .frame(width: dayColumnsWidth, height: 1)
+            .fill(Color.primary.opacity(hour == 0 ? 0 : ScheduleUITokens.Board.gridLineOpacity))
+            .frame(width: dayColumnsWidth, height: ScheduleUITokens.Board.gridLineWidth)
             .offset(y: CGFloat(hour) * hourHeight)
         }
 
         ForEach(0..<hourCount, id: \.self) { hour in
           Rectangle()
-            .fill(Color.primary.opacity(0.02))
-            .frame(width: dayColumnsWidth, height: 1)
+            .fill(Color.primary.opacity(ScheduleUITokens.Board.minorGridLineOpacity))
+            .frame(width: dayColumnsWidth, height: ScheduleUITokens.Board.gridLineWidth)
             .offset(y: CGFloat(hour) * hourHeight + hourHeight / 2)
         }
       }

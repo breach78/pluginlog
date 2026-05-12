@@ -174,16 +174,16 @@ extension ScheduleBoardView {
         .frame(height: dateHeaderHeight)
         .overlay(alignment: .bottom) {
           Rectangle()
-            .fill(Color.primary.opacity(0.08))
-            .frame(height: 1)
+            .fill(Color.primary.opacity(ScheduleUITokens.Board.gridLineOpacity))
+            .frame(height: ScheduleUITokens.Board.gridLineWidth)
         }
 
       HStack {
         Text("All-day")
-          .font(.system(size: 9, weight: .medium))
+          .font(.system(size: ScheduleUITokens.Board.allDayAxisLabelFontSize, weight: .medium))
           .foregroundStyle(.tertiary)
           .textCase(.uppercase)
-          .padding(.trailing, 6)
+          .padding(.trailing, ScheduleUITokens.Board.axisLabelTrailingPadding)
       }
       .frame(
         maxWidth: .infinity,
@@ -200,8 +200,8 @@ extension ScheduleBoardView {
     )
     .overlay(alignment: .trailing) {
       Rectangle()
-        .fill(Color.primary.opacity(0.08))
-        .frame(width: 1)
+        .fill(Color.primary.opacity(ScheduleUITokens.Board.gridLineOpacity))
+        .frame(width: ScheduleUITokens.Board.gridLineWidth)
     }
     .overlay(alignment: .bottom) {
       allDayRailResizeDivider()
@@ -220,15 +220,15 @@ extension ScheduleBoardView {
             .background(dayHeaderBackground(day: day))
             .overlay(alignment: .trailing) {
               Rectangle()
-                .fill(Color.primary.opacity(0.08))
-                .frame(width: 1)
+                .fill(Color.primary.opacity(ScheduleUITokens.Board.gridLineOpacity))
+                .frame(width: ScheduleUITokens.Board.gridLineWidth)
             }
         }
       }
       .overlay(alignment: .bottom) {
         Rectangle()
-          .fill(Color.primary.opacity(0.08))
-          .frame(height: 1)
+          .fill(Color.primary.opacity(ScheduleUITokens.Board.gridLineOpacity))
+          .frame(height: ScheduleUITokens.Board.gridLineWidth)
       }
 
       allDayRail(allDayEntries, backgroundEntries: backgroundAllDayEntries)
