@@ -9,6 +9,7 @@ struct LinkedTextEditor: NSViewRepresentable {
   let font: NSFont
   let vaultRootURL: URL?
   let allowsNewlines: Bool
+  var isEditable = true
   let lineHeightMultiple: CGFloat
   var markdownPresentationMode: LinkedTextEditorMarkdownPresentationMode = .source
   var focusRequestID = 0
@@ -29,7 +30,7 @@ struct LinkedTextEditor: NSViewRepresentable {
     let textView = LinkedTextView()
     textView.delegate = context.coordinator
     textView.linkedCoordinator = context.coordinator
-    textView.isEditable = true
+    textView.isEditable = isEditable
     textView.isSelectable = true
     textView.drawsBackground = false
     textView.textContainerInset = NSSize(width: 0, height: 2)
@@ -61,6 +62,9 @@ struct LinkedTextEditor: NSViewRepresentable {
     context.coordinator.markdownPresentationMode = markdownPresentationMode
     guard let textView = scrollView.documentView as? NSTextView else { return }
     let styleChanged = context.coordinator.updateFontIfNeeded(on: textView)
+    if textView.isEditable != isEditable {
+      textView.isEditable = isEditable
+    }
     context.coordinator.configureMailMessageDropRegistration(on: textView)
     if textView.string != text {
       context.coordinator.isApplyingText = true
@@ -308,6 +312,10 @@ struct LinkedTextEditor: NSViewRepresentable {
     }
 
     func applyAttributes(to textView: NSTextView) {
+      guard !shouldDeferAttributeRefresh(for: textView) else {
+        scheduleAttributeRefresh(for: textView)
+        return
+      }
       guard let storage = textView.textStorage else { return }
       attributeRefreshTask?.cancel()
       attributeRefreshTask = nil
@@ -348,7 +356,9 @@ struct LinkedTextEditor: NSViewRepresentable {
       let usedRect = textView.layoutManager?.usedRect(for: textContainer) ?? .zero
       let contentHeight = ceil(usedRect.height + textView.textContainerInset.height * 2 + 6)
       if abs(parent.measuredHeight - contentHeight) > 1 {
-        parent.measuredHeight = contentHeight
+        MotionTransaction.withoutAnimation {
+          parent.measuredHeight = contentHeight
+        }
       }
     }
 
@@ -359,14 +369,7 @@ struct LinkedTextEditor: NSViewRepresentable {
     }
 
     func scheduleAttributeRefresh(for textView: NSTextView) {
-      let hasMarkdownPreviewCandidates =
-        parent.markdownPresentationMode == .livePreview
-        && hasMarkdownPresentationCandidates(in: textView.string)
-      guard
-        LinkedTextEditorLinkPolicy.hasLinkCandidates(in: textView.string)
-          || hasMarkdownPreviewCandidates
-          || hasDecoratedAttributes
-      else {
+      guard needsAttributeRefresh(for: textView.string) else {
         attributeRefreshTask?.cancel()
         attributeRefreshTask = nil
         return
@@ -376,6 +379,10 @@ struct LinkedTextEditor: NSViewRepresentable {
       attributeRefreshTask = Task { @MainActor [weak self, weak textView] in
         try? await Task.sleep(nanoseconds: Self.attributeRefreshDelayNanoseconds)
         guard !Task.isCancelled, let self, let textView else { return }
+        if self.shouldDeferAttributeRefresh(for: textView) {
+          self.scheduleAttributeRefresh(for: textView)
+          return
+        }
         self.applyAttributes(to: textView)
       }
     }
@@ -546,6 +553,19 @@ struct LinkedTextEditor: NSViewRepresentable {
     private func hasMarkdownPresentationCandidates(in text: String) -> Bool {
       LinkedTextEditorMarkdownPreviewPolicy.hasPreviewCandidates(in: text)
         || LinkedTextEditorMarkdownPreviewPolicy.hasListCandidates(in: text)
+    }
+
+    private func needsAttributeRefresh(for text: String) -> Bool {
+      LinkedTextEditorLinkPolicy.hasLinkCandidates(in: text)
+        || (
+          parent.markdownPresentationMode == .livePreview
+            && hasMarkdownPresentationCandidates(in: text)
+        )
+        || hasDecoratedAttributes
+    }
+
+    private func shouldDeferAttributeRefresh(for textView: NSTextView) -> Bool {
+      textView.hasMarkedText()
     }
 
     private func resolvedURL(from link: Any) -> URL? {

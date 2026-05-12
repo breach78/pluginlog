@@ -427,6 +427,42 @@ final class LinkedTextEditorPolicyTests: XCTestCase {
     XCTAssertGreaterThan(measuredHeight, 0)
   }
 
+  @MainActor
+  func testAttributeRefreshDefersWhileMarkedTextIsActive() async throws {
+    var editorText = "**bold**. "
+    var measuredHeight: CGFloat = 0
+    let editor = LinkedTextEditor(
+      text: Binding(get: { editorText }, set: { editorText = $0 }),
+      measuredHeight: Binding(get: { measuredHeight }, set: { measuredHeight = $0 }),
+      font: .systemFont(ofSize: 14),
+      vaultRootURL: nil,
+      allowsNewlines: true,
+      lineHeightMultiple: 1,
+      markdownPresentationMode: .livePreview
+    )
+    let coordinator = LinkedTextEditor.Coordinator(editor)
+    let textView = MarkedTextView()
+    textView.string = editorText
+    coordinator.textView = textView
+
+    coordinator.scheduleAttributeRefresh(for: textView)
+    try await Task.sleep(nanoseconds: 240_000_000)
+
+    let markedFont = textView.textStorage?.attribute(.font, at: 0, effectiveRange: nil) as? NSFont
+    if let markedFont {
+      XCTAssertNotEqual(markedFont.pointSize, 0.1, accuracy: 0.001)
+    }
+
+    textView.reportsMarkedText = false
+    coordinator.scheduleAttributeRefresh(for: textView)
+    try await Task.sleep(nanoseconds: 240_000_000)
+
+    let previewFont = try XCTUnwrap(
+      textView.textStorage?.attribute(.font, at: 0, effectiveRange: nil) as? NSFont
+    )
+    XCTAssertEqual(previewFont.pointSize, 0.1, accuracy: 0.001)
+  }
+
   func testMarkdownPreviewFindsListParagraphPrefixesForHangingIndent() {
     let text = "   - bullet wraps\nplain\n  1. ordered wraps\n100. ordered"
     let paragraphs = LinkedTextEditorMarkdownPreviewPolicy.listParagraphs(in: text)
@@ -461,5 +497,13 @@ final class LinkedTextEditorPolicyTests: XCTestCase {
       affectedRange: NSRange(location: (marker as NSString).length, length: 0),
       replacementString: " "
     )?.text
+  }
+}
+
+private final class MarkedTextView: NSTextView {
+  var reportsMarkedText = true
+
+  override func hasMarkedText() -> Bool {
+    reportsMarkedText
   }
 }

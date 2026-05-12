@@ -99,11 +99,9 @@ enum ScheduleUITokens {
     static let sectionTitleFontSize: CGFloat = Typography.panelSectionTitleFontSize
     static let statusFontSize: CGFloat = Typography.panelStatusFontSize
     static let titleFieldFontSize: CGFloat = 24
-    static let noteFontSize: CGFloat = 17
     static let bodyFontSize: CGFloat = Typography.panelBodyFontSize
     static let compactControlHeight: CGFloat = 32
     static let compactControlLabelWidth: CGFloat = 34
-    static let noteMinHeight: CGFloat = 170
     static let contentHorizontalPadding: CGFloat = 28
     static let contentBottomPadding: CGFloat = 32
     static let headerLeadingPadding: CGFloat = 28
@@ -112,7 +110,6 @@ enum ScheduleUITokens {
     static let headerBottomPadding: CGFloat = 22
     static let titleFieldHorizontalPadding: CGFloat = 16
     static let titleFieldVerticalPadding: CGFloat = 14
-    static let noteFieldPadding: CGFloat = 12
     static let dateColumnWidth: CGFloat = 260
     static let datePickerPadding: CGFloat = 12
     static let datePickerWidth: CGFloat = 284

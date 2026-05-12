@@ -2,6 +2,25 @@ import XCTest
 @testable import BrainUnfog
 
 final class ScheduleCalendarEventEditPanelTests: XCTestCase {
+  func testEventNoteEditorUsesSharedLinkedEditorBehavior() throws {
+    let scheduleSource = try scheduleCalendarEventEditPanelSource()
+    let taskEditorSource = try timelineTaskEditPopoverSource()
+
+    XCTAssertTrue(scheduleSource.contains("TaskEditNoteEditor("))
+    XCTAssertTrue(scheduleSource.contains("measuredHeight: $noteHeight"))
+    XCTAssertTrue(scheduleSource.contains("isEditable: event.canEditTiming"))
+    XCTAssertFalse(scheduleSource.contains("ScheduleUITokens.Panel.noteFontSize"))
+    XCTAssertFalse(scheduleSource.contains("ScheduleUITokens.Panel.noteMinHeight"))
+    XCTAssertFalse(scheduleSource.contains("TextEditor(text: $noteText)"))
+
+    XCTAssertTrue(taskEditorSource.contains("struct TaskEditNoteEditor: View"))
+    XCTAssertTrue(taskEditorSource.contains("LinkedTextEditor("))
+    XCTAssertTrue(taskEditorSource.contains("font: TaskEditTypography.noteNSFont"))
+    XCTAssertTrue(taskEditorSource.contains("TaskEditTypography.noteMinimumHeight"))
+    XCTAssertTrue(taskEditorSource.contains("markdownPresentationMode: .livePreview"))
+    XCTAssertTrue(taskEditorSource.contains(".taskEditFieldBackground(cornerRadius: 4)"))
+  }
+
   @MainActor
   func testAllDayMultiDayEventUsesVisibleEndDayInEditFields() throws {
     let calendar = Calendar.autoupdatingCurrent
@@ -80,5 +99,27 @@ final class ScheduleCalendarEventEditPanelTests: XCTestCase {
       canEditTiming: true,
       editTimingRestrictionReason: nil
     )
+  }
+
+  private func scheduleCalendarEventEditPanelSource() throws -> String {
+    let root = URL(fileURLWithPath: #filePath)
+      .deletingLastPathComponent()
+      .deletingLastPathComponent()
+      .deletingLastPathComponent()
+    let url = root.appendingPathComponent(
+      "import/BUF/Features/Schedule/ScheduleCalendarEventEditPanel.swift"
+    )
+    return try String(contentsOf: url, encoding: .utf8)
+  }
+
+  private func timelineTaskEditPopoverSource() throws -> String {
+    let root = URL(fileURLWithPath: #filePath)
+      .deletingLastPathComponent()
+      .deletingLastPathComponent()
+      .deletingLastPathComponent()
+    let url = root.appendingPathComponent(
+      "import/BUF/Features/Timeline/TimelineTaskEditPopover.swift"
+    )
+    return try String(contentsOf: url, encoding: .utf8)
   }
 }

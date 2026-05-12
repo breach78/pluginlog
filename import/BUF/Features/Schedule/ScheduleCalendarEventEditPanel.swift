@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 struct WorkspaceCalendarEventEditPanelTarget: Equatable, Sendable {
@@ -55,6 +56,7 @@ struct ScheduleCalendarEventEditPanelContent: View {
   @State private var hasTime: Bool
   @State private var selectedStartTime: Date
   @State private var selectedEndTime: Date
+  @State private var noteHeight: CGFloat = TaskEditTypography.noteMinimumHeight
   @State private var recurringScope: ScheduleCalendarRecurringEditScope = .thisEvent
   @State private var lastCommittedFields: ScheduleCalendarEventEditFields
   @State private var isSaving = false
@@ -223,18 +225,19 @@ struct ScheduleCalendarEventEditPanelContent: View {
   }
 
   private var noteSection: some View {
-    VStack(alignment: .leading, spacing: 8) {
+    VStack(alignment: .leading, spacing: 6) {
       Text("내용")
-        .font(.system(size: ScheduleUITokens.Panel.sectionTitleFontSize, weight: .semibold))
+        .font(TaskEditTypography.labelFont)
         .foregroundStyle(.secondary)
 
-      TextEditor(text: $noteText)
-        .font(.system(size: ScheduleUITokens.Panel.noteFontSize))
-        .scrollContentBackground(.hidden)
-        .frame(minHeight: ScheduleUITokens.Panel.noteMinHeight)
-        .padding(.horizontal, ScheduleUITokens.Panel.noteFieldPadding)
-        .padding(.vertical, ScheduleUITokens.Panel.noteFieldPadding)
-        .background(fieldBackground)
+      TaskEditNoteEditor(
+        text: $noteText,
+        measuredHeight: $noteHeight,
+        vaultRootURL: nil,
+        isEditable: event.canEditTiming,
+        allowsMailMessageDrops: event.canEditTiming,
+        onEscape: closeEditor
+      )
     }
   }
 

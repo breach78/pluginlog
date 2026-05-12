@@ -324,21 +324,13 @@ struct TimelineTaskEditPopoverContent: View {
             .font(TaskEditTypography.labelFont)
             .foregroundStyle(.secondary)
         }
-        LinkedTextEditor(
+        TaskEditNoteEditor(
           text: $noteText,
           measuredHeight: $noteHeight,
-          font: TaskEditTypography.noteNSFont,
           vaultRootURL: vaultRootURL,
-          allowsNewlines: true,
-          lineHeightMultiple: 1.1,
-          markdownPresentationMode: .livePreview,
           focusRequestID: initialFocus == .note ? 1 : 0,
-          allowsMailMessageDrops: true,
           onEscape: closeEditor
         )
-        .frame(minHeight: TaskEditTypography.noteMinimumHeight)
-        .frame(height: max(TaskEditTypography.noteMinimumHeight, noteHeight))
-        .taskEditFieldBackground(cornerRadius: 4)
       }
 
       attachmentSection
@@ -1062,6 +1054,36 @@ enum TaskEditTypography {
 
   static var noteNSFont: NSFont {
     AppInputTypography.nsFont(size: bodySize)
+  }
+}
+
+struct TaskEditNoteEditor: View {
+  @Binding var text: String
+  @Binding var measuredHeight: CGFloat
+
+  let vaultRootURL: URL?
+  var isEditable = true
+  var focusRequestID = 0
+  var allowsMailMessageDrops = true
+  var onEscape: (() -> Void)?
+
+  var body: some View {
+    LinkedTextEditor(
+      text: $text,
+      measuredHeight: $measuredHeight,
+      font: TaskEditTypography.noteNSFont,
+      vaultRootURL: vaultRootURL,
+      allowsNewlines: true,
+      isEditable: isEditable,
+      lineHeightMultiple: 1.1,
+      markdownPresentationMode: .livePreview,
+      focusRequestID: focusRequestID,
+      allowsMailMessageDrops: allowsMailMessageDrops,
+      onEscape: onEscape
+    )
+    .frame(minHeight: TaskEditTypography.noteMinimumHeight)
+    .frame(height: max(TaskEditTypography.noteMinimumHeight, measuredHeight))
+    .taskEditFieldBackground(cornerRadius: 4)
   }
 }
 
