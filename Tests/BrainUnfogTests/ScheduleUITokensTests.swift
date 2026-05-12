@@ -17,6 +17,14 @@ final class ScheduleUITokensTests: XCTestCase {
     XCTAssertEqual(ScheduleUITokens.TimeScale.hourHeight, 46.8, accuracy: 0.001)
     XCTAssertEqual(ScheduleUITokens.Board.hourHeight, ScheduleUITokens.TimeScale.hourHeight)
     XCTAssertEqual(ScheduleUITokens.MonthDayPanel.hourHeight, ScheduleUITokens.TimeScale.hourHeight)
+    XCTAssertEqual(
+      ScheduleUITokens.MonthDayPanel.timeAxisLabelTopPadding,
+      ScheduleUITokens.Board.timeAxisLabelTopPadding
+    )
+    XCTAssertEqual(
+      ScheduleUITokens.MonthDayPanel.timeAxisLabelTrailingPadding,
+      ScheduleUITokens.Board.timeAxisLabelTrailingPadding
+    )
   }
 
   func testMonthTokensKeepExistingCalendarLayoutScale() {

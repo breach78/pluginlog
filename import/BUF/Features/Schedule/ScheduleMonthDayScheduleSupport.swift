@@ -44,11 +44,45 @@ struct ScheduleMonthDayTimedItemLayout: Identifiable {
   }
 
   var height: CGFloat {
-    max(28, CGFloat(durationMinutes) / 60 * hourHeight)
+    ScheduleMonthDayTimedBlockMetrics.height(
+      durationMinutes: durationMinutes,
+      hourHeight: hourHeight
+    )
   }
 
   var width: CGFloat {
     max(42, containerWidth / CGFloat(max(1, columnCount)) - 12)
+  }
+}
+
+enum ScheduleMonthDayTimedBlockMetrics {
+  static func height(durationMinutes: Int, hourHeight: CGFloat) -> CGFloat {
+    max(hourHeight / 4, CGFloat(durationMinutes) / 60 * hourHeight)
+  }
+
+  static func contentVerticalPadding(forBlockHeight blockHeight: CGFloat) -> CGFloat {
+    let defaultPadding = ScheduleUITokens.DayPanelRow.verticalPadding
+    let markerFootprint =
+      ScheduleUITokens.DayPanelRow.taskMarkerSize
+      + ScheduleUITokens.DayPanelRow.markerTopPadding
+    let fittedPadding = (blockHeight - markerFootprint) / 2
+    return max(2, min(defaultPadding, fittedPadding))
+  }
+
+  static func markerHitHeight(forBlockHeight blockHeight: CGFloat) -> CGFloat {
+    let padding = contentVerticalPadding(forBlockHeight: blockHeight)
+    let availableHeight =
+      blockHeight
+      - ScheduleUITokens.DayPanelRow.markerTopPadding
+      - padding * 2
+    return min(
+      ScheduleUITokens.DayPanelRow.markerHitHeight,
+      max(ScheduleUITokens.DayPanelRow.taskMarkerSize, availableHeight)
+    )
+  }
+
+  static func titleLineLimit(forBlockHeight blockHeight: CGFloat) -> Int {
+    blockHeight < ScheduleUITokens.DayPanelRow.timedSubtitleMinHeight ? 1 : 2
   }
 }
 

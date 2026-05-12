@@ -277,6 +277,8 @@ enum ScheduleUITokens {
     static let hiddenIndicatorWidth: CGFloat = 18
     static let hiddenIndicatorHeight: CGFloat = 12
     static let timeAxisFontSize: CGFloat = 10
+    static let timeAxisLabelTopPadding: CGFloat = Board.timeAxisLabelTopPadding
+    static let timeAxisLabelTrailingPadding: CGFloat = Board.timeAxisLabelTrailingPadding
     static let majorGridLineOpacity = 0.45
     static let minorGridLineOpacity = 0.25
     static let currentTimeLineOpacity = 0.78

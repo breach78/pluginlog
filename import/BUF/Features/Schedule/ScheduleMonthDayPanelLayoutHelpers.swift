@@ -36,7 +36,10 @@ extension ScheduleMonthDaySchedulePanel {
   }
 
   func height(forDuration duration: Int) -> CGFloat {
-    max(28, CGFloat(duration) / 60 * Self.hourHeight)
+    ScheduleMonthDayTimedBlockMetrics.height(
+      durationMinutes: duration,
+      hourHeight: Self.hourHeight
+    )
   }
 
   func itemColor(_ item: ScheduleMonthItem) -> Color {

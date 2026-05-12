@@ -432,10 +432,13 @@ struct ScheduleMonthDaySchedulePanel: View {
           .font(.system(size: ScheduleUITokens.MonthDayPanel.timeAxisFontSize))
           .foregroundStyle(.secondary)
           .frame(width: Self.timeGutterWidth - 10, alignment: .trailing)
-          .offset(y: hour == 0 ? 2 : CGFloat(hour) * Self.hourHeight - 7)
+          .offset(
+            y: CGFloat(hour) * Self.hourHeight
+              + ScheduleUITokens.MonthDayPanel.timeAxisLabelTopPadding
+          )
       }
     }
-    .padding(.trailing, 7)
+    .padding(.trailing, ScheduleUITokens.MonthDayPanel.timeAxisLabelTrailingPadding)
   }
 
   var timedGridLines: some View {

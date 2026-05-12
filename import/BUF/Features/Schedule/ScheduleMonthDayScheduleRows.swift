@@ -138,7 +138,7 @@ struct ScheduleMonthDayTimedItemBlock: View {
             Text(layout.item.title)
               .font(.system(size: ScheduleUITokens.DayPanelRow.titleFontSize, weight: .semibold))
               .foregroundStyle(layout.item.isCompleted ? .secondary : .primary)
-              .lineLimit(2)
+              .lineLimit(ScheduleMonthDayTimedBlockMetrics.titleLineLimit(forBlockHeight: layout.height))
 
             if let subtitle = layout.item.subtitle,
               !subtitle.isEmpty,
@@ -164,7 +164,10 @@ struct ScheduleMonthDayTimedItemBlock: View {
         }
       }
       .padding(.horizontal, ScheduleUITokens.DayPanelRow.horizontalPadding)
-      .padding(.vertical, ScheduleUITokens.DayPanelRow.verticalPadding)
+      .padding(
+        .vertical,
+        ScheduleMonthDayTimedBlockMetrics.contentVerticalPadding(forBlockHeight: layout.height)
+      )
 
       if canResize && allowsStartResize {
         resizeHandle(edge: .start)
@@ -178,6 +181,7 @@ struct ScheduleMonthDayTimedItemBlock: View {
     }
     .contentShape(RoundedRectangle(cornerRadius: ScheduleUITokens.DayPanelRow.timedCornerRadius, style: .continuous))
     .opacity(isInteracting ? ScheduleUITokens.DayPanelRow.interactingOpacity : baseOpacity)
+    .clipped()
     .contextMenu {
       ScheduleMonthDayDeleteContextMenu(
         item: layout.item,
@@ -239,7 +243,7 @@ struct ScheduleMonthDayTimedItemBlock: View {
       ScheduleMonthDayTaskMarker(color: color, isCompleted: layout.item.isCompleted)
       .frame(
         width: ScheduleUITokens.DayPanelRow.markerHitWidth,
-        height: ScheduleUITokens.DayPanelRow.markerHitHeight
+        height: ScheduleMonthDayTimedBlockMetrics.markerHitHeight(forBlockHeight: layout.height)
       )
       .contentShape(Rectangle())
       .highPriorityGesture(

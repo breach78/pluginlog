@@ -88,6 +88,49 @@ final class ScheduleMonthModelTests: XCTestCase {
     XCTAssertEqual(ScheduleMonthOverflowPolicy.visibleItemLimit(cellHeight: 48), 1)
   }
 
+  func testDayPanelTimedBlockHeightTracksActualDuration() throws {
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+    let start = try XCTUnwrap(
+      calendar.date(from: DateComponents(year: 2026, month: 5, day: 12, hour: 18))
+    )
+    let end = try XCTUnwrap(calendar.date(byAdding: .minute, value: 30, to: start))
+    let item = makeMonthItem(
+      id: "laundry",
+      source: .workspaceTask(taskID: UUID(), projectID: UUID()),
+      startDate: start,
+      endDate: end,
+      isAllDay: false
+    )
+    let hourHeight = ScheduleUITokens.MonthDayPanel.hourHeight
+    let layout = ScheduleMonthDayTimedItemLayout(
+      item: item,
+      startMinute: 18 * 60,
+      durationMinutes: 30,
+      sourceStartDay: calendar.startOfDay(for: start),
+      sourceStartMinute: 18 * 60,
+      sourceDurationMinutes: 30,
+      isFirstSegment: true,
+      isLastSegment: true,
+      column: 0,
+      columnCount: 1,
+      containerWidth: 320,
+      hourHeight: hourHeight
+    )
+
+    XCTAssertEqual(layout.y, 18 * hourHeight, accuracy: 0.001)
+    XCTAssertEqual(layout.height, hourHeight / 2, accuracy: 0.001)
+    let markerFootprint =
+      ScheduleMonthDayTimedBlockMetrics.contentVerticalPadding(forBlockHeight: layout.height) * 2
+      + ScheduleUITokens.DayPanelRow.markerTopPadding
+      + ScheduleMonthDayTimedBlockMetrics.markerHitHeight(forBlockHeight: layout.height)
+    XCTAssertLessThanOrEqual(markerFootprint, layout.height + 0.001)
+    XCTAssertEqual(
+      ScheduleMonthDayTimedBlockMetrics.titleLineLimit(forBlockHeight: layout.height),
+      1
+    )
+  }
+
   func testAllDayCalendarEventsBecomeConnectedWeekSegments() throws {
     var calendar = Calendar(identifier: .gregorian)
     calendar.timeZone = TimeZone(secondsFromGMT: 0)!
