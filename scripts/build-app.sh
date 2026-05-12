@@ -43,7 +43,11 @@ while IFS= read -r -d '' resource_bundle_path; do
   cp -R "$resource_bundle_path" "$RESOURCES_DIR/$(basename "$resource_bundle_path")"
 done < <(find "$BIN_DIR" -maxdepth 1 -type d -name '*_BrainUnfog.bundle' -print0)
 
-if [[ -d "$ICONSET_PATH" ]] && iconutil -c icns "$ICONSET_PATH" -o "$ICON_PATH" 2>/dev/null; then
+if [[ -d "$ICONSET_PATH" ]]; then
+  TMP_ICONSET="$(mktemp -d "${TMPDIR:-/tmp}/brain-unfog-iconset.XXXXXX")/AppIcon.iconset"
+  mkdir -p "$TMP_ICONSET"
+  cp "$ICONSET_PATH"/*.png "$TMP_ICONSET/"
+  iconutil -c icns "$TMP_ICONSET" -o "$ICON_PATH"
   /usr/libexec/PlistBuddy -c "Set :CFBundleIconFile AppIcon" "$CONTENTS_DIR/Info.plist" 2>/dev/null \
     || /usr/libexec/PlistBuddy -c "Add :CFBundleIconFile string AppIcon" "$CONTENTS_DIR/Info.plist"
 fi
