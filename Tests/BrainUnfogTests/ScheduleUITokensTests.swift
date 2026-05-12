@@ -54,4 +54,61 @@ final class ScheduleUITokensTests: XCTestCase {
       ScheduleUITokens.Interaction.resizeTargetBlockOpacity
     )
   }
+
+  func testScheduleItemTokensCentralizeSharedRenderingMetrics() {
+    XCTAssertEqual(ScheduleUITokens.ScheduleItem.titleFontSize, 11.5)
+    XCTAssertEqual(ScheduleUITokens.ScheduleItem.supplementalFontSize, 9.2)
+    XCTAssertEqual(ScheduleUITokens.ScheduleItem.boardFontScale, 1.265)
+    XCTAssertEqual(
+      ScheduleItemVisualStyle.secondaryTextOpacityMultiplier,
+      ScheduleUITokens.ScheduleItem.secondaryTextOpacityMultiplier
+    )
+
+    XCTAssertEqual(
+      ScheduleUITokens.ScheduleItem.monthTitleFontSize,
+      ScheduleUITokens.Typography.scheduleItemTitleFontSize
+    )
+    XCTAssertEqual(
+      ScheduleUITokens.ScheduleItem.dayPanelTitleFontSize,
+      ScheduleUITokens.Typography.scheduleItemTitleFontSize
+    )
+    XCTAssertEqual(
+      ScheduleUITokens.ScheduleItem.dayPanelSupplementalFontSize,
+      ScheduleUITokens.Typography.scheduleItemSupplementalFontSize
+    )
+    XCTAssertEqual(
+      ScheduleUITokens.ScheduleItem.colorStripeWidth,
+      ScheduleUITokens.EventBlock.colorStripeWidth
+    )
+    XCTAssertEqual(
+      ScheduleUITokens.ScheduleItem.completedOpacity,
+      ScheduleUITokens.Opacity.completedScheduleItem
+    )
+  }
+
+  func testMonthAndDayPanelRowTokensKeepExistingItemLayoutScale() {
+    XCTAssertEqual(ScheduleUITokens.MonthCell.itemRowHeight, ScheduleUITokens.Month.itemRowHeight)
+    XCTAssertEqual(ScheduleMonthLayoutMetrics.itemRowHeight, ScheduleUITokens.MonthCell.itemRowHeight)
+    XCTAssertEqual(ScheduleUITokens.MonthCell.markerControlWidth, 16)
+    XCTAssertEqual(ScheduleUITokens.MonthCell.taskMarkerSize, 10)
+    XCTAssertEqual(ScheduleUITokens.MonthCell.calendarStripeWidth, ScheduleUITokens.EventBlock.colorStripeWidth)
+    XCTAssertEqual(ScheduleUITokens.MonthCell.timedCalendarStripeHeight, 14)
+
+    XCTAssertEqual(ScheduleUITokens.DayPanelRow.allDayRowHeight, 24)
+    XCTAssertEqual(ScheduleUITokens.DayPanelRow.markerColumnWidth, 26)
+    XCTAssertEqual(ScheduleUITokens.DayPanelRow.taskMarkerSize, ScheduleUITokens.Icon.scheduleItemMarkerSize)
+    XCTAssertEqual(ScheduleUITokens.DayPanelRow.colorStripeWidth, ScheduleUITokens.EventBlock.colorStripeWidth)
+    XCTAssertEqual(ScheduleUITokens.DayPanelRow.interactingOpacity, ScheduleUITokens.Opacity.interactingScheduleItem)
+  }
+
+  func testPanelAndChromeTokensKeepExistingControlScale() {
+    XCTAssertEqual(ScheduleUITokens.Panel.headerTitleFontSize, 22)
+    XCTAssertEqual(ScheduleUITokens.Panel.closeButtonSize, 34)
+    XCTAssertEqual(ScheduleUITokens.Panel.sectionTitleFontSize, 14)
+    XCTAssertEqual(ScheduleUITokens.Panel.compactControlHeight, 32)
+    XCTAssertEqual(ScheduleUITokens.Panel.quickAddWidth, 260)
+    XCTAssertEqual(ScheduleUITokens.Chrome.calendarMenuHeight, 24)
+    XCTAssertEqual(ScheduleUITokens.Chrome.calendarIconFontSize, 15)
+    XCTAssertEqual(ScheduleUITokens.Chrome.calendarSwatchSize, 6)
+  }
 }
