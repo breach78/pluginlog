@@ -262,7 +262,8 @@ struct TimelineProjectListContent: View {
     } else {
       let rows = visibleTaskRows
       let lastTaskID = rows.last?.task.id
-      LazyVStack(alignment: .leading, spacing: 0) {
+      let moveTargets = actions.moveOptions().filter { $0.id != snapshot.projectID }
+      VStack(alignment: .leading, spacing: 0) {
         if session.draftAnchor == .beginning {
           draftRow(anchor: .beginning)
         }
@@ -271,7 +272,7 @@ struct TimelineProjectListContent: View {
           let task = row.task
           dropLine(for: task, placement: .before)
           VStack(alignment: .leading, spacing: 0) {
-            taskRow(task)
+            taskRow(task, moveTargets: moveTargets)
               .opacity(session.draggingTaskID == task.id || movingTaskIDs.contains(task.id) ? 0.42 : 1)
               .onDrag {
                 updateSession { session in
@@ -336,7 +337,10 @@ struct TimelineProjectListContent: View {
     }
   }
 
-  private func taskRow(_ task: TimelineProjectListWindowSnapshot.Task) -> some View {
+  private func taskRow(
+    _ task: TimelineProjectListWindowSnapshot.Task,
+    moveTargets: [TimelineProjectMoveOption]
+  ) -> some View {
     HStack(alignment: .top, spacing: 10) {
       Button {
         cancelInlineEditing()
@@ -375,7 +379,7 @@ struct TimelineProjectListContent: View {
         cancelInlineEditing()
         openTask(task)
       }
-      moveTaskMenu(for: task)
+      moveTaskMenu(for: task, targets: moveTargets)
       Divider()
       Button("삭제", role: .destructive) {
         deleteTask(task.id)
@@ -386,9 +390,9 @@ struct TimelineProjectListContent: View {
 
   @ViewBuilder
   private func moveTaskMenu(
-    for task: TimelineProjectListWindowSnapshot.Task
+    for task: TimelineProjectListWindowSnapshot.Task,
+    targets: [TimelineProjectMoveOption]
   ) -> some View {
-    let targets = actions.moveOptions().filter { $0.id != snapshot.projectID }
     if !targets.isEmpty {
       Menu("이동") {
         ForEach(targets) { target in

@@ -569,8 +569,11 @@ enum AppOwnedRetainedTaskCommandService {
     reminderProjectProvider: ReminderProjectProvider
   ) async throws -> RetainedTaskDeletionResult {
     let task = try await store.taskReference(projectID: projectID, taskID: taskID)
-    guard try reminderProjectProvider.removeTaskReminder(for: reminderReference(task)) else {
-      throw RetainedTaskCommandError.reminderOwnerUnresolved(taskID)
+    let didRemoveReminder = try reminderProjectProvider.removeTaskReminder(for: reminderReference(task))
+    if !didRemoveReminder {
+      AppLogger.sync.info(
+        "deleteTask continuing after missing reminder for task \(taskID.uuidString, privacy: .public)"
+      )
     }
     try await store.deleteTask(taskID: taskID)
     if let reminderExternalIdentifier = task.reminderExternalIdentifier {

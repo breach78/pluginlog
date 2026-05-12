@@ -117,6 +117,26 @@ final class AppOwnedRetainedTaskCommandServiceTests: XCTestCase {
   }
 
   @MainActor
+  func testDeleteTaskRemovesLocalRowWhenReminderIsAlreadyMissing() async throws {
+    let fixture = try await makeEnabledStoreFixture(taskExternalIdentifier: "missing-reminder")
+    let provider = FakeAppOwnedReminderProjectProvider()
+    provider.removeTaskReminderResult = false
+    let taskID = ReminderProjectionIdentity.taskID(for: "missing-reminder")
+
+    let result = try await RetainedTaskCommandFacade.deleteTask(
+      vaultRootURL: fixture.vaultRoot,
+      projectID: fixture.projectID,
+      taskID: taskID,
+      reminderProjectProvider: provider
+    )
+    let snapshot = try await fixture.store.loadRetainedWorkspaceSnapshot(projectIDs: [fixture.projectID])
+
+    XCTAssertEqual(provider.removedTaskExternalIdentifiers, ["missing-reminder"])
+    XCTAssertEqual(result.taskID, taskID)
+    XCTAssertEqual(snapshot.projects.first?.tasks, [])
+  }
+
+  @MainActor
   func testAppOwnedTaskEditRecurrenceWritesReminderAndLoadsBack() async throws {
     let start = try XCTUnwrap(
       Self.calendar.date(from: DateComponents(year: 2026, month: 5, day: 2, hour: 9, minute: 30))
@@ -1292,6 +1312,7 @@ private final class FakeAppOwnedReminderProjectProvider: ReminderProjectProvider
   var scheduleMetadataResults: [ReminderTaskRemoteMetadata?]?
   var recurrenceUpdate: (String?, String?)?
   var removedTaskExternalIdentifiers: [String?] = []
+  var removeTaskReminderResult = true
   var remoteTaskSnapshot: ReminderTaskRemoteSnapshot?
   var fetchedImportSnapshotBatch: ReminderImportSnapshotBatch?
   var presentationUpdates: [String: Int] = [:]
@@ -1341,7 +1362,7 @@ private final class FakeAppOwnedReminderProjectProvider: ReminderProjectProvider
 
   func removeTaskReminder(for task: ReminderTaskReference) throws -> Bool {
     removedTaskExternalIdentifiers.append(task.reminderExternalIdentifier)
-    return true
+    return removeTaskReminderResult
   }
   func taskSnapshot(for task: ReminderTaskReference) throws -> ReminderTaskRemoteSnapshot? {
     _ = task
