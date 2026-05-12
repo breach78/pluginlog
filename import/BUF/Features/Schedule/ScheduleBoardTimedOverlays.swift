@@ -286,12 +286,13 @@ extension ScheduleBoardView {
     originalTimeMinutes: Int,
     durationMinutes: Int,
     edge: ScheduleResizeEdge,
-    originalViewportFrame: CGRect,
+    originalDocumentFrame: CGRect,
     visibleDay: Date,
     xOffsetWithinDay: CGFloat,
     isPreparationSlot: Bool = false,
     targetCompletedWorkUnits: Int? = nil
   ) -> some View {
+    let originalViewportFrame = timedViewportFrame(forDocumentFrame: originalDocumentFrame)
     let hitZoneHeight = min(10, max(7, originalViewportFrame.height * 0.24))
     let edgeOffset = min(5, max(4, hitZoneHeight * 0.35 + 2))
     let leadingExclusionWidth: CGFloat = isPreparationSlot ? 28 : 0
@@ -319,7 +320,7 @@ extension ScheduleBoardView {
             originalTimeMinutes: originalTimeMinutes,
             originalDurationMinutes: durationMinutes,
             edge: edge,
-            originalViewportFrame: originalViewportFrame,
+            originalDocumentFrame: originalDocumentFrame,
             visibleDay: visibleDay,
             xOffsetWithinDay: xOffsetWithinDay,
             isPreparationSlot: isPreparationSlot,
@@ -340,10 +341,11 @@ extension ScheduleBoardView {
     originalDay: Date,
     originalTimeMinutes: Int,
     originalDurationMinutes: Int,
-    originalViewportFrame: CGRect,
+    originalDocumentFrame: CGRect,
     visibleDay: Date,
     xOffsetWithinDay: CGFloat
   ) -> some View {
+    let originalViewportFrame = timedViewportFrame(forDocumentFrame: originalDocumentFrame)
     let hitZoneHeight = min(10, max(7, originalViewportFrame.height * 0.24))
     let edgeOffset = min(5, max(4, hitZoneHeight * 0.35 + 2))
 
@@ -365,7 +367,7 @@ extension ScheduleBoardView {
           originalTimeMinutes: originalTimeMinutes,
           originalDurationMinutes: originalDurationMinutes,
           edge: edge,
-          originalViewportFrame: originalViewportFrame,
+          originalDocumentFrame: originalDocumentFrame,
           visibleDay: visibleDay,
           xOffsetWithinDay: xOffsetWithinDay
         )

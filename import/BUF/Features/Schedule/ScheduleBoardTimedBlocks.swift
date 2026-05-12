@@ -13,12 +13,13 @@ extension ScheduleBoardView {
     let isEventResizing = activeCalendarResize?.eventID == event?.id
     let visibleDay = days[layout.entry.dayIndex]
     let xOffsetWithinDay = frame.minX - CGFloat(layout.entry.dayIndex) * dayColumnWidth
-    let viewportFrame = CGRect(
-      x: titleColumnWidth + frame.minX - currentScrollOffsetX,
-      y: headerHeight + frame.minY - currentScrollOffsetY,
+    let documentFrame = CGRect(
+      x: frame.minX,
+      y: frame.minY,
       width: frame.width,
       height: blockHeight
     )
+    let viewportFrame = timedViewportFrame(forDocumentFrame: documentFrame)
 
     return Group {
       if layout.entry.isTask, let taskDescriptor {
@@ -38,6 +39,7 @@ extension ScheduleBoardView {
           sourceDay: layout.entry.sourceStartDay,
           sourceTimeMinutes: layout.entry.sourceStartMinute,
           sourceDurationMinutes: layout.entry.sourceDurationMinutes,
+          documentFrame: documentFrame,
           xOffsetWithinDay: xOffsetWithinDay,
           allowsStartResize: layout.entry.isFirstSegment,
           allowsEndResize: layout.entry.isLastSegment,
@@ -124,6 +126,7 @@ extension ScheduleBoardView {
               resizeSourceDay: layout.entry.sourceStartDay,
               resizeSourceTimeMinutes: layout.entry.sourceStartMinute,
               resizeSourceDurationMinutes: layout.entry.sourceDurationMinutes,
+              documentFrame: documentFrame,
               xOffsetWithinDay: xOffsetWithinDay,
               allowsStartResize: layout.entry.isFirstSegment,
               allowsEndResize: layout.entry.isLastSegment
@@ -192,6 +195,7 @@ extension ScheduleBoardView {
     sourceDay: Date,
     sourceTimeMinutes: Int,
     sourceDurationMinutes: Int,
+    documentFrame: CGRect,
     xOffsetWithinDay: CGFloat,
     allowsStartResize: Bool,
     allowsEndResize: Bool,
@@ -250,7 +254,7 @@ extension ScheduleBoardView {
           originalTimeMinutes: sourceTimeMinutes,
           durationMinutes: sourceDurationMinutes,
           edge: .start,
-          originalViewportFrame: viewportFrame,
+          originalDocumentFrame: documentFrame,
           visibleDay: day,
           xOffsetWithinDay: xOffsetWithinDay,
           isPreparationSlot: isPreparationSlot,
@@ -267,7 +271,7 @@ extension ScheduleBoardView {
           originalTimeMinutes: sourceTimeMinutes,
           durationMinutes: sourceDurationMinutes,
           edge: .end,
-          originalViewportFrame: viewportFrame,
+          originalDocumentFrame: documentFrame,
           visibleDay: day,
           xOffsetWithinDay: xOffsetWithinDay,
           isPreparationSlot: isPreparationSlot,
@@ -291,6 +295,7 @@ extension ScheduleBoardView {
     resizeSourceDay: Date? = nil,
     resizeSourceTimeMinutes: Int? = nil,
     resizeSourceDurationMinutes: Int? = nil,
+    documentFrame: CGRect? = nil,
     xOffsetWithinDay: CGFloat = 0,
     allowsStartResize: Bool = true,
     allowsEndResize: Bool = true,
@@ -336,7 +341,8 @@ extension ScheduleBoardView {
       if event.canEditTiming && allowsStartResize && !isBackgroundCalendar,
         let resizeSourceDay,
         let resizeSourceTimeMinutes,
-        let resizeSourceDurationMinutes
+        let resizeSourceDurationMinutes,
+        let documentFrame
       {
         eventResizeHandle(
           for: event,
@@ -344,7 +350,7 @@ extension ScheduleBoardView {
           originalDay: resizeSourceDay,
           originalTimeMinutes: resizeSourceTimeMinutes,
           originalDurationMinutes: resizeSourceDurationMinutes,
-          originalViewportFrame: viewportFrame,
+          originalDocumentFrame: documentFrame,
           visibleDay: visibleDay,
           xOffsetWithinDay: xOffsetWithinDay
         )
@@ -354,7 +360,8 @@ extension ScheduleBoardView {
       if event.canEditTiming && allowsEndResize && !isBackgroundCalendar,
         let resizeSourceDay,
         let resizeSourceTimeMinutes,
-        let resizeSourceDurationMinutes
+        let resizeSourceDurationMinutes,
+        let documentFrame
       {
         eventResizeHandle(
           for: event,
@@ -362,7 +369,7 @@ extension ScheduleBoardView {
           originalDay: resizeSourceDay,
           originalTimeMinutes: resizeSourceTimeMinutes,
           originalDurationMinutes: resizeSourceDurationMinutes,
-          originalViewportFrame: viewportFrame,
+          originalDocumentFrame: documentFrame,
           visibleDay: visibleDay,
           xOffsetWithinDay: xOffsetWithinDay
         )

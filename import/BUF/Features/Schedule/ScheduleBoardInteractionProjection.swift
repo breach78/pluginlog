@@ -77,6 +77,13 @@ extension ScheduleBoardView {
     )
   }
 
+  func timedViewportFrame(forDocumentFrame documentFrame: CGRect) -> CGRect {
+    ScheduleInteractionViewportProjection.viewportFrame(
+      forTimedDocumentFrame: documentFrame,
+      metrics: interactionViewportProjectionMetrics
+    )
+  }
+
   func dragDropTargetViewportFrame(
     for dragState: ScheduleTaskDragState,
     preview: ScheduleInteractionPreview

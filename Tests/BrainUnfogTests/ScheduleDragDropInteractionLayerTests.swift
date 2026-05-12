@@ -536,6 +536,40 @@ final class ScheduleDragDropInteractionLayerTests: XCTestCase {
     )
   }
 
+  func testTimedDocumentFrameProjectionUsesCurrentScrollOffset() {
+    let documentFrame = CGRect(x: 2 * 120 + 16, y: 9 * 60, width: 84, height: 60)
+    let projectionMetrics = ScheduleInteractionViewportProjectionMetrics(
+      titleColumnWidth: 76,
+      dayColumnWidth: 120,
+      hourHeight: 60,
+      quarterHourHeight: 15,
+      currentScrollOffsetX: 120,
+      currentScrollOffsetY: 180,
+      dateHeaderHeight: 32,
+      allDayRailPadding: 6,
+      allDayRailVisibleHeight: 48,
+      allDayRowHeight: 24,
+      allDayChipHorizontalInset: 5,
+      timedBlockInset: 4,
+      timedMinimumDurationMinutes: 30
+    )
+
+    let frame = ScheduleInteractionViewportProjection.viewportFrame(
+      forTimedDocumentFrame: documentFrame,
+      metrics: projectionMetrics
+    )
+
+    XCTAssertEqual(
+      frame,
+      CGRect(
+        x: 76 + documentFrame.minX - 120,
+        y: 32 + 48 + documentFrame.minY - 180,
+        width: 84,
+        height: 60
+      )
+    )
+  }
+
   func testViewportProjectionKeepsCommittedDurationPastMidnight() throws {
     var calendar = Calendar(identifier: .gregorian)
     calendar.timeZone = TimeZone(secondsFromGMT: 0)!

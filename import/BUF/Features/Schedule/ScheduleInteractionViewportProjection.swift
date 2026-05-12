@@ -71,6 +71,18 @@ enum ScheduleInteractionViewportProjection {
     )
   }
 
+  static func viewportFrame(
+    forTimedDocumentFrame documentFrame: CGRect,
+    metrics: ScheduleInteractionViewportProjectionMetrics
+  ) -> CGRect {
+    CGRect(
+      x: metrics.titleColumnWidth + documentFrame.minX - metrics.currentScrollOffsetX,
+      y: metrics.headerHeight + documentFrame.minY - metrics.currentScrollOffsetY,
+      width: documentFrame.width,
+      height: documentFrame.height
+    )
+  }
+
   static func resizeFrame(
     for preview: ScheduleInteractionPreview,
     displayDay: Date,

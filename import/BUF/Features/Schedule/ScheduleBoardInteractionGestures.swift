@@ -519,7 +519,7 @@ extension ScheduleBoardView {
     originalTimeMinutes: Int,
     originalDurationMinutes: Int,
     edge: ScheduleResizeEdge,
-    originalViewportFrame: CGRect,
+    originalDocumentFrame: CGRect,
     visibleDay: Date,
     xOffsetWithinDay: CGFloat,
     isPreparationSlot: Bool = false,
@@ -533,6 +533,7 @@ extension ScheduleBoardView {
           return
         }
 
+        let originalViewportFrame = timedViewportFrame(forDocumentFrame: originalDocumentFrame)
         if activeTaskResize?.entryID != entryID || activeTaskResize?.edge != edge {
           let pointerViewportLocation = resizePointerViewportLocation(
             originalViewportFrame: originalViewportFrame,
@@ -601,7 +602,7 @@ extension ScheduleBoardView {
     originalTimeMinutes: Int,
     originalDurationMinutes: Int,
     edge: ScheduleResizeEdge,
-    originalViewportFrame: CGRect,
+    originalDocumentFrame: CGRect,
     visibleDay: Date,
     xOffsetWithinDay: CGFloat
   ) -> some Gesture {
@@ -614,6 +615,7 @@ extension ScheduleBoardView {
           return
         }
 
+        let originalViewportFrame = timedViewportFrame(forDocumentFrame: originalDocumentFrame)
         if activeCalendarResize?.eventID != event.id || activeCalendarResize?.edge != edge {
           let pointerViewportLocation = resizePointerViewportLocation(
             originalViewportFrame: originalViewportFrame,
