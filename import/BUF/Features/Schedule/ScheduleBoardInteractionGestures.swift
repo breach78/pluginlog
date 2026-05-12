@@ -520,6 +520,8 @@ extension ScheduleBoardView {
     originalDurationMinutes: Int,
     edge: ScheduleResizeEdge,
     originalViewportFrame: CGRect,
+    visibleDay: Date,
+    xOffsetWithinDay: CGFloat,
     isPreparationSlot: Bool = false,
     targetCompletedWorkUnits: Int? = nil
   ) -> some Gesture {
@@ -547,10 +549,12 @@ extension ScheduleBoardView {
             isPreparationSlot: isPreparationSlot,
             targetCompletedWorkUnits: targetCompletedWorkUnits,
             originalDay: originalDay,
+            visibleDay: visibleDay,
             originalTimeMinutes: originalTimeMinutes,
             originalDurationMinutes: originalDurationMinutes,
             edge: edge,
             originalViewportFrame: originalViewportFrame,
+            xOffsetWithinDay: xOffsetWithinDay,
             originalPointerScheduleY: resizeOriginalPointerScheduleY(
               currentPointerViewportLocation: pointerViewportLocation,
               value: value
@@ -597,7 +601,9 @@ extension ScheduleBoardView {
     originalTimeMinutes: Int,
     originalDurationMinutes: Int,
     edge: ScheduleResizeEdge,
-    originalViewportFrame: CGRect
+    originalViewportFrame: CGRect,
+    visibleDay: Date,
+    xOffsetWithinDay: CGFloat
   ) -> some Gesture {
     DragGesture(minimumDistance: 0)
       .onChanged { value in
@@ -621,10 +627,12 @@ extension ScheduleBoardView {
           activeCalendarResize = ScheduleCalendarResizeState(
             eventID: event.id,
             originalDay: originalDay,
+            visibleDay: visibleDay,
             originalTimeMinutes: originalTimeMinutes,
             originalDurationMinutes: originalDurationMinutes,
             edge: edge,
             originalViewportFrame: originalViewportFrame,
+            xOffsetWithinDay: xOffsetWithinDay,
             originalPointerScheduleY: resizeOriginalPointerScheduleY(
               currentPointerViewportLocation: pointerViewportLocation,
               value: value

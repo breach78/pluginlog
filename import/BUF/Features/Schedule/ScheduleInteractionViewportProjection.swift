@@ -53,6 +53,31 @@ enum ScheduleInteractionViewportProjection {
     xOffsetWithinDay: CGFloat,
     width: CGFloat
   ) -> CGRect? {
+    guard let documentFrame = timedDocumentFrame(
+      for: preview,
+      dayIndexByDate: dayIndexByDate,
+      metrics: metrics,
+      xOffsetWithinDay: xOffsetWithinDay,
+      width: width
+    ) else {
+      return nil
+    }
+
+    return CGRect(
+      x: metrics.titleColumnWidth + documentFrame.minX - metrics.currentScrollOffsetX,
+      y: metrics.headerHeight + documentFrame.minY - metrics.currentScrollOffsetY,
+      width: documentFrame.width,
+      height: documentFrame.height
+    )
+  }
+
+  static func timedDocumentFrame(
+    for preview: ScheduleInteractionPreview,
+    dayIndexByDate: [Date: Int],
+    metrics: ScheduleInteractionViewportProjectionMetrics,
+    xOffsetWithinDay: CGFloat,
+    width: CGFloat
+  ) -> CGRect? {
     guard
       let day = preview.day,
       let dayIndex = dayIndexByDate[day],
@@ -64,13 +89,8 @@ enum ScheduleInteractionViewportProjection {
     let durationMinutes = preview.durationMinutes
       ?? metrics.timedMinimumDurationMinutes
     return CGRect(
-      x: metrics.titleColumnWidth
-        + CGFloat(dayIndex) * metrics.dayColumnWidth
-        - metrics.currentScrollOffsetX
-        + xOffsetWithinDay,
-      y: metrics.headerHeight
-        + CGFloat(timeMinutes) / 60 * metrics.hourHeight
-        - metrics.currentScrollOffsetY,
+      x: CGFloat(dayIndex) * metrics.dayColumnWidth + xOffsetWithinDay,
+      y: CGFloat(timeMinutes) / 60 * metrics.hourHeight,
       width: width,
       height: max(metrics.quarterHourHeight, CGFloat(durationMinutes) / 60 * metrics.hourHeight)
     )
@@ -94,60 +114,16 @@ enum ScheduleInteractionViewportProjection {
     )
   }
 
-  static func xOffsetWithinDay(
-    for frame: CGRect,
-    day: Date,
-    dayIndexByDate: [Date: Int],
-    metrics: ScheduleInteractionViewportProjectionMetrics
-  ) -> CGFloat? {
-    guard let dayIndex = dayIndexByDate[day] else { return nil }
-    let dayViewportMinX = metrics.titleColumnWidth
-      + CGFloat(dayIndex) * metrics.dayColumnWidth
-      - metrics.currentScrollOffsetX
-    return frame.minX - dayViewportMinX
-  }
-
-  static func xOffsetWithinVisibleDay(
-    for frame: CGRect,
-    metrics: ScheduleInteractionViewportProjectionMetrics
-  ) -> CGFloat? {
-    guard metrics.dayColumnWidth > 0 else { return nil }
-    let scheduleX = frame.minX - metrics.titleColumnWidth + metrics.currentScrollOffsetX
-    guard scheduleX >= 0 else { return nil }
-    return scheduleX.truncatingRemainder(dividingBy: metrics.dayColumnWidth)
-  }
-
-  static func visibleDay(
-    for frame: CGRect,
-    days: [Date],
-    metrics: ScheduleInteractionViewportProjectionMetrics,
-    calendar: Calendar
-  ) -> Date? {
-    guard metrics.dayColumnWidth > 0 else { return nil }
-    let scheduleX = frame.minX - metrics.titleColumnWidth + metrics.currentScrollOffsetX
-    guard scheduleX >= 0 else { return nil }
-    let dayIndex = Int(floor(scheduleX / metrics.dayColumnWidth))
-    guard days.indices.contains(dayIndex) else { return nil }
-    return calendar.startOfDay(for: days[dayIndex])
-  }
-
   static func resizeDisplayDay(
     originalDay: Date,
-    originalViewportFrame: CGRect,
+    visibleDay: Date,
     preview: ScheduleInteractionPreview,
-    visibleDays: [Date],
-    metrics: ScheduleInteractionViewportProjectionMetrics,
     calendar: Calendar
   ) -> Date {
     let previewDay = preview.day.map { calendar.startOfDay(for: $0) } ?? originalDay
     if !calendar.isDate(previewDay, inSameDayAs: originalDay) {
       return previewDay
     }
-    return visibleDay(
-      for: originalViewportFrame,
-      days: visibleDays,
-      metrics: metrics,
-      calendar: calendar
-    ) ?? previewDay
+    return calendar.startOfDay(for: visibleDay)
   }
 }

@@ -249,10 +249,10 @@ struct ScheduleBoardView: View {
     CGFloat(days.count) * dayColumnWidth
   }
   var currentScrollOffsetX: CGFloat {
-    scrollViewportState.liveOffsetX
+    scrollViewportState.visibleOrigin()?.x ?? scrollViewportState.liveOffsetX
   }
   var currentScrollOffsetY: CGFloat {
-    scrollViewportState.liveOffsetY
+    scrollViewportState.visibleOrigin()?.y ?? scrollViewportState.liveOffsetY
   }
   var days: [Date] {
     Array(dayRange).compactMap { offset in

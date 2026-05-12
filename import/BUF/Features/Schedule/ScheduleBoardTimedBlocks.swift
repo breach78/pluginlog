@@ -11,6 +11,8 @@ extension ScheduleBoardView {
     let isResizing = activeTaskResize?.entryID == layout.entry.id
     let isEventDragging = activeCalendarDrag?.eventID == event?.id
     let isEventResizing = activeCalendarResize?.eventID == event?.id
+    let visibleDay = days[layout.entry.dayIndex]
+    let xOffsetWithinDay = frame.minX - CGFloat(layout.entry.dayIndex) * dayColumnWidth
     let viewportFrame = CGRect(
       x: titleColumnWidth + frame.minX - currentScrollOffsetX,
       y: headerHeight + frame.minY - currentScrollOffsetY,
@@ -24,7 +26,7 @@ extension ScheduleBoardView {
         scheduleTaskBlock(
           taskDescriptor: taskDescriptor,
           entryID: layout.entry.id,
-          day: days[layout.entry.dayIndex],
+          day: visibleDay,
           title: layout.entry.title,
           subtitle: layout.entry.subtitle,
           color: layout.entry.color,
@@ -36,6 +38,7 @@ extension ScheduleBoardView {
           sourceDay: layout.entry.sourceStartDay,
           sourceTimeMinutes: layout.entry.sourceStartMinute,
           sourceDurationMinutes: layout.entry.sourceDurationMinutes,
+          xOffsetWithinDay: xOffsetWithinDay,
           allowsStartResize: layout.entry.isFirstSegment,
           allowsEndResize: layout.entry.isLastSegment,
           timeLabel: timeRangeLabel(
@@ -46,7 +49,7 @@ extension ScheduleBoardView {
           viewportFrame: viewportFrame,
           postponeAction: postponeScheduleAction(
             for: taskDescriptor,
-            day: days[layout.entry.dayIndex],
+            day: visibleDay,
             isPreparationSlot: layout.entry.isPreparationSlot,
             targetCompletedWorkUnits: layout.entry.targetCompletedWorkUnits
           )
@@ -95,6 +98,7 @@ extension ScheduleBoardView {
                 startMinute: layout.entry.startMinute,
                 durationMinutes: layout.entry.durationMinutes
               ),
+              visibleDay: visibleDay,
               blockHeight: blockHeight,
               startMinute: layout.entry.startMinute,
               durationMinutes: layout.entry.durationMinutes,
@@ -112,6 +116,7 @@ extension ScheduleBoardView {
                 startMinute: layout.entry.startMinute,
                 durationMinutes: layout.entry.durationMinutes
               ),
+              visibleDay: visibleDay,
               blockHeight: blockHeight,
               startMinute: layout.entry.startMinute,
               durationMinutes: layout.entry.durationMinutes,
@@ -119,6 +124,7 @@ extension ScheduleBoardView {
               resizeSourceDay: layout.entry.sourceStartDay,
               resizeSourceTimeMinutes: layout.entry.sourceStartMinute,
               resizeSourceDurationMinutes: layout.entry.sourceDurationMinutes,
+              xOffsetWithinDay: xOffsetWithinDay,
               allowsStartResize: layout.entry.isFirstSegment,
               allowsEndResize: layout.entry.isLastSegment
             )
@@ -140,6 +146,7 @@ extension ScheduleBoardView {
                 startMinute: layout.entry.startMinute,
                 durationMinutes: layout.entry.durationMinutes
               ),
+              visibleDay: visibleDay,
               blockHeight: blockHeight,
               startMinute: layout.entry.startMinute,
               durationMinutes: layout.entry.durationMinutes,
@@ -185,6 +192,7 @@ extension ScheduleBoardView {
     sourceDay: Date,
     sourceTimeMinutes: Int,
     sourceDurationMinutes: Int,
+    xOffsetWithinDay: CGFloat,
     allowsStartResize: Bool,
     allowsEndResize: Bool,
     timeLabel: String?,
@@ -243,6 +251,8 @@ extension ScheduleBoardView {
           durationMinutes: sourceDurationMinutes,
           edge: .start,
           originalViewportFrame: viewportFrame,
+          visibleDay: day,
+          xOffsetWithinDay: xOffsetWithinDay,
           isPreparationSlot: isPreparationSlot,
           targetCompletedWorkUnits: targetCompletedWorkUnits
         )
@@ -258,6 +268,8 @@ extension ScheduleBoardView {
           durationMinutes: sourceDurationMinutes,
           edge: .end,
           originalViewportFrame: viewportFrame,
+          visibleDay: day,
+          xOffsetWithinDay: xOffsetWithinDay,
           isPreparationSlot: isPreparationSlot,
           targetCompletedWorkUnits: targetCompletedWorkUnits
         )
@@ -271,6 +283,7 @@ extension ScheduleBoardView {
     subtitle: String?,
     color: Color,
     timeLabel: String?,
+    visibleDay: Date,
     blockHeight: CGFloat,
     startMinute _: Int,
     durationMinutes: Int,
@@ -278,6 +291,7 @@ extension ScheduleBoardView {
     resizeSourceDay: Date? = nil,
     resizeSourceTimeMinutes: Int? = nil,
     resizeSourceDurationMinutes: Int? = nil,
+    xOffsetWithinDay: CGFloat = 0,
     allowsStartResize: Bool = true,
     allowsEndResize: Bool = true,
     contentTopOffset: CGFloat = 0,
@@ -330,7 +344,9 @@ extension ScheduleBoardView {
           originalDay: resizeSourceDay,
           originalTimeMinutes: resizeSourceTimeMinutes,
           originalDurationMinutes: resizeSourceDurationMinutes,
-          originalViewportFrame: viewportFrame
+          originalViewportFrame: viewportFrame,
+          visibleDay: visibleDay,
+          xOffsetWithinDay: xOffsetWithinDay
         )
       }
     }
@@ -346,7 +362,9 @@ extension ScheduleBoardView {
           originalDay: resizeSourceDay,
           originalTimeMinutes: resizeSourceTimeMinutes,
           originalDurationMinutes: resizeSourceDurationMinutes,
-          originalViewportFrame: viewportFrame
+          originalViewportFrame: viewportFrame,
+          visibleDay: visibleDay,
+          xOffsetWithinDay: xOffsetWithinDay
         )
       }
     }

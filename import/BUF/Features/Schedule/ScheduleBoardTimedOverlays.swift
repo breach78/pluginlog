@@ -287,6 +287,8 @@ extension ScheduleBoardView {
     durationMinutes: Int,
     edge: ScheduleResizeEdge,
     originalViewportFrame: CGRect,
+    visibleDay: Date,
+    xOffsetWithinDay: CGFloat,
     isPreparationSlot: Bool = false,
     targetCompletedWorkUnits: Int? = nil
   ) -> some View {
@@ -318,6 +320,8 @@ extension ScheduleBoardView {
             originalDurationMinutes: durationMinutes,
             edge: edge,
             originalViewportFrame: originalViewportFrame,
+            visibleDay: visibleDay,
+            xOffsetWithinDay: xOffsetWithinDay,
             isPreparationSlot: isPreparationSlot,
             targetCompletedWorkUnits: targetCompletedWorkUnits
           )
@@ -336,7 +340,9 @@ extension ScheduleBoardView {
     originalDay: Date,
     originalTimeMinutes: Int,
     originalDurationMinutes: Int,
-    originalViewportFrame: CGRect
+    originalViewportFrame: CGRect,
+    visibleDay: Date,
+    xOffsetWithinDay: CGFloat
   ) -> some View {
     let hitZoneHeight = min(10, max(7, originalViewportFrame.height * 0.24))
     let edgeOffset = min(5, max(4, hitZoneHeight * 0.35 + 2))
@@ -359,7 +365,9 @@ extension ScheduleBoardView {
           originalTimeMinutes: originalTimeMinutes,
           originalDurationMinutes: originalDurationMinutes,
           edge: edge,
-          originalViewportFrame: originalViewportFrame
+          originalViewportFrame: originalViewportFrame,
+          visibleDay: visibleDay,
+          xOffsetWithinDay: xOffsetWithinDay
         )
       )
       .help(edge == .start ? "시작 시간 조절" : "종료 시간 조절")
@@ -520,6 +528,7 @@ extension ScheduleBoardView {
           )
           .zIndex(2002)
         }
+
       }
       .allowsHitTesting(false)
 

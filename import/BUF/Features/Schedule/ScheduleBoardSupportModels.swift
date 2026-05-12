@@ -144,10 +144,12 @@ struct ScheduleTaskResizeState {
   let isPreparationSlot: Bool
   let targetCompletedWorkUnits: Int?
   let originalDay: Date
+  let visibleDay: Date
   let originalTimeMinutes: Int
   let originalDurationMinutes: Int
   let edge: ScheduleResizeEdge
   let originalViewportFrame: CGRect
+  let xOffsetWithinDay: CGFloat
   let originalPointerScheduleY: CGFloat
   let originalEdgeScheduleY: CGFloat
   var translationHeight: CGFloat = 0
@@ -157,10 +159,12 @@ struct ScheduleTaskResizeState {
 struct ScheduleCalendarResizeState {
   let eventID: String
   let originalDay: Date
+  let visibleDay: Date
   let originalTimeMinutes: Int
   let originalDurationMinutes: Int
   let edge: ScheduleResizeEdge
   let originalViewportFrame: CGRect
+  let xOffsetWithinDay: CGFloat
   let originalPointerScheduleY: CGFloat
   let originalEdgeScheduleY: CGFloat
   var translationHeight: CGFloat = 0

@@ -1,3 +1,4 @@
+import AppKit
 import CoreGraphics
 import XCTest
 @testable import BrainUnfog
@@ -357,12 +358,16 @@ final class ScheduleDragDropInteractionLayerTests: XCTestCase {
     )
   }
 
-  func testViewportProjectionDerivesXOffsetFromVisibleColumn() throws {
+  func testResizeDocumentFrameIsIndependentOfViewportScrollOffset() throws {
     var calendar = Calendar(identifier: .gregorian)
     calendar.timeZone = TimeZone(secondsFromGMT: 0)!
     let may12 = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 5, day: 12)))
-    let may13 = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 5, day: 13)))
-    let projectionMetrics = ScheduleInteractionViewportProjectionMetrics(
+    let preview = ScheduleInteractionPreview(
+      day: may12,
+      timeMinutes: 11 * 60,
+      durationMinutes: 90
+    )
+    let baseMetrics = ScheduleInteractionViewportProjectionMetrics(
       titleColumnWidth: 76,
       dayColumnWidth: 120,
       hourHeight: 60,
@@ -377,48 +382,64 @@ final class ScheduleDragDropInteractionLayerTests: XCTestCase {
       timedBlockInset: 4,
       timedMinimumDurationMinutes: 30
     )
-    let visibleSecondDayFrame = CGRect(x: 76 + 120 + 10, y: 220, width: 84, height: 120)
+    let scrolledMetrics = ScheduleInteractionViewportProjectionMetrics(
+      titleColumnWidth: 76,
+      dayColumnWidth: 120,
+      hourHeight: 60,
+      quarterHourHeight: 15,
+      currentScrollOffsetX: 240,
+      currentScrollOffsetY: 300,
+      dateHeaderHeight: 32,
+      allDayRailPadding: 6,
+      allDayRailVisibleHeight: 48,
+      allDayRowHeight: 24,
+      allDayChipHorizontalInset: 5,
+      timedBlockInset: 4,
+      timedMinimumDurationMinutes: 30
+    )
 
     XCTAssertEqual(
-      ScheduleInteractionViewportProjection.xOffsetWithinVisibleDay(
-        for: visibleSecondDayFrame,
-        metrics: projectionMetrics
+      ScheduleInteractionViewportProjection.timedDocumentFrame(
+        for: preview,
+        dayIndexByDate: [may12: 0],
+        metrics: baseMetrics,
+        xOffsetWithinDay: 10,
+        width: 84
       ),
-      10
+      ScheduleInteractionViewportProjection.timedDocumentFrame(
+        for: preview,
+        dayIndexByDate: [may12: 0],
+        metrics: scrolledMetrics,
+        xOffsetWithinDay: 10,
+        width: 84
+      )
     )
-    XCTAssertEqual(
-      ScheduleInteractionViewportProjection.xOffsetWithinDay(
-        for: visibleSecondDayFrame,
-        day: may13,
-        dayIndexByDate: [may12: 0, may13: 1],
-        metrics: projectionMetrics
-      ),
-      10
-    )
+  }
+
+  @MainActor
+  func testScrollViewportVisibleOriginReadsActualClipViewBounds() {
+    let viewportState = ScheduleScrollViewportState()
+    let scrollView = SnappingScheduleScrollView()
+    let clipView = FlippedScheduleClipView()
+    let documentView = FlippedScheduleDocumentView()
+
+    scrollView.contentView = clipView
+    scrollView.documentView = documentView
+    documentView.frame = CGRect(x: 0, y: 0, width: 1_200, height: 1_800)
+    scrollView.frame = CGRect(x: 0, y: 0, width: 400, height: 600)
+    viewportState.scrollView = scrollView
+
+    scrollView.contentView.scroll(to: CGPoint(x: 240, y: 360))
+
+    XCTAssertEqual(viewportState.visibleOrigin()?.x, 240)
+    XCTAssertEqual(viewportState.visibleOrigin()?.y, 360)
   }
 
   func testResizeDisplayDayUsesVisibleSegmentWhenPreviewStillStartsAtSourceDay() throws {
     var calendar = Calendar(identifier: .gregorian)
     calendar.timeZone = TimeZone(secondsFromGMT: 0)!
     let may11 = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 5, day: 11)))
-    let may12 = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 5, day: 12)))
     let may13 = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 5, day: 13)))
-    let projectionMetrics = ScheduleInteractionViewportProjectionMetrics(
-      titleColumnWidth: 76,
-      dayColumnWidth: 120,
-      hourHeight: 60,
-      quarterHourHeight: 15,
-      currentScrollOffsetX: 0,
-      currentScrollOffsetY: 0,
-      dateHeaderHeight: 32,
-      allDayRailPadding: 6,
-      allDayRailVisibleHeight: 48,
-      allDayRowHeight: 24,
-      allDayChipHorizontalInset: 5,
-      timedBlockInset: 4,
-      timedMinimumDurationMinutes: 30
-    )
-    let visibleThirdDayFrame = CGRect(x: 76 + 2 * 120 + 10, y: 220, width: 84, height: 120)
     let preview = ScheduleInteractionPreview(
       day: may11,
       timeMinutes: 9 * 60,
@@ -428,10 +449,8 @@ final class ScheduleDragDropInteractionLayerTests: XCTestCase {
     XCTAssertEqual(
       ScheduleInteractionViewportProjection.resizeDisplayDay(
         originalDay: may11,
-        originalViewportFrame: visibleThirdDayFrame,
+        visibleDay: may13,
         preview: preview,
-        visibleDays: [may11, may12, may13],
-        metrics: projectionMetrics,
         calendar: calendar
       ),
       may13
@@ -443,24 +462,7 @@ final class ScheduleDragDropInteractionLayerTests: XCTestCase {
     calendar.timeZone = TimeZone(secondsFromGMT: 0)!
     let may10 = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 5, day: 10)))
     let may11 = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 5, day: 11)))
-    let may12 = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 5, day: 12)))
     let may13 = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 5, day: 13)))
-    let projectionMetrics = ScheduleInteractionViewportProjectionMetrics(
-      titleColumnWidth: 76,
-      dayColumnWidth: 120,
-      hourHeight: 60,
-      quarterHourHeight: 15,
-      currentScrollOffsetX: 0,
-      currentScrollOffsetY: 0,
-      dateHeaderHeight: 32,
-      allDayRailPadding: 6,
-      allDayRailVisibleHeight: 48,
-      allDayRowHeight: 24,
-      allDayChipHorizontalInset: 5,
-      timedBlockInset: 4,
-      timedMinimumDurationMinutes: 30
-    )
-    let visibleThirdDayFrame = CGRect(x: 76 + 2 * 120 + 10, y: 220, width: 84, height: 120)
     let preview = ScheduleInteractionPreview(
       day: may10,
       timeMinutes: 22 * 60,
@@ -470,10 +472,8 @@ final class ScheduleDragDropInteractionLayerTests: XCTestCase {
     XCTAssertEqual(
       ScheduleInteractionViewportProjection.resizeDisplayDay(
         originalDay: may11,
-        originalViewportFrame: visibleThirdDayFrame,
+        visibleDay: may13,
         preview: preview,
-        visibleDays: [may11, may12, may13],
-        metrics: projectionMetrics,
         calendar: calendar
       ),
       may10

@@ -8,7 +8,9 @@ extension ScheduleBoardView {
   ) -> CGRect {
     resizePreviewViewportFrame(
       originalDay: resizeState.originalDay,
+      visibleDay: resizeState.visibleDay,
       originalViewportFrame: resizeState.originalViewportFrame,
+      xOffsetWithinDay: resizeState.xOffsetWithinDay,
       preview: preview
     )
   }
@@ -19,14 +21,18 @@ extension ScheduleBoardView {
   ) -> CGRect {
     resizePreviewViewportFrame(
       originalDay: resizeState.originalDay,
+      visibleDay: resizeState.visibleDay,
       originalViewportFrame: resizeState.originalViewportFrame,
+      xOffsetWithinDay: resizeState.xOffsetWithinDay,
       preview: preview
     )
   }
 
   func resizePreviewViewportFrame(
     originalDay: Date,
+    visibleDay: Date,
     originalViewportFrame: CGRect,
+    xOffsetWithinDay: CGFloat,
     preview: ScheduleInteractionPreview
   ) -> CGRect {
     guard let timeMinutes = preview.timeMinutes else {
@@ -34,21 +40,10 @@ extension ScheduleBoardView {
     }
     let day = ScheduleInteractionViewportProjection.resizeDisplayDay(
       originalDay: originalDay,
-      originalViewportFrame: originalViewportFrame,
+      visibleDay: visibleDay,
       preview: preview,
-      visibleDays: days,
-      metrics: interactionViewportProjectionMetrics,
       calendar: calendar
     )
-    let xOffsetWithinDay = ScheduleInteractionViewportProjection.xOffsetWithinVisibleDay(
-      for: originalViewportFrame,
-      metrics: interactionViewportProjectionMetrics
-    ) ?? ScheduleInteractionViewportProjection.xOffsetWithinDay(
-      for: originalViewportFrame,
-      day: originalDay,
-      dayIndexByDate: dayIndexByDate,
-      metrics: interactionViewportProjectionMetrics
-    ) ?? timedBlockInset
 
     return ScheduleInteractionViewportProjection.timedFrame(
       for: ScheduleInteractionPreview(

@@ -94,6 +94,12 @@ final class ScheduleScrollViewportState {
     )
   }
 
+  func visibleOrigin() -> CGPoint? {
+    guard let scrollView else { return nil }
+    let origin = scrollView.contentView.bounds.origin
+    return CGPoint(x: max(0, origin.x), y: max(0, origin.y))
+  }
+
   func addViewportChangeListener(_ listener: @escaping () -> Void) -> UUID {
     let id = UUID()
     viewportChangeListeners[id] = listener
