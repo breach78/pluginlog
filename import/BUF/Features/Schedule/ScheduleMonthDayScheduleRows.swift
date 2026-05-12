@@ -21,7 +21,7 @@ struct ScheduleMonthDayAllDayItemRow: View {
       Button(action: onOpen) {
         HStack(spacing: 0) {
           Text(item.title)
-            .font(.system(size: 13, weight: .semibold))
+            .font(.system(size: ScheduleUITokens.DayPanelRow.titleFontSize, weight: .semibold))
             .foregroundStyle(item.isCompleted ? .secondary : .primary)
             .lineLimit(1)
 
@@ -30,16 +30,20 @@ struct ScheduleMonthDayAllDayItemRow: View {
       }
       .buttonStyle(.plain)
     }
-    .padding(.horizontal, itemIsCalendar ? 8 : 0)
-    .frame(height: 24)
+    .padding(.horizontal, itemIsCalendar ? ScheduleUITokens.DayPanelRow.allDayCalendarHorizontalPadding : 0)
+    .frame(height: ScheduleUITokens.DayPanelRow.allDayRowHeight)
     .background {
       if itemIsCalendar {
-        RoundedRectangle(cornerRadius: 6, style: .continuous)
-          .fill(color.opacity(item.isBackgroundCalendar ? 0.16 : 0.24))
+        RoundedRectangle(cornerRadius: ScheduleUITokens.EventBlock.cornerRadius, style: .continuous)
+          .fill(color.opacity(
+            item.isBackgroundCalendar
+              ? ScheduleUITokens.EventBlock.dayPanelAllDayBackgroundCalendarFillOpacity
+              : ScheduleUITokens.EventBlock.dayPanelAllDayCalendarFillOpacity
+          ))
       }
     }
     .contentShape(Rectangle())
-    .opacity(isInteracting ? 0.22 : opacity)
+    .opacity(isInteracting ? ScheduleUITokens.DayPanelRow.interactingOpacity : opacity)
     .contextMenu {
       ScheduleMonthDayDeleteContextMenu(
         item: item,
@@ -54,7 +58,10 @@ struct ScheduleMonthDayAllDayItemRow: View {
   private var marker: some View {
     if itemIsTask {
       ScheduleMonthDayTaskMarker(color: color, isCompleted: item.isCompleted)
-      .frame(width: 26, height: 24)
+      .frame(
+        width: ScheduleUITokens.DayPanelRow.markerHitWidth,
+        height: ScheduleUITokens.DayPanelRow.markerHitHeight
+      )
       .contentShape(Rectangle())
       .highPriorityGesture(
         TapGesture().onEnded {
@@ -92,7 +99,7 @@ struct ScheduleMonthDayAllDayItemRow: View {
   }
 
   private var opacity: Double {
-    item.isCompleted || item.isBackgroundCalendar ? 0.45 : 1
+    item.isCompleted || item.isBackgroundCalendar ? ScheduleUITokens.DayPanelRow.baseMutedOpacity : 1
   }
 }
 
@@ -124,25 +131,28 @@ struct ScheduleMonthDayTimedItemBlock: View {
         HStack(alignment: .top, spacing: 7) {
           if itemIsTask {
             marker
-              .padding(.top, 1)
+              .padding(.top, ScheduleUITokens.DayPanelRow.markerTopPadding)
           }
 
           VStack(alignment: .leading, spacing: 2) {
             Text(layout.item.title)
-              .font(.system(size: 13, weight: .semibold))
+              .font(.system(size: ScheduleUITokens.DayPanelRow.titleFontSize, weight: .semibold))
               .foregroundStyle(layout.item.isCompleted ? .secondary : .primary)
               .lineLimit(2)
 
-            if let subtitle = layout.item.subtitle, !subtitle.isEmpty, layout.height >= 52 {
+            if let subtitle = layout.item.subtitle,
+              !subtitle.isEmpty,
+              layout.height >= ScheduleUITokens.DayPanelRow.timedSubtitleMinHeight
+            {
               Text(subtitle)
-                .font(.system(size: 11))
+                .font(.system(size: ScheduleUITokens.DayPanelRow.supplementalFontSize))
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
             }
 
-            if layout.height >= 68 {
+            if layout.height >= ScheduleUITokens.DayPanelRow.timedTimeMinHeight {
               Text(timeText)
-                .font(.system(size: 11, weight: .medium))
+                .font(.system(size: ScheduleUITokens.DayPanelRow.supplementalFontSize, weight: .medium))
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
             }
@@ -153,8 +163,8 @@ struct ScheduleMonthDayTimedItemBlock: View {
           Spacer(minLength: 0)
         }
       }
-      .padding(.horizontal, 8)
-      .padding(.vertical, 7)
+      .padding(.horizontal, ScheduleUITokens.DayPanelRow.horizontalPadding)
+      .padding(.vertical, ScheduleUITokens.DayPanelRow.verticalPadding)
 
       if canResize && allowsStartResize {
         resizeHandle(edge: .start)
@@ -166,8 +176,8 @@ struct ScheduleMonthDayTimedItemBlock: View {
           .frame(maxHeight: .infinity, alignment: .bottom)
       }
     }
-    .contentShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
-    .opacity(isInteracting ? 0.22 : baseOpacity)
+    .contentShape(RoundedRectangle(cornerRadius: ScheduleUITokens.DayPanelRow.timedCornerRadius, style: .continuous))
+    .opacity(isInteracting ? ScheduleUITokens.DayPanelRow.interactingOpacity : baseOpacity)
     .contextMenu {
       ScheduleMonthDayDeleteContextMenu(
         item: layout.item,
@@ -182,20 +192,28 @@ struct ScheduleMonthDayTimedItemBlock: View {
   private var surface: some View {
     switch layout.item.source {
     case .workspaceTask:
-      RoundedRectangle(cornerRadius: 7, style: .continuous)
-        .fill(color.opacity(layout.item.isCompleted ? 0.08 : 0.16))
+      RoundedRectangle(cornerRadius: ScheduleUITokens.DayPanelRow.timedCornerRadius, style: .continuous)
+        .fill(color.opacity(
+          layout.item.isCompleted
+            ? ScheduleUITokens.EventBlock.dayPanelCompletedTaskFillOpacity
+            : ScheduleUITokens.EventBlock.dayPanelTaskFillOpacity
+        ))
         .overlay(alignment: .leading) {
           Rectangle()
             .fill(color)
-            .frame(width: 3)
+            .frame(width: ScheduleUITokens.DayPanelRow.colorStripeWidth)
         }
     case .calendarEvent:
-      RoundedRectangle(cornerRadius: 7, style: .continuous)
-        .fill(color.opacity(layout.item.isBackgroundCalendar ? 0.12 : 0.2))
+      RoundedRectangle(cornerRadius: ScheduleUITokens.DayPanelRow.timedCornerRadius, style: .continuous)
+        .fill(color.opacity(
+          layout.item.isBackgroundCalendar
+            ? ScheduleUITokens.EventBlock.dayPanelBackgroundCalendarFillOpacity
+            : ScheduleUITokens.EventBlock.dayPanelCalendarFillOpacity
+        ))
         .overlay(alignment: .leading) {
           Rectangle()
-            .fill(color.opacity(0.95))
-            .frame(width: 3)
+            .fill(color.opacity(ScheduleUITokens.EventBlock.dayPanelCalendarStripeForegroundOpacity))
+            .frame(width: ScheduleUITokens.DayPanelRow.colorStripeWidth)
         }
     }
   }
@@ -204,7 +222,7 @@ struct ScheduleMonthDayTimedItemBlock: View {
     HStack(spacing: 0) {
       if itemIsTask {
         Color.clear
-          .frame(width: 34)
+          .frame(width: ScheduleUITokens.DayPanelRow.openHitAreaTaskWidth)
           .allowsHitTesting(false)
       }
 
@@ -219,7 +237,10 @@ struct ScheduleMonthDayTimedItemBlock: View {
   private var marker: some View {
     if itemIsTask {
       ScheduleMonthDayTaskMarker(color: color, isCompleted: layout.item.isCompleted)
-      .frame(width: 26, height: 24)
+      .frame(
+        width: ScheduleUITokens.DayPanelRow.markerHitWidth,
+        height: ScheduleUITokens.DayPanelRow.markerHitHeight
+      )
       .contentShape(Rectangle())
       .highPriorityGesture(
         TapGesture().onEnded {
@@ -245,7 +266,7 @@ struct ScheduleMonthDayTimedItemBlock: View {
   private func resizeHandle(edge: ScheduleResizeEdge) -> some View {
     Rectangle()
       .fill(Color.clear)
-      .frame(height: 10)
+      .frame(height: ScheduleUITokens.DayPanelRow.resizeHandleHeight)
       .overlay {
         ScheduleCursorRegion(cursor: .resizeUpDown)
       }
@@ -268,7 +289,9 @@ struct ScheduleMonthDayTimedItemBlock: View {
   }
 
   private var baseOpacity: Double {
-    layout.item.isCompleted || layout.item.isBackgroundCalendar ? 0.45 : 1
+    layout.item.isCompleted || layout.item.isBackgroundCalendar
+      ? ScheduleUITokens.DayPanelRow.baseMutedOpacity
+      : 1
   }
 
   private var timeText: String {
@@ -333,11 +356,14 @@ struct ScheduleMonthDayTaskMarker: View {
         Circle()
           .fill(color)
         Image(systemName: "checkmark")
-          .font(.system(size: 8, weight: .bold))
+          .font(.system(size: ScheduleUITokens.Icon.scheduleItemAccessoryFontSize, weight: .bold))
           .foregroundStyle(.white)
       }
     }
-    .frame(width: 16, height: 16)
+    .frame(
+      width: ScheduleUITokens.DayPanelRow.taskMarkerSize,
+      height: ScheduleUITokens.DayPanelRow.taskMarkerSize
+    )
   }
 }
 
@@ -351,19 +377,23 @@ struct ScheduleMonthDayDragPreviewRow: View {
         ScheduleMonthDayTaskMarker(color: color, isCompleted: item.isCompleted)
       }
       Text(item.title)
-        .font(.system(size: 13, weight: .semibold))
+        .font(.system(size: ScheduleUITokens.DayPanelRow.titleFontSize, weight: .semibold))
         .lineLimit(1)
       Spacer(minLength: 0)
     }
-    .padding(.horizontal, itemIsCalendar ? 8 : 0)
-    .frame(height: 24)
+    .padding(.horizontal, itemIsCalendar ? ScheduleUITokens.DayPanelRow.allDayCalendarHorizontalPadding : 0)
+    .frame(height: ScheduleUITokens.DayPanelRow.allDayRowHeight)
     .background {
       if itemIsCalendar {
-        RoundedRectangle(cornerRadius: 6, style: .continuous)
-          .fill(color.opacity(item.isBackgroundCalendar ? 0.12 : 0.2))
+        RoundedRectangle(cornerRadius: ScheduleUITokens.EventBlock.cornerRadius, style: .continuous)
+          .fill(color.opacity(
+            item.isBackgroundCalendar
+              ? ScheduleUITokens.EventBlock.dayPanelBackgroundCalendarFillOpacity
+              : ScheduleUITokens.EventBlock.dayPanelCalendarFillOpacity
+          ))
       }
     }
-    .opacity(0.72)
+    .opacity(ScheduleUITokens.DayPanelRow.dragPreviewOpacity)
     .allowsHitTesting(false)
   }
 
@@ -384,28 +414,31 @@ struct ScheduleMonthDayTimedDragPreviewBlock: View {
 
   var body: some View {
     ZStack(alignment: .topLeading) {
-      RoundedRectangle(cornerRadius: 7, style: .continuous)
-        .fill(color.opacity(0.18))
+      RoundedRectangle(cornerRadius: ScheduleUITokens.DayPanelRow.timedCornerRadius, style: .continuous)
+        .fill(color.opacity(ScheduleUITokens.EventBlock.dayPanelDragPreviewFillOpacity))
         .overlay(alignment: .leading) {
           Rectangle()
             .fill(color)
-            .frame(width: 3)
+            .frame(width: ScheduleUITokens.DayPanelRow.colorStripeWidth)
         }
 
       HStack(alignment: .top, spacing: 7) {
         if itemIsTask {
           ScheduleMonthDayTaskMarker(color: color, isCompleted: item.isCompleted)
-            .frame(width: 18, height: 18)
+            .frame(
+              width: ScheduleUITokens.DayPanelRow.dragPreviewMarkerSize,
+              height: ScheduleUITokens.DayPanelRow.dragPreviewMarkerSize
+            )
         }
         Text(item.title)
-          .font(.system(size: 13, weight: .semibold))
+          .font(.system(size: ScheduleUITokens.DayPanelRow.titleFontSize, weight: .semibold))
           .lineLimit(1)
         Spacer(minLength: 0)
       }
-      .padding(.horizontal, 8)
-      .padding(.vertical, 7)
+      .padding(.horizontal, ScheduleUITokens.DayPanelRow.horizontalPadding)
+      .padding(.vertical, ScheduleUITokens.DayPanelRow.verticalPadding)
     }
-    .opacity(0.72)
+    .opacity(ScheduleUITokens.DayPanelRow.dragPreviewOpacity)
     .allowsHitTesting(false)
   }
 

@@ -302,9 +302,9 @@ extension ScheduleBoardView {
     .contentShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
     .overlay(alignment: .topTrailing) {
       if event.isRecurring {
-        recurrenceIndicator(fontSize: 9.5)
-          .padding(.top, 6)
-          .padding(.trailing, 8)
+        recurrenceIndicator(fontSize: ScheduleUITokens.ScheduleItem.recurrenceIndicatorFontSize)
+          .padding(.top, ScheduleUITokens.ScheduleItem.recurrenceIndicatorTopPadding)
+          .padding(.trailing, ScheduleUITokens.ScheduleItem.recurrenceIndicatorTrailingPadding)
       }
     }
     .contentShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
@@ -398,8 +398,8 @@ extension ScheduleBoardView {
         Spacer(minLength: 0)
       }
       .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
-      .padding(.horizontal, 8)
-      .padding(.vertical, 5)
+      .padding(.horizontal, ScheduleUITokens.Spacing.scheduleItemHorizontalPadding)
+      .padding(.vertical, ScheduleUITokens.Spacing.scheduleItemCompactVerticalPadding)
       .overlay(alignment: .trailing) {
         schedulePostponeAffordanceOverlay(
           compact: true,
@@ -440,8 +440,8 @@ extension ScheduleBoardView {
         Spacer(minLength: 0)
       }
       .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-      .padding(.horizontal, 8)
-      .padding(.vertical, 6)
+      .padding(.horizontal, ScheduleUITokens.Spacing.scheduleItemHorizontalPadding)
+      .padding(.vertical, ScheduleUITokens.Spacing.scheduleItemStandardVerticalPadding)
       .overlay(alignment: .trailing) {
         schedulePostponeAffordanceOverlay(
           compact: true,
@@ -489,8 +489,8 @@ extension ScheduleBoardView {
         Spacer(minLength: 0)
       }
       .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-      .padding(.horizontal, 8)
-      .padding(.vertical, 7)
+      .padding(.horizontal, ScheduleUITokens.Spacing.scheduleItemHorizontalPadding)
+      .padding(.vertical, ScheduleUITokens.Spacing.scheduleItemExpandedVerticalPadding)
       .overlay(alignment: .trailing) {
         schedulePostponeAffordanceOverlay(
           compact: false,
@@ -514,7 +514,10 @@ extension ScheduleBoardView {
     isBackgroundCalendar: Bool,
     contentTopOffset: CGFloat = 0
   ) -> some View {
-    let titleColor: Color = isBackgroundCalendar ? .secondary.opacity(0.78) : .primary
+    let titleColor: Color =
+      isBackgroundCalendar
+        ? .secondary.opacity(ScheduleUITokens.ScheduleItem.backgroundCalendarTitleOpacity)
+        : .primary
     let subtitleColor = scheduleEventSecondaryTextColor(isBackgroundCalendar: isBackgroundCalendar)
     let titleLineLimit = scheduleTimedTitleLineLimit(for: blockHeight, density: density)
     switch density {
@@ -531,10 +534,10 @@ extension ScheduleBoardView {
         Spacer(minLength: 0)
       }
       .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
-      .padding(.leading, 10)
-      .padding(.trailing, 8)
-      .padding(.top, 5 + contentTopOffset)
-      .padding(.bottom, 5)
+      .padding(.leading, ScheduleUITokens.Spacing.scheduleEventLeadingPadding)
+      .padding(.trailing, ScheduleUITokens.Spacing.scheduleEventTrailingPadding)
+      .padding(.top, ScheduleUITokens.Spacing.scheduleItemCompactVerticalPadding + contentTopOffset)
+      .padding(.bottom, ScheduleUITokens.Spacing.scheduleItemCompactVerticalPadding)
 
     case .standard:
       VStack(alignment: .leading, spacing: 2) {
@@ -554,10 +557,10 @@ extension ScheduleBoardView {
         Spacer(minLength: 0)
       }
       .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-      .padding(.leading, 10)
-      .padding(.trailing, 8)
-      .padding(.top, 6 + contentTopOffset)
-      .padding(.bottom, 6)
+      .padding(.leading, ScheduleUITokens.Spacing.scheduleEventLeadingPadding)
+      .padding(.trailing, ScheduleUITokens.Spacing.scheduleEventTrailingPadding)
+      .padding(.top, ScheduleUITokens.Spacing.scheduleItemStandardVerticalPadding + contentTopOffset)
+      .padding(.bottom, ScheduleUITokens.Spacing.scheduleItemStandardVerticalPadding)
 
     case .expanded:
       VStack(alignment: .leading, spacing: 3) {
@@ -584,10 +587,10 @@ extension ScheduleBoardView {
         Spacer(minLength: 0)
       }
       .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-      .padding(.leading, 10)
-      .padding(.trailing, 8)
-      .padding(.top, 7 + contentTopOffset)
-      .padding(.bottom, 7)
+      .padding(.leading, ScheduleUITokens.Spacing.scheduleEventLeadingPadding)
+      .padding(.trailing, ScheduleUITokens.Spacing.scheduleEventTrailingPadding)
+      .padding(.top, ScheduleUITokens.Spacing.scheduleItemExpandedVerticalPadding + contentTopOffset)
+      .padding(.bottom, ScheduleUITokens.Spacing.scheduleItemExpandedVerticalPadding)
     }
   }
 
@@ -651,8 +654,8 @@ extension ScheduleBoardView {
             .lineLimit(1)
         }
       }
-      .padding(.leading, 5)
-      .padding(.trailing, 9)
+      .padding(.leading, ScheduleUITokens.Spacing.scheduleItemChipLeadingPadding)
+      .padding(.trailing, ScheduleUITokens.Spacing.scheduleItemChipTrailingPadding)
       .frame(maxWidth: .infinity, alignment: .leading)
     }
     .overlay(alignment: .trailing) {
@@ -685,7 +688,10 @@ extension ScheduleBoardView {
     isBackgroundCalendar: Bool = false
   ) -> some View {
     ScheduleEventChipSurface(color: color, isBackgroundCalendar: isBackgroundCalendar) {
-      let titleColor: Color = isBackgroundCalendar ? .secondary.opacity(0.78) : .primary
+      let titleColor: Color =
+        isBackgroundCalendar
+          ? .secondary.opacity(ScheduleUITokens.ScheduleItem.backgroundCalendarTitleOpacity)
+          : .primary
       let subtitleColor = scheduleEventSecondaryTextColor(isBackgroundCalendar: isBackgroundCalendar)
       HStack(spacing: 2) {
         Circle()
@@ -708,11 +714,11 @@ extension ScheduleBoardView {
         }
         Spacer(minLength: 0)
         if event.isRecurring {
-          recurrenceIndicator(fontSize: 9)
+          recurrenceIndicator(fontSize: ScheduleUITokens.ScheduleItem.chipRecurrenceIndicatorFontSize)
         }
       }
-      .padding(.leading, 5)
-      .padding(.trailing, 9)
+      .padding(.leading, ScheduleUITokens.Spacing.scheduleItemChipLeadingPadding)
+      .padding(.trailing, ScheduleUITokens.Spacing.scheduleItemChipTrailingPadding)
       .frame(maxWidth: .infinity, alignment: .leading)
     }
     .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))

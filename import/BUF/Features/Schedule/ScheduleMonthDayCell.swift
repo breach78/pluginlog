@@ -106,7 +106,7 @@ struct ScheduleMonthDayCell: View {
 
       if hiddenItemCount > 0 {
         Text("+\(hiddenItemCount)개")
-          .font(.system(size: 13, weight: .medium))
+          .font(.system(size: ScheduleUITokens.MonthCell.overflowFontSize, weight: .medium))
           .foregroundStyle(.secondary)
           .lineLimit(1)
           .padding(.leading, 5)
@@ -124,14 +124,14 @@ struct ScheduleMonthDayCell: View {
     let number = "\(calendar.component(.day, from: day))일"
     if calendar.isDate(day, inSameDayAs: today) {
       Text("\(calendar.component(.day, from: day))")
-        .font(.system(size: 13, weight: .bold))
+        .font(.system(size: ScheduleUITokens.MonthCell.dayNumberFontSize, weight: .bold))
         .foregroundStyle(Color.white)
-        .frame(width: 24, height: 24)
+        .frame(width: ScheduleUITokens.Month.dayNumberHeight, height: ScheduleUITokens.Month.dayNumberHeight)
         .background(Circle().fill(Color.red.opacity(ScheduleUITokens.Month.todayBadgeFillOpacity)))
         .accessibilityLabel(number)
     } else {
       Text(number)
-        .font(.system(size: 13, weight: .semibold))
+        .font(.system(size: ScheduleUITokens.MonthCell.dayNumberFontSize, weight: .semibold))
         .foregroundStyle(dayNumberColor)
         .lineLimit(1)
     }
@@ -140,7 +140,7 @@ struct ScheduleMonthDayCell: View {
   private var dayNumberColor: Color {
     calendar.isDate(day, equalTo: monthStart, toGranularity: .month)
       ? .primary
-      : .secondary.opacity(0.55)
+      : .secondary.opacity(ScheduleUITokens.Opacity.mutedSecondaryText)
   }
 
   private func isCompletedTask(_ item: ScheduleMonthItem) -> Bool {
@@ -187,13 +187,13 @@ struct ScheduleMonthDayCell: View {
   private var cellBackground: some View {
     if isDragTarget {
       Rectangle()
-        .fill(Color.accentColor.opacity(0.09))
+        .fill(Color.accentColor.opacity(ScheduleUITokens.Opacity.dragTargetMonthCellBackground))
     } else if isSelected {
       Rectangle()
-        .fill(Color.accentColor.opacity(0.066))
+        .fill(Color.accentColor.opacity(ScheduleUITokens.Opacity.selectedMonthCellBackground))
     } else if calendar.isDate(day, inSameDayAs: today) {
       Rectangle()
-        .fill(Color.accentColor.opacity(0.055))
+        .fill(Color.accentColor.opacity(ScheduleUITokens.Opacity.todayMonthCellBackground))
     }
   }
 }
@@ -208,11 +208,11 @@ struct ScheduleMonthAllDaySpanRow: View {
   var body: some View {
     HStack(spacing: 4) {
       Image(systemName: "calendar")
-        .font(.system(size: 8, weight: .semibold))
+        .font(.system(size: ScheduleUITokens.MonthCell.allDayIconFontSize, weight: .semibold))
         .foregroundStyle(itemColor)
 
       Text(item.title)
-        .font(.system(size: 13, weight: .medium))
+        .font(.system(size: ScheduleUITokens.MonthCell.allDayTitleFontSize, weight: .medium))
         .foregroundStyle(.primary)
         .lineLimit(1)
         .truncationMode(.tail)
@@ -246,8 +246,8 @@ private struct ScheduleMonthCompactItemRow: View {
   .locale(Locale(identifier: "ko_KR"))
 
   private var rowOpacity: Double {
-    if isCompletedTask { return 0.384 }
-    if item.isBackgroundCalendar { return 0.48 }
+    if isCompletedTask { return ScheduleUITokens.Opacity.completedMonthScheduleItem }
+    if item.isBackgroundCalendar { return ScheduleUITokens.Opacity.backgroundMonthCalendarItem }
     return 1
   }
 
@@ -256,7 +256,7 @@ private struct ScheduleMonthCompactItemRow: View {
       markerControl
 
       Text(item.title)
-        .font(.system(size: 13, weight: .regular))
+        .font(.system(size: ScheduleUITokens.MonthCell.itemTitleFontSize, weight: .regular))
         .foregroundStyle(textColor)
         .lineLimit(1)
         .truncationMode(.tail)
@@ -264,7 +264,7 @@ private struct ScheduleMonthCompactItemRow: View {
       if let timeText {
         Spacer(minLength: 2)
         Text(timeText)
-          .font(.system(size: 10.5))
+          .font(.system(size: ScheduleUITokens.MonthCell.itemTimeFontSize))
           .foregroundStyle(.secondary)
           .lineLimit(1)
       }
@@ -278,7 +278,10 @@ private struct ScheduleMonthCompactItemRow: View {
     if let onToggleCompletion {
       Button(action: onToggleCompletion) {
         marker
-          .frame(width: 16, height: ScheduleMonthLayoutMetrics.itemRowHeight)
+          .frame(
+            width: ScheduleUITokens.MonthCell.markerControlWidth,
+            height: ScheduleMonthLayoutMetrics.itemRowHeight
+          )
           .contentShape(Rectangle())
       }
       .buttonStyle(.plain)
@@ -290,7 +293,10 @@ private struct ScheduleMonthCompactItemRow: View {
       .help(item.isCompleted ? "완료 취소" : "완료")
     } else {
       marker
-        .frame(width: 16, height: ScheduleMonthLayoutMetrics.itemRowHeight)
+        .frame(
+          width: ScheduleUITokens.MonthCell.markerControlWidth,
+          height: ScheduleMonthLayoutMetrics.itemRowHeight
+        )
     }
   }
 
@@ -300,22 +306,28 @@ private struct ScheduleMonthCompactItemRow: View {
     case .workspaceTask:
       if isCompletedTask {
         Image(systemName: "checkmark.circle.fill")
-          .font(.system(size: 10, weight: .semibold))
+          .font(.system(size: ScheduleUITokens.MonthCell.completedTaskIconFontSize, weight: .semibold))
           .foregroundStyle(itemColor)
       } else {
         Circle()
           .strokeBorder(itemColor, lineWidth: 1.4)
-          .frame(width: 10, height: 10)
+          .frame(
+            width: ScheduleUITokens.MonthCell.taskMarkerSize,
+            height: ScheduleUITokens.MonthCell.taskMarkerSize
+          )
       }
     case .calendarEvent:
       if item.isAllDay {
         Image(systemName: "calendar")
-          .font(.system(size: 8, weight: .semibold))
+          .font(.system(size: ScheduleUITokens.MonthCell.allDayCalendarIconFontSize, weight: .semibold))
           .foregroundStyle(itemColor)
       } else {
         RoundedRectangle(cornerRadius: 2, style: .continuous)
           .fill(itemColor)
-          .frame(width: 3, height: 14)
+          .frame(
+            width: ScheduleUITokens.MonthCell.calendarStripeWidth,
+            height: ScheduleUITokens.MonthCell.timedCalendarStripeHeight
+          )
       }
     }
   }
@@ -345,13 +357,24 @@ struct ScheduleMonthDragFeedbackMarker: View {
         .fill(Color(nsColor: .windowBackgroundColor))
         .overlay {
           Circle()
-            .strokeBorder(itemColor.opacity(0.75), lineWidth: 1.2)
+            .strokeBorder(
+              itemColor.opacity(ScheduleUITokens.MonthCell.dragFeedbackStrokeOpacity),
+              lineWidth: 1.2
+            )
         }
-        .shadow(color: Color.black.opacity(0.12), radius: 5, x: 0, y: 2)
+        .shadow(
+          color: Color.black.opacity(ScheduleUITokens.Shadow.dragPreviewOpacity),
+          radius: ScheduleUITokens.Shadow.dragPreviewRadius,
+          x: 0,
+          y: ScheduleUITokens.Shadow.dragPreviewYOffset
+        )
 
       marker
     }
-    .frame(width: 24, height: 24)
+    .frame(
+      width: ScheduleUITokens.MonthCell.dragFeedbackSize,
+      height: ScheduleUITokens.MonthCell.dragFeedbackSize
+    )
   }
 
   @ViewBuilder
@@ -360,22 +383,31 @@ struct ScheduleMonthDragFeedbackMarker: View {
     case .workspaceTask:
       if feedback.isCompleted {
         Image(systemName: "checkmark.circle.fill")
-          .font(.system(size: 13, weight: .semibold))
+          .font(.system(
+            size: ScheduleUITokens.MonthCell.dragFeedbackCompletedTaskIconFontSize,
+            weight: .semibold
+          ))
           .foregroundStyle(itemColor)
       } else {
         Circle()
           .strokeBorder(itemColor, lineWidth: 1.8)
-          .frame(width: 12, height: 12)
+          .frame(
+            width: ScheduleUITokens.MonthCell.dragFeedbackTaskOutlineSize,
+            height: ScheduleUITokens.MonthCell.dragFeedbackTaskOutlineSize
+          )
       }
     case .calendarEvent:
       if feedback.isAllDay {
         Image(systemName: "calendar")
-          .font(.system(size: 10, weight: .semibold))
+          .font(.system(size: ScheduleUITokens.MonthCell.dragFeedbackCalendarIconFontSize, weight: .semibold))
           .foregroundStyle(itemColor)
       } else {
         RoundedRectangle(cornerRadius: 2, style: .continuous)
           .fill(itemColor)
-          .frame(width: 4, height: 14)
+          .frame(
+            width: ScheduleUITokens.MonthCell.dragFeedbackTimedCalendarStripeWidth,
+            height: ScheduleUITokens.MonthCell.timedCalendarStripeHeight
+          )
       }
     }
   }

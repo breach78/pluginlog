@@ -127,12 +127,17 @@ struct ScheduleTaskBlockSurface: View {
   }
 
   var body: some View {
-    let shape = RoundedRectangle(cornerRadius: 6, style: .continuous)
+    let cornerRadius = ScheduleUITokens.EventBlock.cornerRadius
+    let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
     let baseFillOpacity: Double = {
       if isPreparationSlot {
-        return isCompleted ? 0.14 : 0.2
+        return isCompleted
+          ? ScheduleUITokens.EventBlock.completedPreparationFillOpacity
+          : ScheduleUITokens.EventBlock.preparationFillOpacity
       }
-      return isCompleted ? 0.14 : 0.22
+      return isCompleted
+        ? ScheduleUITokens.EventBlock.completedTaskFillOpacity
+        : ScheduleUITokens.EventBlock.taskFillOpacity
     }()
     let selectionFillOpacity = isSelected ? (isCompleted ? 0.12 : 0.18) : 0
     let selectionStrokeOpacity = isSelected ? (isCompleted ? 0.22 : 0.34) : 0
@@ -146,7 +151,7 @@ struct ScheduleTaskBlockSurface: View {
           .overlay {
             if strokeOpacity > 0 {
               ScheduleRoundedRectangleStrokeOverlay(
-                cornerRadius: 6,
+                cornerRadius: cornerRadius,
                 color: color.opacity(strokeOpacity),
                 lineWidth: 1
               )
@@ -175,20 +180,27 @@ struct ScheduleEventBlockSurface: View {
   }
 
   var body: some View {
-    let shape = RoundedRectangle(cornerRadius: 6, style: .continuous)
+    let cornerRadius = ScheduleUITokens.EventBlock.cornerRadius
+    let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
     shape
-      .fill(color.opacity(isBackgroundCalendar ? 0.08 : 0.14))
+      .fill(color.opacity(
+        isBackgroundCalendar
+          ? ScheduleUITokens.EventBlock.backgroundCalendarFillOpacity
+          : ScheduleUITokens.EventBlock.eventFillOpacity
+      ))
       .overlay {
         if isBackgroundCalendar {
-          ScheduleBackgroundStripeOverlay(lineColor: Color.white.opacity(0.5))
+          ScheduleBackgroundStripeOverlay(
+            lineColor: Color.white.opacity(ScheduleUITokens.EventBlock.backgroundStripeOpacity)
+          )
             .clipShape(shape)
         }
       }
       .overlay(alignment: .leading) {
         if !isBackgroundCalendar {
           Rectangle()
-            .fill(color.opacity(0.88))
-            .frame(width: 3)
+            .fill(color.opacity(ScheduleUITokens.EventBlock.calendarStripeForegroundOpacity))
+            .frame(width: ScheduleUITokens.EventBlock.colorStripeWidth)
         }
       }
       .clipShape(shape)
@@ -220,22 +232,25 @@ struct ScheduleTaskChipSurface<Content: View>: View {
   }
 
   var body: some View {
-    let shape = RoundedRectangle(cornerRadius: 10, style: .continuous)
+    let cornerRadius = ScheduleUITokens.EventBlock.chipCornerRadius
+    let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
     let baseFillColor =
-      isPreparationSlot ? color.opacity(0.11) : Color(nsColor: .controlBackgroundColor)
+      isPreparationSlot
+        ? color.opacity(ScheduleUITokens.EventBlock.preparationChipFillOpacity)
+        : Color(nsColor: .controlBackgroundColor)
     let selectionFillOpacity = isSelected ? 0.16 : 0
     let selectionStrokeOpacity = isSelected ? 0.28 : 0
     let strokeOpacity = isSelected ? 0.98 : selectionStrokeOpacity
 
     shape
-      .fill(isSelected ? color.opacity(0.95) : baseFillColor)
+      .fill(isSelected ? color.opacity(ScheduleUITokens.EventBlock.selectedFillOpacity) : baseFillColor)
       .overlay {
         shape
           .fill(selectionHighlightColor.opacity(isSelected ? 0 : selectionFillOpacity))
           .overlay {
             if strokeOpacity > 0 {
               ScheduleRoundedRectangleStrokeOverlay(
-                cornerRadius: 10,
+                cornerRadius: cornerRadius,
                 color: color.opacity(strokeOpacity),
                 lineWidth: 1
               )
@@ -264,12 +279,19 @@ struct ScheduleEventChipSurface<Content: View>: View {
   }
 
   var body: some View {
-    RoundedRectangle(cornerRadius: 10, style: .continuous)
-      .fill(color.opacity(isBackgroundCalendar ? 0.07 : 0.14))
+    let cornerRadius = ScheduleUITokens.EventBlock.chipCornerRadius
+    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+      .fill(color.opacity(
+        isBackgroundCalendar
+          ? ScheduleUITokens.EventBlock.backgroundCalendarFillOpacity
+          : ScheduleUITokens.EventBlock.eventFillOpacity
+      ))
       .overlay {
         if isBackgroundCalendar {
-          ScheduleBackgroundStripeOverlay(lineColor: Color.white.opacity(0.48))
-            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+          ScheduleBackgroundStripeOverlay(
+            lineColor: Color.white.opacity(ScheduleUITokens.EventBlock.chipBackgroundStripeOpacity)
+          )
+            .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
         }
       }
       .overlay {

@@ -21,6 +21,12 @@ enum ScheduleUITokens {
     static let scheduleItemStandardVerticalPadding: CGFloat = 6
     static let scheduleItemExpandedVerticalPadding: CGFloat = 7
     static let scheduleItemContentSpacing: CGFloat = 7
+    static let scheduleEventLeadingPadding: CGFloat = 10
+    static let scheduleEventTrailingPadding: CGFloat = 8
+    static let scheduleItemChipLeadingPadding: CGFloat = 5
+    static let scheduleItemChipTrailingPadding: CGFloat = 9
+    static let recurrenceIndicatorTopPadding: CGFloat = 6
+    static let recurrenceIndicatorTrailingPadding: CGFloat = 8
     static let panelSectionSpacing: CGFloat = 18
     static let panelFieldSpacing: CGFloat = 8
     static let quickAddContentPadding: CGFloat = 12
@@ -75,6 +81,15 @@ enum ScheduleUITokens {
     static let completedPreparationFillOpacity = 0.14
     static let eventFillOpacity = 0.14
     static let backgroundCalendarFillOpacity = 0.08
+    static let selectedFillOpacity = 0.95
+    static let preparationChipFillOpacity = 0.11
+    static let dayPanelTaskFillOpacity = 0.16
+    static let dayPanelCompletedTaskFillOpacity = 0.08
+    static let dayPanelCalendarFillOpacity = 0.20
+    static let dayPanelBackgroundCalendarFillOpacity = 0.12
+    static let dayPanelAllDayCalendarFillOpacity = 0.24
+    static let dayPanelAllDayBackgroundCalendarFillOpacity = 0.16
+    static let dayPanelDragPreviewFillOpacity = 0.18
   }
 
   enum Panel {
@@ -189,8 +204,11 @@ enum ScheduleUITokens {
     static let calendarStripeWidth: CGFloat = EventBlock.colorStripeWidth
     static let timedCalendarStripeHeight: CGFloat = 14
     static let dragFeedbackSize: CGFloat = 24
+    static let dragFeedbackCompletedTaskIconFontSize: CGFloat = Typography.scheduleItemTitleFontSize
+    static let dragFeedbackCalendarIconFontSize: CGFloat = Typography.chromeLabelFontSize
     static let dragFeedbackTaskOutlineSize: CGFloat = 12
     static let dragFeedbackTimedCalendarStripeWidth: CGFloat = 4
+    static let dragFeedbackStrokeOpacity = 0.75
   }
 
   enum MonthDayPanel {
@@ -240,6 +258,12 @@ enum ScheduleUITokens {
     static let interactingOpacity = Opacity.interactingScheduleItem
     static let dragPreviewOpacity = Opacity.dragPreviewScheduleItem
     static let secondaryTextOpacityMultiplier = 0.6
+    static let backgroundCalendarTitleOpacity = 0.78
+    static let recurrenceIndicatorFontSize: CGFloat = 9.5
+    static let chipRecurrenceIndicatorFontSize: CGFloat = 9
+    static let recurrenceIndicatorTopPadding: CGFloat = Spacing.recurrenceIndicatorTopPadding
+    static let recurrenceIndicatorTrailingPadding: CGFloat =
+      Spacing.recurrenceIndicatorTrailingPadding
   }
 
   enum DayPanelRow {
@@ -253,6 +277,14 @@ enum ScheduleUITokens {
     static let colorStripeWidth: CGFloat = EventBlock.colorStripeWidth
     static let openHitAreaTaskWidth: CGFloat = 34
     static let resizeHandleHeight: CGFloat = 10
+    static let timedCornerRadius: CGFloat = 7
+    static let timedSubtitleMinHeight: CGFloat = 52
+    static let timedTimeMinHeight: CGFloat = 68
+    static let markerTopPadding: CGFloat = 1
+    static let markerHitWidth: CGFloat = markerColumnWidth
+    static let markerHitHeight: CGFloat = allDayRowHeight
+    static let dragPreviewMarkerSize: CGFloat = 18
+    static let allDayCalendarHorizontalPadding: CGFloat = Spacing.scheduleItemHorizontalPadding
     static let interactingOpacity = Opacity.interactingScheduleItem
     static let baseMutedOpacity = Opacity.completedScheduleItem
     static let dragPreviewOpacity = Opacity.dragPreviewScheduleItem

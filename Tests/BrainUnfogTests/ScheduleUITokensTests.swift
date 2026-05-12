@@ -111,4 +111,74 @@ final class ScheduleUITokensTests: XCTestCase {
     XCTAssertEqual(ScheduleUITokens.Chrome.calendarIconFontSize, 15)
     XCTAssertEqual(ScheduleUITokens.Chrome.calendarSwatchSize, 6)
   }
+
+  func testScheduleItemRenderingFilesUseSharedTokensForRepeatedMetrics() throws {
+    let forbiddenRawMetrics: [String: [String]] = [
+      "import/BUF/Features/Schedule/ScheduleBoardTimedBlocks.swift": [
+        ".padding(.horizontal, 8)",
+        ".padding(.leading, 10)",
+        ".padding(.trailing, 8)",
+        "recurrenceIndicator(fontSize: 9.5)",
+        "recurrenceIndicator(fontSize: 9)",
+        ".secondary.opacity(0.78)",
+      ],
+      "import/BUF/Features/Schedule/ScheduleEventRenderingLayer.swift": [
+        "cornerRadius: 6",
+        "cornerRadius: 10",
+        ".opacity(0.88)",
+        ".frame(width: 3)",
+        "color.opacity(0.11)",
+        "color.opacity(0.95)",
+        "Color.white.opacity(0.5)",
+        "Color.white.opacity(0.48)",
+      ],
+      "import/BUF/Features/Schedule/ScheduleMonthDayCell.swift": [
+        ".font(.system(size: 13",
+        ".font(.system(size: 10.5",
+        ".font(.system(size: 10",
+        ".font(.system(size: 8",
+        ".frame(width: 16",
+        ".frame(width: 10, height: 10)",
+        ".frame(width: 3, height: 14)",
+        "return 0.384",
+        "return 0.48",
+        ".secondary.opacity(0.55)",
+        "Color.accentColor.opacity(0.09)",
+        "Color.accentColor.opacity(0.066)",
+        "Color.accentColor.opacity(0.055)",
+      ],
+      "import/BUF/Features/Schedule/ScheduleMonthDayScheduleRows.swift": [
+        ".font(.system(size: 13",
+        ".font(.system(size: 11",
+        ".font(.system(size: 8",
+        ".frame(height: 24)",
+        ".frame(width: 26, height: 24)",
+        ".frame(width: 3)",
+        ".frame(width: 34)",
+        ".frame(height: 10)",
+        ".frame(width: 16, height: 16)",
+        ".frame(width: 18, height: 18)",
+        "isInteracting ? 0.22",
+        "? 0.45 : 1",
+        ".opacity(0.72)",
+        "color.opacity(0.18)",
+        "color.opacity(0.95)",
+      ],
+    ]
+
+    let root = URL(fileURLWithPath: #filePath)
+      .deletingLastPathComponent()
+      .deletingLastPathComponent()
+      .deletingLastPathComponent()
+
+    var failures: [String] = []
+    for (relativePath, forbiddenPatterns) in forbiddenRawMetrics {
+      let source = try String(contentsOf: root.appendingPathComponent(relativePath), encoding: .utf8)
+      for pattern in forbiddenPatterns where source.contains(pattern) {
+        failures.append("\(relativePath) still contains \(pattern)")
+      }
+    }
+
+    XCTAssertTrue(failures.isEmpty, failures.joined(separator: "\n"))
+  }
 }
