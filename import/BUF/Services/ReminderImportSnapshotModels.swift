@@ -455,24 +455,6 @@ struct ReminderGatewayImportSnapshotProvider {
   }
 
   private func encodedRecurrence(_ rule: EKRecurrenceRule?) -> String? {
-    guard let rule else { return nil }
-
-    switch rule.frequency {
-    case .daily:
-      return "daily|\(max(1, rule.interval))"
-    case .weekly:
-      let weekdays = (rule.daysOfTheWeek ?? [])
-        .map(\.dayOfTheWeek.rawValue)
-        .sorted()
-        .map(String.init)
-        .joined(separator: ",")
-      return "weekly|\(max(1, rule.interval))|\(weekdays)"
-    case .monthly:
-      return "monthly|\(max(1, rule.interval))"
-    case .yearly:
-      return "yearly|\(max(1, rule.interval))"
-    @unknown default:
-      return nil
-    }
+    ReminderRecurrenceCodec.rawValue(from: rule.map { [$0] })
   }
 }

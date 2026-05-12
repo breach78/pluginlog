@@ -78,6 +78,7 @@ struct TimelineTaskEditPopoverContent: View {
   @State private var hasTime: Bool
   @State private var selectedTime: Date
   @State private var durationMinutes: Int?
+  @State private var recurrenceDescriptor: ReminderRecurrenceDescriptor
   @State private var isDatePickerPresented = false
   @State private var isTimePickerPresented = false
   @State private var lastCommittedFields: RetainedTaskEditFields
@@ -144,6 +145,9 @@ struct TimelineTaskEditPopoverContent: View {
     _hasTime = State(initialValue: initialFields.timeMinutes != nil)
     _selectedTime = State(initialValue: Self.timeDate(minutes: initialFields.timeMinutes))
     _durationMinutes = State(initialValue: initialDurationMinutes)
+    _recurrenceDescriptor = State(
+      initialValue: ReminderRecurrenceDescriptor.parse(initialFields.recurrenceRuleRaw)
+    )
     _lastCommittedFields = State(
       initialValue: Self.savingFields(
         title: initialFields.title,
@@ -151,7 +155,8 @@ struct TimelineTaskEditPopoverContent: View {
         attachments: initialAttachments,
         day: initialFields.day,
         timeMinutes: initialFields.timeMinutes,
-        durationMinutes: initialDurationMinutes
+        durationMinutes: initialDurationMinutes,
+        recurrenceRuleRaw: initialFields.recurrenceRuleRaw
       )
     )
   }
@@ -203,6 +208,12 @@ struct TimelineTaskEditPopoverContent: View {
         scheduleAutoSave()
       }
       .onChange(of: durationMinutes) { _, _ in
+        scheduleAutoSave()
+      }
+      .onChange(of: recurrenceDescriptor) { _, descriptor in
+        if descriptor != .none, !descriptor.isUnsupported, !hasDate {
+          hasDate = true
+        }
         scheduleAutoSave()
       }
       .onChange(of: selectedDate) { _, _ in
@@ -333,6 +344,8 @@ struct TimelineTaskEditPopoverContent: View {
       attachmentSection
 
       dateTimeSection
+
+      recurrenceSection
 
       if let bottomContent {
         VStack(alignment: .leading, spacing: 10) {
@@ -482,6 +495,14 @@ struct TimelineTaskEditPopoverContent: View {
     }
     .frame(maxWidth: .infinity, alignment: .leading)
     .tint(TaskEditFieldStyle.softAccentColor)
+  }
+
+  private var recurrenceSection: some View {
+    TaskEditRecurrenceControl(
+      descriptor: $recurrenceDescriptor,
+      selectedDate: selectedDate,
+      calendar: calendar
+    )
   }
 
   private var durationValueBinding: Binding<Int> {
@@ -736,6 +757,7 @@ struct TimelineTaskEditPopoverContent: View {
     selectedDate = fields.day ?? .now
     hasTime = fields.timeMinutes != nil
     selectedTime = Self.timeDate(minutes: fields.timeMinutes)
+    recurrenceDescriptor = ReminderRecurrenceDescriptor.parse(fields.recurrenceRuleRaw)
     durationMinutes = TimelineTaskEditDurationPolicy.savedDuration(
       hasDate: fields.day != nil,
       hasTime: fields.timeMinutes != nil,
@@ -749,7 +771,8 @@ struct TimelineTaskEditPopoverContent: View {
         attachments: nextAttachments,
         day: fields.day,
         timeMinutes: fields.timeMinutes,
-        durationMinutes: fields.durationMinutes
+        durationMinutes: fields.durationMinutes,
+        recurrenceRuleRaw: fields.recurrenceRuleRaw
       )
     endSyncEditingSessionIfClean()
   }
@@ -763,7 +786,8 @@ struct TimelineTaskEditPopoverContent: View {
       attachments: nextAttachments,
       day: fields.day,
       timeMinutes: fields.timeMinutes,
-      durationMinutes: fields.durationMinutes
+      durationMinutes: fields.durationMinutes,
+      recurrenceRuleRaw: fields.recurrenceRuleRaw
     )
   }
 
@@ -897,7 +921,8 @@ struct TimelineTaskEditPopoverContent: View {
         hasDate: hasDate,
         hasTime: hasTime,
         durationMinutes: durationMinutes
-      )
+      ),
+      recurrenceRuleRaw: recurrenceDescriptor.rawValue
     )
   }
 
@@ -912,7 +937,8 @@ struct TimelineTaskEditPopoverContent: View {
     attachments: [TaskEditAttachment],
     day: Date?,
     timeMinutes: Int?,
-    durationMinutes: Int?
+    durationMinutes: Int?,
+    recurrenceRuleRaw: String?
   ) -> RetainedTaskEditFields {
     let savedDuration = TimelineTaskEditDurationPolicy.savedDuration(
       hasDate: day != nil,
@@ -924,7 +950,9 @@ struct TimelineTaskEditPopoverContent: View {
       noteText: TaskEditAttachmentService.noteTextByAppendingAttachments(attachments, to: noteText),
       day: day,
       timeMinutes: timeMinutes,
-      durationMinutes: savedDuration
+      durationMinutes: savedDuration,
+      recurrenceRuleRaw: recurrenceRuleRaw,
+      updatesRecurrence: true
     )
   }
 
@@ -1067,7 +1095,7 @@ private struct TaskEditCompactControlBackground: ViewModifier {
   }
 }
 
-private enum TaskEditFieldStyle {
+enum TaskEditFieldStyle {
   static let panelBackgroundColor = Color(
     nsColor: NSColor(calibratedWhite: 1, alpha: 1)
   )

@@ -67,7 +67,9 @@ extension ScheduleBoardView {
       noteText: "",
       day: taskRow.reminderDate.map { calendar.startOfDay(for: $0) },
       timeMinutes: taskRow.scheduleHasExplicitTime ? taskRow.reminderDate.map(timeMinutes) : nil,
-      durationMinutes: taskRow.scheduledDurationMinutes
+      durationMinutes: taskRow.scheduledDurationMinutes,
+      recurrenceRuleRaw: taskRow.recurrenceRuleRaw,
+      updatesRecurrence: true
     )
   }
 

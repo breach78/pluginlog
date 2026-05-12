@@ -73,6 +73,7 @@ enum AppOwnedRetainedTaskCommandService {
       noteText: "",
       dueDate: dueDate,
       hasExplicitTime: hasExplicitTime,
+      recurrenceRuleRaw: nil,
       remoteModifiedAt: metadata.modifiedAt
     )
     TaskIdentityBridgeStore.upsertProject(
@@ -106,7 +107,9 @@ enum AppOwnedRetainedTaskCommandService {
       noteText: task.noteText,
       day: task.dueDate.map { calendar.startOfDay(for: $0) },
       timeMinutes: task.hasExplicitTime ? task.dueDate.map { minutesSinceStartOfDay(for: $0, calendar: calendar) } : nil,
-      durationMinutes: task.durationMinutes
+      durationMinutes: task.durationMinutes,
+      recurrenceRuleRaw: task.recurrenceRuleRaw,
+      updatesRecurrence: true
     )
   }
 
@@ -122,6 +125,9 @@ enum AppOwnedRetainedTaskCommandService {
     let dueDate = scheduledDate(day: rawFields.day, timeMinutes: rawFields.timeMinutes, calendar: calendar)
     let hasExplicitTime = dueDate != nil && rawFields.timeMinutes != nil
     let effectiveDurationMinutes = hasExplicitTime ? (rawFields.durationMinutes ?? task.durationMinutes) : nil
+    let recurrenceRuleRaw = rawFields.updatesRecurrence
+      ? normalized(rawFields.recurrenceRuleRaw)
+      : task.recurrenceRuleRaw
     let reference = reminderReference(task)
     var latestModifiedAt: Date?
 
@@ -144,6 +150,12 @@ enum AppOwnedRetainedTaskCommandService {
         hasExplicitTime: hasExplicitTime
       )?.modifiedAt ?? latestModifiedAt
     }
+    if rawFields.updatesRecurrence, recurrenceRuleRaw != normalized(task.recurrenceRuleRaw) {
+      latestModifiedAt = try reminderProjectProvider.setTaskRecurrence(
+        for: reference,
+        recurrenceRuleRaw: recurrenceRuleRaw
+      )?.modifiedAt ?? latestModifiedAt
+    }
 
     let modifiedAt = latestModifiedAt ?? .now
     try await store.upsertTask(
@@ -158,7 +170,7 @@ enum AppOwnedRetainedTaskCommandService {
       dueDate: dueDate,
       hasExplicitTime: hasExplicitTime,
       durationMinutes: effectiveDurationMinutes,
-      recurrenceRuleRaw: task.recurrenceRuleRaw,
+      recurrenceRuleRaw: recurrenceRuleRaw,
       priority: task.priority,
       modifiedAt: modifiedAt,
       appendIfMissing: false
@@ -170,6 +182,7 @@ enum AppOwnedRetainedTaskCommandService {
       noteText: rawFields.noteText,
       dueDate: dueDate,
       hasExplicitTime: hasExplicitTime,
+      recurrenceRuleRaw: recurrenceRuleRaw,
       remoteModifiedAt: modifiedAt
     )
     TaskIdentityBridgeStore.upsertTask(
@@ -266,6 +279,7 @@ enum AppOwnedRetainedTaskCommandService {
         noteText: remoteSnapshot.noteText,
         dueDate: remoteSnapshot.dueDate,
         hasExplicitTime: remoteSnapshot.hasExplicitTime,
+        recurrenceRuleRaw: remoteSnapshot.recurrenceRuleRaw,
         remoteModifiedAt: remoteSnapshot.modifiedAt
       )
       TaskIdentityBridgeStore.upsertTask(
@@ -299,6 +313,7 @@ enum AppOwnedRetainedTaskCommandService {
       noteText: task.noteText,
       dueDate: task.dueDate,
       hasExplicitTime: task.hasExplicitTime,
+      recurrenceRuleRaw: task.recurrenceRuleRaw,
       remoteModifiedAt: metadata.modifiedAt
     )
     return commandResult(projectID: projectID, taskID: taskID)
@@ -373,6 +388,7 @@ enum AppOwnedRetainedTaskCommandService {
         noteText: task.noteText,
         dueDate: dueDate,
         hasExplicitTime: hasExplicitTime,
+        recurrenceRuleRaw: taskForStorage.recurrenceRuleRaw,
         remoteModifiedAt: remoteMetadata.modifiedAt
       )
     } else {
@@ -528,6 +544,7 @@ enum AppOwnedRetainedTaskCommandService {
         noteText: noteText,
         dueDate: storedDueDate,
         hasExplicitTime: storedHasExplicitTime,
+        recurrenceRuleRaw: recurrenceRuleRaw,
         remoteModifiedAt: storedModifiedAt
       )
       TaskIdentityBridgeStore.upsertTask(
@@ -618,6 +635,7 @@ enum AppOwnedRetainedTaskCommandService {
     noteText: String,
     dueDate: Date?,
     hasExplicitTime: Bool,
+    recurrenceRuleRaw: String?,
     remoteModifiedAt: Date?
   ) {
     ReminderSyncBaselineStore.upsert(
@@ -626,7 +644,7 @@ enum AppOwnedRetainedTaskCommandService {
         title: title,
         isCompleted: isCompleted,
         date: ReminderScheduleMetadataCodec.encodeDate(dueDate, hasExplicitTime: hasExplicitTime),
-        repeatRule: nil,
+        repeatRule: ReminderScheduleMetadataCodec.encodeRepeat(recurrenceRuleRaw),
         noteText: noteText
       ),
       remoteModifiedAt: remoteModifiedAt

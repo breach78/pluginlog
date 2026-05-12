@@ -19,6 +19,8 @@ struct RetainedTaskEditFields: Equatable, Sendable {
   var day: Date?
   var timeMinutes: Int?
   var durationMinutes: Int?
+  var recurrenceRuleRaw: String? = nil
+  var updatesRecurrence: Bool = false
 }
 
 struct RetainedTaskCompletionMutationPlan: Equatable, Sendable {

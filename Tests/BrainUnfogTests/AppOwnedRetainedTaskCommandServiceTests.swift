@@ -117,6 +117,96 @@ final class AppOwnedRetainedTaskCommandServiceTests: XCTestCase {
   }
 
   @MainActor
+  func testAppOwnedTaskEditRecurrenceWritesReminderAndLoadsBack() async throws {
+    let start = try XCTUnwrap(
+      Self.calendar.date(from: DateComponents(year: 2026, month: 5, day: 2, hour: 9, minute: 30))
+    )
+    let fixture = try await makeEnabledStoreFixture(
+      taskExternalIdentifier: "task-1",
+      dueDate: start,
+      scheduleHasExplicitTime: true,
+      scheduledDurationMinutes: 45
+    )
+    let provider = FakeAppOwnedReminderProjectProvider()
+    let taskID = ReminderProjectionIdentity.taskID(for: "task-1")
+    let day = Self.calendar.startOfDay(for: start)
+
+    _ = try await RetainedTaskCommandFacade.updateTaskEditFields(
+      vaultRootURL: fixture.vaultRoot,
+      projectID: fixture.projectID,
+      taskID: taskID,
+      fields: RetainedTaskEditFields(
+        title: "Task",
+        noteText: "",
+        day: day,
+        timeMinutes: 9 * 60 + 30,
+        durationMinutes: 45,
+        recurrenceRuleRaw: "monthly|1|weekdays=3:2",
+        updatesRecurrence: true
+      ),
+      calendar: Self.calendar,
+      reminderProjectProvider: provider
+    )
+
+    let fields = try await RetainedTaskCommandFacade.taskEditFields(
+      vaultRootURL: fixture.vaultRoot,
+      projectID: fixture.projectID,
+      taskID: taskID,
+      calendar: Self.calendar
+    )
+    let snapshot = try await fixture.store.loadRetainedWorkspaceSnapshot(projectIDs: [fixture.projectID])
+    let task = try XCTUnwrap(snapshot.projects.first?.tasks.first)
+    let taskReference = try await fixture.store.taskReference(projectID: fixture.projectID, taskID: taskID)
+
+    XCTAssertEqual(provider.recurrenceUpdate?.0, "task-1")
+    XCTAssertEqual(provider.recurrenceUpdate?.1, "monthly|1|weekdays=3:2")
+    XCTAssertNil(provider.scheduleUpdate)
+    XCTAssertEqual(fields.recurrenceRuleRaw, "monthly|1|weekdays=3:2")
+    XCTAssertEqual(fields.durationMinutes, 45)
+    XCTAssertEqual(taskReference.recurrenceRuleRaw, "monthly|1|weekdays=3:2")
+    XCTAssertEqual(task.schedule.durationMinutes, 45)
+  }
+
+  @MainActor
+  func testAppOwnedTaskEditWithoutRecurrenceIntentPreservesExistingRecurrence() async throws {
+    let start = try XCTUnwrap(
+      Self.calendar.date(from: DateComponents(year: 2026, month: 5, day: 2, hour: 9, minute: 30))
+    )
+    let fixture = try await makeEnabledStoreFixture(
+      taskExternalIdentifier: "task-1",
+      dueDate: start,
+      scheduleHasExplicitTime: true,
+      scheduledDurationMinutes: 45,
+      recurrenceRuleRaw: "daily|2"
+    )
+    let provider = FakeAppOwnedReminderProjectProvider()
+    let taskID = ReminderProjectionIdentity.taskID(for: "task-1")
+    let nextDay = try XCTUnwrap(
+      Self.calendar.date(from: DateComponents(year: 2026, month: 5, day: 3))
+    )
+
+    _ = try await RetainedTaskCommandFacade.updateTaskEditFields(
+      vaultRootURL: fixture.vaultRoot,
+      projectID: fixture.projectID,
+      taskID: taskID,
+      fields: RetainedTaskEditFields(
+        title: "Task",
+        noteText: "",
+        day: nextDay,
+        timeMinutes: 10 * 60,
+        durationMinutes: 45
+      ),
+      calendar: Self.calendar,
+      reminderProjectProvider: provider
+    )
+
+    let taskReference = try await fixture.store.taskReference(projectID: fixture.projectID, taskID: taskID)
+
+    XCTAssertNil(provider.recurrenceUpdate)
+    XCTAssertEqual(taskReference.recurrenceRuleRaw, "daily|2")
+  }
+
+  @MainActor
   func testUserFlowDurationEditSurvivesRelaunchAndReminderRefresh() async throws {
     let start = try XCTUnwrap(
       Self.calendar.date(from: DateComponents(year: 2026, month: 5, day: 2, hour: 9, minute: 30))

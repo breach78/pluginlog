@@ -612,7 +612,9 @@ extension TimelineBoardView {
       noteText: entry.reminderNoteText,
       day: date.map { calendar.startOfDay(for: $0) },
       timeMinutes: entry.scheduleHasExplicitTime ? date.map(timelineTaskEditTimeMinutes) : nil,
-      durationMinutes: entry.scheduledDurationMinutes
+      durationMinutes: entry.scheduledDurationMinutes,
+      recurrenceRuleRaw: entry.recurrenceRuleRaw,
+      updatesRecurrence: true
     )
   }
 
