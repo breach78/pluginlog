@@ -18,6 +18,7 @@ struct ScheduleMonthView: View {
   let externalDragTargetDate: Date?
   let externalDayDropTarget: ScheduleMonthDropTarget?
   let onDropTargetsChanged: ([ScheduleMonthDropTarget]) -> Void
+  let scrollToTodayToken: Int
 
   private let weekdayHeaderHeight: CGFloat = ScheduleUITokens.Month.weekdayHeaderHeight
   private let monthHeaderHeight: CGFloat = ScheduleUITokens.Month.monthHeaderHeight
@@ -86,41 +87,6 @@ struct ScheduleMonthView: View {
         .minimumScaleFactor(0.7)
 
       Spacer(minLength: 0)
-
-      HStack(spacing: 8) {
-        Button {
-          moveMonth(by: -1)
-        } label: {
-          Image(systemName: "chevron.left")
-            .font(.system(size: ScheduleUITokens.Month.headerNavigationIconFontSize, weight: .bold))
-            .frame(
-              width: ScheduleUITokens.Month.headerNavigationButtonSize,
-              height: ScheduleUITokens.Month.headerNavigationButtonSize
-            )
-        }
-        .buttonStyle(.borderless)
-        .help("이전 달")
-
-        Button("오늘") {
-          visibleMonthStart = ScheduleMonthCalendar.monthStart(containing: today, calendar: calendar)
-          anchorDate = today
-        }
-        .buttonStyle(.bordered)
-        .controlSize(.small)
-
-        Button {
-          moveMonth(by: 1)
-        } label: {
-          Image(systemName: "chevron.right")
-            .font(.system(size: ScheduleUITokens.Month.headerNavigationIconFontSize, weight: .bold))
-            .frame(
-              width: ScheduleUITokens.Month.headerNavigationButtonSize,
-              height: ScheduleUITokens.Month.headerNavigationButtonSize
-            )
-        }
-        .buttonStyle(.borderless)
-        .help("다음 달")
-      }
     }
     .padding(.horizontal, 18)
     .padding(.top, 4)
@@ -195,6 +161,11 @@ struct ScheduleMonthView: View {
         visibleMonthStart = monthStart
         scrollToAnchorWeek(using: proxy, animated: true)
       }
+      .onChange(of: scrollToTodayToken) { _, _ in
+        visibleMonthStart = ScheduleMonthCalendar.monthStart(containing: today, calendar: calendar)
+        anchorDate = today
+        scrollToMonthStart(containing: today, using: proxy, animated: true)
+      }
       .onPreferenceChange(ScheduleMonthWeekFramePreferenceKey.self) { weekFrames in
         updateVisibleMonthStart(
           from: weekFrames,
@@ -255,15 +226,12 @@ struct ScheduleMonthView: View {
     return Array(symbols[first..<symbols.count] + symbols[0..<first])
   }
 
-  private func moveMonth(by value: Int) {
-    if let next = calendar.date(byAdding: .month, value: value, to: displayedMonthStart) {
-      visibleMonthStart = ScheduleMonthCalendar.monthStart(containing: next, calendar: calendar)
-      anchorDate = next
-    }
+  private func scrollToAnchorWeek(using proxy: ScrollViewProxy, animated: Bool) {
+    scrollToMonthStart(containing: anchorDate, using: proxy, animated: animated)
   }
 
-  private func scrollToAnchorWeek(using proxy: ScrollViewProxy, animated: Bool) {
-    let target = ScheduleMonthContinuousWindow.monthStartWeek(containing: anchorDate, calendar: calendar)
+  private func scrollToMonthStart(containing date: Date, using proxy: ScrollViewProxy, animated: Bool) {
+    let target = ScheduleMonthContinuousWindow.monthStartWeek(containing: date, calendar: calendar)
     let action = {
       proxy.scrollTo(target, anchor: .top)
     }
