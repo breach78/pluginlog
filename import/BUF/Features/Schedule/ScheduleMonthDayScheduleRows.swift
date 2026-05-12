@@ -34,7 +34,7 @@ struct ScheduleMonthDayAllDayItemRow: View {
     .frame(height: ScheduleUITokens.DayPanelRow.allDayRowHeight)
     .background {
       if itemIsCalendar {
-        RoundedRectangle(cornerRadius: ScheduleUITokens.EventBlock.cornerRadius, style: .continuous)
+        RoundedRectangle(cornerRadius: ScheduleUITokens.DayPanelRow.allDayCornerRadius, style: .continuous)
           .fill(color.opacity(
             item.isBackgroundCalendar
               ? ScheduleUITokens.EventBlock.dayPanelAllDayBackgroundCalendarFillOpacity
@@ -389,7 +389,7 @@ struct ScheduleMonthDayDragPreviewRow: View {
     .frame(height: ScheduleUITokens.DayPanelRow.allDayRowHeight)
     .background {
       if itemIsCalendar {
-        RoundedRectangle(cornerRadius: ScheduleUITokens.EventBlock.cornerRadius, style: .continuous)
+        RoundedRectangle(cornerRadius: ScheduleUITokens.DayPanelRow.allDayCornerRadius, style: .continuous)
           .fill(color.opacity(
             item.isBackgroundCalendar
               ? ScheduleUITokens.EventBlock.dayPanelBackgroundCalendarFillOpacity

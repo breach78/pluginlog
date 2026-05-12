@@ -20,11 +20,12 @@ extension MainWorkspaceView {
 
       if let monthTitle = workspaceHeaderMonthTitle {
         Text(monthTitle)
-          .font(.system(size: 14, weight: .semibold))
+          .font(.system(size: 28, weight: .semibold))
           .foregroundStyle(.secondary)
           .lineLimit(1)
           .minimumScaleFactor(0.8)
           .fixedSize(horizontal: true, vertical: false)
+          .padding(.trailing, 20)
       }
     }
     .padding(.leading, workspaceTitlebarControlInset)

@@ -363,7 +363,8 @@ enum ScheduleUITokens {
     static let colorStripeWidth: CGFloat = EventBlock.colorStripeWidth
     static let openHitAreaTaskWidth: CGFloat = 34
     static let resizeHandleHeight: CGFloat = 10
-    static let timedCornerRadius: CGFloat = 7
+    static let allDayCornerRadius: CGFloat = 0
+    static let timedCornerRadius: CGFloat = 0
     static let timedSubtitleMinHeight: CGFloat = 52
     static let timedTimeMinHeight: CGFloat = 68
     static let markerTopPadding: CGFloat = 1
