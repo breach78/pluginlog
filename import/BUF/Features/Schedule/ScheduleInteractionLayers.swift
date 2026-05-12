@@ -354,6 +354,10 @@ enum ScheduleDragDropInteractionLayer {
 }
 
 enum ScheduleTimeResizingInteractionLayer {
+  static func targetDayForResize(visibleDay: Date, calendar: Calendar) -> Date {
+    calendar.startOfDay(for: visibleDay)
+  }
+
   static func preview(
     originalDay: Date,
     originalTimeMinutes: Int,

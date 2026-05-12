@@ -480,6 +480,62 @@ final class ScheduleDragDropInteractionLayerTests: XCTestCase {
     )
   }
 
+  func testResizeTargetDayIsAnchoredToVisibleSegmentDay() throws {
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+    let may11 = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 5, day: 11)))
+
+    XCTAssertEqual(
+      ScheduleTimeResizingInteractionLayer.targetDayForResize(
+        visibleDay: may11.addingTimeInterval(6 * 60 * 60),
+        calendar: calendar
+      ),
+      may11
+    )
+  }
+
+  func testResizeFrameKeepsSourceViewportColumnWhenPreviewDayChanges() throws {
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+    let may11 = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 5, day: 11)))
+    let may12 = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 5, day: 12)))
+    let sourceFrame = CGRect(x: 76 + 10, y: 320, width: 84, height: 60)
+    let preview = ScheduleInteractionPreview(
+      day: may12,
+      timeMinutes: 11 * 60,
+      durationMinutes: 90
+    )
+    let projectionMetrics = ScheduleInteractionViewportProjectionMetrics(
+      titleColumnWidth: 76,
+      dayColumnWidth: 120,
+      hourHeight: 60,
+      quarterHourHeight: 15,
+      currentScrollOffsetX: 0,
+      currentScrollOffsetY: 0,
+      dateHeaderHeight: 32,
+      allDayRailPadding: 6,
+      allDayRailVisibleHeight: 48,
+      allDayRowHeight: 24,
+      allDayChipHorizontalInset: 5,
+      timedBlockInset: 4,
+      timedMinimumDurationMinutes: 30
+    )
+
+    let frame = ScheduleInteractionViewportProjection.resizeFrame(
+      for: preview,
+      displayDay: may12,
+      sourceViewportFrame: sourceFrame,
+      dayIndexByDate: [may11: 0, may12: 1],
+      metrics: projectionMetrics,
+      xOffsetWithinDay: 10
+    )
+
+    XCTAssertEqual(
+      frame,
+      CGRect(x: sourceFrame.minX, y: 32 + 48 + 11 * 60, width: 84, height: 90)
+    )
+  }
+
   func testViewportProjectionKeepsCommittedDurationPastMidnight() throws {
     var calendar = Calendar(identifier: .gregorian)
     calendar.timeZone = TimeZone(secondsFromGMT: 0)!

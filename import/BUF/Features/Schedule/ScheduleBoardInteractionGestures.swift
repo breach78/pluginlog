@@ -164,10 +164,10 @@ extension ScheduleBoardView {
         resizeState.currentPointerViewportLocation
       ),
       fallbackTranslationHeight: resizeState.translationHeight,
-      targetDay: interactionTargetDay(
-        pointerViewportLocation: resizeState.currentPointerViewportLocation,
-        allowsDayChange: true
-      ) ?? resizeState.originalDay,
+      targetDay: ScheduleTimeResizingInteractionLayer.targetDayForResize(
+        visibleDay: resizeState.visibleDay,
+        calendar: calendar
+      ),
       calendar: calendar,
       metrics: interactionMetrics
     )
@@ -182,10 +182,10 @@ extension ScheduleBoardView {
         resizeState.currentPointerViewportLocation
       ),
       fallbackTranslationHeight: resizeState.translationHeight,
-      targetDay: interactionTargetDay(
-        pointerViewportLocation: resizeState.currentPointerViewportLocation,
-        allowsDayChange: true
-      ) ?? resizeState.originalDay,
+      targetDay: ScheduleTimeResizingInteractionLayer.targetDayForResize(
+        visibleDay: resizeState.visibleDay,
+        calendar: calendar
+      ),
       calendar: calendar,
       metrics: interactionMetrics
     )

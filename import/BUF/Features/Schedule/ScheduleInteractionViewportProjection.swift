@@ -71,6 +71,39 @@ enum ScheduleInteractionViewportProjection {
     )
   }
 
+  static func resizeFrame(
+    for preview: ScheduleInteractionPreview,
+    displayDay: Date,
+    sourceViewportFrame: CGRect,
+    dayIndexByDate: [Date: Int],
+    metrics: ScheduleInteractionViewportProjectionMetrics,
+    xOffsetWithinDay: CGFloat
+  ) -> CGRect? {
+    guard let timeMinutes = preview.timeMinutes else { return nil }
+    guard
+      let projectedFrame = timedFrame(
+        for: ScheduleInteractionPreview(
+          day: displayDay,
+          timeMinutes: timeMinutes,
+          durationMinutes: preview.durationMinutes
+        ),
+        dayIndexByDate: dayIndexByDate,
+        metrics: metrics,
+        xOffsetWithinDay: xOffsetWithinDay,
+        width: sourceViewportFrame.width
+      )
+    else {
+      return nil
+    }
+
+    return CGRect(
+      x: sourceViewportFrame.minX,
+      y: projectedFrame.minY,
+      width: sourceViewportFrame.width,
+      height: projectedFrame.height
+    )
+  }
+
   static func timedDocumentFrame(
     for preview: ScheduleInteractionPreview,
     dayIndexByDate: [Date: Int],

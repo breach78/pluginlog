@@ -45,16 +45,17 @@ extension ScheduleBoardView {
       calendar: calendar
     )
 
-    return ScheduleInteractionViewportProjection.timedFrame(
+    return ScheduleInteractionViewportProjection.resizeFrame(
       for: ScheduleInteractionPreview(
-        day: day,
+        day: preview.day,
         timeMinutes: timeMinutes,
         durationMinutes: preview.durationMinutes
       ),
+      displayDay: day,
+      sourceViewportFrame: originalViewportFrame,
       dayIndexByDate: dayIndexByDate,
       metrics: interactionViewportProjectionMetrics,
-      xOffsetWithinDay: xOffsetWithinDay,
-      width: originalViewportFrame.width
+      xOffsetWithinDay: xOffsetWithinDay
     ) ?? originalViewportFrame
   }
 
