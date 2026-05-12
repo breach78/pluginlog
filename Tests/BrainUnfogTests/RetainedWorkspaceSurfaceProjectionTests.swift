@@ -103,6 +103,73 @@ final class RetainedWorkspaceSurfaceProjectionTests: XCTestCase {
     XCTAssertEqual(defaultDurationItem.endDate.timeIntervalSince(defaultDurationItem.startDate), 30 * 60)
   }
 
+  func testUserFlowScheduleSurfacesShareRetainedProjectionSource() throws {
+    let projectID = RetainedProjectionBuilder.derivedProjectID(for: "reminder-list-1")
+    let taskID = UUID()
+    let start = try XCTUnwrap(
+      Self.calendar.date(from: DateComponents(year: 2026, month: 5, day: 12, hour: 9, minute: 15))
+    )
+    let snapshot = RetainedWorkspaceSnapshot(
+      projects: [
+        RetainedProject(
+          identity: RetainedProjectIdentity(
+            projectID: projectID,
+            reminderListExternalIdentifier: "reminder-list-1"
+          ),
+          fileURL: URL(fileURLWithPath: "/tmp/Launch.md"),
+          title: "Launch",
+          noteMarkdown: "",
+          tasks: [
+            makeTask(
+              taskID: taskID,
+              title: "Shared schedule",
+              parsedDate: start,
+              hasExplicitTime: true,
+              durationMinutes: 75,
+              calendarEventExternalIdentifier: nil
+            )
+          ],
+          usesProjectTag: true,
+          isBUFOwned: true,
+          hasManagedTaskSection: true,
+          canSafelyPersistProjectNote: true
+        )
+      ]
+    )
+
+    let result = RetainedWorkspaceSurfaceProjectionBuilder.build(
+      snapshot: snapshot,
+      projectIDs: [projectID],
+      calendar: Self.calendar
+    )
+    let surface = try XCTUnwrap(result.loadedProjection)
+    let descriptors = ScheduleProjectionService.taskDescriptors(
+      projectIDs: [projectID],
+      projectSnapshots: surface.projectSnapshots,
+      scheduleEntriesByProjectID: surface.scheduleEntriesByProjectID
+    )
+
+    let boardItem = try XCTUnwrap(
+      WorkspaceTaskScheduleEventStore.items(from: descriptors, calendar: Self.calendar)
+        .first { $0.source == .workspaceTask(taskID: taskID, projectID: projectID) }
+    )
+    let monthItem = try XCTUnwrap(
+      ScheduleMonthItemFactory.items(
+        workspaceTasks: descriptors,
+        foregroundEvents: [],
+        backgroundEvents: [],
+        calendar: Self.calendar
+      )
+      .first { $0.source == .workspaceTask(taskID: taskID, projectID: projectID) }
+    )
+
+    XCTAssertEqual(boardItem.startDate, start)
+    XCTAssertEqual(boardItem.endDate.timeIntervalSince(boardItem.startDate), 75 * 60)
+    XCTAssertEqual(monthItem.startDate, boardItem.startDate)
+    XCTAssertEqual(monthItem.endDate, boardItem.endDate)
+    XCTAssertFalse(monthItem.isAllDay)
+  }
+
   func testOpenRecurringTasksKeepStoredAnchorDateInsteadOfExpandedCalendarOccurrence() throws {
     let projectID = UUID()
     let taskID = UUID()
