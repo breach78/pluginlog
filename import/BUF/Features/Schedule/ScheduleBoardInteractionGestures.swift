@@ -109,11 +109,11 @@ extension ScheduleBoardView {
     for dragState: ScheduleTaskDragState,
     value: DragGesture.Value
   ) -> CGPoint {
-    scrollViewportState.pointerViewportLocation()
-      ?? CGPoint(
-        x: dragState.originalPointerViewportX + value.translation.width,
-        y: dragState.originalPointerViewportY + value.translation.height
-      )
+    ScheduleDragDropInteractionLayer.pointerViewportLocation(
+      originalPointerViewportX: dragState.originalPointerViewportX,
+      originalPointerViewportY: dragState.originalPointerViewportY,
+      translation: value.translation
+    )
   }
 
   func resizePointerViewportLocation(
@@ -121,12 +121,11 @@ extension ScheduleBoardView {
     edge: ScheduleResizeEdge,
     value: DragGesture.Value
   ) -> CGPoint {
-    scrollViewportState.pointerViewportLocation()
-      ?? CGPoint(
-        x: originalViewportFrame.midX,
-        y: (edge == .start ? originalViewportFrame.minY : originalViewportFrame.maxY)
-          + value.translation.height
-      )
+    ScheduleDragDropInteractionLayer.resizePointerViewportLocation(
+      originalViewportFrame: originalViewportFrame,
+      edge: edge,
+      translation: value.translation
+    )
   }
 
   func resizeOriginalPointerScheduleY(
@@ -465,12 +464,11 @@ extension ScheduleBoardView {
         suppressTaskTap()
         guard var dragState else { return }
         dragState.translation = value.translation
-        let pointerViewportLocation =
-          scrollViewportState.pointerViewportLocation()
-          ?? CGPoint(
-            x: dragState.originalPointerViewportX + value.translation.width,
-            y: dragState.originalPointerViewportY + value.translation.height
-          )
+        let pointerViewportLocation = ScheduleDragDropInteractionLayer.pointerViewportLocation(
+          originalPointerViewportX: dragState.originalPointerViewportX,
+          originalPointerViewportY: dragState.originalPointerViewportY,
+          translation: value.translation
+        )
         dragState.currentPointerViewportLocation = pointerViewportLocation
         dragState.isInAllDayZone = isPointerInAllDayZone(
           pointerViewportLocation: pointerViewportLocation,
@@ -483,12 +481,11 @@ extension ScheduleBoardView {
         suppressTaskTap()
         activeCalendarDrag = nil
         var resolvedDragState = dragState
-        let pointerViewportLocation =
-          scrollViewportState.pointerViewportLocation()
-          ?? CGPoint(
-            x: dragState.originalPointerViewportX + value.translation.width,
-            y: dragState.originalPointerViewportY + value.translation.height
-          )
+        let pointerViewportLocation = ScheduleDragDropInteractionLayer.pointerViewportLocation(
+          originalPointerViewportX: dragState.originalPointerViewportX,
+          originalPointerViewportY: dragState.originalPointerViewportY,
+          translation: value.translation
+        )
         resolvedDragState.currentPointerViewportLocation = pointerViewportLocation
         resolvedDragState.isInAllDayZone = isPointerInAllDayZone(
           pointerViewportLocation: pointerViewportLocation,

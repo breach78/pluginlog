@@ -106,4 +106,48 @@ enum ScheduleInteractionViewportProjection {
       - metrics.currentScrollOffsetX
     return frame.minX - dayViewportMinX
   }
+
+  static func xOffsetWithinVisibleDay(
+    for frame: CGRect,
+    metrics: ScheduleInteractionViewportProjectionMetrics
+  ) -> CGFloat? {
+    guard metrics.dayColumnWidth > 0 else { return nil }
+    let scheduleX = frame.minX - metrics.titleColumnWidth + metrics.currentScrollOffsetX
+    guard scheduleX >= 0 else { return nil }
+    return scheduleX.truncatingRemainder(dividingBy: metrics.dayColumnWidth)
+  }
+
+  static func visibleDay(
+    for frame: CGRect,
+    days: [Date],
+    metrics: ScheduleInteractionViewportProjectionMetrics,
+    calendar: Calendar
+  ) -> Date? {
+    guard metrics.dayColumnWidth > 0 else { return nil }
+    let scheduleX = frame.minX - metrics.titleColumnWidth + metrics.currentScrollOffsetX
+    guard scheduleX >= 0 else { return nil }
+    let dayIndex = Int(floor(scheduleX / metrics.dayColumnWidth))
+    guard days.indices.contains(dayIndex) else { return nil }
+    return calendar.startOfDay(for: days[dayIndex])
+  }
+
+  static func resizeDisplayDay(
+    originalDay: Date,
+    originalViewportFrame: CGRect,
+    preview: ScheduleInteractionPreview,
+    visibleDays: [Date],
+    metrics: ScheduleInteractionViewportProjectionMetrics,
+    calendar: Calendar
+  ) -> Date {
+    let previewDay = preview.day.map { calendar.startOfDay(for: $0) } ?? originalDay
+    if !calendar.isDate(previewDay, inSameDayAs: originalDay) {
+      return previewDay
+    }
+    return visibleDay(
+      for: originalViewportFrame,
+      days: visibleDays,
+      metrics: metrics,
+      calendar: calendar
+    ) ?? previewDay
+  }
 }

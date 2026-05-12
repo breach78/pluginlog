@@ -357,6 +357,129 @@ final class ScheduleDragDropInteractionLayerTests: XCTestCase {
     )
   }
 
+  func testViewportProjectionDerivesXOffsetFromVisibleColumn() throws {
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+    let may12 = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 5, day: 12)))
+    let may13 = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 5, day: 13)))
+    let projectionMetrics = ScheduleInteractionViewportProjectionMetrics(
+      titleColumnWidth: 76,
+      dayColumnWidth: 120,
+      hourHeight: 60,
+      quarterHourHeight: 15,
+      currentScrollOffsetX: 0,
+      currentScrollOffsetY: 0,
+      dateHeaderHeight: 32,
+      allDayRailPadding: 6,
+      allDayRailVisibleHeight: 48,
+      allDayRowHeight: 24,
+      allDayChipHorizontalInset: 5,
+      timedBlockInset: 4,
+      timedMinimumDurationMinutes: 30
+    )
+    let visibleSecondDayFrame = CGRect(x: 76 + 120 + 10, y: 220, width: 84, height: 120)
+
+    XCTAssertEqual(
+      ScheduleInteractionViewportProjection.xOffsetWithinVisibleDay(
+        for: visibleSecondDayFrame,
+        metrics: projectionMetrics
+      ),
+      10
+    )
+    XCTAssertEqual(
+      ScheduleInteractionViewportProjection.xOffsetWithinDay(
+        for: visibleSecondDayFrame,
+        day: may13,
+        dayIndexByDate: [may12: 0, may13: 1],
+        metrics: projectionMetrics
+      ),
+      10
+    )
+  }
+
+  func testResizeDisplayDayUsesVisibleSegmentWhenPreviewStillStartsAtSourceDay() throws {
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+    let may11 = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 5, day: 11)))
+    let may12 = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 5, day: 12)))
+    let may13 = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 5, day: 13)))
+    let projectionMetrics = ScheduleInteractionViewportProjectionMetrics(
+      titleColumnWidth: 76,
+      dayColumnWidth: 120,
+      hourHeight: 60,
+      quarterHourHeight: 15,
+      currentScrollOffsetX: 0,
+      currentScrollOffsetY: 0,
+      dateHeaderHeight: 32,
+      allDayRailPadding: 6,
+      allDayRailVisibleHeight: 48,
+      allDayRowHeight: 24,
+      allDayChipHorizontalInset: 5,
+      timedBlockInset: 4,
+      timedMinimumDurationMinutes: 30
+    )
+    let visibleThirdDayFrame = CGRect(x: 76 + 2 * 120 + 10, y: 220, width: 84, height: 120)
+    let preview = ScheduleInteractionPreview(
+      day: may11,
+      timeMinutes: 9 * 60,
+      durationMinutes: 3 * 24 * 60
+    )
+
+    XCTAssertEqual(
+      ScheduleInteractionViewportProjection.resizeDisplayDay(
+        originalDay: may11,
+        originalViewportFrame: visibleThirdDayFrame,
+        preview: preview,
+        visibleDays: [may11, may12, may13],
+        metrics: projectionMetrics,
+        calendar: calendar
+      ),
+      may13
+    )
+  }
+
+  func testResizeDisplayDayUsesPreviewDayWhenStartEdgeMovesToAnotherDay() throws {
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+    let may10 = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 5, day: 10)))
+    let may11 = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 5, day: 11)))
+    let may12 = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 5, day: 12)))
+    let may13 = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 5, day: 13)))
+    let projectionMetrics = ScheduleInteractionViewportProjectionMetrics(
+      titleColumnWidth: 76,
+      dayColumnWidth: 120,
+      hourHeight: 60,
+      quarterHourHeight: 15,
+      currentScrollOffsetX: 0,
+      currentScrollOffsetY: 0,
+      dateHeaderHeight: 32,
+      allDayRailPadding: 6,
+      allDayRailVisibleHeight: 48,
+      allDayRowHeight: 24,
+      allDayChipHorizontalInset: 5,
+      timedBlockInset: 4,
+      timedMinimumDurationMinutes: 30
+    )
+    let visibleThirdDayFrame = CGRect(x: 76 + 2 * 120 + 10, y: 220, width: 84, height: 120)
+    let preview = ScheduleInteractionPreview(
+      day: may10,
+      timeMinutes: 22 * 60,
+      durationMinutes: 3 * 24 * 60
+    )
+
+    XCTAssertEqual(
+      ScheduleInteractionViewportProjection.resizeDisplayDay(
+        originalDay: may11,
+        originalViewportFrame: visibleThirdDayFrame,
+        preview: preview,
+        visibleDays: [may11, may12, may13],
+        metrics: projectionMetrics,
+        calendar: calendar
+      ),
+      may10
+    )
+  }
+
   func testViewportProjectionKeepsCommittedDurationPastMidnight() throws {
     var calendar = Calendar(identifier: .gregorian)
     calendar.timeZone = TimeZone(secondsFromGMT: 0)!
@@ -594,12 +717,56 @@ final class ScheduleDragDropInteractionLayerTests: XCTestCase {
     XCTAssertEqual(ghostFrame, CGRect(x: 270, y: 620, width: 160, height: 240))
   }
 
+  func testDragPointerViewportLocationUsesTranslationFromOriginalGrabPoint() {
+    let point = ScheduleDragDropInteractionLayer.pointerViewportLocation(
+      originalPointerViewportX: 220,
+      originalPointerViewportY: 500,
+      translation: CGSize(width: -80, height: 90)
+    )
+
+    XCTAssertEqual(point, CGPoint(x: 140, y: 590))
+  }
+
+  func testResizePointerViewportLocationUsesTranslationFromOriginalEdge() {
+    let originalFrame = CGRect(x: 180, y: 420, width: 160, height: 240)
+
+    XCTAssertEqual(
+      ScheduleDragDropInteractionLayer.resizePointerViewportLocation(
+        originalViewportFrame: originalFrame,
+        edge: .start,
+        translation: CGSize(width: 50, height: -30)
+      ),
+      CGPoint(x: 260, y: 390)
+    )
+    XCTAssertEqual(
+      ScheduleDragDropInteractionLayer.resizePointerViewportLocation(
+        originalViewportFrame: originalFrame,
+        edge: .end,
+        translation: CGSize(width: 50, height: 90)
+      ),
+      CGPoint(x: 260, y: 750)
+    )
+  }
+
   func testInitialPointerViewportLocationUsesCurrentPointerMinusTranslation() {
     let originalFrame = CGRect(x: 180, y: 420, width: 160, height: 240)
 
     let point = ScheduleDragDropInteractionLayer.initialPointerViewportLocation(
       currentPointerViewportLocation: CGPoint(x: 310, y: 700),
       translation: CGSize(width: 90, height: 200),
+      originalViewportFrame: originalFrame,
+      gestureStartLocation: CGPoint(x: 40, y: 80)
+    )
+
+    XCTAssertEqual(point, CGPoint(x: 220, y: 500))
+  }
+
+  func testInitialPointerViewportLocationIgnoresStaleCurrentPointer() {
+    let originalFrame = CGRect(x: 180, y: 420, width: 160, height: 240)
+
+    let point = ScheduleDragDropInteractionLayer.initialPointerViewportLocation(
+      currentPointerViewportLocation: CGPoint(x: 30, y: 40),
+      translation: CGSize(width: 10, height: 5),
       originalViewportFrame: originalFrame,
       gestureStartLocation: CGPoint(x: 40, y: 80)
     )

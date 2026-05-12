@@ -336,7 +336,10 @@ struct ScheduleBoardView: View {
     MotionSystem.quality(for: scheduleOverlayMotionContext)
   }
   var scheduleOverlayPresentationAnimation: Animation? {
-    MotionSystem.animation(
+    if isScheduleBoardTransientInteractionActive {
+      return nil
+    }
+    return MotionSystem.animation(
       for: .overlayFade,
       quality: scheduleOverlayMotionQuality
     )

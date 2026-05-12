@@ -31,10 +31,13 @@ enum ScheduleDragDropInteractionLayer {
     gestureStartLocation: CGPoint
   ) -> CGPoint {
     if let currentPointerViewportLocation {
-      return CGPoint(
+      let inferredStartLocation = CGPoint(
         x: currentPointerViewportLocation.x - translation.width,
         y: currentPointerViewportLocation.y - translation.height
       )
+      if originalViewportFrame.contains(inferredStartLocation) {
+        return inferredStartLocation
+      }
     }
 
     if gestureStartLocation.x >= 0,
@@ -193,6 +196,29 @@ enum ScheduleDragDropInteractionLayer {
     return originalViewportFrame.offsetBy(
       dx: allowsHorizontalMovement ? translation.width : 0,
       dy: translation.height
+    )
+  }
+
+  static func pointerViewportLocation(
+    originalPointerViewportX: CGFloat,
+    originalPointerViewportY: CGFloat,
+    translation: CGSize
+  ) -> CGPoint {
+    CGPoint(
+      x: originalPointerViewportX + translation.width,
+      y: originalPointerViewportY + translation.height
+    )
+  }
+
+  static func resizePointerViewportLocation(
+    originalViewportFrame: CGRect,
+    edge: ScheduleResizeEdge,
+    translation: CGSize
+  ) -> CGPoint {
+    CGPoint(
+      x: originalViewportFrame.midX,
+      y: (edge == .start ? originalViewportFrame.minY : originalViewportFrame.maxY)
+        + translation.height
     )
   }
 
