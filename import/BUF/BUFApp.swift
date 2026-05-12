@@ -68,11 +68,23 @@ struct BUFApplication: App {
         }
         .keyboardShortcut("1", modifiers: .command)
 
-        Button("스케줄") {
+        Button("주간") {
+          UserDefaults.standard.set(
+            ScheduleBoardDisplayMode.week.rawValue,
+            forKey: WorkspaceUserDefaultsKey.scheduleDisplayMode
+          )
           appState.handleViewMenuSelection(.schedule)
         }
         .keyboardShortcut("2", modifiers: .command)
 
+        Button("월간") {
+          UserDefaults.standard.set(
+            ScheduleBoardDisplayMode.month.rawValue,
+            forKey: WorkspaceUserDefaultsKey.scheduleDisplayMode
+          )
+          appState.handleViewMenuSelection(.schedule)
+        }
+        .keyboardShortcut("3", modifiers: .command)
       }
 
       CommandGroup(after: .textEditing) {

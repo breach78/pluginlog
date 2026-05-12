@@ -233,11 +233,10 @@ enum ScheduleUITokens {
     static let allDaySpanHeight: CGFloat = 18
     static let allDaySpanRowHeight: CGFloat = 20
     static let weekdayHeaderHeight: CGFloat = 28
-    static let monthHeaderHeight: CGFloat = 58
+    static let monthHeaderHeight: CGFloat = 0
     static let cellMinHeight: CGFloat = 72
     static let gridLineOpacity = 0.10
     static let todayBadgeFillOpacity = 0.88
-    static let headerTitleFontSize: CGFloat = 32
     static let headerNavigationIconFontSize: CGFloat = 12
     static let headerNavigationButtonSize: CGFloat = 28
     static let weekdayFontSize: CGFloat = 14

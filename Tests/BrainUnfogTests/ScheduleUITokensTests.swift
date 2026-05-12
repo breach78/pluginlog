@@ -33,7 +33,7 @@ final class ScheduleUITokensTests: XCTestCase {
     XCTAssertEqual(ScheduleUITokens.Month.itemRowHeight, 18)
     XCTAssertEqual(ScheduleUITokens.Month.allDaySpanRowHeight, 20)
     XCTAssertEqual(ScheduleUITokens.Month.weekdayHeaderHeight, 28)
-    XCTAssertEqual(ScheduleUITokens.Month.monthHeaderHeight, 58)
+    XCTAssertEqual(ScheduleUITokens.Month.monthHeaderHeight, 0)
     XCTAssertEqual(ScheduleUITokens.Month.cellMinHeight, 72)
     XCTAssertEqual(ScheduleUITokens.Month.gridLineOpacity, 0.10)
   }

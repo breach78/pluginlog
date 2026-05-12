@@ -59,7 +59,10 @@ extension ScheduleBoardView {
       externalDragTargetDate: externalMonthDragTargetDate,
       externalDayDropTarget: externalDayDropTarget,
       onDropTargetsChanged: onMonthDropTargetsChanged,
-      scrollToTodayToken: appState.scheduleJumpToTodayToken
+      scrollToTodayToken: appState.scheduleJumpToTodayToken,
+      onVisibleMonthChanged: { monthStart in
+        appState.scheduleMonthDisplayedMonthStart = monthStart
+      }
     )
     .onAppear {
       if scheduleMonthAnchorDate == nil {

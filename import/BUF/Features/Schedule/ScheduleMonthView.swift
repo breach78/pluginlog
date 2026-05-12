@@ -19,9 +19,9 @@ struct ScheduleMonthView: View {
   let externalDayDropTarget: ScheduleMonthDropTarget?
   let onDropTargetsChanged: ([ScheduleMonthDropTarget]) -> Void
   let scrollToTodayToken: Int
+  let onVisibleMonthChanged: (Date) -> Void
 
   private let weekdayHeaderHeight: CGFloat = ScheduleUITokens.Month.weekdayHeaderHeight
-  private let monthHeaderHeight: CGFloat = ScheduleUITokens.Month.monthHeaderHeight
   private let cellMinHeight: CGFloat = ScheduleUITokens.Month.cellMinHeight
   private let gridLineColor = Color.primary.opacity(ScheduleUITokens.Month.gridLineOpacity)
 
@@ -51,7 +51,7 @@ struct ScheduleMonthView: View {
       let layout = monthLayout
       let availableGridHeight = max(
         cellMinHeight * 6,
-        proxy.size.height - monthHeaderHeight - weekdayHeaderHeight
+        proxy.size.height - weekdayHeaderHeight
       )
       let cellHeight = pixelFloored(availableGridHeight / 6)
       let gridHeight = cellHeight * 6
@@ -60,9 +60,6 @@ struct ScheduleMonthView: View {
       )
 
       VStack(spacing: 0) {
-        monthHeader
-          .frame(height: monthHeaderHeight)
-
         weekdayHeader
           .frame(height: weekdayHeaderHeight)
 
@@ -77,19 +74,6 @@ struct ScheduleMonthView: View {
       .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
       .background(Color(nsColor: .windowBackgroundColor))
     }
-  }
-
-  private var monthHeader: some View {
-    HStack(alignment: .center, spacing: 12) {
-      Text(monthTitle(for: displayedMonthStart))
-        .font(.system(size: ScheduleUITokens.Month.headerTitleFontSize, weight: .bold))
-        .lineLimit(1)
-        .minimumScaleFactor(0.7)
-
-      Spacer(minLength: 0)
-    }
-    .padding(.horizontal, 18)
-    .padding(.top, 4)
   }
 
   private var weekdayHeader: some View {
@@ -154,15 +138,15 @@ struct ScheduleMonthView: View {
       .coordinateSpace(name: ScheduleMonthScrollCoordinateSpace.name)
       .scrollIndicators(.never)
       .onAppear {
-        visibleMonthStart = monthStart
+        setVisibleMonthStart(monthStart)
         scrollToAnchorWeek(using: proxy, animated: false)
       }
       .onChange(of: anchorDate) { _, _ in
-        visibleMonthStart = monthStart
+        setVisibleMonthStart(monthStart)
         scrollToAnchorWeek(using: proxy, animated: true)
       }
       .onChange(of: scrollToTodayToken) { _, _ in
-        visibleMonthStart = ScheduleMonthCalendar.monthStart(containing: today, calendar: calendar)
+        setVisibleMonthStart(ScheduleMonthCalendar.monthStart(containing: today, calendar: calendar))
         anchorDate = today
         scrollToMonthStart(containing: today, using: proxy, animated: true)
       }
@@ -197,7 +181,20 @@ struct ScheduleMonthView: View {
     guard !calendar.isDate(currentMonthStart, equalTo: nextMonthStart, toGranularity: .month) else {
       return
     }
-    visibleMonthStart = nextMonthStart
+    setVisibleMonthStart(nextMonthStart)
+  }
+
+  private func setVisibleMonthStart(_ nextMonthStart: Date) {
+    let normalizedMonthStart = ScheduleMonthCalendar.monthStart(
+      containing: nextMonthStart,
+      calendar: calendar
+    )
+    let previousMonthStart = visibleMonthStart
+    visibleMonthStart = normalizedMonthStart
+    guard previousMonthStart == nil
+      || !calendar.isDate(previousMonthStart!, equalTo: normalizedMonthStart, toGranularity: .month)
+    else { return }
+    onVisibleMonthChanged(normalizedMonthStart)
   }
 
   private func updateDropTargets(
@@ -240,11 +237,6 @@ struct ScheduleMonthView: View {
     } else {
       action()
     }
-  }
-
-  private func monthTitle(for date: Date) -> String {
-    let components = calendar.dateComponents([.year, .month], from: date)
-    return "\(components.year ?? 0)년 \(components.month ?? 1)월"
   }
 
   private func pixelFloored(_ value: CGFloat) -> CGFloat {

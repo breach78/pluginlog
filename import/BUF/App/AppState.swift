@@ -41,6 +41,7 @@ final class AppState: ObservableObject {
   @Published var scheduleJumpToTodayToken = 0
   @Published var scheduleJumpTargetDate: Date?
   @Published var scheduleJumpToDateToken = 0
+  @Published var scheduleMonthDisplayedMonthStart: Date?
   @Published var currentDayStart: Date = Calendar.autoupdatingCurrent.startOfDay(for: .now)
   @Published var currentDayChangeToken = 0
   @Published var isHoveringTimelineTaskBadgeOverlay = false

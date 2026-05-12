@@ -17,6 +17,15 @@ extension MainWorkspaceView {
         .layoutPriority(0)
 
       Spacer()
+
+      if let monthTitle = workspaceHeaderMonthTitle {
+        Text(monthTitle)
+          .font(.system(size: 14, weight: .semibold))
+          .foregroundStyle(.secondary)
+          .lineLimit(1)
+          .minimumScaleFactor(0.8)
+          .fixedSize(horizontal: true, vertical: false)
+      }
     }
     .padding(.leading, workspaceTitlebarControlInset)
     .padding(.trailing, 12)
@@ -104,6 +113,13 @@ extension MainWorkspaceView {
       return .timeline
     }
     return scheduleDisplayMode == .month ? .month : .week
+  }
+
+  var workspaceHeaderMonthTitle: String? {
+    guard appState.viewMode == .schedule, scheduleDisplayMode == .month else { return nil }
+    let date = appState.scheduleMonthDisplayedMonthStart ?? Date()
+    let components = Calendar.autoupdatingCurrent.dateComponents([.year, .month], from: date)
+    return "\(components.year ?? 0)년 \(components.month ?? 1)월"
   }
 
   var workspaceDisplayModeBinding: Binding<WorkspaceToolbarDisplayMode> {
