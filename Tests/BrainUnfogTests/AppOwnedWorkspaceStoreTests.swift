@@ -1935,6 +1935,9 @@ final class AppOwnedWorkspaceStoreTests: XCTestCase {
     let containerRoot = try makeTemporaryDirectory()
     let importedAt = Date(timeIntervalSinceReferenceDate: 630)
     let dueDate = try XCTUnwrap(Self.calendar.date(from: DateComponents(year: 2026, month: 5, day: 11, hour: 9)))
+    let completedAt = try XCTUnwrap(
+      Self.calendar.date(from: DateComponents(year: 2026, month: 5, day: 12, hour: 16, minute: 45))
+    )
     let projectID = RetainedProjectionBuilder.derivedProjectID(for: "list-1")
     let taskID = ReminderProjectionIdentity.taskID(for: "recurring-task")
     let active = Self.reminderItem(
@@ -1953,9 +1956,14 @@ final class AppOwnedWorkspaceStoreTests: XCTestCase {
     _ = try await store.upsertLocalCompletedRecurringOccurrence(
       projectID: projectID,
       sourceTask: sourceTask,
-      completionDate: dueDate,
+      completionDate: completedAt,
       modifiedAt: importedAt.addingTimeInterval(1)
     )
+    let initialSnapshot = try await store.loadRetainedWorkspaceSnapshot(projectIDs: [projectID])
+    let initialCompletedOccurrence = try XCTUnwrap(initialSnapshot.tasks.first { $0.isCompleted })
+    let initialCompletedTaskID = initialCompletedOccurrence.identity.taskID
+    let initialCompletedExternalIdentifier =
+      initialCompletedOccurrence.identity.reminderExternalIdentifier
 
     store = AppOwnedWorkspaceStore(containerRootURL: containerRoot)
     try await store.replaceReminderSnapshot(
@@ -1964,15 +1972,19 @@ final class AppOwnedWorkspaceStoreTests: XCTestCase {
       coverage: .full
     )
     let snapshot = try await store.loadRetainedWorkspaceSnapshot(projectIDs: [projectID])
+    let completedOccurrence = try XCTUnwrap(snapshot.tasks.first { $0.isCompleted })
 
     XCTAssertEqual(snapshot.tasks.count, 2)
+    XCTAssertEqual(completedOccurrence.identity.taskID, initialCompletedTaskID)
+    XCTAssertEqual(
+      completedOccurrence.identity.reminderExternalIdentifier,
+      initialCompletedExternalIdentifier
+    )
+    XCTAssertEqual(completedOccurrence.schedule.parsedDate, completedAt)
     XCTAssertTrue(
-      snapshot.tasks.contains {
-        $0.isCompleted
-          && AppOwnedWorkspaceStore.isLocalCompletedRecurringExternalIdentifier(
-            $0.identity.reminderExternalIdentifier
-          )
-      }
+      AppOwnedWorkspaceStore.isLocalCompletedRecurringExternalIdentifier(
+        completedOccurrence.identity.reminderExternalIdentifier
+      )
     )
   }
 

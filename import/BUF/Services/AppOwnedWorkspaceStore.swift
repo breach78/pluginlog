@@ -860,7 +860,7 @@ actor AppOwnedWorkspaceStore {
       noteText: sourceTask.noteText,
       isCompleted: true,
       completionDate: completionDate,
-      dueDate: sourceTask.dueDate,
+      dueDate: completionDate,
       hasExplicitTime: sourceTask.hasExplicitTime,
       durationMinutes: sourceTask.durationMinutes,
       recurrenceRuleRaw: nil,
@@ -1733,6 +1733,9 @@ actor AppOwnedWorkspaceStore {
     guard let activeMatch = try activeRecurringTaskMatch(db, matching: row),
       let reminderExternalIdentifier = Self.localCompletedRecurringExternalIdentifier(
         baseExternalIdentifier: activeMatch.externalIdentifier,
+        occurrenceKey: Self.localCompletedRecurringOccurrenceKey(from: row.reminderExternalIdentifier)
+      ) ?? Self.localCompletedRecurringExternalIdentifier(
+        baseExternalIdentifier: activeMatch.externalIdentifier,
         dueDate: row.dueDate,
         hasExplicitTime: row.hasExplicitTime
       )
@@ -1763,11 +1766,16 @@ actor AppOwnedWorkspaceStore {
       return exactMatch
     }
     guard let recurrenceRuleRaw = row.signatureRecurrenceRuleRaw else { return nil }
+    let occurrenceSchedule = Self.localCompletedRecurringOccurrenceSchedule(
+      from: row.reminderExternalIdentifier,
+      fallbackDueDate: row.dueDate,
+      fallbackHasExplicitTime: row.hasExplicitTime
+    )
     let anchorPhaseRaw = RecurringTaskSignature.anchorPhaseRaw(
       recurrenceRuleRaw: recurrenceRuleRaw,
       startDate: row.startDate,
-      dueDate: row.dueDate,
-      hasExplicitTime: row.hasExplicitTime
+      dueDate: occurrenceSchedule.dueDate,
+      hasExplicitTime: occurrenceSchedule.hasExplicitTime
     )
     if let exactSignatureMatch = try uniqueActiveRecurringTaskMatch(
       db,
@@ -2132,6 +2140,18 @@ actor AppOwnedWorkspaceStore {
     return "\(baseExternalIdentifier)\(localCompletedRecurringMarker)\(occurrenceKey)"
   }
 
+  private static func localCompletedRecurringExternalIdentifier(
+    baseExternalIdentifier: String?,
+    occurrenceKey: String?
+  ) -> String? {
+    guard let baseExternalIdentifier = normalizedValue(baseExternalIdentifier),
+      let occurrenceKey = normalizedValue(occurrenceKey)
+    else {
+      return nil
+    }
+    return "\(baseExternalIdentifier)\(localCompletedRecurringMarker)\(occurrenceKey)"
+  }
+
   private static func localCompletedRecurringBaseIdentifier(
     from externalIdentifier: String
   ) -> String? {
@@ -2140,6 +2160,33 @@ actor AppOwnedWorkspaceStore {
     }
     let baseIdentifier = String(externalIdentifier[..<markerRange.lowerBound])
     return baseIdentifier.isEmpty ? nil : baseIdentifier
+  }
+
+  private static func localCompletedRecurringOccurrenceKey(
+    from externalIdentifier: String
+  ) -> String? {
+    guard let markerRange = externalIdentifier.range(of: localCompletedRecurringMarker) else {
+      return nil
+    }
+    let occurrenceKey = String(externalIdentifier[markerRange.upperBound...])
+    return occurrenceKey.isEmpty ? nil : occurrenceKey
+  }
+
+  private static func localCompletedRecurringOccurrenceSchedule(
+    from externalIdentifier: String,
+    fallbackDueDate: Date?,
+    fallbackHasExplicitTime: Bool
+  ) -> (dueDate: Date?, hasExplicitTime: Bool) {
+    guard let occurrenceKey = localCompletedRecurringOccurrenceKey(from: externalIdentifier) else {
+      return (fallbackDueDate, fallbackHasExplicitTime)
+    }
+    guard occurrenceKey != "undated" else {
+      return (nil, fallbackHasExplicitTime)
+    }
+    guard let decodedDate = ReminderScheduleMetadataCodec.decodeDate(occurrenceKey) else {
+      return (fallbackDueDate, fallbackHasExplicitTime)
+    }
+    return (decodedDate.date, decodedDate.hasExplicitTime)
   }
 
   private static func normalizedValue(_ value: String?) -> String? {

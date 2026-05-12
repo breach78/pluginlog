@@ -884,6 +884,63 @@ final class AppOwnedRetainedTaskCommandServiceTests: XCTestCase {
   }
 
   @MainActor
+  func testAppOwnedRecurringCompletionStoresCompletedOccurrenceAtCompletionTime()
+    async throws
+  {
+    let dueDate = try XCTUnwrap(
+      Self.calendar.date(from: DateComponents(year: 2026, month: 5, day: 2, hour: 2))
+    )
+    let completedAt = try XCTUnwrap(
+      Self.calendar.date(from: DateComponents(year: 2026, month: 5, day: 7, hour: 15, minute: 30))
+    )
+    let nextDueDate = try XCTUnwrap(
+      Self.calendar.date(from: DateComponents(year: 2026, month: 5, day: 9, hour: 2))
+    )
+    let fixture = try await makeEnabledStoreFixture(
+      taskExternalIdentifier: "task-1",
+      taskTitle: "Recurring",
+      dueDate: dueDate,
+      scheduleHasExplicitTime: true,
+      scheduledDurationMinutes: 45,
+      recurrenceRuleRaw: "daily"
+    )
+    let provider = FakeAppOwnedReminderProjectProvider()
+    provider.remoteTaskSnapshot = ReminderTaskRemoteSnapshot(
+      identifier: "task-identifier",
+      externalIdentifier: "task-1",
+      calendarIdentifier: "list-1",
+      title: "Recurring",
+      noteText: "",
+      isCompleted: false,
+      completionDate: nil,
+      startDate: nil,
+      dueDate: nextDueDate,
+      hasExplicitTime: true,
+      priority: 0,
+      recurrenceRuleRaw: "daily",
+      modifiedAt: Date(timeIntervalSinceReferenceDate: 710)
+    )
+    let taskID = ReminderProjectionIdentity.taskID(for: "task-1")
+
+    _ = try await RetainedTaskCommandFacade.setTaskCompletion(
+      vaultRootURL: fixture.vaultRoot,
+      projectID: fixture.projectID,
+      taskID: taskID,
+      isCompleted: true,
+      completionDate: completedAt,
+      reminderProjectProvider: provider
+    )
+    let snapshot = try await fixture.store.loadRetainedWorkspaceSnapshot(projectIDs: [fixture.projectID])
+    let completedOccurrence = try XCTUnwrap(
+      snapshot.projects.first?.tasks.first { $0.isCompleted }
+    )
+
+    XCTAssertEqual(completedOccurrence.schedule.parsedDate, completedAt)
+    XCTAssertTrue(completedOccurrence.schedule.hasExplicitTime)
+    XCTAssertEqual(completedOccurrence.schedule.durationMinutes, 45)
+  }
+
+  @MainActor
   func testAppOwnedRecurringScheduleRestoreWithResetRecreatesReminderAnchor() async throws {
     let advancedDueDate = try XCTUnwrap(Self.calendar.date(from: DateComponents(year: 2026, month: 5, day: 5)))
     let originalDueDate = try XCTUnwrap(Self.calendar.date(from: DateComponents(year: 2026, month: 5, day: 2, hour: 11)))

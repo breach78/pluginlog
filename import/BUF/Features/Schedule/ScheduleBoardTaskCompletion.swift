@@ -56,9 +56,7 @@ extension ScheduleBoardView {
             projectID: projectID,
             taskID: taskID,
             isCompleted: nextState.isCompleted,
-            completionDate: nextState.isCompleted && nextState.isRecurring
-              ? (nextState.occurrenceDate ?? nextState.completionDate)
-              : nextState.completionDate,
+            completionDate: nextState.completionDate,
             reminderProjectProvider: appState.reminderProjectProvider
           )
         }

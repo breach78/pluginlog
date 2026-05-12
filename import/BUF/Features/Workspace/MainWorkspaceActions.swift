@@ -503,17 +503,12 @@ extension MainWorkspaceView {
     else {
       return false
     }
-    let occurrenceDate = ReminderTaskDateCanonicalizer.unifiedDate(
-      dueDate: entry.dueDate,
-      startDate: entry.startDate,
-      displayedDate: entry.displayedDate
-    )
     let isRecurring = !(entry.recurrenceRuleRaw?.trimmingCharacters(
       in: .whitespacesAndNewlines
     ).isEmpty ?? true)
     let nextCompletionDate =
       isCompleted
-      ? (completionDate ?? (isRecurring ? occurrenceDate : nil) ?? .now)
+      ? (completionDate ?? .now)
       : nil
     let currentSnapshot = workspaceTaskUndoSnapshot(for: entry)
     let targetFields = restoreScheduleFields ?? currentSnapshot.fields
