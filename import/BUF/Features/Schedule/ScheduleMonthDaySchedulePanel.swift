@@ -15,18 +15,18 @@ struct ScheduleMonthDaySchedulePanel: View {
   let onExternalMonthDragTargetChanged: (Date?) -> Void
   let onDropTargetChanged: (ScheduleMonthDropTarget?) -> Void
 
-  @State private var items: [ScheduleMonthItem]
-  @State private var activeMutationPreview: ScheduleMonthDayScheduleMutationPreview?
-  @State private var activeCreatePreview: ScheduleMonthDayScheduleCreatePreview?
-  @State private var pendingCreatePreview: ScheduleMonthDayScheduleCreatePreview?
-  @State private var savingItemIDs: Set<String> = []
-  @State private var timeScrollResetID = UUID()
-  @State private var timeContentMinYInPanel: CGFloat = 0
-  @State private var activeItemDragState: ScheduleMonthDayItemDragState?
-  @State private var activeItemResizeState: ScheduleMonthDayItemResizeState?
-  @State private var resizeBlockedMoveItemID: String?
-  @State private var panelFrameInScreen: CGRect = .null
-  @State private var timeContentFrameInScreen: CGRect = .null
+  @State var items: [ScheduleMonthItem]
+  @State var activeMutationPreview: ScheduleMonthDayScheduleMutationPreview?
+  @State var activeCreatePreview: ScheduleMonthDayScheduleCreatePreview?
+  @State var pendingCreatePreview: ScheduleMonthDayScheduleCreatePreview?
+  @State var savingItemIDs: Set<String> = []
+  @State var timeScrollResetID = UUID()
+  @State var timeContentMinYInPanel: CGFloat = 0
+  @State var activeItemDragState: ScheduleMonthDayItemDragState?
+  @State var activeItemResizeState: ScheduleMonthDayItemResizeState?
+  @State var resizeBlockedMoveItemID: String?
+  @State var panelFrameInScreen: CGRect = .null
+  @State var timeContentFrameInScreen: CGRect = .null
 
   init(
     target: ScheduleMonthDetailPanelTarget,
@@ -123,7 +123,7 @@ struct ScheduleMonthDaySchedulePanel: View {
     }
   }
 
-  private func scrollTimeGridToInitialPosition(_ proxy: ScrollViewProxy) {
+  func scrollTimeGridToInitialPosition(_ proxy: ScrollViewProxy) {
     let delays: [TimeInterval] = [0, 0.05, 0.18]
     for delay in delays {
       DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
@@ -132,7 +132,7 @@ struct ScheduleMonthDaySchedulePanel: View {
     }
   }
 
-  private var panelFrameReporter: some View {
+  var panelFrameReporter: some View {
     ScheduleScreenFrameReporter { frame in
       panelFrameInScreen = frame
       reportDropTarget(frame: frame)
@@ -140,7 +140,7 @@ struct ScheduleMonthDaySchedulePanel: View {
     }
   }
 
-  private func reportDropTarget(frame: CGRect) {
+  func reportDropTarget(frame: CGRect) {
     if frame.isNull {
       onDropTargetChanged(nil)
     } else {
@@ -153,7 +153,7 @@ struct ScheduleMonthDaySchedulePanel: View {
     }
   }
 
-  private var allDaySection: some View {
+  var allDaySection: some View {
     ZStack(alignment: .topLeading) {
       ScheduleQuickAddContextMenuRegion(
         isAllDayRegion: true,
@@ -210,15 +210,15 @@ struct ScheduleMonthDaySchedulePanel: View {
     .frame(height: allDaySectionHeight, alignment: .topLeading)
   }
 
-  private var allDaySectionHeight: CGFloat {
+  var allDaySectionHeight: CGFloat {
     max(22, CGFloat(allDayRowCount) * Self.allDayRowHeight + 20)
   }
 
-  private var allDayRowCount: Int {
+  var allDayRowCount: Int {
     allDayItems.count + (activeDragPreviewIsAllDay ? 1 : 0)
   }
 
-  private var timedSchedule: some View {
+  var timedSchedule: some View {
     GeometryReader { proxy in
       let gridWidth = max(0, proxy.size.width - Self.timeGutterWidth)
 
@@ -364,19 +364,19 @@ struct ScheduleMonthDaySchedulePanel: View {
     .frame(height: Self.timeGridHeight)
   }
 
-  private var timeContentFrameReporter: some View {
+  var timeContentFrameReporter: some View {
     ScheduleScreenFrameReporter { frame in
       timeContentFrameInScreen = frame
       updateTimeContentOffset(timeFrame: frame, panelFrame: panelFrameInScreen)
     }
   }
 
-  private func updateTimeContentOffset(timeFrame: CGRect, panelFrame: CGRect) {
+  func updateTimeContentOffset(timeFrame: CGRect, panelFrame: CGRect) {
     guard !timeFrame.isNull, !panelFrame.isNull else { return }
     timeContentMinYInPanel = panelFrame.maxY - timeFrame.maxY
   }
 
-  private var timeScrollAnchorLayer: some View {
+  var timeScrollAnchorLayer: some View {
     ZStack(alignment: .topLeading) {
       VStack(spacing: 0) {
         Color.clear
@@ -400,7 +400,7 @@ struct ScheduleMonthDaySchedulePanel: View {
   }
 
   @ViewBuilder
-  private func hiddenTimedItemsIndicator(proxy: ScrollViewProxy) -> some View {
+  func hiddenTimedItemsIndicator(proxy: ScrollViewProxy) -> some View {
     if hasHiddenTimedItemsAboveVisibleStart {
       Button {
         revealHiddenTimedItems(proxy: proxy)
@@ -425,7 +425,7 @@ struct ScheduleMonthDaySchedulePanel: View {
     }
   }
 
-  private var timeAxis: some View {
+  var timeAxis: some View {
     ZStack(alignment: .topTrailing) {
       ForEach(0...24, id: \.self) { hour in
         Text(hour == 24 ? "" : Self.timeLabel(hour: hour))
@@ -438,7 +438,7 @@ struct ScheduleMonthDaySchedulePanel: View {
     .padding(.trailing, 7)
   }
 
-  private var timedGridLines: some View {
+  var timedGridLines: some View {
     ZStack(alignment: .topLeading) {
       ForEach(0...24, id: \.self) { hour in
         Rectangle()
@@ -455,7 +455,7 @@ struct ScheduleMonthDaySchedulePanel: View {
     }
   }
 
-  private var allDayItems: [ScheduleMonthItem] {
+  var allDayItems: [ScheduleMonthItem] {
     displayedItems
       .filter(\.isAllDay)
       .sorted { lhs, rhs in
@@ -463,7 +463,7 @@ struct ScheduleMonthDaySchedulePanel: View {
       }
   }
 
-  private var timedItems: [ScheduleMonthItem] {
+  var timedItems: [ScheduleMonthItem] {
     displayedItems
       .filter { !$0.isAllDay }
       .sorted { lhs, rhs in
@@ -471,7 +471,7 @@ struct ScheduleMonthDaySchedulePanel: View {
       }
   }
 
-  private var visibleStartMinute: Int {
+  var visibleStartMinute: Int {
     let scrollOffsetY = max(0, allDaySectionHeight + Self.dividerHeight - timeContentMinYInPanel)
     return ScheduleHiddenTimedItemIndicatorPolicy.visibleStartMinute(
       scrollOffsetY: scrollOffsetY,
@@ -479,7 +479,7 @@ struct ScheduleMonthDaySchedulePanel: View {
     )
   }
 
-  private var hasHiddenTimedItemsAboveVisibleStart: Bool {
+  var hasHiddenTimedItemsAboveVisibleStart: Bool {
     let intervals = timedItems.compactMap(timedInterval)
     return ScheduleHiddenTimedItemIndicatorPolicy.hasHiddenTimedItem(
       visibleStartMinute: visibleStartMinute,
@@ -487,16 +487,16 @@ struct ScheduleMonthDaySchedulePanel: View {
     )
   }
 
-  private var displayedItems: [ScheduleMonthItem] {
+  var displayedItems: [ScheduleMonthItem] {
     items
   }
 
-  private var activeDragPreviewIsAllDay: Bool {
+  var activeDragPreviewIsAllDay: Bool {
     guard activeItemDragState != nil, let activeMutationPreview else { return false }
     return activeMutationPreview.timeMinutes == nil
   }
 
-  private func timedLayouts(for width: CGFloat) -> [ScheduleMonthDayTimedItemLayout] {
+  func timedLayouts(for width: CGFloat) -> [ScheduleMonthDayTimedItemLayout] {
     let intervals = timedItems.compactMap(timedInterval)
     return ScheduleMonthDayTimedLayoutBuilder.layouts(
       intervals: intervals,
@@ -505,7 +505,7 @@ struct ScheduleMonthDaySchedulePanel: View {
     )
   }
 
-  private func timedInterval(for item: ScheduleMonthItem) -> ScheduleMonthDayTimedInterval? {
+  func timedInterval(for item: ScheduleMonthItem) -> ScheduleMonthDayTimedInterval? {
     let dayStart = calendar.startOfDay(for: target.date)
     guard let dayEnd = calendar.date(byAdding: .day, value: 1, to: dayStart) else {
       return nil
@@ -535,7 +535,7 @@ struct ScheduleMonthDaySchedulePanel: View {
     )
   }
 
-  private func sourceTopScheduleY(for layout: ScheduleMonthDayTimedItemLayout) -> CGFloat {
+  func sourceTopScheduleY(for layout: ScheduleMonthDayTimedItemLayout) -> CGFloat {
     let targetDay = calendar.startOfDay(for: target.date)
     let relativeMinute = calendar.dateComponents(
       [.minute],
@@ -545,7 +545,7 @@ struct ScheduleMonthDaySchedulePanel: View {
     return CGFloat(relativeMinute) / 60 * Self.hourHeight
   }
 
-  private func createPreviewBlock(
+  func createPreviewBlock(
     _ preview: ScheduleMonthDayScheduleCreatePreview,
     width: CGFloat
   ) -> some View {
@@ -563,7 +563,7 @@ struct ScheduleMonthDaySchedulePanel: View {
       .allowsHitTesting(false)
   }
 
-  private func pendingCreateCard(
+  func pendingCreateCard(
     _ preview: ScheduleMonthDayScheduleCreatePreview,
     width: CGFloat
   ) -> some View {
@@ -594,7 +594,7 @@ struct ScheduleMonthDaySchedulePanel: View {
     .zIndex(20)
   }
 
-  private func revealHiddenTimedItems(proxy: ScrollViewProxy) {
+  func revealHiddenTimedItems(proxy: ScrollViewProxy) {
     let intervals = timedItems.compactMap(timedInterval)
     let policyIntervals = intervals.map { interval in
       (startMinute: interval.startMinute, endMinute: interval.endMinute)
@@ -611,577 +611,5 @@ struct ScheduleMonthDaySchedulePanel: View {
     withAnimation(.easeOut(duration: 0.16)) {
       proxy.scrollTo(Self.timeScrollID(forQuarter: quarter), anchor: .top)
     }
-  }
-
-  private func toggleCompletion(for item: ScheduleMonthItem) {
-    guard case .workspaceTask = item.source else { return }
-    guard !savingItemIDs.contains(item.id) else { return }
-    let next = !item.isCompleted
-    let optimistic = item.replacing(isCompleted: next)
-    replaceItem(optimistic)
-    savingItemIDs.insert(item.id)
-    Task { @MainActor in
-      defer { savingItemIDs.remove(item.id) }
-      guard let saved = await onToggleTaskCompletion(item, next) else {
-        replaceItem(item)
-        return
-      }
-      replaceItem(saved)
-    }
-  }
-
-  private func deleteItem(
-    _ item: ScheduleMonthItem,
-    scope: ScheduleCalendarRecurringEditScope?
-  ) {
-    guard !savingItemIDs.contains(item.id) else { return }
-    let previousItems = items
-    removeItem(item.id)
-    savingItemIDs.insert(item.id)
-    Task { @MainActor in
-      defer { savingItemIDs.remove(item.id) }
-      guard await onDeleteItem(item, scope) else {
-        items = previousItems
-        return
-      }
-    }
-  }
-
-  private func commitMutationSession(
-    _ session: ScheduleInteractionSession,
-    item: ScheduleMonthItem,
-    itemID: String
-  ) {
-    activeMutationPreview = nil
-    activeItemDragState = nil
-    activeItemResizeState = nil
-    guard canUpdateSchedule(for: item) else { return }
-    guard !savingItemIDs.contains(item.id) else { return }
-    guard let command = session.command else { return }
-    let commandPreview = command
-      .schedulePreview(fallbackDay: calendar.startOfDay(for: target.date))
-      .monthDayPreview(itemID: itemID, fallbackDay: calendar.startOfDay(for: target.date))
-    let updated = item.applyingSchedulePreview(commandPreview, calendar: calendar)
-    guard updated.startDate != item.startDate
-      || updated.endDate != item.endDate
-      || updated.isAllDay != item.isAllDay
-    else {
-      return
-    }
-
-    replaceOrRemoveForCurrentDay(updated)
-    savingItemIDs.insert(item.id)
-    Task { @MainActor in
-      defer { savingItemIDs.remove(item.id) }
-      guard
-        let saved = await onUpdateItemSchedule(
-          item,
-          commandPreview.day,
-          commandPreview.timeMinutes,
-          commandPreview.durationMinutes
-        )
-      else {
-        replaceOrRemoveForCurrentDay(item)
-        return
-      }
-      replaceOrRemoveForCurrentDay(saved)
-    }
-  }
-
-  private func interactionIdentity(for item: ScheduleMonthItem) -> ScheduleInteractionItemIdentity? {
-    switch item.source {
-    case .workspaceTask(let taskID, _):
-      return .task(taskID)
-    case .calendarEvent(let eventID):
-      return .calendarEvent(eventID)
-    }
-  }
-
-  private func updateMovePreview(
-    for item: ScheduleMonthItem,
-    drag: DragGesture.Value,
-    originalTopScheduleY: CGFloat?,
-    originalX: CGFloat?,
-    originalWidth: CGFloat?
-  ) {
-    guard canUpdateSchedule(for: item) else { return }
-    guard resizeBlockedMoveItemID != item.id, activeItemResizeState == nil else { return }
-    let state = updatedDragState(
-      for: item,
-      drag: drag,
-      originalTopScheduleY: originalTopScheduleY,
-      originalX: originalX,
-      originalWidth: originalWidth
-    )
-    let externalDrop = externalMonthDropContext(for: drag)
-    if externalDrop.isExternal {
-      activeMutationPreview = nil
-      onExternalMonthDragTargetChanged(externalDrop.day)
-      updateMoveCursor(isExternalDrop: true, externalDropDay: externalDrop.day)
-      return
-    }
-    onExternalMonthDragTargetChanged(nil)
-    updateMoveCursor(isExternalDrop: false, externalDropDay: nil)
-    activeMutationPreview = moveMutationPreview(for: state)
-  }
-
-  private func finishMovePreview(
-    for item: ScheduleMonthItem,
-    drag: DragGesture.Value,
-    originalTopScheduleY: CGFloat?,
-    originalX: CGFloat?,
-    originalWidth: CGFloat?
-  ) {
-    guard canUpdateSchedule(for: item) else { return }
-    guard resizeBlockedMoveItemID != item.id, activeItemResizeState == nil else {
-      if resizeBlockedMoveItemID == item.id {
-        resizeBlockedMoveItemID = nil
-      }
-      return
-    }
-    let state = updatedDragState(
-      for: item,
-      drag: drag,
-      originalTopScheduleY: originalTopScheduleY,
-      originalX: originalX,
-      originalWidth: originalWidth
-    )
-    defer { NSCursor.arrow.set() }
-    let externalDrop = externalMonthDropContext(for: drag)
-    if externalDrop.isExternal {
-      defer { onExternalMonthDragTargetChanged(nil) }
-      guard let targetDay = externalDrop.day else {
-        activeMutationPreview = nil
-        activeItemDragState = nil
-        return
-      }
-      guard let session = externalMonthDropSession(for: state, targetDay: targetDay) else {
-        activeMutationPreview = nil
-        activeItemDragState = nil
-        return
-      }
-      commitMutationSession(session, item: state.originalItem, itemID: state.itemID)
-      return
-    }
-    onExternalMonthDragTargetChanged(nil)
-    guard let session = moveSession(for: state) else { return }
-    commitMutationSession(session, item: state.originalItem, itemID: state.itemID)
-  }
-
-  private func updateResizePreview(
-    for layout: ScheduleMonthDayTimedItemLayout,
-    edge: ScheduleResizeEdge,
-    drag: DragGesture.Value
-  ) {
-    let item = layout.item
-    guard canResizeSchedule(for: item) else { return }
-    let state = resizeState(for: layout, edge: edge, drag: drag)
-    activeMutationPreview = resizeMutationPreview(for: state, currentPointerPanelY: drag.location.y)
-  }
-
-  private func finishResizePreview(
-    for layout: ScheduleMonthDayTimedItemLayout,
-    edge: ScheduleResizeEdge,
-    drag: DragGesture.Value
-  ) {
-    let item = layout.item
-    guard canResizeSchedule(for: item) else { return }
-    let state = resizeState(for: layout, edge: edge, drag: drag)
-    guard let session = resizeSession(for: state, currentPointerPanelY: drag.location.y) else { return }
-    let blockedItemID = state.itemID
-    commitMutationSession(session, item: state.originalItem, itemID: state.itemID)
-    DispatchQueue.main.async {
-      if resizeBlockedMoveItemID == blockedItemID {
-        resizeBlockedMoveItemID = nil
-      }
-    }
-  }
-
-  private func updatedDragState(
-    for item: ScheduleMonthItem,
-    drag: DragGesture.Value,
-    originalTopScheduleY: CGFloat?,
-    originalX: CGFloat?,
-    originalWidth: CGFloat?
-  ) -> ScheduleMonthDayItemDragState {
-    let state: ScheduleMonthDayItemDragState
-    if let activeItemDragState, activeItemDragState.itemID == item.id {
-      state = activeItemDragState
-    } else {
-      let originalPointerScheduleY = drag.startLocation.y - timeContentMinYInPanel
-      state = ScheduleMonthDayItemDragState(
-        itemID: item.id,
-        originalItem: item,
-        originalTimeMinutes: item.isAllDay ? nil : startMinute(for: item),
-        originalDurationMinutes: item.isAllDay ? nil : durationMinutes(for: item),
-        originalPointerScheduleY: originalPointerScheduleY,
-        originalTopScheduleY: originalTopScheduleY ?? (originalPointerScheduleY - Self.allDayRowHeight / 2),
-        originalX: originalX,
-        originalWidth: originalWidth,
-        allDayBoundaryYInPanel: allDaySectionHeight + Self.dividerHeight,
-        timeContentMinYInPanel: timeContentMinYInPanel,
-        isInAllDayZone: item.isAllDay
-      )
-      activeItemResizeState = nil
-    }
-    let next = ScheduleMonthDayInteractionAdapter.updatedDragState(
-      state,
-      drag: DragGestureProxy(
-        locationY: drag.location.y,
-        translation: drag.translation
-      ),
-      allDayRowHeight: Self.allDayRowHeight,
-      timeContentMinYInPanel: timeContentMinYInPanel
-    )
-    activeItemDragState = next
-    return next
-  }
-
-  private func resizeState(
-    for layout: ScheduleMonthDayTimedItemLayout,
-    edge: ScheduleResizeEdge,
-    drag: DragGesture.Value
-  ) -> ScheduleMonthDayItemResizeState {
-    let item = layout.item
-    if let activeItemResizeState,
-      activeItemResizeState.itemID == item.id,
-      activeItemResizeState.edge == edge
-    {
-      return activeItemResizeState
-    }
-
-    let state = ScheduleMonthDayItemResizeState(
-      itemID: item.id,
-      originalItem: item,
-      originalTimeMinutes: layout.sourceStartMinute,
-      originalDurationMinutes: layout.sourceDurationMinutes,
-      originalPointerScheduleY: drag.startLocation.y - timeContentMinYInPanel,
-      originalEdgeScheduleY: edge == .start
-        ? sourceTopScheduleY(for: layout)
-        : sourceTopScheduleY(for: layout)
-          + CGFloat(layout.sourceDurationMinutes) / 60 * Self.hourHeight,
-      originalX: layout.x,
-      originalWidth: layout.width,
-      timeContentMinYInPanel: timeContentMinYInPanel,
-      edge: edge
-    )
-    activeItemResizeState = state
-    activeItemDragState = nil
-    resizeBlockedMoveItemID = item.id
-    return state
-  }
-
-  private func createTask(
-    title: String,
-    projectID: UUID,
-    timeMinutes: Int?,
-    durationMinutes: Int?
-  ) {
-    pendingCreatePreview = nil
-    activeCreatePreview = nil
-    Task { @MainActor in
-      guard
-        let created = await onCreateTask(
-          title,
-          projectID,
-          calendar.startOfDay(for: target.date),
-          timeMinutes,
-          durationMinutes
-        )
-      else { return }
-      replaceItem(created)
-    }
-  }
-
-  private func replaceItem(_ item: ScheduleMonthItem) {
-    if let index = items.firstIndex(where: { $0.id == item.id }) {
-      items[index] = item
-    } else {
-      items.append(item)
-    }
-    items = Self.sortedItems(items, calendar: calendar)
-  }
-
-  private func replaceOrRemoveForCurrentDay(_ item: ScheduleMonthItem) {
-    if itemBelongsToCurrentDay(item) {
-      replaceItem(item)
-    } else {
-      removeItem(item.id)
-    }
-  }
-
-  private func removeItem(_ itemID: String) {
-    items.removeAll { $0.id == itemID }
-  }
-
-  private func itemBelongsToCurrentDay(_ item: ScheduleMonthItem) -> Bool {
-    let day = calendar.startOfDay(for: target.date)
-    if item.isAllDay {
-      let start = calendar.startOfDay(for: item.startDate)
-      let end = calendar.startOfDay(for: item.endDate)
-      return start <= day && day < end
-    }
-    guard let nextDay = calendar.date(byAdding: .day, value: 1, to: day) else {
-      return calendar.isDate(item.startDate, inSameDayAs: day)
-    }
-    return item.startDate < nextDay && item.endDate > day
-  }
-
-  private func moveMutationPreview(
-    for state: ScheduleMonthDayItemDragState
-  ) -> ScheduleMonthDayScheduleMutationPreview? {
-    moveSession(for: state)?.preview.monthDayPreview(
-      itemID: state.itemID,
-      fallbackDay: calendar.startOfDay(for: target.date)
-    )
-  }
-
-  private func moveSession(
-    for state: ScheduleMonthDayItemDragState
-  ) -> ScheduleInteractionSession? {
-    guard let identity = interactionIdentity(for: state.originalItem) else { return nil }
-    let targetDay = calendar.startOfDay(for: target.date)
-    return ScheduleInteractionSession.move(
-      identity: identity,
-      originalTimeMinutes: state.originalTimeMinutes,
-      originalDurationMinutes: state.originalDurationMinutes,
-      target: ScheduleMonthDayInteractionAdapter.moveTarget(
-        for: state,
-        targetDay: targetDay,
-        calendar: calendar,
-        metrics: interactionMetrics
-      ),
-      metrics: interactionMetrics
-    )
-  }
-
-  private func externalMonthDropSession(
-    for state: ScheduleMonthDayItemDragState,
-    targetDay: Date
-  ) -> ScheduleInteractionSession? {
-    guard let identity = interactionIdentity(for: state.originalItem) else { return nil }
-    return ScheduleInteractionSession.move(
-      identity: identity,
-      originalTimeMinutes: state.originalTimeMinutes,
-      originalDurationMinutes: state.originalDurationMinutes,
-      target: ScheduleMonthDayInteractionAdapter.externalMonthDropTarget(
-        targetDay: targetDay,
-        calendar: calendar
-      ),
-      metrics: interactionMetrics
-    )
-  }
-
-  private func externalMonthDropContext(for drag: DragGesture.Value) -> (
-    isExternal: Bool,
-    day: Date?
-  ) {
-    guard
-      let screenPoint = ScheduleScreenPointMapper.screenPoint(
-        localLocation: drag.location,
-        in: panelFrameInScreen
-      )
-    else {
-      return (false, nil)
-    }
-    let targetDay = externalMonthDropDay(at: screenPoint)
-    let leftPanel = ScheduleMonthDayInteractionAdapter.isExternalMonthDropLocation(
-      locationXInPanel: drag.location.x,
-      translation: drag.translation
-    )
-    return (targetDay != nil || leftPanel, targetDay)
-  }
-
-  private func externalMonthDropDay(at screenPoint: CGPoint) -> Date? {
-    guard !panelFrameInScreen.isNull else { return nil }
-    return resolveExternalMonthDropDay(screenPoint)
-  }
-
-  private func updateMoveCursor(isExternalDrop: Bool, externalDropDay day: Date?) {
-    if day != nil {
-      NSCursor.dragCopy.set()
-    } else if isExternalDrop {
-      NSCursor.operationNotAllowed.set()
-    } else if activeItemDragState != nil {
-      NSCursor.closedHand.set()
-    }
-  }
-
-  private func resizeMutationPreview(
-    for state: ScheduleMonthDayItemResizeState,
-    currentPointerPanelY: CGFloat
-  ) -> ScheduleMonthDayScheduleMutationPreview? {
-    resizeSession(for: state, currentPointerPanelY: currentPointerPanelY)?.preview.monthDayPreview(
-      itemID: state.itemID,
-      fallbackDay: calendar.startOfDay(for: target.date)
-    )
-  }
-
-  private func resizeSession(
-    for state: ScheduleMonthDayItemResizeState,
-    currentPointerPanelY: CGFloat
-  ) -> ScheduleInteractionSession? {
-    guard let identity = interactionIdentity(for: state.originalItem) else { return nil }
-    let targetDay = calendar.startOfDay(for: target.date)
-    return ScheduleInteractionSession.resize(
-      identity: identity,
-      originalDay: calendar.startOfDay(for: state.originalItem.startDate),
-      originalTimeMinutes: state.originalTimeMinutes,
-      originalDurationMinutes: state.originalDurationMinutes,
-      isStartEdge: state.edge == .start,
-      target: ScheduleMonthDayInteractionAdapter.resizeTarget(
-        for: state,
-        currentPointerPanelY: currentPointerPanelY,
-        targetDay: targetDay,
-        calendar: calendar,
-        metrics: interactionMetrics
-      ),
-      metrics: interactionMetrics,
-      calendar: calendar
-    )
-  }
-
-  private func createPreview(
-    from startLocation: CGPoint,
-    to endLocation: CGPoint
-  ) -> ScheduleMonthDayScheduleCreatePreview {
-    let start = snappedTimeMinutes(forY: startLocation.y)
-    let end = snappedTimeMinutes(forY: endLocation.y)
-    let lower = min(start, end)
-    let upper = max(start, end)
-    let duration = max(Self.minimumDurationMinutes, upper - lower)
-    let clampedStart = Self.clampedTimeMinute(lower, durationMinutes: duration)
-    return ScheduleMonthDayScheduleCreatePreview(
-      timeMinutes: clampedStart,
-      durationMinutes: min(duration, (24 * 60) - clampedStart)
-    )
-  }
-
-  private func startMinute(for item: ScheduleMonthItem) -> Int {
-    let components = calendar.dateComponents([.hour, .minute], from: item.startDate)
-    return min(23 * 60 + 45, max(0, (components.hour ?? 0) * 60 + (components.minute ?? 0)))
-  }
-
-  private func durationMinutes(for item: ScheduleMonthItem) -> Int {
-    max(Self.minimumDurationMinutes, item.durationMinutes ?? Self.minimumDurationMinutes)
-  }
-
-  private func snappedTimeMinutes(forY y: CGFloat) -> Int {
-    ScheduleMonthDayInteractionAdapter.snappedTimeMinutes(for: y, metrics: interactionMetrics)
-  }
-
-  private func y(forMinute minute: Int) -> CGFloat {
-    CGFloat(minute) / 60 * Self.hourHeight
-  }
-
-  private func height(forDuration duration: Int) -> CGFloat {
-    max(28, CGFloat(duration) / 60 * Self.hourHeight)
-  }
-
-  private func itemColor(_ item: ScheduleMonthItem) -> Color {
-    ColorHexCodec.color(from: item.colorHex) ?? .accentColor
-  }
-
-  private func canUpdateSchedule(for item: ScheduleMonthItem) -> Bool {
-    guard !item.isBackgroundCalendar else { return false }
-    switch item.source {
-    case .workspaceTask:
-      return true
-    case .calendarEvent:
-      return item.calendarEvent?.canEditTiming == true
-    }
-  }
-
-  private func canResizeSchedule(for item: ScheduleMonthItem) -> Bool {
-    guard canUpdateSchedule(for: item), !item.isAllDay else { return false }
-    switch item.source {
-    case .workspaceTask:
-      return true
-    case .calendarEvent:
-      return item.calendarEvent?.canEditTiming == true
-    }
-  }
-
-  private var interactionMetrics: ScheduleInteractionMetrics {
-    ScheduleMonthDayInteractionAdapter.metrics(
-      hourHeight: Self.hourHeight,
-      minimumDurationMinutes: Self.minimumDurationMinutes
-    )
-  }
-
-  private static func sortedItems(
-    _ items: [ScheduleMonthItem],
-    calendar: Calendar
-  ) -> [ScheduleMonthItem] {
-    items.sorted { itemSortKey($0, calendar: calendar) < itemSortKey($1, calendar: calendar) }
-  }
-
-  private static func clampedTimeMinute(_ minute: Int, durationMinutes: Int) -> Int {
-    let latestStart = max(0, (24 * 60) - durationMinutes)
-    return min(latestStart, max(0, minute))
-  }
-
-  private static func timeLabel(hour: Int) -> String {
-    if hour == 0 { return "오전 12" }
-    if hour < 12 { return "오전 \(hour)" }
-    if hour == 12 { return "오후 12" }
-    return "오후 \(hour - 12)"
-  }
-
-  private static let timeGutterWidth: CGFloat = ScheduleUITokens.MonthDayPanel.timeGutterWidth
-  private static let hourHeight: CGFloat = ScheduleUITokens.MonthDayPanel.hourHeight
-  private static let allDayRowHeight: CGFloat = ScheduleUITokens.MonthDayPanel.allDayRowHeight
-  private static let minimumDurationMinutes = ScheduleUITokens.MonthDayPanel.minimumDurationMinutes
-  private static let dividerHeight: CGFloat = ScheduleUITokens.MonthDayPanel.dividerHeight
-  private static let initialVisibleHour = ScheduleUITokens.MonthDayPanel.initialVisibleHour
-  private static let topScrollID = "schedule-month-detail-time-top"
-  private static let bottomScrollID = "schedule-month-detail-time-bottom"
-  private static let nightScrollID = "schedule-month-detail-time-night"
-  private static let panelCoordinateSpaceName = "schedule-month-detail-panel"
-  private static var quarterHourHeight: CGFloat { hourHeight / 4 }
-  private static var timeGridHeight: CGFloat { hourHeight * 24 }
-
-  private static func timeScrollID(forQuarter quarter: Int) -> String {
-    "schedule-month-detail-time-quarter-\(quarter)"
-  }
-}
-
-private struct ScheduleMonthDayCurrentTimeIndicator: View {
-  private static let refreshIntervalSeconds: TimeInterval = 60
-
-  let day: Date
-  let width: CGFloat
-  let height: CGFloat
-  let hourHeight: CGFloat
-  let calendar: Calendar
-
-  var body: some View {
-    TimelineView(.periodic(from: .now, by: Self.refreshIntervalSeconds)) { context in
-      ZStack(alignment: .topLeading) {
-        if calendar.isDate(day, inSameDayAs: context.date) {
-          let y = currentTimeY(for: context.date)
-
-          Rectangle()
-            .fill(Color.red.opacity(ScheduleUITokens.MonthDayPanel.currentTimeLineOpacity))
-            .frame(width: width, height: 2)
-            .offset(y: y - 1)
-
-          Circle()
-            .fill(Color.red.opacity(ScheduleUITokens.MonthDayPanel.currentTimeDotOpacity))
-            .frame(width: 7, height: 7)
-            .offset(x: 1, y: y - 3.5)
-        }
-      }
-      .frame(width: width, height: height, alignment: .topLeading)
-    }
-    .allowsHitTesting(false)
-  }
-
-  private func currentTimeY(for date: Date) -> CGFloat {
-    let components = calendar.dateComponents([.hour, .minute, .second], from: date)
-    let minutes =
-      CGFloat((components.hour ?? 0) * 60 + (components.minute ?? 0))
-      + CGFloat(components.second ?? 0) / 60
-    return minutes / 60 * hourHeight
   }
 }
