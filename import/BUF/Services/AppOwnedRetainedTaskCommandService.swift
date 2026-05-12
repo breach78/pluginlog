@@ -454,7 +454,11 @@ enum AppOwnedRetainedTaskCommandService {
       dueDate: dueDate,
       hasExplicitTime: hasExplicitTime
     ) else {
-      return .unresolved
+      AppLogger.sync.info(
+        "setTaskSchedule removing stale local task after reminder refresh could not resolve task \(originalTask.taskID.uuidString, privacy: .public)"
+      )
+      try await store.deleteTask(taskID: originalTask.taskID)
+      return .removedStaleTask
     }
     return .resolved(refreshedTask, metadata)
   }

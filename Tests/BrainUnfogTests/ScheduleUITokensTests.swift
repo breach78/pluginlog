@@ -112,6 +112,7 @@ final class ScheduleUITokensTests: XCTestCase {
     XCTAssertEqual(ScheduleUITokens.DayPanelRow.markerColumnWidth, 26)
     XCTAssertEqual(ScheduleUITokens.DayPanelRow.taskMarkerSize, ScheduleUITokens.Icon.scheduleItemMarkerSize)
     XCTAssertEqual(ScheduleUITokens.DayPanelRow.colorStripeWidth, ScheduleUITokens.EventBlock.colorStripeWidth)
+    XCTAssertEqual(ScheduleUITokens.DayPanelRow.resizeHandleHeight, 5)
     XCTAssertEqual(ScheduleUITokens.DayPanelRow.interactingOpacity, ScheduleUITokens.Opacity.interactingScheduleItem)
   }
 

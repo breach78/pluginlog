@@ -175,14 +175,16 @@ struct ReminderGatewayImportSnapshotProvider {
 
   private func fetchImportReminders(in calendars: [EKCalendar]) async throws -> ImportReminderSelection {
     let primaryReminders = try await gateway.fetchReminders(in: calendars, scope: .all)
+    let activeRecurringSignatures = activeRecurringSignatures(in: primaryReminders)
     let fallbackDueDatesByReminderIdentifier = completedOccurrenceFallbackDueDates(
-      in: primaryReminders
+      in: primaryReminders,
+      activeRecurringSignatures: activeRecurringSignatures
     )
     return ImportReminderSelection(
       reminders: primaryReminders.filter {
         shouldImportReminder(
           $0,
-          in: primaryReminders,
+          activeRecurringSignatures: activeRecurringSignatures,
           fallbackDueDate: fallbackDueDatesByReminderIdentifier[$0.calendarItemIdentifier]
         )
       },
@@ -345,7 +347,7 @@ struct ReminderGatewayImportSnapshotProvider {
 
   private func shouldImportReminder(
     _ reminder: EKReminder,
-    in reminders: [EKReminder],
+    activeRecurringSignatures: Set<RecurringOccurrenceSignature>,
     fallbackDueDate: Date?
   ) -> Bool {
     guard reminder.isCompleted else { return true }
@@ -358,14 +360,7 @@ struct ReminderGatewayImportSnapshotProvider {
     guard let completedCandidate = recurringOccurrenceCandidate(for: reminder) else {
       return true
     }
-    return !reminders.contains { activeReminder in
-      guard let activeCandidate = activeRecurringCandidate(for: activeReminder),
-        activeCandidate.signature == completedCandidate.signature
-      else {
-        return false
-      }
-      return true
-    }
+    return !activeRecurringSignatures.contains(completedCandidate.signature)
   }
 
   private struct RecurringOccurrenceSignature: Hashable {
@@ -408,10 +403,16 @@ struct ReminderGatewayImportSnapshotProvider {
     )
   }
 
-  private func completedOccurrenceFallbackDueDates(in reminders: [EKReminder]) -> [String: Date] {
-    let activeRecurringSignatures = Set(
-      reminders.compactMap { activeRecurringCandidate(for: $0)?.signature }
-    )
+  private func activeRecurringSignatures(
+    in reminders: [EKReminder]
+  ) -> Set<RecurringOccurrenceSignature> {
+    Set(reminders.compactMap { activeRecurringCandidate(for: $0)?.signature })
+  }
+
+  private func completedOccurrenceFallbackDueDates(
+    in reminders: [EKReminder],
+    activeRecurringSignatures: Set<RecurringOccurrenceSignature>
+  ) -> [String: Date] {
     guard !activeRecurringSignatures.isEmpty else { return [:] }
 
     return reminders.reduce(into: [String: Date]()) { result, reminder in

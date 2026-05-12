@@ -94,7 +94,9 @@ extension ScheduleCalendarStore {
 
     if didChange || liveEvent.calendarItemExternalIdentifier == nil {
       do {
-        try eventStoreForCapabilities.save(liveEvent, span: .thisEvent)
+        try EventKitChangeEchoSuppressor.performAppAuthoredMutation {
+          try eventStoreForCapabilities.save(liveEvent, span: .thisEvent)
+        }
       } catch {
         AppLogger.sync.error(
           "owned calendar event upsert failed: \(error.localizedDescription, privacy: .public)"
@@ -123,7 +125,9 @@ extension ScheduleCalendarStore {
     }
 
     do {
-      try eventStoreForCapabilities.remove(liveEvent, span: .thisEvent)
+      try EventKitChangeEchoSuppressor.performAppAuthoredMutation {
+        try eventStoreForCapabilities.remove(liveEvent, span: .thisEvent)
+      }
     } catch {
       AppLogger.sync.error(
         "owned calendar event remove failed: \(error.localizedDescription, privacy: .public)"
@@ -206,7 +210,9 @@ extension ScheduleCalendarStore {
     }
 
     do {
-      try eventStoreForCapabilities.saveCalendar(calendar, commit: true)
+      try EventKitChangeEchoSuppressor.performAppAuthoredMutation {
+        try eventStoreForCapabilities.saveCalendar(calendar, commit: true)
+      }
     } catch {
       AppLogger.sync.error(
         "owned calendar create failed: \(error.localizedDescription, privacy: .public)"

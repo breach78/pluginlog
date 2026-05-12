@@ -555,7 +555,9 @@ private final class DefaultScheduleCalendarCapabilityService: ScheduleCalendarCa
         liveEvent.title = trimmedTitle
         liveEvent.notes = notes
         applyTimingTarget(target, to: liveEvent)
-        try eventStore.save(liveEvent, span: scope.eventKitSpan)
+        try EventKitChangeEchoSuppressor.performAppAuthoredMutation {
+          try eventStore.save(liveEvent, span: scope.eventKitSpan)
+        }
         savedEvent = liveEvent
       }
     } catch let error as ScheduleCalendarEditError {
@@ -599,7 +601,9 @@ private final class DefaultScheduleCalendarCapabilityService: ScheduleCalendarCa
         )
       } else {
         applyTimingTarget(target, to: liveEvent)
-        try eventStore.save(liveEvent, span: scope.eventKitSpan)
+        try EventKitChangeEchoSuppressor.performAppAuthoredMutation {
+          try eventStore.save(liveEvent, span: scope.eventKitSpan)
+        }
         savedEvent = liveEvent
       }
     } catch let error as ScheduleCalendarEditError {
@@ -692,7 +696,9 @@ private final class DefaultScheduleCalendarCapabilityService: ScheduleCalendarCa
     )
 
     do {
-      try support.eventStoreForCapabilities.remove(liveEvent, span: scope.eventKitSpan)
+      try EventKitChangeEchoSuppressor.performAppAuthoredMutation {
+        try support.eventStoreForCapabilities.remove(liveEvent, span: scope.eventKitSpan)
+      }
     } catch {
       AppLogger.sync.error(
         "calendar event remove failed: \(error.localizedDescription, privacy: .public)"
@@ -734,7 +740,9 @@ private final class DefaultScheduleCalendarCapabilityService: ScheduleCalendarCa
     }
 
     do {
-      try eventStore.save(restored, span: .thisEvent)
+      try EventKitChangeEchoSuppressor.performAppAuthoredMutation {
+        try eventStore.save(restored, span: .thisEvent)
+      }
     } catch {
       AppLogger.sync.error(
         "calendar deleted event restore failed: \(error.localizedDescription, privacy: .public)"
@@ -909,9 +917,11 @@ final class ScheduleCalendarStore: ObservableObject, ScheduleCalendarServicing,
     replacement.endDate = target.endDate
 
     do {
-      try eventStore.save(replacement, span: .thisEvent, commit: false)
-      try eventStore.remove(event, span: .thisEvent, commit: false)
-      try eventStore.commit()
+      try EventKitChangeEchoSuppressor.performAppAuthoredMutation {
+        try eventStore.save(replacement, span: .thisEvent, commit: false)
+        try eventStore.remove(event, span: .thisEvent, commit: false)
+        try eventStore.commit()
+      }
       return replacement
     } catch {
       eventStore.reset()

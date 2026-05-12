@@ -65,6 +65,30 @@ final class ReminderSourceObserverTests: XCTestCase {
     XCTAssertTrue(invalidationReasons.isEmpty)
   }
 
+  func testAppAuthoredCalendarMutationSuppressesReminderSourceRefresh() async throws {
+    let gateway = ObserverTestReminderGateway()
+    var invalidationReasons: [SyncReason] = []
+    let observer = ReminderSourceObserver(
+      gateway: gateway,
+      invalidateSource: { reason in
+        invalidationReasons.append(reason)
+        return true
+      },
+      handleExternalOwnerChange: { _ in true },
+      eventDebounceDelay: .milliseconds(1),
+      eventFollowUpDelay: .milliseconds(5),
+      authorizationStatusProvider: { .fullAccess }
+    )
+
+    await observer.startObserving()
+    EventKitChangeEchoSuppressor.performAppAuthoredMutation {}
+    NotificationCenter.default.post(name: .EKEventStoreChanged, object: gateway.eventStore)
+    try await Task.sleep(for: .milliseconds(60))
+    observer.stop()
+
+    XCTAssertTrue(invalidationReasons.isEmpty)
+  }
+
   func testGlobalEventStoreChangeSchedulesImmediateAndDelayedRefresh() async throws {
     let gateway = ObserverTestReminderGateway()
     var invalidationReasons: [SyncReason] = []

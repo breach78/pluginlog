@@ -137,6 +137,76 @@ final class AppOwnedRetainedTaskCommandServiceTests: XCTestCase {
   }
 
   @MainActor
+  func testAppOwnedScheduleEditRemovesUnwritableStaleReminderAfterRefresh() async throws {
+    let start = try XCTUnwrap(
+      Self.calendar.date(from: DateComponents(year: 2026, month: 5, day: 2, hour: 9, minute: 30))
+    )
+    let fixture = try await makeEnabledStoreFixture(
+      taskExternalIdentifier: "stale-reminder",
+      dueDate: start,
+      scheduleHasExplicitTime: true,
+      scheduledDurationMinutes: 30
+    )
+    let provider = FakeAppOwnedReminderProjectProvider()
+    provider.scheduleMetadataResults = [nil, nil]
+    provider.fetchedImportSnapshotBatch = ReminderImportSnapshotBatch(
+      lists: [
+        ReminderListImportSnapshot(
+          identifier: "list-1",
+          externalIdentifier: "list-1",
+          title: "Project",
+          colorHex: nil
+        )
+      ],
+      itemsByListIdentifier: [
+        "list-1": [
+          ReminderItemImportSnapshot(
+            identifier: "stale-reminder-identifier",
+            externalIdentifier: "stale-reminder",
+            parentExternalIdentifier: nil,
+            sourceListIdentifier: "list-1",
+            sourceListTitle: "Project",
+            title: "Task",
+            notes: "",
+            attachmentCount: 0,
+            isCompleted: false,
+            completionDate: nil,
+            startDate: nil,
+            dueDate: start,
+            scheduleHasExplicitTime: true,
+            scheduledDurationMinutes: nil,
+            priority: 0,
+            recurrenceRuleRaw: nil,
+            isFlagged: false,
+            requiredWorkDays: 0,
+            createdAt: Date(timeIntervalSinceReferenceDate: 500),
+            modifiedAt: Date(timeIntervalSinceReferenceDate: 500)
+          )
+        ]
+      ]
+    )
+    let taskID = ReminderProjectionIdentity.taskID(for: "stale-reminder")
+
+    _ = try await RetainedTaskCommandFacade.setTaskSchedule(
+      vaultRootURL: fixture.vaultRoot,
+      projectID: fixture.projectID,
+      taskID: taskID,
+      day: Self.calendar.startOfDay(for: start),
+      timeMinutes: 10 * 60,
+      durationMinutes: 60,
+      calendar: Self.calendar,
+      reminderProjectProvider: provider
+    )
+    let snapshot = try await fixture.store.loadRetainedWorkspaceSnapshot(projectIDs: [fixture.projectID])
+
+    XCTAssertEqual(provider.scheduleTaskReferences.map(\.reminderIdentifier), [
+      "task-identifier",
+      "stale-reminder-identifier",
+    ])
+    XCTAssertEqual(snapshot.projects.first?.tasks, [])
+  }
+
+  @MainActor
   func testAppOwnedTaskEditRecurrenceWritesReminderAndLoadsBack() async throws {
     let start = try XCTUnwrap(
       Self.calendar.date(from: DateComponents(year: 2026, month: 5, day: 2, hour: 9, minute: 30))
