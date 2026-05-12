@@ -90,6 +90,12 @@ struct BUFApplication: App {
           }
         }
         .keyboardShortcut("0", modifiers: [.command, .option, .shift])
+
+        Button("성능 계측 로그 출력") {
+          AppLogger.performance.info(
+            "sync performance counters\n\(SyncPerformanceCounter.diagnosticReport(), privacy: .public)"
+          )
+        }
       }
 #endif
     }

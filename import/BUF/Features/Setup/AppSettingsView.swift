@@ -7,6 +7,7 @@ struct AppSettingsView: View {
   @AppStorage(ScheduleUserDefaultsKey.dateBoundarySnappingEnabled)
   private var isScheduleDateBoundarySnappingEnabled = true
   @State private var isChangingObsidianVault = false
+  @State private var performanceReport = SyncPerformanceCounter.diagnosticReport()
 
   var body: some View {
     VStack(alignment: .leading, spacing: 18) {
@@ -65,9 +66,36 @@ struct AppSettingsView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
       }
 
+#if DEBUG
+      GroupBox("Diagnostics") {
+        VStack(alignment: .leading, spacing: 10) {
+          HStack(spacing: 10) {
+            Button("성능 계측 새로고침") {
+              performanceReport = SyncPerformanceCounter.diagnosticReport()
+            }
+
+            Button("성능 계측 초기화") {
+              SyncPerformanceCounter.reset()
+              performanceReport = SyncPerformanceCounter.diagnosticReport()
+            }
+          }
+
+          Text(performanceReport)
+            .font(.system(.caption, design: .monospaced))
+            .textSelection(.enabled)
+            .lineLimit(12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+      }
+#endif
+
     }
     .padding(24)
     .frame(minWidth: 560, idealWidth: 640, maxWidth: 640, alignment: .leading)
+    .onAppear {
+      performanceReport = SyncPerformanceCounter.diagnosticReport()
+    }
   }
 
   private var obsidianVaultPath: String {

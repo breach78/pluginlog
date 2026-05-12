@@ -45,6 +45,22 @@ final class SyncPerformanceCounterTests: XCTestCase {
     }
   }
 
+  func testDiagnosticReportIncludesCountersAndOperationDurations() {
+    SyncPerformanceCounter.reset()
+    defer { SyncPerformanceCounter.reset() }
+
+    SyncPerformanceCounter.recordEventKitFetch()
+    SyncPerformanceCounter.record(.monthLayout, durationNanoseconds: 2_500_000)
+
+    let report = SyncPerformanceCounter.diagnosticReport()
+
+    XCTAssertTrue(report.contains("eventKitFetchCount=1"))
+    XCTAssertTrue(report.contains("monthLayout: count=1"))
+    XCTAssertTrue(report.contains("total=2.50 ms"))
+    XCTAssertTrue(report.contains("avg=2.50 ms"))
+    XCTAssertTrue(report.contains("max=2.50 ms"))
+  }
+
   private enum TestError: Error {
     case expected
   }

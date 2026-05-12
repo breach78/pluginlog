@@ -13,4 +13,5 @@ enum AppLogger {
     static let attachment = Logger(subsystem: subsystem, category: "attachment")
     static let notes = Logger(subsystem: subsystem, category: "notes")
     static let ui = Logger(subsystem: subsystem, category: "ui")
+    static let performance = Logger(subsystem: subsystem, category: "performance")
 }

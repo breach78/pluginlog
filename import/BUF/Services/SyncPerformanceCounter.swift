@@ -129,6 +129,36 @@ enum SyncPerformanceCounter {
     return operationStorage.mapValues(\.snapshot)
   }
 
+  static func diagnosticLines() -> [String] {
+    let counters = snapshot()
+    let operations = operationSnapshot()
+    let counterKeys = [
+      "contextSaveCount",
+      "eventKitFetchCount",
+      "workspaceCacheInvalidationCount",
+      "normalizedRebuildCount",
+      "ekObserverFireCount",
+    ]
+
+    let counterLines = counterKeys.map { key in
+      "\(key)=\(counters[key] ?? 0)"
+    }
+    let operationLines = SyncPerformanceOperation.allCases.map { operation in
+      let snapshot = operations[operation.rawValue]
+      return [
+        "\(operation.rawValue): count=\(snapshot?.count ?? 0)",
+        "total=\(formattedMilliseconds(snapshot?.totalNanoseconds ?? 0))",
+        "avg=\(formattedMilliseconds(averageNanoseconds(snapshot)))",
+        "max=\(formattedMilliseconds(snapshot?.maxNanoseconds ?? 0))",
+      ].joined(separator: " ")
+    }
+    return counterLines + operationLines
+  }
+
+  static func diagnosticReport() -> String {
+    diagnosticLines().joined(separator: "\n")
+  }
+
   static func reset() {
     lock.lock()
     contextSaveCountStorage = 0
@@ -138,5 +168,17 @@ enum SyncPerformanceCounter {
     ekObserverFireCountStorage = 0
     operationStorage = [:]
     lock.unlock()
+  }
+
+  private static func averageNanoseconds(
+    _ snapshot: SyncPerformanceOperationSnapshot?
+  ) -> UInt64 {
+    guard let snapshot, snapshot.count > 0 else { return 0 }
+    return snapshot.totalNanoseconds / UInt64(snapshot.count)
+  }
+
+  private static func formattedMilliseconds(_ nanoseconds: UInt64) -> String {
+    let milliseconds = Double(nanoseconds) / 1_000_000
+    return String(format: "%.2f ms", milliseconds)
   }
 }
