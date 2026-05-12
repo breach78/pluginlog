@@ -7,10 +7,16 @@ final class ScheduleUITokensTests: XCTestCase {
     XCTAssertEqual(ScheduleUITokens.Board.dayColumnWidth, 168 * 1.7)
     XCTAssertEqual(ScheduleUITokens.Board.dateHeaderHeight, 32)
     XCTAssertEqual(ScheduleUITokens.Board.allDayRowHeight, 24)
-    XCTAssertEqual(ScheduleUITokens.Board.hourHeight, 52)
+    XCTAssertEqual(ScheduleUITokens.Board.hourHeight, 46.8, accuracy: 0.001)
     XCTAssertEqual(ScheduleUITokens.Board.timedBlockInset, 4)
     XCTAssertEqual(ScheduleUITokens.Board.timedBlockColumnSpacing, 3)
     XCTAssertEqual(ScheduleUITokens.Board.allDayChipHorizontalInset, 5)
+  }
+
+  func testWeekAndDayPanelUseSharedTimeScale() {
+    XCTAssertEqual(ScheduleUITokens.TimeScale.hourHeight, 46.8, accuracy: 0.001)
+    XCTAssertEqual(ScheduleUITokens.Board.hourHeight, ScheduleUITokens.TimeScale.hourHeight)
+    XCTAssertEqual(ScheduleUITokens.MonthDayPanel.hourHeight, ScheduleUITokens.TimeScale.hourHeight)
   }
 
   func testMonthTokensKeepExistingCalendarLayoutScale() {

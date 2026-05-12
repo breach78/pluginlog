@@ -178,7 +178,7 @@ enum ScheduleUITokens {
     static let allDayRowHeight: CGFloat = 24
     static let allDayRailPadding: CGFloat = 6
     static let allDayRailExtraVisibleHeight: CGFloat = 8
-    static let hourHeight: CGFloat = 52
+    static let hourHeight: CGFloat = TimeScale.hourHeight
     static let timedBlockInset: CGFloat = 4
     static let timedBlockColumnSpacing: CGFloat = 3
     static let allDayChipHorizontalInset: CGFloat = 5
@@ -218,6 +218,10 @@ enum ScheduleUITokens {
     static let postponeShadowRadius: CGFloat = 3
     static let postponeShadowYOffset: CGFloat = 1
     static let allDayRailColumnDividerOpacity = 0.07
+  }
+
+  enum TimeScale {
+    static let hourHeight: CGFloat = 46.8
   }
 
   enum Month {
@@ -263,7 +267,7 @@ enum ScheduleUITokens {
 
   enum MonthDayPanel {
     static let timeGutterWidth: CGFloat = 64
-    static let hourHeight: CGFloat = 56
+    static let hourHeight: CGFloat = TimeScale.hourHeight
     static let allDayRowHeight: CGFloat = 30
     static let minimumDurationMinutes = 30
     static let dividerHeight: CGFloat = 1
