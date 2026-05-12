@@ -1,6 +1,23 @@
 import AppKit
 import SwiftUI
 
+enum ScheduleTaskDescriptorLookupPolicy {
+  static func descriptor(
+    for taskID: UUID,
+    cached cachedDescriptorsByID: [UUID: WorkspaceScheduleTaskDescriptor],
+    fallback fallbackDescriptorsByID: () -> [UUID: WorkspaceScheduleTaskDescriptor],
+    applying transform: (WorkspaceScheduleTaskDescriptor) -> WorkspaceScheduleTaskDescriptor = { $0 }
+  ) -> WorkspaceScheduleTaskDescriptor? {
+    if let cached = cachedDescriptorsByID[taskID] {
+      return transform(cached)
+    }
+    guard let descriptor = fallbackDescriptorsByID()[taskID] else {
+      return nil
+    }
+    return transform(descriptor)
+  }
+}
+
 extension ScheduleBoardView {
   func timeMinutes(for date: Date) -> Int {
     let components = calendar.dateComponents([.hour, .minute], from: date)
@@ -32,14 +49,12 @@ extension ScheduleBoardView {
   }
 
   func scheduleTaskDescriptor(for taskID: UUID) -> WorkspaceScheduleTaskDescriptor? {
-    if let cached = cachedWorkspaceScheduleTasksByID[taskID] {
-      return scheduleTaskDescriptorApplyingOptimisticSchedule(cached)
-    }
-    guard let descriptor = resolvedScheduleTaskSnapshot(preferCached: true).workspaceTasksByID[taskID]
-    else {
-      return nil
-    }
-    return scheduleTaskDescriptorApplyingOptimisticSchedule(descriptor)
+    ScheduleTaskDescriptorLookupPolicy.descriptor(
+      for: taskID,
+      cached: cachedWorkspaceScheduleTasksByID,
+      fallback: { resolvedScheduleTaskSnapshot(preferCached: false).workspaceTasksByID },
+      applying: scheduleTaskDescriptorApplyingOptimisticSchedule
+    )
   }
 
   func effectiveScheduleTaskIsCompleted(_ taskRow: TaskRowSnapshot) -> Bool {

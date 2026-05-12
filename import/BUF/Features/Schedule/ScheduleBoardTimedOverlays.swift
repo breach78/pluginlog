@@ -389,7 +389,7 @@ extension ScheduleBoardView {
         }
 
         if let dragState = activeTaskDrag,
-          let taskDescriptor = cachedWorkspaceScheduleTasksByID[dragState.taskID]
+          let taskDescriptor = scheduleTaskDescriptor(for: dragState.taskID)
         {
           let preview = preview(for: dragState)
           let dropFrame = dragDropTargetViewportFrame(for: dragState, preview: preview)
@@ -494,7 +494,7 @@ extension ScheduleBoardView {
         }
 
         if let resizeState = activeTaskResize,
-          let taskDescriptor = cachedWorkspaceScheduleTasksByID[resizeState.taskID]
+          let taskDescriptor = scheduleTaskDescriptor(for: resizeState.taskID)
         {
           let preview = preview(for: resizeState)
           let frame = resizePreviewViewportFrame(for: resizeState, preview: preview)
