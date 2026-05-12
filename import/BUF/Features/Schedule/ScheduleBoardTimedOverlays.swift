@@ -96,9 +96,9 @@ extension ScheduleBoardView {
     }
     .overlay(alignment: .topTrailing) {
       if event.isRecurring {
-        recurrenceIndicator(fontSize: 9.5)
-          .padding(.top, 6)
-          .padding(.trailing, 8)
+        recurrenceIndicator(fontSize: ScheduleUITokens.ScheduleItem.recurrenceIndicatorFontSize)
+          .padding(.top, ScheduleUITokens.ScheduleItem.recurrenceIndicatorTopPadding)
+          .padding(.trailing, ScheduleUITokens.ScheduleItem.recurrenceIndicatorTrailingPadding)
       }
     }
   }
@@ -113,7 +113,7 @@ extension ScheduleBoardView {
       .scaleEffect(dragGhostScale, anchor: .center)
       .opacity(dragGhostOpacity)
       .shadow(
-        color: Color.black.opacity(0.18),
+        color: Color.black.opacity(ScheduleUITokens.Shadow.liftedGhostOpacity),
         radius: dragGhostShadowRadius,
         x: 0,
         y: dragGhostShadowYOffset
@@ -129,11 +129,15 @@ extension ScheduleBoardView {
   ) -> some View {
     ZStack(alignment: .topLeading) {
       RoundedRectangle(cornerRadius: isAllDay ? 8 : 6, style: .continuous)
-        .fill(color.opacity(isAllDay ? 0.08 : 0.1))
+        .fill(color.opacity(
+          isAllDay
+            ? ScheduleUITokens.Interaction.dropTargetAllDayFillOpacity
+            : ScheduleUITokens.Interaction.dropTargetTimedFillOpacity
+        ))
 
       ScheduleRoundedRectangleStrokeOverlay(
         cornerRadius: isAllDay ? 8 : 6,
-        color: color.opacity(0.72),
+        color: color.opacity(ScheduleUITokens.Interaction.dropTargetStrokeOpacity),
         lineWidth: 1.2,
         lineCap: .round,
         dash: [5, 4]
@@ -141,8 +145,8 @@ extension ScheduleBoardView {
 
       if let label {
         Text(label)
-          .font(.system(size: 10, weight: .semibold))
-          .foregroundStyle(color.opacity(0.92))
+          .font(.system(size: ScheduleUITokens.Interaction.dropTargetLabelFontSize, weight: .semibold))
+          .foregroundStyle(color.opacity(ScheduleUITokens.Interaction.dropTargetLabelForegroundOpacity))
           .lineLimit(1)
           .padding(.horizontal, 6)
           .padding(.vertical, 4)
@@ -156,11 +160,13 @@ extension ScheduleBoardView {
 
   func dragSourcePlaceholder(frame: CGRect, isAllDay: Bool) -> some View {
     RoundedRectangle(cornerRadius: isAllDay ? 8 : 6, style: .continuous)
-      .fill(Color(nsColor: .windowBackgroundColor).opacity(0.58))
+      .fill(Color(nsColor: .windowBackgroundColor).opacity(
+        ScheduleUITokens.Interaction.dragSourcePlaceholderFillOpacity
+      ))
       .overlay {
         ScheduleRoundedRectangleStrokeOverlay(
           cornerRadius: isAllDay ? 8 : 6,
-          color: Color.primary.opacity(0.08),
+          color: Color.primary.opacity(ScheduleUITokens.Interaction.dragSourcePlaceholderStrokeOpacity),
           lineWidth: 1
         )
       }
@@ -209,7 +215,12 @@ extension ScheduleBoardView {
     .frame(width: frame.width, height: frame.height, alignment: .topLeading)
     .offset(x: frame.minX, y: frame.minY)
     .opacity(ScheduleResizePreviewStylePolicy.targetBlockOpacity)
-    .shadow(color: Color.black.opacity(0.12), radius: 6, x: 0, y: 2)
+    .shadow(
+      color: Color.black.opacity(ScheduleUITokens.Shadow.resizePreviewTaskOpacity),
+      radius: ScheduleUITokens.Shadow.resizePreviewTaskRadius,
+      x: 0,
+      y: ScheduleUITokens.Shadow.dragPreviewYOffset
+    )
     .allowsHitTesting(false)
   }
 
@@ -236,9 +247,9 @@ extension ScheduleBoardView {
     }
     .overlay(alignment: .topTrailing) {
       if event.isRecurring {
-        recurrenceIndicator(fontSize: 9.5)
-          .padding(.top, 6)
-          .padding(.trailing, 8)
+        recurrenceIndicator(fontSize: ScheduleUITokens.ScheduleItem.recurrenceIndicatorFontSize)
+          .padding(.top, ScheduleUITokens.ScheduleItem.recurrenceIndicatorTopPadding)
+          .padding(.trailing, ScheduleUITokens.ScheduleItem.recurrenceIndicatorTrailingPadding)
       }
     }
     .frame(width: frame.width, height: frame.height, alignment: .topLeading)
@@ -247,11 +258,16 @@ extension ScheduleBoardView {
     .overlay {
       ScheduleRoundedRectangleStrokeOverlay(
         cornerRadius: 6,
-        color: color.opacity(0.72),
+        color: color.opacity(ScheduleUITokens.Interaction.dropTargetStrokeOpacity),
         lineWidth: 1
       )
     }
-    .shadow(color: Color.black.opacity(0.1), radius: 5, x: 0, y: 2)
+    .shadow(
+      color: Color.black.opacity(ScheduleUITokens.Shadow.resizePreviewEventOpacity),
+      radius: ScheduleUITokens.Shadow.resizePreviewEventRadius,
+      x: 0,
+      y: ScheduleUITokens.Shadow.dragPreviewYOffset
+    )
     .allowsHitTesting(false)
   }
 
@@ -522,23 +538,23 @@ extension ScheduleBoardView {
   ) -> some View {
     VStack(alignment: .leading, spacing: 4) {
       Text("새 할일")
-        .font(.system(size: 12, weight: .semibold))
-        .foregroundStyle(.primary.opacity(0.88))
+        .font(.system(size: ScheduleUITokens.Interaction.quickCreateTitleFontSize, weight: .semibold))
+        .foregroundStyle(.primary.opacity(ScheduleUITokens.Interaction.quickCreateTitleForegroundOpacity))
       Text(timeRangeLabel(startMinute: selection.startMinutes, durationMinutes: selection.durationMinutes))
-        .font(.system(size: 11, weight: .medium, design: .monospaced))
+        .font(.system(size: ScheduleUITokens.Interaction.quickCreateTimeFontSize, weight: .medium, design: .monospaced))
         .foregroundStyle(.secondary)
     }
-    .padding(.horizontal, 10)
-    .padding(.vertical, 8)
+    .padding(.horizontal, ScheduleUITokens.Interaction.quickCreateHorizontalPadding)
+    .padding(.vertical, ScheduleUITokens.Interaction.quickCreateVerticalPadding)
     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     .background(
       RoundedRectangle(cornerRadius: 12, style: .continuous)
-        .fill(Color.accentColor.opacity(0.14))
+        .fill(Color.accentColor.opacity(ScheduleUITokens.Interaction.quickCreateFillOpacity))
     )
     .overlay {
       ScheduleRoundedRectangleStrokeOverlay(
         cornerRadius: 12,
-        color: Color.accentColor.opacity(0.6),
+        color: Color.accentColor.opacity(ScheduleUITokens.Interaction.quickCreateStrokeOpacity),
         lineWidth: 1.1,
         dash: [5, 4]
       )

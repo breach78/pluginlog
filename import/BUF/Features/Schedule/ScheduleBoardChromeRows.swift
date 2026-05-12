@@ -14,19 +14,26 @@ struct CalendarPickerRow: View {
     Button(action: onCycle) {
       HStack(spacing: 10) {
         stateIcon
-          .frame(width: 14, height: 14)
+          .frame(
+            width: ScheduleUITokens.Chrome.calendarPickerRowIconFrameSize,
+            height: ScheduleUITokens.Chrome.calendarPickerRowIconFrameSize
+          )
 
         Text(source.title)
-          .font(.system(size: 13))
-          .foregroundStyle(source.isVisible ? Color.primary : Color.primary.opacity(0.3))
+          .font(.system(size: ScheduleUITokens.Chrome.calendarPickerRowTitleFontSize))
+          .foregroundStyle(
+            source.isVisible
+              ? Color.primary
+              : Color.primary.opacity(ScheduleUITokens.Chrome.calendarPickerRowHiddenTitleOpacity)
+          )
           .lineLimit(1)
 
         Spacer(minLength: 0)
       }
-      .padding(.horizontal, 10)
-      .padding(.vertical, 6)
+      .padding(.horizontal, ScheduleUITokens.Chrome.calendarPickerRowHorizontalPadding)
+      .padding(.vertical, ScheduleUITokens.Chrome.calendarPickerRowVerticalPadding)
       .background(
-        RoundedRectangle(cornerRadius: 6, style: .continuous)
+        RoundedRectangle(cornerRadius: ScheduleUITokens.Chrome.calendarPickerRowCornerRadius, style: .continuous)
           .fill(isHovering ? Color(nsColor: .controlBackgroundColor) : Color.clear)
       )
     }
@@ -39,15 +46,15 @@ struct CalendarPickerRow: View {
   private var stateIcon: some View {
     if !source.isVisible {
       Image(systemName: "xmark")
-        .font(.system(size: 9, weight: .semibold))
-        .foregroundStyle(Color.primary.opacity(0.25))
+        .font(.system(size: ScheduleUITokens.Chrome.calendarPickerRowStateIconFontSize, weight: .semibold))
+        .foregroundStyle(Color.primary.opacity(ScheduleUITokens.Chrome.calendarPickerRowHiddenIconOpacity))
     } else if source.isBackgroundOnly {
       Image(systemName: "triangle.fill")
-        .font(.system(size: 9))
-        .foregroundStyle(calendarColor.opacity(0.55))
+        .font(.system(size: ScheduleUITokens.Chrome.calendarPickerRowStateIconFontSize))
+        .foregroundStyle(calendarColor.opacity(ScheduleUITokens.Chrome.calendarPickerRowBackgroundOnlyIconOpacity))
     } else {
       Image(systemName: "circle.fill")
-        .font(.system(size: 9))
+        .font(.system(size: ScheduleUITokens.Chrome.calendarPickerRowStateIconFontSize))
         .foregroundStyle(calendarColor)
     }
   }

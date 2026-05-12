@@ -59,11 +59,11 @@ extension ScheduleBoardView {
   func calendarPickerPopover(sources: [ScheduleCalendarSource]) -> some View {
     VStack(alignment: .leading, spacing: 1) {
       Text("캘린더")
-        .font(.system(size: 11, weight: .semibold))
+        .font(.system(size: ScheduleUITokens.Chrome.calendarPickerTitleFontSize, weight: .semibold))
         .foregroundStyle(.secondary)
-        .padding(.horizontal, 10)
-        .padding(.top, 6)
-        .padding(.bottom, 2)
+        .padding(.horizontal, ScheduleUITokens.Chrome.calendarPickerHorizontalPadding)
+        .padding(.top, ScheduleUITokens.Chrome.calendarPickerTitleTopPadding)
+        .padding(.bottom, ScheduleUITokens.Chrome.calendarPickerTitleBottomPadding)
 
       ForEach(sources) { source in
         CalendarPickerRow(source: source) {
@@ -72,25 +72,28 @@ extension ScheduleBoardView {
       }
 
       Divider()
-        .padding(.horizontal, 6)
-        .padding(.vertical, 4)
+        .padding(.horizontal, ScheduleUITokens.Chrome.calendarPickerDividerHorizontalPadding)
+        .padding(.vertical, ScheduleUITokens.Chrome.calendarPickerDividerVerticalPadding)
 
       HStack(spacing: 12) {
         calendarPickerLegendItem("circle.fill", opacity: 1.0, label: "활성")
         calendarPickerLegendItem("triangle.fill", opacity: 0.55, label: "표시만")
         calendarPickerLegendItem("xmark", opacity: 0.25, label: "숨김")
       }
-      .font(.system(size: 10))
-      .padding(.horizontal, 10)
-      .padding(.bottom, 8)
+      .font(.system(size: ScheduleUITokens.Chrome.calendarPickerLegendFontSize))
+      .padding(.horizontal, ScheduleUITokens.Chrome.calendarPickerHorizontalPadding)
+      .padding(.bottom, ScheduleUITokens.Chrome.calendarPickerLegendBottomPadding)
     }
-    .frame(minWidth: 190, maxWidth: 280)
+    .frame(
+      minWidth: ScheduleUITokens.Chrome.calendarPickerMinWidth,
+      maxWidth: ScheduleUITokens.Chrome.calendarPickerMaxWidth
+    )
   }
 
   func calendarPickerLegendItem(_ symbol: String, opacity: Double, label: String) -> some View {
     HStack(spacing: 4) {
       Image(systemName: symbol)
-        .font(.system(size: 8))
+        .font(.system(size: ScheduleUITokens.Chrome.calendarPickerLegendIconFontSize))
         .foregroundStyle(Color.primary.opacity(opacity))
       Text(label)
         .foregroundStyle(.tertiary)
@@ -133,24 +136,26 @@ extension ScheduleBoardView {
     HStack(spacing: 6) {
       ZStack(alignment: .bottomTrailing) {
         Image(systemName: "calendar")
-          .font(.system(size: 15, weight: .semibold))
+          .font(.system(size: ScheduleUITokens.Chrome.calendarIconFontSize, weight: .semibold))
           .foregroundStyle(.primary)
 
         calendarMenuSwatches
-          .padding(.horizontal, 4)
-          .padding(.vertical, 2)
+          .padding(.horizontal, ScheduleUITokens.Chrome.calendarMenuSwatchCapsuleHorizontalPadding)
+          .padding(.vertical, ScheduleUITokens.Chrome.calendarMenuSwatchCapsuleVerticalPadding)
           .background(
             Capsule()
-              .fill(Color(nsColor: .windowBackgroundColor).opacity(0.94))
+              .fill(Color(nsColor: .windowBackgroundColor).opacity(
+                ScheduleUITokens.Chrome.calendarMenuSwatchCapsuleBackgroundOpacity
+              ))
           )
           .offset(x: 8, y: 7)
       }
 
       Image(systemName: "chevron.down")
-        .font(.system(size: 9, weight: .semibold))
+        .font(.system(size: ScheduleUITokens.Chrome.calendarChevronFontSize, weight: .semibold))
         .foregroundStyle(.secondary)
     }
-    .frame(height: 24)
+    .frame(height: ScheduleUITokens.Chrome.calendarMenuHeight)
     .contentShape(Rectangle())
     .accessibilityLabel("Calendars")
   }
@@ -162,7 +167,10 @@ extension ScheduleBoardView {
       ForEach(Array(calendarSources.prefix(3))) { source in
         Circle()
           .fill(ColorHexCodec.color(from: source.colorHex) ?? .secondary)
-          .frame(width: 6, height: 6)
+          .frame(
+            width: ScheduleUITokens.Chrome.calendarSwatchSize,
+            height: ScheduleUITokens.Chrome.calendarSwatchSize
+          )
       }
     }
   }
@@ -305,9 +313,12 @@ extension ScheduleBoardView {
 
     return HStack(spacing: 7) {
       Text(dayHeaderDayNumber(day))
-        .font(.system(size: 15, weight: .semibold, design: .rounded))
+        .font(.system(size: ScheduleUITokens.Chrome.dayHeaderDayFontSize, weight: .semibold, design: .rounded))
         .foregroundStyle(dayNumberColor)
-        .frame(width: 24, height: 24)
+        .frame(
+          width: ScheduleUITokens.Chrome.dayHeaderBadgeSize,
+          height: ScheduleUITokens.Chrome.dayHeaderBadgeSize
+        )
         .background {
           if isToday {
             Circle()
@@ -318,19 +329,19 @@ extension ScheduleBoardView {
       HStack(spacing: 4) {
         if showsMonth {
           Text(dayHeaderMonth(day))
-            .font(.system(size: 8, weight: .bold, design: .rounded))
+            .font(.system(size: ScheduleUITokens.Chrome.dayHeaderMonthFontSize, weight: .bold, design: .rounded))
             .foregroundStyle(.tertiary)
             .textCase(.uppercase)
         }
 
         Text(dayHeaderWeekday(day))
-          .font(.system(size: 10, weight: .semibold))
+          .font(.system(size: ScheduleUITokens.Chrome.dayHeaderWeekdayFontSize, weight: .semibold))
           .foregroundStyle(weekdayColor)
           .textCase(.uppercase)
       }
     }
     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
-    .padding(.horizontal, 10)
+    .padding(.horizontal, ScheduleUITokens.Chrome.dayHeaderHorizontalPadding)
     .contentShape(Rectangle())
     .onHover { isHovering in
       updateScheduleDayHeaderHover(day: day, index: index, isHovering: isHovering)

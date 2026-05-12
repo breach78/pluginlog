@@ -76,7 +76,7 @@ struct ScheduleMonthView: View {
   private var monthHeader: some View {
     HStack(alignment: .center, spacing: 12) {
       Text(monthTitle(for: monthStart))
-        .font(.system(size: 32, weight: .bold))
+        .font(.system(size: ScheduleUITokens.Month.headerTitleFontSize, weight: .bold))
         .lineLimit(1)
         .minimumScaleFactor(0.7)
 
@@ -87,8 +87,11 @@ struct ScheduleMonthView: View {
           moveMonth(by: -1)
         } label: {
           Image(systemName: "chevron.left")
-            .font(.system(size: 12, weight: .bold))
-            .frame(width: 28, height: 28)
+            .font(.system(size: ScheduleUITokens.Month.headerNavigationIconFontSize, weight: .bold))
+            .frame(
+              width: ScheduleUITokens.Month.headerNavigationButtonSize,
+              height: ScheduleUITokens.Month.headerNavigationButtonSize
+            )
         }
         .buttonStyle(.borderless)
         .help("이전 달")
@@ -103,8 +106,11 @@ struct ScheduleMonthView: View {
           moveMonth(by: 1)
         } label: {
           Image(systemName: "chevron.right")
-            .font(.system(size: 12, weight: .bold))
-            .frame(width: 28, height: 28)
+            .font(.system(size: ScheduleUITokens.Month.headerNavigationIconFontSize, weight: .bold))
+            .frame(
+              width: ScheduleUITokens.Month.headerNavigationButtonSize,
+              height: ScheduleUITokens.Month.headerNavigationButtonSize
+            )
         }
         .buttonStyle(.borderless)
         .help("다음 달")
@@ -118,7 +124,7 @@ struct ScheduleMonthView: View {
     HStack(spacing: 0) {
       ForEach(weekdaySymbols, id: \.self) { symbol in
         Text(symbol)
-          .font(.system(size: 14, weight: .semibold))
+          .font(.system(size: ScheduleUITokens.Month.weekdayFontSize, weight: .semibold))
           .foregroundStyle(.secondary)
           .frame(maxWidth: .infinity, maxHeight: .infinity)
       }

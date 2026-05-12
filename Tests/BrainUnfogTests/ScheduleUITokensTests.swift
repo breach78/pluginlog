@@ -181,4 +181,107 @@ final class ScheduleUITokensTests: XCTestCase {
 
     XCTAssertTrue(failures.isEmpty, failures.joined(separator: "\n"))
   }
+
+  func testPanelChromeAndOverlayFilesUseSharedTokensForRepeatedMetrics() throws {
+    let forbiddenRawMetrics: [String: [String]] = [
+      "import/BUF/Features/Schedule/ScheduleBoardChrome.swift": [
+        ".font(.system(size: 11",
+        ".font(.system(size: 10",
+        ".font(.system(size: 9",
+        ".font(.system(size: 8",
+        ".font(.system(size: 15",
+        ".frame(height: 24)",
+        ".frame(width: 6, height: 6)",
+        ".frame(width: 24, height: 24)",
+        "windowBackgroundColor).opacity(0.94)",
+      ],
+      "import/BUF/Features/Schedule/ScheduleBoardChromeRows.swift": [
+        ".font(.system(size: 13",
+        ".font(.system(size: 9",
+        "Color.primary.opacity(0.3)",
+        "Color.primary.opacity(0.25)",
+        "calendarColor.opacity(0.55)",
+      ],
+      "import/BUF/Features/Schedule/ScheduleBoardTimedChrome.swift": [
+        "color.opacity(0.95)",
+        "color.opacity(0.9)",
+        "Color.white.opacity(0.84)",
+        "0.78 * ScheduleItemVisualStyle.secondaryTextOpacityMultiplier",
+        "isBackgroundCalendar ? 0.68 : 1.0",
+        "Color.accentColor.opacity(0.08)",
+        "Color.primary.opacity(0.02)",
+        "Color.accentColor.opacity(0.045)",
+        "Color.primary.opacity(0.018)",
+      ],
+      "import/BUF/Features/Schedule/ScheduleBoardTimedOverlays.swift": [
+        ".padding(.top, 6)",
+        ".padding(.trailing, 8)",
+        "Color.black.opacity(0.18)",
+        "color.opacity(0.72)",
+        ".font(.system(size: 10",
+        "color.opacity(0.92)",
+        "windowBackgroundColor).opacity(0.58)",
+        "Color.primary.opacity(0.08)",
+        "Color.black.opacity(0.12)",
+        "Color.black.opacity(0.1)",
+        ".font(.system(size: 12",
+        ".primary.opacity(0.88)",
+        ".font(.system(size: 11",
+        ".padding(.horizontal, 10)",
+        ".padding(.vertical, 8)",
+        "Color.accentColor.opacity(0.14)",
+        "Color.accentColor.opacity(0.6)",
+      ],
+      "import/BUF/Features/Schedule/ScheduleCalendarEventEditPanel.swift": [
+        ".font(.system(size: 24",
+        ".font(.system(size: 22",
+        ".font(.system(size: 20",
+        ".font(.system(size: 17",
+        ".font(.system(size: 15",
+        ".font(.system(size: 14",
+        ".font(.system(size: 13",
+        ".font(.system(size: 10",
+        ".padding(.horizontal, 28)",
+        ".padding(.bottom, 32)",
+        ".frame(width: 34",
+        ".frame(minHeight: 170)",
+        ".frame(width: 260",
+        ".padding(12)",
+        ".frame(width: 284",
+        ".frame(height: 32)",
+      ],
+      "import/BUF/Features/Schedule/ScheduleMonthDetailPanel.swift": [
+        ".font(.system(size: 18",
+        ".font(.system(size: 13",
+        ".font(.system(size: 12",
+        ".frame(width: 28",
+        ".padding(.horizontal, 18)",
+        ".padding(.vertical, 14)",
+      ],
+      "import/BUF/Features/Schedule/ScheduleQuickAddContextMenu.swift": [
+        ".font(.system(size: 12",
+        ".font(.system(size: 10",
+        ".frame(height: 22)",
+        ".padding(.horizontal, 10)",
+        ".padding(.vertical, 8)",
+        ".padding(12)",
+        ".frame(width: 260)",
+      ],
+    ]
+
+    let root = URL(fileURLWithPath: #filePath)
+      .deletingLastPathComponent()
+      .deletingLastPathComponent()
+      .deletingLastPathComponent()
+
+    var failures: [String] = []
+    for (relativePath, forbiddenPatterns) in forbiddenRawMetrics {
+      let source = try String(contentsOf: root.appendingPathComponent(relativePath), encoding: .utf8)
+      for pattern in forbiddenPatterns where source.contains(pattern) {
+        failures.append("\(relativePath) still contains \(pattern)")
+      }
+    }
+
+    XCTAssertTrue(failures.isEmpty, failures.joined(separator: "\n"))
+  }
 }

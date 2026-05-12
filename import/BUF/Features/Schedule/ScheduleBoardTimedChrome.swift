@@ -15,15 +15,29 @@ extension ScheduleBoardView {
     compact: Bool,
     isPreparationSlot: Bool = false
   ) -> some View {
-    let frameSize: CGFloat = compact ? 14 : 16
-    let strokeWidth: CGFloat = compact ? 1.55 : 1.75
-    let arrowFontSize: CGFloat = CGFloat(compact ? 9 : 10) * 0.9215
+    let frameSize: CGFloat =
+      compact
+        ? ScheduleUITokens.ScheduleItem.compactCompletionGlyphSize
+        : ScheduleUITokens.ScheduleItem.regularCompletionGlyphSize
+    let strokeWidth: CGFloat =
+      compact
+        ? ScheduleUITokens.ScheduleItem.compactCompletionStrokeWidth
+        : ScheduleUITokens.ScheduleItem.regularCompletionStrokeWidth
+    let arrowFontSize: CGFloat =
+      compact
+        ? ScheduleUITokens.ScheduleItem.compactRecurringArrowFontSize
+        : ScheduleUITokens.ScheduleItem.regularRecurringArrowFontSize
     let glyphColor: Color = isSelected ? .white : color
 
     return ZStack {
       if isCompleted {
         Image(systemName: "checkmark.circle.fill")
-          .font(.system(size: compact ? 13 : 14, weight: .semibold))
+          .font(.system(
+            size: compact
+              ? ScheduleUITokens.ScheduleItem.compactCompletionIconFontSize
+              : ScheduleUITokens.ScheduleItem.regularCompletionIconFontSize,
+            weight: .semibold
+          ))
           .foregroundStyle(glyphColor)
       } else {
         taskOutlineGlyph(
@@ -50,14 +64,14 @@ extension ScheduleBoardView {
     Group {
       if showsPreparationIndicator {
         ScheduleCircleStrokeOverlay(
-          color: color.opacity(0.95),
+          color: color.opacity(ScheduleUITokens.ScheduleItem.preparationOutlineOpacity),
           lineWidth: strokeWidth,
           lineCap: .round,
           dash: [0.1, 3.15]
         )
       } else {
         ScheduleCircleStrokeOverlay(
-          color: color.opacity(0.9),
+          color: color.opacity(ScheduleUITokens.ScheduleItem.outlineOpacity),
           lineWidth: strokeWidth
         )
       }
@@ -184,19 +198,27 @@ extension ScheduleBoardView {
 
   func scheduleTaskPrimaryTextColor(isSelected: Bool, isCompleted: Bool) -> Color {
     if isSelected {
-      return isCompleted ? Color.white.opacity(0.84) : .white
+      return isCompleted
+        ? Color.white.opacity(ScheduleUITokens.ScheduleItem.selectedCompletedTitleOpacity)
+        : .white
     }
     return isCompleted ? .secondary : .primary
   }
 
   func scheduleTaskSecondaryTextColor(isSelected: Bool) -> Color {
     isSelected
-      ? Color.white.opacity(0.78 * ScheduleItemVisualStyle.secondaryTextOpacityMultiplier)
+      ? Color.white.opacity(
+        ScheduleUITokens.ScheduleItem.selectedSecondaryTextBaseOpacity
+          * ScheduleItemVisualStyle.secondaryTextOpacityMultiplier
+      )
       : Color.secondary.opacity(ScheduleItemVisualStyle.secondaryTextOpacityMultiplier)
   }
 
   func scheduleEventSecondaryTextColor(isBackgroundCalendar: Bool) -> Color {
-    let baseOpacity = isBackgroundCalendar ? 0.68 : 1.0
+    let baseOpacity =
+      isBackgroundCalendar
+        ? ScheduleUITokens.ScheduleItem.backgroundCalendarSecondaryTextBaseOpacity
+        : 1.0
     return Color.secondary.opacity(
       baseOpacity * ScheduleItemVisualStyle.secondaryTextOpacityMultiplier
     )
@@ -363,20 +385,20 @@ extension ScheduleBoardView {
     switch section {
     case .header:
       if isToday {
-        return Color.accentColor.opacity(0.08)
+        return Color.accentColor.opacity(ScheduleUITokens.ScheduleItem.todayHeaderBackgroundOpacity)
       }
       if isWeekend {
-        return Color.primary.opacity(0.02)
+        return Color.primary.opacity(ScheduleUITokens.ScheduleItem.weekendHeaderBackgroundOpacity)
       }
       return Color(nsColor: .windowBackgroundColor)
     case .allDayRail:
       return Color(nsColor: .windowBackgroundColor)
     case .timeline:
       if isToday {
-        return Color.accentColor.opacity(0.045)
+        return Color.accentColor.opacity(ScheduleUITokens.ScheduleItem.todayTimelineBackgroundOpacity)
       }
       if isWeekend {
-        return Color.primary.opacity(0.018)
+        return Color.primary.opacity(ScheduleUITokens.ScheduleItem.weekendTimelineBackgroundOpacity)
       }
       return .clear
     }

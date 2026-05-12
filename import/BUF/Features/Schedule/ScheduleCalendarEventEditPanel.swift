@@ -99,7 +99,7 @@ struct ScheduleCalendarEventEditPanelContent: View {
         VStack(alignment: .leading, spacing: 18) {
           if !event.canEditTiming {
             Text(event.editTimingRestrictionReason ?? "이 캘린더 이벤트는 수정할 수 없습니다.")
-              .font(.system(size: 14, weight: .semibold))
+              .font(.system(size: ScheduleUITokens.Panel.sectionTitleFontSize, weight: .semibold))
               .foregroundStyle(.red)
               .frame(maxWidth: .infinity, alignment: .leading)
           }
@@ -118,17 +118,17 @@ struct ScheduleCalendarEventEditPanelContent: View {
 
           if let message = validationText ?? errorText {
             Text(message)
-              .font(.system(size: 13, weight: .semibold))
+              .font(.system(size: ScheduleUITokens.Panel.statusFontSize, weight: .semibold))
               .foregroundStyle(validationText == nil ? .red : .orange)
               .frame(maxWidth: .infinity, alignment: .leading)
           } else if isSaving {
             Text("저장 중")
-              .font(.system(size: 13, weight: .semibold))
+              .font(.system(size: ScheduleUITokens.Panel.statusFontSize, weight: .semibold))
               .foregroundStyle(.secondary)
           }
         }
-        .padding(.horizontal, 28)
-        .padding(.bottom, 32)
+        .padding(.horizontal, ScheduleUITokens.Panel.contentHorizontalPadding)
+        .padding(.bottom, ScheduleUITokens.Panel.contentBottomPadding)
       }
     }
     .background(Color(nsColor: NSColor(calibratedWhite: 1, alpha: 1)))
@@ -166,7 +166,7 @@ struct ScheduleCalendarEventEditPanelContent: View {
   private var header: some View {
     HStack(spacing: 12) {
       Text("일정 편집")
-        .font(.system(size: 22, weight: .bold))
+        .font(.system(size: ScheduleUITokens.Panel.headerTitleFontSize, weight: .bold))
         .foregroundStyle(.primary)
 
       Spacer(minLength: 0)
@@ -175,23 +175,26 @@ struct ScheduleCalendarEventEditPanelContent: View {
         closeEditor()
       } label: {
         Image(systemName: "xmark")
-          .font(.system(size: 20, weight: .semibold))
-          .frame(width: 34, height: 34)
+          .font(.system(size: ScheduleUITokens.Panel.closeIconFontSize, weight: .semibold))
+          .frame(
+            width: ScheduleUITokens.Panel.closeButtonSize,
+            height: ScheduleUITokens.Panel.closeButtonSize
+          )
           .contentShape(Rectangle())
       }
       .buttonStyle(.plain)
       .help("닫기")
     }
-    .padding(.leading, 28)
-    .padding(.trailing, 22)
-    .padding(.top, 34)
-    .padding(.bottom, 22)
+    .padding(.leading, ScheduleUITokens.Panel.headerLeadingPadding)
+    .padding(.trailing, ScheduleUITokens.Panel.headerTrailingPadding)
+    .padding(.top, ScheduleUITokens.Panel.headerTopPadding)
+    .padding(.bottom, ScheduleUITokens.Panel.headerBottomPadding)
   }
 
   private var recurringScopeSection: some View {
     VStack(alignment: .leading, spacing: 8) {
       Text("반복 일정")
-        .font(.system(size: 14, weight: .semibold))
+        .font(.system(size: ScheduleUITokens.Panel.sectionTitleFontSize, weight: .semibold))
         .foregroundStyle(.secondary)
 
       Picker("적용 범위", selection: $recurringScope) {
@@ -207,14 +210,14 @@ struct ScheduleCalendarEventEditPanelContent: View {
   private var titleSection: some View {
     VStack(alignment: .leading, spacing: 8) {
       Text("제목")
-        .font(.system(size: 14, weight: .semibold))
+        .font(.system(size: ScheduleUITokens.Panel.sectionTitleFontSize, weight: .semibold))
         .foregroundStyle(.secondary)
 
       TextField("", text: $title)
-        .font(.system(size: 24, weight: .bold))
+        .font(.system(size: ScheduleUITokens.Panel.titleFieldFontSize, weight: .bold))
         .textFieldStyle(.plain)
-        .padding(.horizontal, 16)
-        .padding(.vertical, 14)
+        .padding(.horizontal, ScheduleUITokens.Panel.titleFieldHorizontalPadding)
+        .padding(.vertical, ScheduleUITokens.Panel.titleFieldVerticalPadding)
         .background(fieldBackground)
     }
   }
@@ -222,15 +225,15 @@ struct ScheduleCalendarEventEditPanelContent: View {
   private var noteSection: some View {
     VStack(alignment: .leading, spacing: 8) {
       Text("내용")
-        .font(.system(size: 14, weight: .semibold))
+        .font(.system(size: ScheduleUITokens.Panel.sectionTitleFontSize, weight: .semibold))
         .foregroundStyle(.secondary)
 
       TextEditor(text: $noteText)
-        .font(.system(size: 17))
+        .font(.system(size: ScheduleUITokens.Panel.noteFontSize))
         .scrollContentBackground(.hidden)
-        .frame(minHeight: 170)
-        .padding(.horizontal, 12)
-        .padding(.vertical, 12)
+        .frame(minHeight: ScheduleUITokens.Panel.noteMinHeight)
+        .padding(.horizontal, ScheduleUITokens.Panel.noteFieldPadding)
+        .padding(.vertical, ScheduleUITokens.Panel.noteFieldPadding)
         .background(fieldBackground)
     }
   }
@@ -240,7 +243,7 @@ struct ScheduleCalendarEventEditPanelContent: View {
       HStack(alignment: .top, spacing: 18) {
         VStack(alignment: .leading, spacing: 10) {
           Text("날짜")
-            .font(.system(size: 14, weight: .semibold))
+            .font(.system(size: ScheduleUITokens.Panel.sectionTitleFontSize, weight: .semibold))
             .foregroundStyle(.secondary)
 
           dateControl(
@@ -255,21 +258,21 @@ struct ScheduleCalendarEventEditPanelContent: View {
             isPresented: $isEndDatePickerPresented
           )
         }
-        .frame(width: 260, alignment: .topLeading)
+        .frame(width: ScheduleUITokens.Panel.dateColumnWidth, alignment: .topLeading)
 
         VStack(alignment: .leading, spacing: 10) {
           Toggle("시간 설정", isOn: $hasTime)
-            .font(.system(size: 15, weight: .semibold))
+            .font(.system(size: ScheduleUITokens.Panel.bodyFontSize, weight: .semibold))
             .toggleStyle(.checkbox)
 
           if hasTime {
             DatePicker("시작", selection: $selectedStartTime, displayedComponents: .hourAndMinute)
-              .font(.system(size: 15))
+              .font(.system(size: ScheduleUITokens.Panel.bodyFontSize))
             DatePicker("끝", selection: $selectedEndTime, displayedComponents: .hourAndMinute)
-              .font(.system(size: 15))
+              .font(.system(size: ScheduleUITokens.Panel.bodyFontSize))
           } else {
             Text("종일")
-              .font(.system(size: 14, weight: .semibold))
+              .font(.system(size: ScheduleUITokens.Panel.sectionTitleFontSize, weight: .semibold))
               .foregroundStyle(.secondary)
           }
         }
@@ -289,17 +292,17 @@ struct ScheduleCalendarEventEditPanelContent: View {
     } label: {
       HStack(spacing: 8) {
         Text(title)
-          .font(.system(size: 14, weight: .semibold))
+          .font(.system(size: ScheduleUITokens.Panel.sectionTitleFontSize, weight: .semibold))
           .foregroundStyle(.secondary)
-          .frame(width: 34, alignment: .leading)
+          .frame(width: ScheduleUITokens.Panel.compactControlLabelWidth, alignment: .leading)
         Image(systemName: "calendar")
-          .font(.system(size: 13, weight: .semibold))
+          .font(.system(size: ScheduleUITokens.Panel.statusFontSize, weight: .semibold))
         Text(date.wrappedValue.formatted(.dateTime.year().month(.wide).day()))
-          .font(.system(size: 15, weight: .medium))
+          .font(.system(size: ScheduleUITokens.Panel.bodyFontSize, weight: .medium))
           .lineLimit(1)
         Spacer(minLength: 0)
         Image(systemName: "chevron.down")
-          .font(.system(size: 10, weight: .semibold))
+          .font(.system(size: ScheduleUITokens.Panel.quickAddMenuIconFontSize, weight: .semibold))
           .foregroundStyle(.secondary)
       }
       .calendarEventCompactControlBackground()
@@ -310,8 +313,8 @@ struct ScheduleCalendarEventEditPanelContent: View {
       DatePicker("", selection: date, displayedComponents: .date)
         .datePickerStyle(.graphical)
         .labelsHidden()
-        .padding(12)
-        .frame(width: 284, alignment: .leading)
+        .padding(ScheduleUITokens.Panel.datePickerPadding)
+        .frame(width: ScheduleUITokens.Panel.datePickerWidth, alignment: .leading)
         .background(CalendarEventEditFieldStyle.panelBackgroundColor)
     }
   }
@@ -554,8 +557,8 @@ private enum CalendarEventEditFieldStyle {
 private struct CalendarEventEditCompactControlBackground: ViewModifier {
   func body(content: Content) -> some View {
     content
-      .padding(.horizontal, 10)
-      .frame(height: 32)
+      .padding(.horizontal, ScheduleUITokens.Panel.quickAddMenuHorizontalPadding)
+      .frame(height: ScheduleUITokens.Panel.compactControlHeight)
       .frame(maxWidth: .infinity, alignment: .leading)
       .background(
         RoundedRectangle(cornerRadius: 4)

@@ -59,7 +59,7 @@ extension ScheduleBoardView {
               .offset(x: CGFloat(index) * dayColumnWidth)
 
             Rectangle()
-              .fill(Color.primary.opacity(0.07))
+              .fill(Color.primary.opacity(ScheduleUITokens.Board.allDayRailColumnDividerOpacity))
               .frame(width: 1, height: contentHeight)
               .offset(x: CGFloat(index + 1) * dayColumnWidth - 0.5)
           }

@@ -106,10 +106,31 @@ enum ScheduleUITokens {
     static let noteMinHeight: CGFloat = 170
     static let contentHorizontalPadding: CGFloat = 28
     static let contentBottomPadding: CGFloat = 32
+    static let headerLeadingPadding: CGFloat = 28
+    static let headerTrailingPadding: CGFloat = 22
+    static let headerTopPadding: CGFloat = 34
+    static let headerBottomPadding: CGFloat = 22
+    static let titleFieldHorizontalPadding: CGFloat = 16
+    static let titleFieldVerticalPadding: CGFloat = 14
+    static let noteFieldPadding: CGFloat = 12
+    static let dateColumnWidth: CGFloat = 260
+    static let datePickerPadding: CGFloat = 12
+    static let datePickerWidth: CGFloat = 284
     static let quickAddTitleFontSize: CGFloat = 12
     static let quickAddWidth: CGFloat = 260
     static let quickAddTextFieldHeight: CGFloat = 22
     static let quickAddMenuIconFontSize: CGFloat = 10
+    static let quickAddMenuHorizontalPadding: CGFloat = 10
+    static let quickAddMenuVerticalPadding: CGFloat = 8
+    static let monthDetailTitleFontSize: CGFloat = 18
+    static let monthDetailSubtitleFontSize: CGFloat = 12
+    static let monthDetailCloseIconFontSize: CGFloat = 13
+    static let monthDetailCloseButtonSize: CGFloat = 28
+    static let monthDetailHeaderHorizontalPadding: CGFloat = 18
+    static let monthDetailHeaderVerticalPadding: CGFloat = 14
+    static let floatingPopoverShadowOpacity = 0.16
+    static let floatingPopoverShadowRadius: CGFloat = 16
+    static let floatingPopoverShadowYOffset: CGFloat = 8
   }
 
   enum Chrome {
@@ -124,6 +145,30 @@ enum ScheduleUITokens {
     static let dayHeaderMonthFontSize: CGFloat = 8
     static let dayHeaderWeekdayFontSize: CGFloat = 10
     static let dayHeaderBadgeSize: CGFloat = 24
+    static let runtimeNoticeTitleFontSize: CGFloat = 12
+    static let runtimeNoticeBodyFontSize: CGFloat = 11
+    static let runtimeNoticeIconFontSize: CGFloat = 12
+    static let calendarPickerHorizontalPadding: CGFloat = 10
+    static let calendarPickerTitleTopPadding: CGFloat = 6
+    static let calendarPickerTitleBottomPadding: CGFloat = 2
+    static let calendarPickerDividerHorizontalPadding: CGFloat = 6
+    static let calendarPickerDividerVerticalPadding: CGFloat = 4
+    static let calendarPickerLegendBottomPadding: CGFloat = 8
+    static let calendarPickerMinWidth: CGFloat = 190
+    static let calendarPickerMaxWidth: CGFloat = 280
+    static let calendarPickerRowTitleFontSize: CGFloat = Typography.scheduleItemTitleFontSize
+    static let calendarPickerRowIconFrameSize: CGFloat = 14
+    static let calendarPickerRowStateIconFontSize: CGFloat = 9
+    static let calendarPickerRowHiddenTitleOpacity = 0.30
+    static let calendarPickerRowHiddenIconOpacity = 0.25
+    static let calendarPickerRowBackgroundOnlyIconOpacity = 0.55
+    static let calendarPickerRowHorizontalPadding: CGFloat = 10
+    static let calendarPickerRowVerticalPadding: CGFloat = 6
+    static let calendarPickerRowCornerRadius: CGFloat = 6
+    static let calendarMenuSwatchCapsuleHorizontalPadding: CGFloat = 4
+    static let calendarMenuSwatchCapsuleVerticalPadding: CGFloat = 2
+    static let calendarMenuSwatchCapsuleBackgroundOpacity = 0.94
+    static let dayHeaderHorizontalPadding: CGFloat = 10
   }
 
   enum Board {
@@ -172,6 +217,7 @@ enum ScheduleUITokens {
     static let postponeShadowReducedOpacity = 0.04
     static let postponeShadowRadius: CGFloat = 3
     static let postponeShadowYOffset: CGFloat = 1
+    static let allDayRailColumnDividerOpacity = 0.07
   }
 
   enum Month {
@@ -187,6 +233,10 @@ enum ScheduleUITokens {
     static let cellMinHeight: CGFloat = 72
     static let gridLineOpacity = 0.10
     static let todayBadgeFillOpacity = 0.88
+    static let headerTitleFontSize: CGFloat = 32
+    static let headerNavigationIconFontSize: CGFloat = 12
+    static let headerNavigationButtonSize: CGFloat = 28
+    static let weekdayFontSize: CGFloat = 14
   }
 
   enum MonthCell {
@@ -242,6 +292,20 @@ enum ScheduleUITokens {
     static let dragGhostShadowRadius: CGFloat = 10
     static let dragGhostShadowYOffset: CGFloat = 4
     static let resizeTargetBlockOpacity = 0.96
+    static let dropTargetAllDayFillOpacity = 0.08
+    static let dropTargetTimedFillOpacity = 0.10
+    static let dropTargetStrokeOpacity = 0.72
+    static let dropTargetLabelFontSize: CGFloat = Typography.chromeLabelFontSize
+    static let dropTargetLabelForegroundOpacity = 0.92
+    static let dragSourcePlaceholderFillOpacity = 0.58
+    static let dragSourcePlaceholderStrokeOpacity = 0.08
+    static let quickCreateTitleForegroundOpacity = 0.88
+    static let quickCreateFillOpacity = 0.14
+    static let quickCreateStrokeOpacity = 0.60
+    static let quickCreateTitleFontSize: CGFloat = Panel.quickAddTitleFontSize
+    static let quickCreateTimeFontSize: CGFloat = Typography.scheduleItemSupplementalFontSize
+    static let quickCreateHorizontalPadding: CGFloat = Spacing.scheduleEventLeadingPadding
+    static let quickCreateVerticalPadding: CGFloat = 8
   }
 
   enum ScheduleItem {
@@ -264,6 +328,23 @@ enum ScheduleUITokens {
     static let recurrenceIndicatorTopPadding: CGFloat = Spacing.recurrenceIndicatorTopPadding
     static let recurrenceIndicatorTrailingPadding: CGFloat =
       Spacing.recurrenceIndicatorTrailingPadding
+    static let compactCompletionGlyphSize: CGFloat = 14
+    static let regularCompletionGlyphSize: CGFloat = 16
+    static let compactCompletionStrokeWidth: CGFloat = 1.55
+    static let regularCompletionStrokeWidth: CGFloat = 1.75
+    static let compactCompletionIconFontSize: CGFloat = Typography.scheduleItemTitleFontSize
+    static let regularCompletionIconFontSize: CGFloat = 14
+    static let compactRecurringArrowFontSize: CGFloat = 9 * 0.9215
+    static let regularRecurringArrowFontSize: CGFloat = 10 * 0.9215
+    static let preparationOutlineOpacity = 0.95
+    static let outlineOpacity = 0.90
+    static let selectedCompletedTitleOpacity = 0.84
+    static let selectedSecondaryTextBaseOpacity = 0.78
+    static let backgroundCalendarSecondaryTextBaseOpacity = 0.68
+    static let todayHeaderBackgroundOpacity = 0.08
+    static let weekendHeaderBackgroundOpacity = 0.02
+    static let todayTimelineBackgroundOpacity = 0.045
+    static let weekendTimelineBackgroundOpacity = 0.018
   }
 
   enum DayPanelRow {

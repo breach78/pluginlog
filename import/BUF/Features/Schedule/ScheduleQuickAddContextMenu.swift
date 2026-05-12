@@ -25,7 +25,7 @@ struct ScheduleQuickAddPopoverContent: View {
   var body: some View {
     VStack(alignment: .leading, spacing: 10) {
       Text("할일 추가")
-        .font(.system(size: 12, weight: .semibold))
+        .font(.system(size: ScheduleUITokens.Panel.quickAddTitleFontSize, weight: .semibold))
 
       EscapeAwareTextField(
         text: $title,
@@ -34,7 +34,7 @@ struct ScheduleQuickAddPopoverContent: View {
         onSubmit: submit,
         onEscape: onCancel
       )
-      .frame(height: 22)
+      .frame(height: ScheduleUITokens.Panel.quickAddTextFieldHeight)
 
       Menu {
         ForEach(projects) { project in
@@ -54,11 +54,11 @@ struct ScheduleQuickAddPopoverContent: View {
             .lineLimit(1)
           Spacer(minLength: 0)
           Image(systemName: "chevron.up.chevron.down")
-            .font(.system(size: 10, weight: .semibold))
+            .font(.system(size: ScheduleUITokens.Panel.quickAddMenuIconFontSize, weight: .semibold))
             .foregroundStyle(.secondary)
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 8)
+        .padding(.horizontal, ScheduleUITokens.Panel.quickAddMenuHorizontalPadding)
+        .padding(.vertical, ScheduleUITokens.Panel.quickAddMenuVerticalPadding)
         .frame(maxWidth: .infinity)
         .background(
           RoundedRectangle(cornerRadius: 8, style: .continuous)
@@ -84,8 +84,8 @@ struct ScheduleQuickAddPopoverContent: View {
         )
       }
     }
-    .padding(12)
-    .frame(width: 260)
+    .padding(ScheduleUITokens.Spacing.quickAddContentPadding)
+    .frame(width: ScheduleUITokens.Panel.quickAddWidth)
     .onAppear {
       DispatchQueue.main.async {
         isFieldFocused = true
@@ -218,7 +218,7 @@ struct ScheduleQuickAddContextMenuRegion: NSViewRepresentable {
 
       let popover = NSPopover()
       popover.behavior = .transient
-      popover.contentSize = NSSize(width: 260, height: 134)
+      popover.contentSize = NSSize(width: ScheduleUITokens.Panel.quickAddWidth, height: 134)
       popover.contentViewController = NSHostingController(
         rootView: ScheduleQuickAddPopoverContent(
           projects: projects,

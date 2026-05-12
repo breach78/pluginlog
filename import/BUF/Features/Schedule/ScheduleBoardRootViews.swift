@@ -328,17 +328,17 @@ extension ScheduleBoardView {
     if let notice = scheduleRuntimeNotice {
       HStack(alignment: .top, spacing: 10) {
         Image(systemName: notice.symbol)
-          .font(.system(size: 12, weight: .semibold))
+          .font(.system(size: ScheduleUITokens.Chrome.runtimeNoticeIconFontSize, weight: .semibold))
           .foregroundStyle(.secondary)
           .padding(.top, 1)
 
         VStack(alignment: .leading, spacing: 3) {
           Text(notice.title)
-            .font(.system(size: 12, weight: .semibold))
+            .font(.system(size: ScheduleUITokens.Chrome.runtimeNoticeTitleFontSize, weight: .semibold))
             .foregroundStyle(.primary)
 
           Text(notice.message)
-            .font(.system(size: 11))
+            .font(.system(size: ScheduleUITokens.Chrome.runtimeNoticeBodyFontSize))
             .foregroundStyle(.secondary)
             .fixedSize(horizontal: false, vertical: true)
         }

@@ -43,12 +43,12 @@ struct ScheduleMonthDetailPanelContent: View {
     HStack(alignment: .center, spacing: 10) {
       VStack(alignment: .leading, spacing: 3) {
         Text(dateTitle)
-          .font(.system(size: 18, weight: .bold))
+          .font(.system(size: ScheduleUITokens.Panel.monthDetailTitleFontSize, weight: .bold))
           .lineLimit(1)
           .minimumScaleFactor(0.8)
 
         Text(itemCountText)
-          .font(.system(size: 12))
+          .font(.system(size: ScheduleUITokens.Panel.monthDetailSubtitleFontSize))
           .foregroundStyle(.secondary)
       }
 
@@ -58,16 +58,19 @@ struct ScheduleMonthDetailPanelContent: View {
         onClose()
       } label: {
         Image(systemName: "xmark")
-          .font(.system(size: 13, weight: .semibold))
+          .font(.system(size: ScheduleUITokens.Panel.monthDetailCloseIconFontSize, weight: .semibold))
           .foregroundStyle(.secondary)
-          .frame(width: 28, height: 28)
+          .frame(
+            width: ScheduleUITokens.Panel.monthDetailCloseButtonSize,
+            height: ScheduleUITokens.Panel.monthDetailCloseButtonSize
+          )
           .contentShape(Rectangle())
       }
       .buttonStyle(.plain)
       .help("닫기")
     }
-    .padding(.horizontal, 18)
-    .padding(.vertical, 14)
+    .padding(.horizontal, ScheduleUITokens.Panel.monthDetailHeaderHorizontalPadding)
+    .padding(.vertical, ScheduleUITokens.Panel.monthDetailHeaderVerticalPadding)
   }
 
   private var dateTitle: String {

@@ -585,7 +585,11 @@ struct ScheduleMonthDaySchedulePanel: View {
     .background(
       RoundedRectangle(cornerRadius: 10, style: .continuous)
         .fill(Color(nsColor: .windowBackgroundColor))
-        .shadow(color: .black.opacity(0.16), radius: 16, y: 8)
+        .shadow(
+          color: .black.opacity(ScheduleUITokens.Panel.floatingPopoverShadowOpacity),
+          radius: ScheduleUITokens.Panel.floatingPopoverShadowRadius,
+          y: ScheduleUITokens.Panel.floatingPopoverShadowYOffset
+        )
     )
     .position(
       x: min(max(140, width * 0.5), max(140, width - 140)),
