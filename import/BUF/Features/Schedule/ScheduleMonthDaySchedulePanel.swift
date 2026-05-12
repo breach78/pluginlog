@@ -13,6 +13,7 @@ struct ScheduleMonthDaySchedulePanel: View {
   let onDeleteItem: (ScheduleMonthItem, ScheduleCalendarRecurringEditScope?) async -> Bool
   let resolveExternalMonthDropDay: (CGPoint) -> Date?
   let onExternalMonthDragTargetChanged: (Date?) -> Void
+  let onExternalMonthDragActiveChanged: (Bool) -> Void
   let onDropTargetChanged: (ScheduleMonthDropTarget?) -> Void
 
   @State var items: [ScheduleMonthItem]
@@ -40,6 +41,7 @@ struct ScheduleMonthDaySchedulePanel: View {
     onDeleteItem: @escaping (ScheduleMonthItem, ScheduleCalendarRecurringEditScope?) async -> Bool,
     resolveExternalMonthDropDay: @escaping (CGPoint) -> Date?,
     onExternalMonthDragTargetChanged: @escaping (Date?) -> Void,
+    onExternalMonthDragActiveChanged: @escaping (Bool) -> Void = { _ in },
     onDropTargetChanged: @escaping (ScheduleMonthDropTarget?) -> Void = { _ in }
   ) {
     self.target = target
@@ -53,6 +55,7 @@ struct ScheduleMonthDaySchedulePanel: View {
     self.onDeleteItem = onDeleteItem
     self.resolveExternalMonthDropDay = resolveExternalMonthDropDay
     self.onExternalMonthDragTargetChanged = onExternalMonthDragTargetChanged
+    self.onExternalMonthDragActiveChanged = onExternalMonthDragActiveChanged
     self.onDropTargetChanged = onDropTargetChanged
     _items = State(initialValue: Self.sortedItems(target.items, calendar: calendar))
   }
@@ -114,11 +117,13 @@ struct ScheduleMonthDaySchedulePanel: View {
       resizeBlockedMoveItemID = nil
       savingItemIDs = []
       onExternalMonthDragTargetChanged(nil)
+      onExternalMonthDragActiveChanged(false)
       reportDropTarget(frame: panelFrameInScreen)
       timeScrollResetID = UUID()
     }
     .onDisappear {
       onExternalMonthDragTargetChanged(nil)
+      onExternalMonthDragActiveChanged(false)
       onDropTargetChanged(nil)
     }
   }

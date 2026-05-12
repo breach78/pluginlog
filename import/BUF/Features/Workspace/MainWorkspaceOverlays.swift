@@ -143,6 +143,12 @@ extension MainWorkspaceView {
       onExternalMonthDragTargetChanged: { day in
         activeScheduleMonthExternalDropDay = day
       },
+      onExternalMonthDragActiveChanged: { isActive in
+        isScheduleMonthDetailDraggingItem = isActive
+        if !isActive {
+          activeScheduleMonthExternalDropDay = nil
+        }
+      },
       onDropTargetChanged: { target in
         scheduleMonthDetailDropTarget = target
       },

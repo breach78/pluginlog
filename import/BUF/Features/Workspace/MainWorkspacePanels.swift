@@ -107,10 +107,12 @@ extension MainWorkspaceView {
         },
         externalMonthDragTargetDate: activeScheduleMonthExternalDropDay,
         externalDayDropTarget: scheduleMonthDetailDropTarget,
+        shouldPublishMonthDropTargets: isScheduleMonthDetailDraggingItem,
         onMonthItemScheduleChanged: { item in
           updateScheduleMonthDetailAfterMovedItem(item)
         },
         onMonthDropTargetsChanged: { targets in
+          guard scheduleMonthDropTargets != targets else { return }
           scheduleMonthDropTargets = targets
         }
       )

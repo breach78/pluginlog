@@ -798,6 +798,7 @@ extension MainWorkspaceView {
     previousWorkspaceScheduleMonthDetailTarget = nil
     activeScheduleMonthExternalDropDay = nil
     scheduleMonthDetailDropTarget = nil
+    isScheduleMonthDetailDraggingItem = false
   }
 
   func scheduleMonthDropDay(at globalPoint: CGPoint) -> Date? {

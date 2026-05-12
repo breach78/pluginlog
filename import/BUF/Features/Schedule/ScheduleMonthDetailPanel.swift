@@ -12,6 +12,7 @@ struct ScheduleMonthDetailPanelContent: View {
   let onDeleteItem: (ScheduleMonthItem, ScheduleCalendarRecurringEditScope?) async -> Bool
   let resolveExternalMonthDropDay: (CGPoint) -> Date?
   let onExternalMonthDragTargetChanged: (Date?) -> Void
+  let onExternalMonthDragActiveChanged: (Bool) -> Void
   let onDropTargetChanged: (ScheduleMonthDropTarget?) -> Void
   let onClose: () -> Void
 
@@ -33,6 +34,7 @@ struct ScheduleMonthDetailPanelContent: View {
         onDeleteItem: onDeleteItem,
         resolveExternalMonthDropDay: resolveExternalMonthDropDay,
         onExternalMonthDragTargetChanged: onExternalMonthDragTargetChanged,
+        onExternalMonthDragActiveChanged: onExternalMonthDragActiveChanged,
         onDropTargetChanged: onDropTargetChanged
       )
     }

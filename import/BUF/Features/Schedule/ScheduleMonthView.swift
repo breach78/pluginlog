@@ -17,6 +17,7 @@ struct ScheduleMonthView: View {
   let onMoveItem: (ScheduleMonthDragItem, ScheduleInteractionTarget) -> Void
   let externalDragTargetDate: Date?
   let externalDayDropTarget: ScheduleMonthDropTarget?
+  let shouldPublishDropTargets: Bool
   let onDropTargetsChanged: ([ScheduleMonthDropTarget]) -> Void
   let scrollToTodayToken: Int
   let onVisibleMonthChanged: (Date) -> Void
@@ -116,6 +117,7 @@ struct ScheduleMonthView: View {
               onToggleTaskCompletion: onToggleTaskCompletion,
               onMoveItem: onMoveItem,
               externalDayDropTarget: externalDayDropTarget,
+              shouldPublishDropTargets: shouldPublishDropTargets,
               onRowDropTargetsChanged: updateDropTargets
             )
             .id(weekLayout.weekStart)
@@ -203,8 +205,10 @@ struct ScheduleMonthView: View {
   ) {
     let key = calendar.startOfDay(for: weekStart)
     if targets.isEmpty {
+      guard dropTargetsByWeekStart[key] != nil else { return }
       dropTargetsByWeekStart.removeValue(forKey: key)
     } else {
+      guard dropTargetsByWeekStart[key] != targets else { return }
       dropTargetsByWeekStart[key] = targets
     }
 

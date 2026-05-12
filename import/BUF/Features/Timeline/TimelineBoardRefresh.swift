@@ -158,6 +158,18 @@ enum TimelineBoardReadPath {
     }?.badgeID
   }
 
+  static func dateRange(
+    forDayOffsets offsets: ClosedRange<Int>,
+    anchorDate: Date,
+    calendar: Calendar
+  ) -> ClosedRange<Date> {
+    let start = calendar.date(byAdding: .day, value: offsets.lowerBound, to: anchorDate)
+      ?? anchorDate
+    let end = calendar.date(byAdding: .day, value: offsets.upperBound, to: anchorDate)
+      ?? anchorDate
+    return calendar.startOfDay(for: start)...calendar.startOfDay(for: end)
+  }
+
   static func didScrollOriginChange(
     from previous: CGPoint?,
     to next: CGPoint,

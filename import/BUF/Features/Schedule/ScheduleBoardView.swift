@@ -42,6 +42,7 @@ struct ScheduleBoardView: View {
   let onShowMonthDetail: (ScheduleMonthDetailPanelTarget) -> Void
   let externalMonthDragTargetDate: Date?
   let externalDayDropTarget: ScheduleMonthDropTarget?
+  let shouldPublishMonthDropTargets: Bool
   let onMonthItemScheduleChanged: (ScheduleMonthItem) -> Void
   let onMonthDropTargetsChanged: ([ScheduleMonthDropTarget]) -> Void
 
@@ -184,6 +185,7 @@ struct ScheduleBoardView: View {
     onShowMonthDetail: @escaping (ScheduleMonthDetailPanelTarget) -> Void = { _ in },
     externalMonthDragTargetDate: Date? = nil,
     externalDayDropTarget: ScheduleMonthDropTarget? = nil,
+    shouldPublishMonthDropTargets: Bool = false,
     onMonthItemScheduleChanged: @escaping (ScheduleMonthItem) -> Void = { _ in },
     onMonthDropTargetsChanged: @escaping ([ScheduleMonthDropTarget]) -> Void = { _ in }
   ) {
@@ -203,6 +205,7 @@ struct ScheduleBoardView: View {
     self.onShowMonthDetail = onShowMonthDetail
     self.externalMonthDragTargetDate = externalMonthDragTargetDate
     self.externalDayDropTarget = externalDayDropTarget
+    self.shouldPublishMonthDropTargets = shouldPublishMonthDropTargets
     self.onMonthItemScheduleChanged = onMonthItemScheduleChanged
     self.onMonthDropTargetsChanged = onMonthDropTargetsChanged
   }

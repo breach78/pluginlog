@@ -898,6 +898,27 @@ final class TimelineBoardReadPathTests: XCTestCase {
     )
   }
 
+  func testDateRangeForDayOffsetsNormalizesToAnchorRelativeDays() {
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+    let anchor = calendar.date(from: DateComponents(year: 2026, month: 5, day: 12, hour: 15))!
+
+    let range = TimelineBoardReadPath.dateRange(
+      forDayOffsets: -2...3,
+      anchorDate: anchor,
+      calendar: calendar
+    )
+
+    XCTAssertEqual(
+      range.lowerBound,
+      calendar.date(from: DateComponents(year: 2026, month: 5, day: 10))
+    )
+    XCTAssertEqual(
+      range.upperBound,
+      calendar.date(from: DateComponents(year: 2026, month: 5, day: 15))
+    )
+  }
+
   func testProjectColorHexUsesTimelineBarColorForOverlayReference() {
     let projectID = UUID()
 

@@ -20,6 +20,7 @@ extension ScheduleMonthDaySchedulePanel {
   ) {
     guard canUpdateSchedule(for: item) else { return }
     guard resizeBlockedMoveItemID != item.id, activeItemResizeState == nil else { return }
+    onExternalMonthDragActiveChanged(true)
     let state = updatedDragState(
       for: item,
       drag: drag,
@@ -47,6 +48,7 @@ extension ScheduleMonthDaySchedulePanel {
     originalWidth: CGFloat?
   ) {
     guard canUpdateSchedule(for: item) else { return }
+    defer { onExternalMonthDragActiveChanged(false) }
     guard resizeBlockedMoveItemID != item.id, activeItemResizeState == nil else {
       if resizeBlockedMoveItemID == item.id {
         resizeBlockedMoveItemID = nil

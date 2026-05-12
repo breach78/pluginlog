@@ -299,7 +299,8 @@ extension TimelineBoardView {
         for: bar,
         rowLayout: rowLayout,
         rowIndex: index,
-        projectColor: projectColor
+        projectColor: projectColor,
+        visibleDayOffsets: visibleLowerOffset...visibleUpperOffset
       )
     }
     .padding(.top, interRowTopPadding(for: index, rowLayout: rowLayout))
@@ -664,12 +665,23 @@ extension TimelineBoardView {
     for bar: TimelineProjectBar,
     rowLayout: TimelineRowLayout,
     rowIndex: Int,
-    projectColor: Color
+    projectColor: Color,
+    visibleDayOffsets: ClosedRange<Int>
   ) -> some View {
-    let badges = timelineTaskBadges(for: bar, rowIndex: rowIndex)
+    let visibleDateRange = TimelineBoardReadPath.dateRange(
+      forDayOffsets: visibleDayOffsets,
+      anchorDate: anchorDate,
+      calendar: calendar
+    )
+    let badges = timelineTaskBadges(
+      for: bar,
+      rowIndex: rowIndex,
+      visibleDateRange: visibleDateRange
+    )
     let completedCounts = timelineCompletedCountLayouts(
       for: bar,
-      suppressOnDatesWithPendingWork: true
+      suppressOnDatesWithPendingWork: true,
+      visibleDateRange: visibleDateRange
     )
 
     ZStack(alignment: .topLeading) {
@@ -773,12 +785,16 @@ extension TimelineBoardView {
   func timelineTaskBadges(
     for bar: TimelineProjectBar,
     rowIndex: Int,
-    suppressOnDatesWithCompletedWork: Bool = false
+    suppressOnDatesWithCompletedWork: Bool = false,
+    visibleDateRange: ClosedRange<Date>? = nil
   )
     -> [TimelineTaskBadgeLayout]
   {
     let dates = Set(bar.dailyTaskCounts.keys).union(bar.dailyPlannedWorkCounts.keys)
     return dates.compactMap { date -> TimelineTaskBadgeLayout? in
+      if let visibleDateRange, !visibleDateRange.contains(date) {
+        return nil
+      }
       let strongCount = bar.dailyTaskCounts[date] ?? 0
       let lightCount = bar.dailyPlannedWorkCounts[date] ?? 0
       let totalCount = strongCount + lightCount
@@ -826,14 +842,22 @@ extension TimelineBoardView {
   func timelineCompletedCountLayouts(for bar: TimelineProjectBar)
     -> [TimelineCompletedCountLayout]
   {
-    timelineCompletedCountLayouts(for: bar, suppressOnDatesWithPendingWork: false)
+    timelineCompletedCountLayouts(
+      for: bar,
+      suppressOnDatesWithPendingWork: false,
+      visibleDateRange: nil
+    )
   }
 
   func timelineCompletedCountLayouts(
     for bar: TimelineProjectBar,
-    suppressOnDatesWithPendingWork: Bool
+    suppressOnDatesWithPendingWork: Bool,
+    visibleDateRange: ClosedRange<Date>? = nil
   ) -> [TimelineCompletedCountLayout] {
     bar.dailyCompletedTaskCounts.compactMap { date, count in
+      if let visibleDateRange, !visibleDateRange.contains(date) {
+        return nil
+      }
       guard count > 0 else { return nil }
       if suppressOnDatesWithPendingWork,
         ((bar.dailyTaskCounts[date] ?? 0) + (bar.dailyPlannedWorkCounts[date] ?? 0)) > 0
@@ -862,15 +886,25 @@ extension TimelineBoardView {
 
   func timelineTaskBadgeHitTargets(
     bars: [TimelineProjectBar],
-    rowLayouts: [TimelineRowLayout]
+    rowLayouts: [TimelineRowLayout],
+    visibleDayOffsets: ClosedRange<Int>
   ) -> [TimelineTaskBadgeHitTarget] {
+    let visibleDateRange = TimelineBoardReadPath.dateRange(
+      forDayOffsets: visibleDayOffsets,
+      anchorDate: anchorDate,
+      calendar: calendar
+    )
     var targets: [TimelineTaskBadgeHitTarget] = []
     for (rowIndex, bar) in bars.enumerated() {
       guard rowLayouts.indices.contains(rowIndex) else { continue }
       let rowLayout = rowLayouts[rowIndex]
       let centerY = headerHeight + rowLayout.topY + rowLayout.metrics.midpointY
 
-      for badge in timelineTaskBadges(for: bar, rowIndex: rowIndex) {
+      for badge in timelineTaskBadges(
+        for: bar,
+        rowIndex: rowIndex,
+        visibleDateRange: visibleDateRange
+      ) {
         targets.append(
           timelineTaskBadgeHitTarget(
             badgeID: badge.id,
@@ -883,7 +917,8 @@ extension TimelineBoardView {
 
       for completedCount in timelineCompletedCountLayouts(
         for: bar,
-        suppressOnDatesWithPendingWork: true
+        suppressOnDatesWithPendingWork: true,
+        visibleDateRange: visibleDateRange
       ) {
         targets.append(
           timelineTaskBadgeHitTarget(

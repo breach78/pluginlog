@@ -16,8 +16,10 @@ struct ScheduleMonthWeekRow: View {
   let onToggleTaskCompletion: (UUID, UUID, Bool) -> Void
   let onMoveItem: (ScheduleMonthDragItem, ScheduleInteractionTarget) -> Void
   let externalDayDropTarget: ScheduleMonthDropTarget?
+  let shouldPublishDropTargets: Bool
   let onRowDropTargetsChanged: (Date, [ScheduleMonthDropTarget]) -> Void
   @State private var rowFrameInScreen: CGRect = .null
+  @State private var publishedDropTargets: [ScheduleMonthDropTarget] = []
 
   private var visibleAllDaySegments: [ScheduleMonthAllDaySpanSegment] {
     layout.allDaySegments.filter { $0.rowIndex < visibleAllDayRowLimit }
@@ -29,6 +31,10 @@ struct ScheduleMonthWeekRow: View {
 
   private var rowCoordinateSpaceName: String {
     "schedule-month-week-\(layout.weekStart.timeIntervalSinceReferenceDate)"
+  }
+
+  private var shouldTrackScreenFrame: Bool {
+    shouldPublishDropTargets || activeDragFeedback != nil
   }
 
   var body: some View {
@@ -115,17 +121,49 @@ struct ScheduleMonthWeekRow: View {
         }
       }
       .coordinateSpace(name: rowCoordinateSpaceName)
-      .background(
-        ScheduleScreenFrameReporter { frame in
-          rowFrameInScreen = frame
-          onRowDropTargetsChanged(layout.weekStart, dropTargets(rowFrame: frame))
+      .background {
+        if shouldTrackScreenFrame {
+          ScheduleScreenFrameReporter { frame in
+            updateScreenFrame(frame)
+          }
         }
-      )
+      }
+    }
+    .onChange(of: shouldPublishDropTargets) { _, isEnabled in
+      if isEnabled {
+        publishDropTargetsIfNeeded(for: rowFrameInScreen)
+      } else {
+        clearPublishedDropTargets()
+      }
     }
     .onDisappear {
-      onRowDropTargetsChanged(layout.weekStart, [])
+      clearPublishedDropTargets()
     }
     .zIndex(activeDragFeedback == nil ? 0 : 1)
+  }
+
+  private func updateScreenFrame(_ frame: CGRect) {
+    if frame != rowFrameInScreen {
+      rowFrameInScreen = frame
+    }
+    if shouldPublishDropTargets {
+      publishDropTargetsIfNeeded(for: frame)
+    }
+  }
+
+  private func publishDropTargetsIfNeeded(for frame: CGRect) {
+    let targets = dropTargets(rowFrame: frame)
+    let targetsChanged = targets != publishedDropTargets
+    guard targetsChanged else { return }
+
+    publishedDropTargets = targets
+    onRowDropTargetsChanged(layout.weekStart, targets)
+  }
+
+  private func clearPublishedDropTargets() {
+    guard !publishedDropTargets.isEmpty else { return }
+    publishedDropTargets = []
+    onRowDropTargetsChanged(layout.weekStart, [])
   }
 
   private func dropTargets(rowFrame: CGRect) -> [ScheduleMonthDropTarget] {

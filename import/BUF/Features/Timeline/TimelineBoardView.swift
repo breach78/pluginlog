@@ -599,7 +599,13 @@ struct TimelineBoardView: View {
     snapshot: TimelineBoardSnapshot,
     viewport: TimelineViewportSnapshot
   ) -> some View {
-    ZStack(alignment: .topLeading) {
+    let visibleDayOffsets = viewport.visibleLowerOffset...viewport.visibleUpperOffset
+    let isTaskBadgeHoverEnabled =
+      isActive
+      && !isInteractionObscured
+      && !isTimelineScrolling
+      && !appState.isEditorMotionSuppressed
+    return ZStack(alignment: .topLeading) {
       UnifiedTimelineBoardScrollView(
         boardSize: CGSize(width: viewport.boardWidth, height: viewport.boardHeight),
         titleColumnWidth: titleColumnWidth,
@@ -618,14 +624,14 @@ struct TimelineBoardView: View {
           && !isTimelineScrolling
           && !appState.isEditorMotionSuppressed,
         isTaskBadgeHoverEnabled:
-          isActive
-          && !isInteractionObscured
-          && !isTimelineScrolling
-          && !appState.isEditorMotionSuppressed,
-        taskBadgeHitTargets: timelineTaskBadgeHitTargets(
-          bars: snapshot.bars,
-          rowLayouts: snapshot.rowLayouts
-        ),
+          isTaskBadgeHoverEnabled,
+        taskBadgeHitTargets: isTaskBadgeHoverEnabled
+          ? timelineTaskBadgeHitTargets(
+            bars: snapshot.bars,
+            rowLayouts: snapshot.rowLayouts,
+            visibleDayOffsets: visibleDayOffsets
+          )
+          : [],
         scrollHoverSuppressionInterval: timelineScrollIdleDelay,
         offsetX: $horizontalOffsetX,
         offsetY: $verticalOffsetY,
@@ -650,10 +656,10 @@ struct TimelineBoardView: View {
           clearTimelineTaskBadgeTriggerHover(deferClose: true)
         }
       ) {
-        boardContent(
-          bars: snapshot.bars,
-          rowLayouts: snapshot.rowLayouts,
-          rowsHeight: viewport.rowsHeight,
+          boardContent(
+            bars: snapshot.bars,
+            rowLayouts: snapshot.rowLayouts,
+            rowsHeight: viewport.rowsHeight,
           visibleLowerOffset: viewport.visibleLowerOffset,
           visibleUpperOffset: viewport.visibleUpperOffset
         )
