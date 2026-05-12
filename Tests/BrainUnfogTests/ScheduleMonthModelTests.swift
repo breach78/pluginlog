@@ -88,6 +88,60 @@ final class ScheduleMonthModelTests: XCTestCase {
     XCTAssertEqual(ScheduleMonthOverflowPolicy.visibleItemLimit(cellHeight: 48), 1)
   }
 
+  func testVisibleMonthUsesWeekClosestToViewportCenter() throws {
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+    calendar.firstWeekday = 1
+    let may = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 5, day: 1)))
+    let june = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 6, day: 1)))
+    let mayWeek = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 5, day: 24)))
+    let juneWeek = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 5, day: 31)))
+
+    let displayedMonth = try XCTUnwrap(
+      ScheduleMonthVisibleMonthPolicy.displayedMonthStart(
+        weekFrames: [
+          mayWeek: CGRect(x: 0, y: -30, width: 700, height: 100),
+          juneWeek: CGRect(x: 0, y: 70, width: 700, height: 100),
+        ],
+        weekMonthStarts: [
+          mayWeek: ScheduleMonthCalendar.monthStart(containing: may, calendar: calendar),
+          juneWeek: ScheduleMonthCalendar.monthStart(containing: june, calendar: calendar),
+        ],
+        viewportHeight: 180,
+        calendar: calendar
+      )
+    )
+
+    XCTAssertEqual(calendar.component(.month, from: displayedMonth), 6)
+  }
+
+  func testVisibleMonthIgnoresRowsOutsideViewport() throws {
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+    calendar.firstWeekday = 1
+    let april = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 4, day: 1)))
+    let may = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 5, day: 1)))
+    let aprilWeek = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 4, day: 19)))
+    let mayWeek = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 5, day: 10)))
+
+    let displayedMonth = try XCTUnwrap(
+      ScheduleMonthVisibleMonthPolicy.displayedMonthStart(
+        weekFrames: [
+          aprilWeek: CGRect(x: 0, y: -180, width: 700, height: 100),
+          mayWeek: CGRect(x: 0, y: 160, width: 700, height: 100),
+        ],
+        weekMonthStarts: [
+          aprilWeek: ScheduleMonthCalendar.monthStart(containing: april, calendar: calendar),
+          mayWeek: ScheduleMonthCalendar.monthStart(containing: may, calendar: calendar),
+        ],
+        viewportHeight: 300,
+        calendar: calendar
+      )
+    )
+
+    XCTAssertEqual(calendar.component(.month, from: displayedMonth), 5)
+  }
+
   func testDayPanelTimedBlockHeightTracksActualDuration() throws {
     var calendar = Calendar(identifier: .gregorian)
     calendar.timeZone = TimeZone(secondsFromGMT: 0)!

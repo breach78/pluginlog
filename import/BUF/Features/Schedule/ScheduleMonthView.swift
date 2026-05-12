@@ -5,6 +5,7 @@ struct ScheduleMonthView: View {
   @Binding var anchorDate: Date
   @State private var layoutCache = ScheduleMonthLayoutCache()
   @State private var dropTargetsByWeekStart: [Date: [ScheduleMonthDropTarget]] = [:]
+  @State private var visibleMonthStart: Date?
 
   let today: Date
   let items: [ScheduleMonthItem]
@@ -38,6 +39,10 @@ struct ScheduleMonthView: View {
       itemsSignature: itemsSignature,
       calendar: calendar
     )
+  }
+
+  private var displayedMonthStart: Date {
+    visibleMonthStart ?? monthStart
   }
 
   var body: some View {
@@ -75,7 +80,7 @@ struct ScheduleMonthView: View {
 
   private var monthHeader: some View {
     HStack(alignment: .center, spacing: 12) {
-      Text(monthTitle(for: monthStart))
+      Text(monthTitle(for: displayedMonthStart))
         .font(.system(size: ScheduleUITokens.Month.headerTitleFontSize, weight: .bold))
         .lineLimit(1)
         .minimumScaleFactor(0.7)
@@ -97,6 +102,7 @@ struct ScheduleMonthView: View {
         .help("이전 달")
 
         Button("오늘") {
+          visibleMonthStart = ScheduleMonthCalendar.monthStart(containing: today, calendar: calendar)
           anchorDate = today
         }
         .buttonStyle(.bordered)
@@ -148,6 +154,7 @@ struct ScheduleMonthView: View {
           ForEach(layout.weeks) { weekLayout in
             ScheduleMonthWeekRow(
               layout: weekLayout,
+              displayedMonthStart: displayedMonthStart,
               today: today,
               visibleItemLimit: visibleItemLimit,
               selectedDate: selectedDate,
@@ -163,21 +170,63 @@ struct ScheduleMonthView: View {
             )
             .id(weekLayout.weekStart)
             .frame(height: cellHeight)
+            .background(
+              GeometryReader { rowProxy in
+                Color.clear.preference(
+                  key: ScheduleMonthWeekFramePreferenceKey.self,
+                  value: [
+                    weekLayout.weekStart: rowProxy.frame(
+                      in: .named(ScheduleMonthScrollCoordinateSpace.name)
+                    )
+                  ]
+                )
+              }
+            )
           }
         }
       }
+      .coordinateSpace(name: ScheduleMonthScrollCoordinateSpace.name)
       .scrollIndicators(.never)
       .onAppear {
+        visibleMonthStart = monthStart
         scrollToAnchorWeek(using: proxy, animated: false)
       }
       .onChange(of: anchorDate) { _, _ in
+        visibleMonthStart = monthStart
         scrollToAnchorWeek(using: proxy, animated: true)
+      }
+      .onPreferenceChange(ScheduleMonthWeekFramePreferenceKey.self) { weekFrames in
+        updateVisibleMonthStart(
+          from: weekFrames,
+          weeks: layout.weeks,
+          viewportHeight: cellHeight * 6
+        )
       }
       .onDisappear {
         dropTargetsByWeekStart = [:]
         onDropTargetsChanged([])
       }
     }
+  }
+
+  private func updateVisibleMonthStart(
+    from weekFrames: [Date: CGRect],
+    weeks: [ScheduleMonthWeekLayout],
+    viewportHeight: CGFloat
+  ) {
+    let weekMonthStarts = Dictionary(uniqueKeysWithValues: weeks.map { ($0.weekStart, $0.monthStart) })
+    guard let nextMonthStart = ScheduleMonthVisibleMonthPolicy.displayedMonthStart(
+      weekFrames: weekFrames,
+      weekMonthStarts: weekMonthStarts,
+      viewportHeight: viewportHeight,
+      calendar: calendar
+    ) else { return }
+
+    let currentMonthStart = visibleMonthStart ?? monthStart
+    guard !calendar.isDate(currentMonthStart, equalTo: nextMonthStart, toGranularity: .month) else {
+      return
+    }
+    visibleMonthStart = nextMonthStart
   }
 
   private func updateDropTargets(
@@ -207,7 +256,8 @@ struct ScheduleMonthView: View {
   }
 
   private func moveMonth(by value: Int) {
-    if let next = calendar.date(byAdding: .month, value: value, to: anchorDate) {
+    if let next = calendar.date(byAdding: .month, value: value, to: displayedMonthStart) {
+      visibleMonthStart = ScheduleMonthCalendar.monthStart(containing: next, calendar: calendar)
       anchorDate = next
     }
   }
@@ -231,5 +281,17 @@ struct ScheduleMonthView: View {
 
   private func pixelFloored(_ value: CGFloat) -> CGFloat {
     floor(value * max(displayScale, 1)) / max(displayScale, 1)
+  }
+}
+
+private enum ScheduleMonthScrollCoordinateSpace {
+  static let name = "schedule-month-scroll"
+}
+
+private struct ScheduleMonthWeekFramePreferenceKey: PreferenceKey {
+  static let defaultValue: [Date: CGRect] = [:]
+
+  static func reduce(value: inout [Date: CGRect], nextValue: () -> [Date: CGRect]) {
+    value.merge(nextValue(), uniquingKeysWith: { _, next in next })
   }
 }

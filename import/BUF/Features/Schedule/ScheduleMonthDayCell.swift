@@ -2,7 +2,7 @@ import SwiftUI
 
 struct ScheduleMonthDayCell: View {
   let day: Date
-  let monthStart: Date
+  let displayedMonthStart: Date
   let today: Date
   let items: [ScheduleMonthItem]
   let visibleItemLimit: Int
@@ -138,7 +138,7 @@ struct ScheduleMonthDayCell: View {
   }
 
   private var dayNumberColor: Color {
-    calendar.isDate(day, equalTo: monthStart, toGranularity: .month)
+    calendar.isDate(day, equalTo: displayedMonthStart, toGranularity: .month)
       ? .primary
       : .secondary.opacity(ScheduleUITokens.Opacity.mutedSecondaryText)
   }

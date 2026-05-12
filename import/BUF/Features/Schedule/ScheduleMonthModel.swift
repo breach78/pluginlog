@@ -563,6 +563,34 @@ enum ScheduleMonthOverflowPolicy {
   }
 }
 
+enum ScheduleMonthVisibleMonthPolicy {
+  static func displayedMonthStart(
+    weekFrames: [Date: CGRect],
+    weekMonthStarts: [Date: Date],
+    viewportHeight: CGFloat,
+    calendar: Calendar
+  ) -> Date? {
+    let viewportCenterY = viewportHeight / 2
+
+    return weekFrames.compactMap { weekStart, frame -> (distance: CGFloat, midY: CGFloat, monthStart: Date)? in
+      guard frame.maxY >= 0, frame.minY <= viewportHeight else { return nil }
+      guard let monthStart = weekMonthStarts[weekStart] else { return nil }
+      return (
+        abs(frame.midY - viewportCenterY),
+        frame.midY,
+        ScheduleMonthCalendar.monthStart(containing: monthStart, calendar: calendar)
+      )
+    }
+    .min { lhs, rhs in
+      if lhs.distance == rhs.distance {
+        return lhs.midY > rhs.midY
+      }
+      return lhs.distance < rhs.distance
+    }?
+    .monthStart
+  }
+}
+
 enum ScheduleMonthItemFactory {
   static func item(
     workspaceTask descriptor: WorkspaceScheduleTaskDescriptor,

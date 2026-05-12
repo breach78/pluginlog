@@ -2,6 +2,7 @@ import SwiftUI
 
 struct ScheduleMonthWeekRow: View {
   let layout: ScheduleMonthWeekLayout
+  let displayedMonthStart: Date
   let today: Date
   let visibleItemLimit: Int
   let selectedDate: Date?
@@ -40,7 +41,7 @@ struct ScheduleMonthWeekRow: View {
 
             ScheduleMonthDayCell(
               day: dayLayout.day,
-              monthStart: layout.monthStart,
+              displayedMonthStart: displayedMonthStart,
               today: today,
               items: dayLayout.inlineItems,
               visibleItemLimit: inlineVisibleItemLimit(on: dayIndex),
