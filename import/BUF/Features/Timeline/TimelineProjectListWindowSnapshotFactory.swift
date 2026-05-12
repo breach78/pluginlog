@@ -60,22 +60,27 @@ enum TimelineProjectListWindowSnapshotFactory {
   ) -> TimelineProjectListWindowSnapshot.Task.MetadataIndicators {
     metadataIndicators(
       noteText: entry.reminderNoteText,
-      attachmentCount: entry.attachmentCount
+      attachmentCount: entry.attachmentCount,
+      recurrenceRuleRaw: entry.recurrenceRuleRaw
     )
   }
 
   static func metadataIndicators(
     noteText: String,
-    attachmentCount: Int
+    attachmentCount: Int,
+    recurrenceRuleRaw: String? = nil
   ) -> TimelineProjectListWindowSnapshot.Task.MetadataIndicators {
     let noteTextWithoutAttachmentLinks =
       TaskEditAttachmentService.noteTextByRemovingAttachmentLinks(from: noteText)
     let trimmedNoteText = noteTextWithoutAttachmentLinks
       .trimmingCharacters(in: .whitespacesAndNewlines)
+    let trimmedRecurrenceRule = recurrenceRuleRaw?
+      .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
     return TimelineProjectListWindowSnapshot.Task.MetadataIndicators(
       hasNote: !trimmedNoteText.isEmpty,
       attachmentCount: max(0, attachmentCount)
-        + TaskEditAttachmentService.attachmentLinkCount(in: noteText)
+        + TaskEditAttachmentService.attachmentLinkCount(in: noteText),
+      isRecurring: !trimmedRecurrenceRule.isEmpty
     )
   }
 

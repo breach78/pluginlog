@@ -435,7 +435,8 @@ extension TimelineBoardView {
         ),
         metadataIndicators: TimelineProjectListWindowSnapshotFactory.metadataIndicators(
           noteText: snapshot.fields.noteText,
-          attachmentCount: 0
+          attachmentCount: 0,
+          recurrenceRuleRaw: snapshot.fields.recurrenceRuleRaw
         ),
         isCompleted: snapshot.isCompleted,
         isOverdue: false

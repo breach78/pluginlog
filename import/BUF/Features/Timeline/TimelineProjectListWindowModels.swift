@@ -5,14 +5,16 @@ struct TimelineProjectListWindowSnapshot: Equatable {
     struct MetadataIndicators: Equatable {
       let hasNote: Bool
       let attachmentCount: Int
+      let isRecurring: Bool
 
       static let empty = MetadataIndicators(
         hasNote: false,
-        attachmentCount: 0
+        attachmentCount: 0,
+        isRecurring: false
       )
 
       var isEmpty: Bool {
-        !hasNote && attachmentCount <= 0
+        !hasNote && attachmentCount <= 0 && !isRecurring
       }
     }
 

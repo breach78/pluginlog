@@ -483,6 +483,10 @@ struct TimelineProjectListContent: View {
                 ? "첨부파일 \(indicators.attachmentCount)개" : "첨부파일 있음"
             )
         }
+        if indicators.isRecurring {
+          Image(systemName: "repeat")
+            .help("반복 할일")
+        }
       }
       .font(projectListDateFont.weight(.semibold))
       .foregroundStyle(Color.secondary.opacity(isCompleted ? 0.55 : 0.8))

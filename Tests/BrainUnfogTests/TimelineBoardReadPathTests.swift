@@ -1202,6 +1202,19 @@ final class TimelineBoardReadPathTests: XCTestCase {
     XCTAssertEqual(task.metadataIndicators.attachmentCount, 0)
   }
 
+  func testProjectListTaskSnapshotIncludesRecurringIndicator() {
+    let entry = makeScheduleEntry(
+      taskID: UUID(),
+      title: "Task",
+      rowOrder: 0,
+      recurrenceRuleRaw: "weekly|1|2,4"
+    )
+
+    let task = TimelineProjectListWindowSnapshotFactory.taskSnapshot(for: entry)
+
+    XCTAssertTrue(task.metadataIndicators.isRecurring)
+  }
+
   func testScheduleSourceSignatureIgnoresNoteBodyWhenVisibleMetadataIsUnchanged() {
     let projectID = UUID()
     let taskID = UUID()
@@ -1337,7 +1350,8 @@ final class TimelineBoardReadPathTests: XCTestCase {
     rowOrder: Int,
     attachmentCount: Int = 0,
     hasReminderNoteContent: Bool = false,
-    reminderNoteText: String = ""
+    reminderNoteText: String = "",
+    recurrenceRuleRaw: String? = nil
   ) -> ScheduleSliceEntry {
     ScheduleSliceEntry(
       taskID: taskID,
@@ -1350,7 +1364,7 @@ final class TimelineBoardReadPathTests: XCTestCase {
       scheduledDurationMinutes: nil,
       isCompleted: isCompleted,
       completionDate: isCompleted ? .distantPast : nil,
-      recurrenceRuleRaw: nil,
+      recurrenceRuleRaw: recurrenceRuleRaw,
       isLocalCompletedRecurringOccurrence: false,
       attachmentCount: attachmentCount,
       hasReminderNoteContent: hasReminderNoteContent,
