@@ -28,19 +28,15 @@ extension MainWorkspaceView {
   var headerLeadingControls: some View {
     HStack(spacing: workspaceTitlebarControlSpacing) {
       dailyJournalButton
-      viewModeToggleButton
-      scheduleDisplayModeToggle
-
+      workspaceDisplayModeSelector
       workspaceQuickAddSection
       overdueRolloverButton
 
       if appState.viewMode == .timeline {
-        Button("오늘") {
+        todayJumpButton {
           showArchive = false
           appState.jumpTimelineToToday()
         }
-        .buttonStyle(.bordered)
-        .frame(width: workspaceTitlebarTodayButtonWidth, height: workspaceTitlebarControlHeight)
 
         Button("-") {
           appState.zoomOutTimelineDayColumn()
@@ -56,12 +52,10 @@ extension MainWorkspaceView {
         .frame(width: workspaceTitlebarZoomButtonWidth, height: workspaceTitlebarControlHeight)
         .disabled(!appState.canZoomInTimelineDayColumn())
       } else if appState.viewMode == .schedule {
-        Button("오늘") {
+        todayJumpButton {
           showArchive = false
           appState.jumpScheduleToToday()
         }
-        .buttonStyle(.bordered)
-        .frame(width: workspaceTitlebarTodayButtonWidth, height: workspaceTitlebarControlHeight)
       }
     }
     .fixedSize(horizontal: true, vertical: false)
@@ -71,31 +65,25 @@ extension MainWorkspaceView {
       })
   }
 
-  @ViewBuilder
-  var viewModeToggleButton: some View {
-    if let targetMode = nextViewMode {
-      Button {
-        appState.selectViewMode(targetMode)
-      } label: {
-        Image(systemName: targetMode.iconName)
-          .font(.system(size: 13, weight: .semibold))
-          .foregroundStyle(.primary)
-          .frame(
-            width: workspaceTitlebarIconButtonSize,
-            height: workspaceTitlebarControlHeight
-          )
-          .contentShape(Rectangle())
+  var workspaceDisplayModeSelector: some View {
+    Picker("", selection: workspaceDisplayModeBinding) {
+      ForEach(WorkspaceToolbarDisplayMode.allCases) { mode in
+        Image(systemName: mode.systemImage)
+          .help(mode.helpText)
+          .accessibilityLabel(mode.accessibilityLabel)
+          .tag(mode)
       }
-      .buttonStyle(.plain)
-      .help("\(targetMode.accessibilityTitle) 보기로 전환")
-      .accessibilityLabel("\(targetMode.accessibilityTitle) 보기로 전환")
-      .background {
-        GeometryReader { proxy in
-          Color.clear.preference(
-            key: WorkspaceViewModePickerFramePreferenceKey.self,
-            value: proxy.frame(in: .named(Self.mainPaneCoordinateSpaceName))
-          )
-        }
+    }
+    .pickerStyle(.segmented)
+    .labelsHidden()
+    .frame(width: workspaceTitlebarModeSelectorWidth, height: workspaceTitlebarControlHeight)
+    .help("보기 전환")
+    .background {
+      GeometryReader { proxy in
+        Color.clear.preference(
+          key: WorkspaceViewModePickerFramePreferenceKey.self,
+          value: proxy.frame(in: .named(Self.mainPaneCoordinateSpaceName))
+        )
       }
     }
   }
@@ -104,44 +92,36 @@ extension MainWorkspaceView {
     Button {
       openDailyJournalWindow()
     } label: {
-      Image(systemName: "exclamationmark")
-        .font(.system(size: 15, weight: .semibold))
-        .foregroundStyle(.primary)
-        .frame(
-          width: workspaceTitlebarIconButtonSize,
-          height: workspaceTitlebarControlHeight
-        )
-        .contentShape(Rectangle())
+      workspaceToolbarIcon(systemName: "exclamationmark")
     }
     .buttonStyle(.plain)
     .help("저널 열기")
     .accessibilityLabel("저널 열기")
   }
 
-  @ViewBuilder
-  var scheduleDisplayModeToggle: some View {
-    if appState.viewMode == .schedule {
-      Picker("", selection: scheduleDisplayModeBinding) {
-        ForEach(ScheduleBoardDisplayMode.allCases) { mode in
-          Text(mode.title).tag(mode)
-        }
-      }
-      .pickerStyle(.segmented)
-      .labelsHidden()
-      .frame(width: 78, height: workspaceTitlebarControlHeight)
-      .help("스케줄 주/월 보기 전환")
+  var workspaceDisplayMode: WorkspaceToolbarDisplayMode {
+    if appState.viewMode == .timeline {
+      return .timeline
     }
+    return scheduleDisplayMode == .month ? .month : .week
   }
 
-  var nextViewMode: ViewMode? {
-    let availableViewModes = appState.availableViewModes
-    guard
-      availableViewModes.count > 1,
-      let currentIndex = availableViewModes.firstIndex(of: appState.viewMode)
-    else {
-      return availableViewModes.first { $0 != appState.viewMode }
-    }
-    return availableViewModes[(currentIndex + 1) % availableViewModes.count]
+  var workspaceDisplayModeBinding: Binding<WorkspaceToolbarDisplayMode> {
+    Binding(
+      get: { workspaceDisplayMode },
+      set: { mode in
+        switch mode {
+        case .timeline:
+          appState.selectViewMode(.timeline)
+        case .week:
+          scheduleDisplayMode = .week
+          appState.selectViewMode(.schedule)
+        case .month:
+          scheduleDisplayMode = .month
+          appState.selectViewMode(.schedule)
+        }
+      }
+    )
   }
 
   @ViewBuilder
@@ -153,7 +133,7 @@ extension MainWorkspaceView {
     Button {
       rollOverdueTasksToTodayAllDay()
     } label: {
-      roundWorkspaceToolbarIcon(
+      workspaceToolbarIcon(
         systemName: "arrow.right.to.line",
         isLoading: isRollingOverdueTasksToToday,
         tintColor: .accentColor,
@@ -197,39 +177,29 @@ extension MainWorkspaceView {
   }
 
   var syncStatusIndicatorLabel: some View {
-    roundWorkspaceToolbarIcon(systemName: "plus")
+    workspaceToolbarIcon(systemName: "plus", tintColor: syncIndicatorColor)
   }
 
-  func roundWorkspaceToolbarIcon(
+  func workspaceToolbarIcon(
     systemName: String,
     isLoading: Bool = false,
     tintColor: Color? = nil,
     symbolOffsetX: CGFloat = 0
   ) -> some View {
-    let iconColor = tintColor ?? syncIndicatorColor
+    let iconColor = tintColor ?? Color.primary
     return ZStack {
       Color.clear
 
-      ZStack {
-        Circle()
-          .fill(Color(nsColor: .windowBackgroundColor).opacity(0.96))
-
-        if isLoading {
-          ProgressView()
-            .controlSize(.small)
-            .scaleEffect(0.7)
-            .tint(iconColor)
-        } else {
-          Image(systemName: systemName)
-            .font(.system(size: 11, weight: .bold))
-            .foregroundStyle(iconColor)
-            .offset(x: symbolOffsetX)
-        }
-      }
-      .frame(width: 18, height: 18)
-      .overlay {
-        Circle()
-          .stroke(iconColor, lineWidth: 1.5)
+      if isLoading {
+        ProgressView()
+          .controlSize(.small)
+          .scaleEffect(0.72)
+          .tint(iconColor)
+      } else {
+        Image(systemName: systemName)
+          .font(.system(size: workspaceTitlebarIconFontSize, weight: .semibold))
+          .foregroundStyle(iconColor)
+          .offset(x: symbolOffsetX)
       }
     }
     .frame(
@@ -238,6 +208,15 @@ extension MainWorkspaceView {
       alignment: .center
     )
     .contentShape(Rectangle())
+  }
+
+  func todayJumpButton(action: @escaping () -> Void) -> some View {
+    Button(action: action) {
+      workspaceToolbarIcon(systemName: "calendar")
+    }
+    .buttonStyle(.plain)
+    .help("오늘로 이동")
+    .accessibilityLabel("오늘로 이동")
   }
 
   var syncIndicatorColor: Color {
@@ -267,11 +246,49 @@ extension MainWorkspaceView {
     30
   }
 
-  var workspaceTitlebarTodayButtonWidth: CGFloat {
-    58
+  var workspaceTitlebarIconFontSize: CGFloat {
+    14
+  }
+
+  var workspaceTitlebarModeSelectorWidth: CGFloat {
+    104
   }
 
   var workspaceTitlebarZoomButtonWidth: CGFloat {
     42
+  }
+}
+
+enum WorkspaceToolbarDisplayMode: String, CaseIterable, Identifiable {
+  case timeline
+  case week
+  case month
+
+  var id: String { rawValue }
+
+  var systemImage: String {
+    switch self {
+    case .timeline:
+      return "chart.bar.xaxis"
+    case .week:
+      return "clock"
+    case .month:
+      return "square.grid.3x3"
+    }
+  }
+
+  var helpText: String {
+    switch self {
+    case .timeline:
+      return "타임라인 보기"
+    case .week:
+      return "주간 스케줄 보기"
+    case .month:
+      return "월간 스케줄 보기"
+    }
+  }
+
+  var accessibilityLabel: String {
+    helpText
   }
 }
