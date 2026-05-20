@@ -56,6 +56,7 @@ extension MainWorkspaceView {
     switch mode {
     case .timeline:
       TimelineBoardView(
+        displayMode: timelineDisplayMode,
         projectListSortMode: Binding(
           get: { timelineProjectListSortMode },
           set: { timelineProjectListSortMode = $0 }

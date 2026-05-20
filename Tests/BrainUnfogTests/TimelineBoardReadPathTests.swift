@@ -966,6 +966,110 @@ final class TimelineBoardReadPathTests: XCTestCase {
     )
   }
 
+  func testDetailTimelineTaskChipGroupsFilterTrimAndOverflowByDay() {
+    let projectID = UUID()
+    let day = Date(timeIntervalSince1970: 1_775_340_000)
+    let otherDay = day.addingTimeInterval(86_400)
+    let bar = makeBar(
+      projectID: projectID,
+      title: "Project",
+      dailyTaskPreviews: [
+        day: TimelineDayPreview(
+          totalCount: 3,
+          tasks: [
+            TimelineProjectTaskPreview(
+              id: "one",
+              taskID: UUID(),
+              title: "  One  ",
+              isCompleted: false,
+              isOverdue: false,
+              targetCompletedWorkUnits: 0
+            ),
+            TimelineProjectTaskPreview(
+              id: "two",
+              taskID: UUID(),
+              title: "Two",
+              isCompleted: false,
+              isOverdue: true,
+              targetCompletedWorkUnits: 0
+            ),
+            TimelineProjectTaskPreview(
+              id: "three",
+              taskID: UUID(),
+              title: "Three",
+              isCompleted: false,
+              isOverdue: false,
+              targetCompletedWorkUnits: 0
+            ),
+          ]
+        ),
+        otherDay: TimelineDayPreview(
+          totalCount: 1,
+          tasks: [
+            TimelineProjectTaskPreview(
+              id: "other",
+              taskID: UUID(),
+              title: "Other",
+              isCompleted: false,
+              isOverdue: false,
+              targetCompletedWorkUnits: 0
+            ),
+          ]
+        ),
+      ],
+      dailyCompletedTaskPreviews: [
+        day: TimelineDayPreview(
+          totalCount: 1,
+          tasks: [
+            TimelineProjectTaskPreview(
+              id: "done",
+              taskID: UUID(),
+              title: "Done",
+              isCompleted: true,
+              isOverdue: false,
+              targetCompletedWorkUnits: 0
+            ),
+          ]
+        ),
+      ]
+    )
+
+    let groups = TimelineBoardReadPath.detailTimelineTaskChipGroups(
+      for: bar,
+      visibleDateRange: day...day,
+      maxRowsPerDay: 3
+    )
+
+    XCTAssertEqual(groups.map(\.date), [day])
+    XCTAssertEqual(groups.first?.visibleChips.map(\.title), ["One", "Two"])
+    XCTAssertEqual(groups.first?.visibleChips.map(\.style), [.active, .active])
+    XCTAssertEqual(groups.first?.hiddenCount, 2)
+    XCTAssertEqual(groups.first?.renderedRowCount, 3)
+  }
+
+  func testDetailTimelineRowHeightGrowsWithRenderedRows() {
+    XCTAssertEqual(
+      TimelineBoardReadPath.detailTimelineRowHeight(
+        renderedRowCount: 0,
+        minHeight: 72,
+        chipHeight: 20,
+        chipSpacing: 4,
+        verticalInset: 8
+      ),
+      72
+    )
+    XCTAssertEqual(
+      TimelineBoardReadPath.detailTimelineRowHeight(
+        renderedRowCount: 5,
+        minHeight: 72,
+        chipHeight: 20,
+        chipSpacing: 4,
+        verticalInset: 8
+      ),
+      132
+    )
+  }
+
   func testDayHeaderSectionsBuildFromCurrentBars() {
     let projectID = UUID()
     let overdueTaskID = UUID()

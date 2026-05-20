@@ -177,6 +177,40 @@ struct TimelineRowLayout {
   let metrics: TimelineRowMetrics
 }
 
+enum TimelineBoardDisplayMode: String {
+  case summary
+  case detail
+
+  static func resolved(rawValue: String) -> TimelineBoardDisplayMode {
+    TimelineBoardDisplayMode(rawValue: rawValue) ?? .summary
+  }
+}
+
+enum TimelineDetailTaskChipStyle: String, Sendable {
+  case active
+  case planned
+  case completed
+}
+
+struct TimelineDetailTaskChip: Identifiable, Equatable, Sendable {
+  let id: String
+  let taskID: UUID
+  let title: String
+  let style: TimelineDetailTaskChipStyle
+  let isOverdue: Bool
+}
+
+struct TimelineDetailTaskChipGroup: Identifiable, Equatable, Sendable {
+  let id: String
+  let date: Date
+  let visibleChips: [TimelineDetailTaskChip]
+  let hiddenCount: Int
+
+  var renderedRowCount: Int {
+    visibleChips.count + (hiddenCount > 0 ? 1 : 0)
+  }
+}
+
 struct TaskProjectMoveSnapshot {
   let movedTaskIDs: [UUID]
   let taskProjectIDs: [UUID: UUID]

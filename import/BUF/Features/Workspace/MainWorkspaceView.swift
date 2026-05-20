@@ -450,6 +450,7 @@ enum WorkspaceUserDefaultsKey {
   static let timelineProjectListSortModeReminderOrderMigration =
     "workspace.timelineProjectListSortModeReminderOrderMigration"
   static let timelineShowsHiddenProjectLists = "workspace.timelineShowsHiddenProjectLists"
+  static let timelineDisplayMode = "workspace.timelineDisplayMode"
   static let scheduleDisplayMode = "workspace.scheduleDisplayMode"
 }
 
@@ -458,6 +459,8 @@ struct MainWorkspaceView: View {
   var projectListSortModeRaw = ProjectListSortMode.manual.rawValue
   @AppStorage(WorkspaceUserDefaultsKey.timelineProjectListSortMode)
   var timelineProjectListSortModeRaw = ProjectListSortMode.manual.rawValue
+  @AppStorage(WorkspaceUserDefaultsKey.timelineDisplayMode)
+  var timelineDisplayModeRaw = TimelineBoardDisplayMode.summary.rawValue
   @AppStorage(WorkspaceUserDefaultsKey.scheduleDisplayMode)
   var scheduleDisplayModeRaw = ScheduleBoardDisplayMode.week.rawValue
   @AppStorage(WorkspaceUserDefaultsKey.timelineShowsHiddenProjectLists)
@@ -818,6 +821,15 @@ struct MainWorkspaceView: View {
     }
     nonmutating set {
       scheduleDisplayModeRaw = newValue.rawValue
+    }
+  }
+
+  var timelineDisplayMode: TimelineBoardDisplayMode {
+    get {
+      TimelineBoardDisplayMode.resolved(rawValue: timelineDisplayModeRaw)
+    }
+    nonmutating set {
+      timelineDisplayModeRaw = newValue.rawValue
     }
   }
 

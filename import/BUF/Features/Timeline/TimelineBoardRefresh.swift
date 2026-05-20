@@ -199,6 +199,84 @@ enum TimelineBoardReadPath {
     return trimmed.isEmpty ? "제목 없음" : trimmed
   }
 
+  static func detailTimelineTaskChipGroups(
+    for bar: TimelineProjectBar,
+    visibleDateRange: ClosedRange<Date>,
+    maxRowsPerDay: Int
+  ) -> [TimelineDetailTaskChipGroup] {
+    guard maxRowsPerDay > 0 else { return [] }
+    let dates = Set(bar.dailyTaskPreviews.keys)
+      .union(bar.dailyPlannedWorkPreviews.keys)
+      .union(bar.dailyCompletedTaskPreviews.keys)
+
+    return dates
+      .filter { visibleDateRange.contains($0) }
+      .sorted()
+      .compactMap { date -> TimelineDetailTaskChipGroup? in
+        var chips: [TimelineDetailTaskChip] = []
+        if let preview = bar.dailyTaskPreviews[date] {
+          chips.append(contentsOf: detailTimelineTaskChips(
+            from: preview.tasks,
+            style: .active
+          ))
+        }
+        if let preview = bar.dailyPlannedWorkPreviews[date] {
+          chips.append(contentsOf: detailTimelineTaskChips(
+            from: preview.tasks,
+            style: .planned
+          ))
+        }
+        if let preview = bar.dailyCompletedTaskPreviews[date] {
+          chips.append(contentsOf: detailTimelineTaskChips(
+            from: preview.tasks,
+            style: .completed
+          ))
+        }
+
+        guard !chips.isEmpty else { return nil }
+        let visibleLimit = chips.count > maxRowsPerDay ? max(0, maxRowsPerDay - 1) : maxRowsPerDay
+        let visibleChips = Array(chips.prefix(visibleLimit))
+        let hiddenCount = max(0, chips.count - visibleChips.count)
+        return TimelineDetailTaskChipGroup(
+          id: "\(bar.projectID.uuidString)-\(Int(date.timeIntervalSinceReferenceDate))",
+          date: date,
+          visibleChips: visibleChips,
+          hiddenCount: hiddenCount
+        )
+      }
+  }
+
+  static func detailTimelineRowHeight(
+    renderedRowCount: Int,
+    minHeight: CGFloat,
+    chipHeight: CGFloat,
+    chipSpacing: CGFloat,
+    verticalInset: CGFloat
+  ) -> CGFloat {
+    let clampedCount = max(0, renderedRowCount)
+    guard clampedCount > 0 else { return minHeight }
+    let contentHeight =
+      CGFloat(clampedCount) * chipHeight
+      + CGFloat(max(0, clampedCount - 1)) * chipSpacing
+      + verticalInset * 2
+    return max(minHeight, contentHeight)
+  }
+
+  private static func detailTimelineTaskChips(
+    from tasks: [TimelineProjectTaskPreview],
+    style: TimelineDetailTaskChipStyle
+  ) -> [TimelineDetailTaskChip] {
+    tasks.map { task in
+      TimelineDetailTaskChip(
+        id: "\(task.id)-\(style.rawValue)",
+        taskID: task.taskID,
+        title: timelinePreviewTitle(for: task.title),
+        style: style,
+        isOverdue: task.isOverdue
+      )
+    }
+  }
+
   static func projectListPopoverEntries(from entries: [ScheduleSliceEntry])
     -> [ScheduleSliceEntry]
   {

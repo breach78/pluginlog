@@ -295,12 +295,20 @@ extension TimelineBoardView {
           .offset(x: deadlineMarker.x)
       }
 
-      taskCountBadges(
-        for: bar,
-        rowLayout: rowLayout,
-        rowIndex: index,
-        projectColor: projectColor
-      )
+      if displayMode == .detail {
+        detailTaskChips(
+          for: bar,
+          rowLayout: rowLayout,
+          projectColor: projectColor
+        )
+      } else {
+        taskCountBadges(
+          for: bar,
+          rowLayout: rowLayout,
+          rowIndex: index,
+          projectColor: projectColor
+        )
+      }
     }
     .padding(.top, interRowTopPadding(for: index, rowLayout: rowLayout))
     .padding(.bottom, interRowBottomPadding(for: index, totalCount: totalCount, rowLayout: rowLayout))
@@ -754,6 +762,92 @@ extension TimelineBoardView {
       .allowsHitTesting(false)
   }
 
+  @ViewBuilder
+  func detailTaskChips(
+    for bar: TimelineProjectBar,
+    rowLayout: TimelineRowLayout,
+    projectColor: Color
+  ) -> some View {
+    let groups = detailTaskChipGroups(for: bar)
+    ZStack(alignment: .topLeading) {
+      ForEach(groups) { group in
+        VStack(alignment: .leading, spacing: detailTaskChipSpacing) {
+          ForEach(group.visibleChips) { chip in
+            detailTaskChip(chip, projectColor: projectColor)
+          }
+
+          if group.hiddenCount > 0 {
+            detailTaskOverflowChip(hiddenCount: group.hiddenCount)
+          }
+        }
+        .frame(width: max(0, dayColumnWidth - 8), alignment: .topLeading)
+        .offset(
+          x: CGFloat(dayOffset(for: group.date) - dayRange.lowerBound) * dayColumnWidth + 4,
+          y: detailTaskChipVerticalInset
+        )
+      }
+    }
+    .frame(width: timelineWidth, height: rowLayout.metrics.height, alignment: .topLeading)
+    .clipped()
+    .allowsHitTesting(false)
+  }
+
+  func detailTaskChip(_ chip: TimelineDetailTaskChip, projectColor: Color) -> some View {
+    let isCompleted = chip.style == .completed
+    let isPlanned = chip.style == .planned
+    return HStack(spacing: 5) {
+      detailTaskChipMarker(chip, projectColor: projectColor)
+
+      Text(chip.title)
+        .font(.system(size: 11, weight: isCompleted ? .regular : .semibold))
+        .lineLimit(1)
+        .truncationMode(.tail)
+    }
+    .foregroundStyle(isCompleted ? Color.secondary : Color.primary)
+    .opacity(isCompleted ? 0.45 : (isPlanned ? 0.72 : 1))
+    .padding(.horizontal, 6)
+    .frame(height: detailTaskChipHeight)
+    .frame(maxWidth: .infinity, alignment: .leading)
+    .background(
+      Rectangle()
+        .fill(detailTaskChipFill(chip, projectColor: projectColor))
+    )
+  }
+
+  func detailTaskChipMarker(
+    _ chip: TimelineDetailTaskChip,
+    projectColor: Color
+  ) -> some View {
+    let isCompleted = chip.style == .completed
+    return Image(systemName: isCompleted ? "checkmark.circle.fill" : "circle")
+      .font(.system(size: 10, weight: .semibold))
+      .foregroundStyle(chip.isOverdue ? Color.red : projectColor)
+      .frame(width: 12, height: 12)
+  }
+
+  func detailTaskChipFill(
+    _ chip: TimelineDetailTaskChip,
+    projectColor: Color
+  ) -> Color {
+    switch chip.style {
+    case .active:
+      return (chip.isOverdue ? Color.red : projectColor).opacity(0.15)
+    case .planned:
+      return projectColor.opacity(0.08)
+    case .completed:
+      return projectColor.opacity(0.06)
+    }
+  }
+
+  func detailTaskOverflowChip(hiddenCount: Int) -> some View {
+    Text("+\(hiddenCount)")
+      .font(.system(size: 11, weight: .semibold, design: .rounded))
+      .foregroundStyle(.secondary)
+      .padding(.horizontal, 6)
+      .frame(height: detailTaskChipHeight)
+      .frame(maxWidth: .infinity, alignment: .leading)
+  }
+
   func timelineCompletedCountLabel(
     _ layout: TimelineCompletedCountLayout,
     projectColor: Color
@@ -1069,6 +1163,23 @@ extension TimelineBoardView {
   }
 
   func rowMetrics(for bar: TimelineProjectBar) -> TimelineRowMetrics {
+    if displayMode == .detail {
+      let maxRenderedRows = detailTaskChipGroups(for: bar)
+        .map(\.renderedRowCount)
+        .max() ?? 0
+      return TimelineRowMetrics(
+        height: TimelineBoardReadPath.detailTimelineRowHeight(
+          renderedRowCount: maxRenderedRows,
+          minHeight: detailRowMinHeight,
+          chipHeight: detailTaskChipHeight,
+          chipSpacing: detailTaskChipSpacing,
+          verticalInset: detailTaskChipVerticalInset
+        ),
+        spacing: rowMetrics.spacing,
+        contentInsetY: rowMetrics.contentInsetY
+      )
+    }
+
     guard projectListSortMode == .priority,
       priorityStage(for: bar) == .do
     else {
@@ -1079,6 +1190,19 @@ extension TimelineBoardView {
       height: rowMetrics.height * priorityDoRowHeightMultiplier,
       spacing: rowMetrics.spacing,
       contentInsetY: rowMetrics.contentInsetY
+    )
+  }
+
+  func detailTaskChipGroups(for bar: TimelineProjectBar) -> [TimelineDetailTaskChipGroup] {
+    let renderDateRange = TimelineBoardReadPath.renderedTimelineBadgeDateRange(
+      anchorDate: anchorDate,
+      dayRange: dayRange,
+      calendar: calendar
+    )
+    return TimelineBoardReadPath.detailTimelineTaskChipGroups(
+      for: bar,
+      visibleDateRange: renderDateRange,
+      maxRowsPerDay: detailMaxRowsPerDay
     )
   }
 

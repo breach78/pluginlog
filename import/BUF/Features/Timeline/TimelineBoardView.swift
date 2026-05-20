@@ -137,6 +137,7 @@ struct TimelineBoardView: View {
   @State var selectionCommitTask: Task<Void, Never>?
   @State var suppressedTimelineTaskTapUntil: Date = .distantPast
 
+  let displayMode: TimelineBoardDisplayMode
   let titleColumnWidth: CGFloat = 200
   let timelineTitleColumnHorizontalPadding: CGFloat = 12
   let priorityStageRailWidth: CGFloat = 3
@@ -145,6 +146,12 @@ struct TimelineBoardView: View {
   let monthHeaderReservedHeight: CGFloat = 18
   let monthLabelTopPadding: CGFloat = 1
   let rowMetrics = TimelineRowMetrics(height: 30, spacing: 8, contentInsetY: 4)
+  let detailDayColumnWidth: CGFloat = 120
+  let detailRowMinHeight: CGFloat = 72
+  let detailTaskChipHeight: CGFloat = 20
+  let detailTaskChipSpacing: CGFloat = 4
+  let detailTaskChipVerticalInset: CGFloat = 8
+  let detailMaxRowsPerDay = 5
   let priorityDoRowHeightMultiplier: CGFloat = 1.5
   let progressMarkerSize: CGFloat = 8
   let horizontalEdgePadding: CGFloat = 16
@@ -179,7 +186,10 @@ struct TimelineBoardView: View {
     ("회색", "#8E8E93"),
   ]
   var dayColumnWidth: CGFloat {
-    min(max(appState.timelineDayColumnWidth, 22), 88)
+    if displayMode == .detail {
+      return detailDayColumnWidth
+    }
+    return min(max(appState.timelineDayColumnWidth, 22), 88)
   }
 
   var calendar: Calendar { Calendar.autoupdatingCurrent }
@@ -214,6 +224,7 @@ struct TimelineBoardView: View {
   let selectionHighlightColor = Color(red: 0.84, green: 0.94, blue: 1.0)
 
   init(
+    displayMode: TimelineBoardDisplayMode = .summary,
     projectListSortMode: Binding<ProjectListSortMode>,
     hiddenProjectIDs: Binding<Set<UUID>>,
     showsHiddenProjects: Bool = false,
@@ -228,6 +239,7 @@ struct TimelineBoardView: View {
     onEditTask: @escaping (WorkspaceTaskEditPanelTarget) -> Void = { _ in },
     onTaskDeleted: @escaping (UUID, UUID) -> Void = { _, _ in }
   ) {
+    self.displayMode = displayMode
     _projectListSortMode = projectListSortMode
     _hiddenTimelineProjectIDs = hiddenProjectIDs
     self.showsHiddenProjects = showsHiddenProjects
@@ -269,10 +281,7 @@ struct TimelineBoardView: View {
         workspaceProjectSummaries: workspaceTimelineProjectSummaries,
         scheduleEntriesByProjectID: workspaceTimelineScheduleEntriesByProjectID
       )
-    let rowLayouts =
-      hasCachedSnapshot
-      ? cachedTimelineRowLayouts
-      : buildRowLayouts(for: bars)
+    let rowLayouts = buildRowLayouts(for: bars)
 
     return TimelineBoardSnapshot(
       bars: bars,
@@ -603,7 +612,8 @@ struct TimelineBoardView: View {
   ) -> some View {
     let visibleDayOffsets = viewport.visibleLowerOffset...viewport.visibleUpperOffset
     let isTaskBadgeHoverEnabled =
-      isActive
+      displayMode == .summary
+      && isActive
       && !isInteractionObscured
       && !isTimelineScrolling
       && !appState.isEditorMotionSuppressed
@@ -750,6 +760,7 @@ struct TimelineBoardView: View {
     hasher.combine(dayRange.upperBound)
     hasher.combine(Int(timelineWidth))
     hasher.combine(Int(rowsHeight.rounded()))
+    hasher.combine(displayMode.rawValue)
     hasher.combine(activeTimelineTaskBadgeID)
     hasher.combine(selectedProjectID)
     hasher.combine(draggingProjectID)
@@ -774,6 +785,7 @@ struct TimelineBoardView: View {
     var hasher = Hasher()
     hasher.combine(barsPresentationSignature)
     hasher.combine(Int(rowsHeight.rounded()))
+    hasher.combine(displayMode.rawValue)
     hasher.combine(visibleLowerOffset)
     hasher.combine(visibleUpperOffset)
     hasher.combine(selectedProjectID)

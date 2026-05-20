@@ -48,19 +48,21 @@ extension MainWorkspaceView {
           appState.jumpTimelineToToday()
         }
 
-        Button("-") {
-          appState.zoomOutTimelineDayColumn()
-        }
-        .buttonStyle(.bordered)
-        .frame(width: workspaceTitlebarZoomButtonWidth, height: workspaceTitlebarControlHeight)
-        .disabled(!appState.canZoomOutTimelineDayColumn())
+        if timelineDisplayMode == .summary {
+          Button("-") {
+            appState.zoomOutTimelineDayColumn()
+          }
+          .buttonStyle(.bordered)
+          .frame(width: workspaceTitlebarZoomButtonWidth, height: workspaceTitlebarControlHeight)
+          .disabled(!appState.canZoomOutTimelineDayColumn())
 
-        Button("+") {
-          appState.zoomInTimelineDayColumn()
+          Button("+") {
+            appState.zoomInTimelineDayColumn()
+          }
+          .buttonStyle(.bordered)
+          .frame(width: workspaceTitlebarZoomButtonWidth, height: workspaceTitlebarControlHeight)
+          .disabled(!appState.canZoomInTimelineDayColumn())
         }
-        .buttonStyle(.bordered)
-        .frame(width: workspaceTitlebarZoomButtonWidth, height: workspaceTitlebarControlHeight)
-        .disabled(!appState.canZoomInTimelineDayColumn())
       } else if appState.viewMode == .schedule {
         todayJumpButton {
           showArchive = false
@@ -111,7 +113,7 @@ extension MainWorkspaceView {
 
   var workspaceDisplayMode: WorkspaceToolbarDisplayMode {
     if appState.viewMode == .timeline {
-      return .timeline
+      return timelineDisplayMode == .detail ? .timelineDetail : .timeline
     }
     return scheduleDisplayMode == .month ? .month : .week
   }
@@ -129,6 +131,10 @@ extension MainWorkspaceView {
       set: { mode in
         switch mode {
         case .timeline:
+          timelineDisplayMode = .summary
+          appState.selectViewMode(.timeline)
+        case .timelineDetail:
+          timelineDisplayMode = .detail
           appState.selectViewMode(.timeline)
         case .week:
           scheduleDisplayMode = .week
@@ -268,7 +274,7 @@ extension MainWorkspaceView {
   }
 
   var workspaceTitlebarModeSelectorWidth: CGFloat {
-    104
+    138
   }
 
   var workspaceTitlebarZoomButtonWidth: CGFloat {
@@ -278,6 +284,7 @@ extension MainWorkspaceView {
 
 enum WorkspaceToolbarDisplayMode: String, CaseIterable, Identifiable {
   case timeline
+  case timelineDetail
   case week
   case month
 
@@ -287,6 +294,8 @@ enum WorkspaceToolbarDisplayMode: String, CaseIterable, Identifiable {
     switch self {
     case .timeline:
       return "chart.bar.xaxis"
+    case .timelineDetail:
+      return "list.bullet.rectangle"
     case .week:
       return "clock"
     case .month:
@@ -298,6 +307,8 @@ enum WorkspaceToolbarDisplayMode: String, CaseIterable, Identifiable {
     switch self {
     case .timeline:
       return "타임라인 보기"
+    case .timelineDetail:
+      return "상세 타임라인 보기"
     case .week:
       return "주간 스케줄 보기"
     case .month:
