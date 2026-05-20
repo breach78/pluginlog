@@ -1959,11 +1959,17 @@ final class AppOwnedWorkspaceStoreTests: XCTestCase {
       completionDate: completedAt,
       modifiedAt: importedAt.addingTimeInterval(1)
     )
+    try overwriteLocalCompletedRecurringDueDate(
+      containerRoot: containerRoot,
+      dueDate: completedAt,
+      hasExplicitTime: true
+    )
     let initialSnapshot = try await store.loadRetainedWorkspaceSnapshot(projectIDs: [projectID])
     let initialCompletedOccurrence = try XCTUnwrap(initialSnapshot.tasks.first { $0.isCompleted })
     let initialCompletedTaskID = initialCompletedOccurrence.identity.taskID
     let initialCompletedExternalIdentifier =
       initialCompletedOccurrence.identity.reminderExternalIdentifier
+    XCTAssertEqual(initialCompletedOccurrence.schedule.parsedDate, dueDate)
 
     store = AppOwnedWorkspaceStore(containerRootURL: containerRoot)
     try await store.replaceReminderSnapshot(
@@ -1980,7 +1986,8 @@ final class AppOwnedWorkspaceStoreTests: XCTestCase {
       completedOccurrence.identity.reminderExternalIdentifier,
       initialCompletedExternalIdentifier
     )
-    XCTAssertEqual(completedOccurrence.schedule.parsedDate, completedAt)
+    XCTAssertEqual(completedOccurrence.schedule.parsedDate, dueDate)
+    XCTAssertTrue(completedOccurrence.schedule.hasExplicitTime)
     XCTAssertTrue(
       AppOwnedWorkspaceStore.isLocalCompletedRecurringExternalIdentifier(
         completedOccurrence.identity.reminderExternalIdentifier
@@ -2547,5 +2554,24 @@ final class AppOwnedWorkspaceStoreTests: XCTestCase {
       ),
       SQLITE_OK
     )
+  }
+
+  private func overwriteLocalCompletedRecurringDueDate(
+    containerRoot: URL,
+    dueDate: Date,
+    hasExplicitTime: Bool
+  ) throws {
+    let sqliteURL = ContainerPaths(root: containerRoot).sqliteURL
+    var db: OpaquePointer?
+    XCTAssertEqual(sqlite3_open(sqliteURL.path, &db), SQLITE_OK)
+    defer { sqlite3_close(db) }
+    let sql = """
+      UPDATE app_tasks
+      SET due_date = \(dueDate.timeIntervalSinceReferenceDate),
+          schedule_has_explicit_time = \(hasExplicitTime ? 1 : 0)
+      WHERE is_completed = 1
+        AND reminder_external_identifier LIKE '%::app-completed::%';
+      """
+    XCTAssertEqual(sqlite3_exec(db, sql, nil, nil, nil), SQLITE_OK)
   }
 }

@@ -860,7 +860,7 @@ actor AppOwnedWorkspaceStore {
       noteText: sourceTask.noteText,
       isCompleted: true,
       completionDate: completionDate,
-      dueDate: completionDate,
+      dueDate: sourceTask.dueDate,
       hasExplicitTime: sourceTask.hasExplicitTime,
       durationMinutes: sourceTask.durationMinutes,
       recurrenceRuleRaw: nil,
@@ -1690,6 +1690,11 @@ actor AppOwnedWorkspaceStore {
           bindings: [.text(row.taskID)]
         )
       }
+      let occurrenceSchedule = Self.localCompletedRecurringOccurrenceSchedule(
+        from: restoreIdentity.reminderExternalIdentifier,
+        fallbackDueDate: row.dueDate,
+        fallbackHasExplicitTime: row.hasExplicitTime
+      )
       try execute(
         db,
         """
@@ -1710,8 +1715,8 @@ actor AppOwnedWorkspaceStore {
           .text(row.noteText),
           .optionalDouble(row.completionDate?.timeIntervalSinceReferenceDate),
           .optionalDouble(row.startDate?.timeIntervalSinceReferenceDate),
-          .optionalDouble(row.dueDate?.timeIntervalSinceReferenceDate),
-          .int(row.hasExplicitTime ? 1 : 0),
+          .optionalDouble(occurrenceSchedule.dueDate?.timeIntervalSinceReferenceDate),
+          .int(occurrenceSchedule.hasExplicitTime ? 1 : 0),
           .optionalInt(row.durationMinutes),
           .int(row.priority),
           .optionalText(restoreIdentity.signatureRecurrenceRuleRaw),
@@ -1949,8 +1954,17 @@ actor AppOwnedWorkspaceStore {
       }
       let dueDate = columnDouble(statement, 6).map(Date.init(timeIntervalSinceReferenceDate:))
       let startDate = columnDouble(statement, 7).map(Date.init(timeIntervalSinceReferenceDate:))
-      let scheduleDate = dueDate ?? startDate
-      let hasExplicitTime = columnInt(statement, 8) == 1
+      let storedHasExplicitTime = columnInt(statement, 8) == 1
+      let reminderExternalIdentifier = columnText(statement, 2)
+      let occurrenceSchedule = reminderExternalIdentifier.map {
+        Self.localCompletedRecurringOccurrenceSchedule(
+          from: $0,
+          fallbackDueDate: dueDate,
+          fallbackHasExplicitTime: storedHasExplicitTime
+        )
+      } ?? (dueDate: dueDate, hasExplicitTime: storedHasExplicitTime)
+      let scheduleDate = occurrenceSchedule.dueDate ?? startDate
+      let hasExplicitTime = occurrenceSchedule.hasExplicitTime
       let durationMinutes = columnInt(statement, 9).flatMap { $0 > 0 ? $0 : nil }
       let recurrenceRuleRaw = columnText(statement, 10)
       let priority = columnInt(statement, 11) ?? 0
@@ -1963,7 +1977,7 @@ actor AppOwnedWorkspaceStore {
         RetainedTask(
           identity: RetainedTaskIdentity(
             taskID: taskID,
-            reminderExternalIdentifier: columnText(statement, 2),
+            reminderExternalIdentifier: reminderExternalIdentifier,
             calendarEventExternalIdentifier: nil
           ),
           title: columnText(statement, 3) ?? "",

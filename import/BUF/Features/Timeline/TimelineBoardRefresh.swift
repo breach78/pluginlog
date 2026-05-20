@@ -170,6 +170,14 @@ enum TimelineBoardReadPath {
     return calendar.startOfDay(for: start)...calendar.startOfDay(for: end)
   }
 
+  static func renderedTimelineBadgeDateRange(
+    anchorDate: Date,
+    dayRange: ClosedRange<Int>,
+    calendar: Calendar
+  ) -> ClosedRange<Date> {
+    dateRange(forDayOffsets: dayRange, anchorDate: anchorDate, calendar: calendar)
+  }
+
   static func didScrollOriginChange(
     from previous: CGPoint?,
     to next: CGPoint,
@@ -385,9 +393,12 @@ enum TimelineBoardReadPath {
 
   static func visibleProjectIDs(
     _ projectIDs: [UUID],
-    hiddenProjectIDs: Set<UUID>
+    hiddenProjectIDs: Set<UUID>,
+    excludedProjectIDs: Set<UUID> = []
   ) -> [UUID] {
-    normalizedProjectIDs(projectIDs).filter { !hiddenProjectIDs.contains($0) }
+    normalizedProjectIDs(projectIDs).filter {
+      !hiddenProjectIDs.contains($0) && !excludedProjectIDs.contains($0)
+    }
   }
 
   static func hasCompleteWorkspaceCoverage(

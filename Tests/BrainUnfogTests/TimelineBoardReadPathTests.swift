@@ -270,6 +270,20 @@ final class TimelineBoardReadPathTests: XCTestCase {
     )
   }
 
+  func testVisibleProjectIDsFiltersLocallyDeletedProjectsAfterDeduping() {
+    let visibleID = UUID()
+    let deletedID = UUID()
+
+    XCTAssertEqual(
+      TimelineBoardReadPath.visibleProjectIDs(
+        [visibleID, deletedID, visibleID],
+        hiddenProjectIDs: [],
+        excludedProjectIDs: [deletedID]
+      ),
+      [visibleID]
+    )
+  }
+
   func testTimelineHiddenProjectStorePersistsProjectIDs() throws {
     let suiteName = "TimelineHiddenProjectStoreTests-\(UUID().uuidString)"
     let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
@@ -916,6 +930,27 @@ final class TimelineBoardReadPathTests: XCTestCase {
     XCTAssertEqual(
       range.upperBound,
       calendar.date(from: DateComponents(year: 2026, month: 5, day: 15))
+    )
+  }
+
+  func testRenderedTimelineBadgeDateRangeUsesWholeRenderedTimelineRange() {
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+    let anchor = calendar.date(from: DateComponents(year: 2026, month: 5, day: 15, hour: 13))!
+
+    let range = TimelineBoardReadPath.renderedTimelineBadgeDateRange(
+      anchorDate: anchor,
+      dayRange: -7...61,
+      calendar: calendar
+    )
+
+    XCTAssertEqual(
+      range.lowerBound,
+      calendar.date(from: DateComponents(year: 2026, month: 5, day: 8))
+    )
+    XCTAssertEqual(
+      range.upperBound,
+      calendar.date(from: DateComponents(year: 2026, month: 7, day: 15))
     )
   }
 

@@ -1083,10 +1083,33 @@ extension TimelineBoardView {
     hiddenTimelineProjectIDs = nextHiddenProjectIDs
     TimelineHiddenProjectStore.save(nextHiddenProjectIDs)
 
+    removeProjectFromTimelineState(projectID, markDeleted: false)
+  }
+
+  func removeProjectFromTimelineState(_ projectID: UUID, markDeleted: Bool = true) {
+    let removedTaskIDs = Set(workspaceTimelineScheduleEntriesByProjectID[projectID]?.map(\.taskID) ?? [])
+    if markDeleted {
+      locallyDeletedTimelineProjectIDs.insert(projectID)
+    }
+    workspaceTimelineProjectSnapshots.removeValue(forKey: projectID)
+    workspaceTimelineProjectSummaries.removeValue(forKey: projectID)
+    workspaceTimelineScheduleEntriesByProjectID.removeValue(forKey: projectID)
+    pendingTimelineProjectStageOverrides.removeValue(forKey: projectID)
+    for taskID in removedTaskIDs {
+      retainedTimelineCalendarBridgeDecisionsByTaskID.removeValue(forKey: taskID)
+      retainedTimelineCalendarBridgeWriteMarkersByTaskID.removeValue(forKey: taskID)
+    }
     cachedTimelineBars.removeAll { $0.projectID == projectID }
     cachedTimelineRowLayouts = buildRowLayouts(for: cachedTimelineBars)
     cachedTimelineBarsSourceSignature = nil
     cachedTimelineBarsPresentationSignature = timelineSignature(for: cachedTimelineBars)
+    if case .partialProjectCoverage(let missingProjectIDs) = retainedTimelineReadBlocker {
+      let remainingMissingProjectIDs = missingProjectIDs.filter { $0 != projectID }
+      retainedTimelineReadBlocker =
+        remainingMissingProjectIDs.isEmpty
+        ? nil
+        : .partialProjectCoverage(missingProjectIDs: remainingMissingProjectIDs)
+    }
     rebuildWorkspaceTimelineProjectionCachesAfterMutation()
     if activeTimelineProjectListPopoverProjectID == projectID {
       activeTimelineProjectListPopoverProjectID = nil
@@ -1098,7 +1121,10 @@ extension TimelineBoardView {
   func performPermanentDelete(_ projectID: UUID) {
     guard allowTimelineRetainedWrite("delete-project") else { return }
     Task { @MainActor in
-      _ = await appState.deleteProjectPermanently(projectID, context: modelContext)
+      let didDelete = await appState.deleteProjectPermanently(projectID, context: modelContext)
+      guard didDelete else { return }
+      removeProjectFromTimelineState(projectID)
+      await refreshTimelineProjectState(excluding: [projectID])
     }
   }
 

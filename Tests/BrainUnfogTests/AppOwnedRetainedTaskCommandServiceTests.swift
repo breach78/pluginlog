@@ -1064,7 +1064,7 @@ final class AppOwnedRetainedTaskCommandServiceTests: XCTestCase {
   }
 
   @MainActor
-  func testAppOwnedRecurringCompletionStoresCompletedOccurrenceAtCompletionTime()
+  func testAppOwnedRecurringCompletionStoresCompletedOccurrenceAtScheduledTime()
     async throws
   {
     let dueDate = try XCTUnwrap(
@@ -1115,7 +1115,7 @@ final class AppOwnedRetainedTaskCommandServiceTests: XCTestCase {
       snapshot.projects.first?.tasks.first { $0.isCompleted }
     )
 
-    XCTAssertEqual(completedOccurrence.schedule.parsedDate, completedAt)
+    XCTAssertEqual(completedOccurrence.schedule.parsedDate, dueDate)
     XCTAssertTrue(completedOccurrence.schedule.hasExplicitTime)
     XCTAssertEqual(completedOccurrence.schedule.durationMinutes, 45)
   }

@@ -299,8 +299,7 @@ extension TimelineBoardView {
         for: bar,
         rowLayout: rowLayout,
         rowIndex: index,
-        projectColor: projectColor,
-        visibleDayOffsets: visibleLowerOffset...visibleUpperOffset
+        projectColor: projectColor
       )
     }
     .padding(.top, interRowTopPadding(for: index, rowLayout: rowLayout))
@@ -665,23 +664,22 @@ extension TimelineBoardView {
     for bar: TimelineProjectBar,
     rowLayout: TimelineRowLayout,
     rowIndex: Int,
-    projectColor: Color,
-    visibleDayOffsets: ClosedRange<Int>
+    projectColor: Color
   ) -> some View {
-    let visibleDateRange = TimelineBoardReadPath.dateRange(
-      forDayOffsets: visibleDayOffsets,
+    let renderDateRange = TimelineBoardReadPath.renderedTimelineBadgeDateRange(
       anchorDate: anchorDate,
+      dayRange: dayRange,
       calendar: calendar
     )
     let badges = timelineTaskBadges(
       for: bar,
       rowIndex: rowIndex,
-      visibleDateRange: visibleDateRange
+      visibleDateRange: renderDateRange
     )
     let completedCounts = timelineCompletedCountLayouts(
       for: bar,
       suppressOnDatesWithPendingWork: true,
-      visibleDateRange: visibleDateRange
+      visibleDateRange: renderDateRange
     )
 
     ZStack(alignment: .topLeading) {

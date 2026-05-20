@@ -96,6 +96,7 @@ struct TimelineBoardView: View {
   @State var isRenamingProject = false
   @State var pendingDeleteProjectID: UUID?
   @State var pendingDeleteProjectTitle: String = ""
+  @State var locallyDeletedTimelineProjectIDs: Set<UUID> = []
   @State var workspaceTimelineProjectSnapshots: [UUID: WorkspaceProjectRuntimeRecord] = [:]
   @State var workspaceTimelineProjectSummaries: [UUID: ProjectSummaryRecord] = [:]
   @State var workspaceTimelineScheduleEntriesByProjectID: [UUID: [ScheduleSliceEntry]] = [:]
@@ -187,7 +188,8 @@ struct TimelineBoardView: View {
   var activeProjectIDs: [UUID] {
     TimelineBoardReadPath.visibleProjectIDs(
       projectIDs,
-      hiddenProjectIDs: showsHiddenProjects ? [] : hiddenTimelineProjectIDs
+      hiddenProjectIDs: showsHiddenProjects ? [] : hiddenTimelineProjectIDs,
+      excludedProjectIDs: locallyDeletedTimelineProjectIDs
     )
   }
   var activeProjectIDSet: Set<UUID> {

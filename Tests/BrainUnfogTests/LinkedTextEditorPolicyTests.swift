@@ -43,6 +43,41 @@ final class LinkedTextEditorPolicyTests: XCTestCase {
     )
   }
 
+  func testSelectionVisibilityPolicyTargetsInsertionPointWithinTextBounds() {
+    XCTAssertEqual(
+      LinkedTextEditorSelectionVisibilityPolicy.targetRange(
+        selectedRange: NSRange(location: 4, length: 2),
+        textLength: 10
+      ),
+      NSRange(location: 6, length: 0)
+    )
+    XCTAssertEqual(
+      LinkedTextEditorSelectionVisibilityPolicy.targetRange(
+        selectedRange: NSRange(location: 12, length: 4),
+        textLength: 10
+      ),
+      NSRange(location: 10, length: 0)
+    )
+  }
+
+  func testSelectionVisibilityPolicyPadsCaretRectVerticallyOnly() {
+    let rect = NSRect(x: 12, y: 24, width: 3, height: 18)
+    let padded = LinkedTextEditorSelectionVisibilityPolicy.padded(rect)
+
+    XCTAssertEqual(padded.minX, rect.minX, accuracy: 0.001)
+    XCTAssertEqual(padded.width, rect.width, accuracy: 0.001)
+    XCTAssertEqual(
+      padded.minY,
+      rect.minY - LinkedTextEditorSelectionVisibilityPolicy.verticalPadding,
+      accuracy: 0.001
+    )
+    XCTAssertEqual(
+      padded.height,
+      rect.height + LinkedTextEditorSelectionVisibilityPolicy.verticalPadding * 2,
+      accuracy: 0.001
+    )
+  }
+
   func testMarkdownPreviewKeepsActiveLineInSourceMode() {
     let text = "# Heading\n**Bold** and [Mail](message://abc)"
     let activeLines = LinkedTextEditorMarkdownPreviewPolicy.activeLineRanges(

@@ -94,6 +94,7 @@ struct LinkedTextEditor: NSViewRepresentable {
     private var isApplyingAttributes = false
     private var attributeRefreshTask: Task<Void, Never>?
     private var heightMeasurementTask: Task<Void, Never>?
+    private var selectionVisibilityTask: Task<Void, Never>?
     private var lastMeasuredWidth: CGFloat = 0
     private var didConfigureMailMessageDrops = false
     private var appliedFocusRequestID = 0
@@ -126,6 +127,7 @@ struct LinkedTextEditor: NSViewRepresentable {
 
     private static let attributeRefreshDelayNanoseconds: UInt64 = 180_000_000
     private static let heightMeasurementDelayNanoseconds: UInt64 = 120_000_000
+    private static let selectionVisibilityDelayNanoseconds: UInt64 = 30_000_000
 
     init(_ parent: LinkedTextEditor) {
       self.parent = parent
@@ -135,6 +137,7 @@ struct LinkedTextEditor: NSViewRepresentable {
     deinit {
       attributeRefreshTask?.cancel()
       heightMeasurementTask?.cancel()
+      selectionVisibilityTask?.cancel()
     }
 
     func textDidChange(_ notification: Notification) {
@@ -143,6 +146,7 @@ struct LinkedTextEditor: NSViewRepresentable {
       textView.typingAttributes = baseAttributes()
       scheduleAttributeRefresh(for: textView)
       updateMeasuredHeight()
+      scheduleSelectionVisibilityUpdate(for: textView)
     }
 
     func textDidBeginEditing(_ notification: Notification) {
@@ -205,6 +209,7 @@ struct LinkedTextEditor: NSViewRepresentable {
       textView.typingAttributes = baseAttributes()
       scheduleAttributeRefresh(for: textView)
       updateMeasuredHeight()
+      scheduleSelectionVisibilityUpdate(for: textView)
     }
 
     func textView(_ textView: NSTextView, clickedOnLink link: Any, at charIndex: Int) -> Bool {
@@ -216,6 +221,10 @@ struct LinkedTextEditor: NSViewRepresentable {
     }
 
     func textViewDidChangeSelection(_ notification: Notification) {
+      if !isApplyingText, !isApplyingAttributes, let textView = notification.object as? NSTextView {
+        scheduleSelectionVisibilityUpdate(for: textView)
+      }
+
       guard !isApplyingText,
         !isApplyingAttributes,
         parent.markdownPresentationMode == .livePreview,
@@ -264,6 +273,7 @@ struct LinkedTextEditor: NSViewRepresentable {
       let endLocation = (textView.string as NSString).length
       textView.setSelectedRange(NSRange(location: endLocation, length: 0))
       textView.scrollRangeToVisible(NSRange(location: endLocation, length: 0))
+      scheduleSelectionVisibilityUpdate(for: textView)
       applyAttributes(to: textView)
     }
 
@@ -297,6 +307,7 @@ struct LinkedTextEditor: NSViewRepresentable {
       textView.typingAttributes = baseAttributes()
       scheduleAttributeRefresh(for: textView)
       updateMeasuredHeight()
+      scheduleSelectionVisibilityUpdate(for: textView)
       return true
     }
 
@@ -393,6 +404,9 @@ struct LinkedTextEditor: NSViewRepresentable {
         try? await Task.sleep(nanoseconds: Self.heightMeasurementDelayNanoseconds)
         guard !Task.isCancelled, let self else { return }
         self.updateMeasuredHeight()
+        if let textView = self.textView {
+          self.scheduleSelectionVisibilityUpdate(for: textView)
+        }
       }
     }
 
@@ -401,6 +415,8 @@ struct LinkedTextEditor: NSViewRepresentable {
       attributeRefreshTask = nil
       heightMeasurementTask?.cancel()
       heightMeasurementTask = nil
+      selectionVisibilityTask?.cancel()
+      selectionVisibilityTask = nil
     }
 
     private func baseAttributes() -> [NSAttributedString.Key: Any] {
@@ -566,6 +582,53 @@ struct LinkedTextEditor: NSViewRepresentable {
 
     private func shouldDeferAttributeRefresh(for textView: NSTextView) -> Bool {
       textView.hasMarkedText()
+    }
+
+    private func scheduleSelectionVisibilityUpdate(for textView: NSTextView) {
+      selectionVisibilityTask?.cancel()
+      selectionVisibilityTask = Task { @MainActor [weak self, weak textView] in
+        try? await Task.sleep(nanoseconds: Self.selectionVisibilityDelayNanoseconds)
+        guard !Task.isCancelled, let self, let textView else { return }
+        self.scrollSelectionToVisibleInAncestorScrollView(textView)
+      }
+    }
+
+    private func scrollSelectionToVisibleInAncestorScrollView(_ textView: NSTextView) {
+      guard textView.window?.firstResponder === textView,
+        let outerScrollView = ancestorScrollView(outside: textView),
+        let documentView = outerScrollView.documentView,
+        let windowRect = selectionRectInWindow(for: textView)
+      else {
+        return
+      }
+
+      let targetRect = LinkedTextEditorSelectionVisibilityPolicy.padded(
+        documentView.convert(windowRect, from: nil)
+      )
+      documentView.scrollToVisible(targetRect)
+    }
+
+    private func ancestorScrollView(outside textView: NSTextView) -> NSScrollView? {
+      var currentView = textView.enclosingScrollView?.superview ?? textView.superview
+      while let view = currentView {
+        if let scrollView = view as? NSScrollView {
+          return scrollView
+        }
+        currentView = view.superview
+      }
+      return nil
+    }
+
+    private func selectionRectInWindow(for textView: NSTextView) -> NSRect? {
+      guard let window = textView.window else { return nil }
+      var actualRange = NSRange(location: 0, length: 0)
+      let targetRange = LinkedTextEditorSelectionVisibilityPolicy.targetRange(
+        selectedRange: textView.selectedRange(),
+        textLength: (textView.string as NSString).length
+      )
+      let screenRect = textView.firstRect(forCharacterRange: targetRange, actualRange: &actualRange)
+      guard !screenRect.isNull, !screenRect.isInfinite else { return nil }
+      return window.convertFromScreen(screenRect)
     }
 
     private func resolvedURL(from link: Any) -> URL? {
@@ -787,6 +850,21 @@ enum LinkedTextEditorLinkPolicy {
       || text.localizedCaseInsensitiveContains("message:")
       || text.contains("](")
       || (text.contains("@") && text.contains("."))
+  }
+}
+
+enum LinkedTextEditorSelectionVisibilityPolicy {
+  static let verticalPadding: CGFloat = 32
+
+  static func targetRange(selectedRange: NSRange, textLength: Int) -> NSRange {
+    let safeTextLength = max(textLength, 0)
+    let requestedLocation = selectedRange.location + selectedRange.length
+    let location = min(max(requestedLocation, 0), safeTextLength)
+    return NSRange(location: location, length: 0)
+  }
+
+  static func padded(_ rect: NSRect) -> NSRect {
+    rect.insetBy(dx: 0, dy: -verticalPadding)
   }
 }
 
