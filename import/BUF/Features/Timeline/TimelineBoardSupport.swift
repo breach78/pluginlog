@@ -4,6 +4,7 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 let workspaceMainPaneCoordinateSpaceName = "workspaceMainPane"
+let timelineDetailRowsCoordinateSpaceName = "timelineDetailRows"
 
 struct TimelineProjectTapPassthroughFramePreferenceKey: PreferenceKey {
   static let defaultValue: [CGRect] = []

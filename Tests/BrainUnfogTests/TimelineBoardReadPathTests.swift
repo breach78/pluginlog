@@ -1138,6 +1138,40 @@ final class TimelineBoardReadPathTests: XCTestCase {
     )
   }
 
+  func testDetailTimelineTargetProjectIDIncludesInterRowSpacing() {
+    let firstProjectID = UUID()
+    let secondProjectID = UUID()
+    let metrics = TimelineRowMetrics(height: 40, spacing: 8, contentInsetY: 2)
+    let rowLayouts = [
+      TimelineRowLayout(topY: 0, metrics: metrics),
+      TimelineRowLayout(topY: 48, metrics: metrics),
+    ]
+
+    XCTAssertEqual(
+      TimelineBoardReadPath.detailTimelineTargetProjectID(
+        atY: 42,
+        projectIDs: [firstProjectID, secondProjectID],
+        rowLayouts: rowLayouts
+      ),
+      firstProjectID
+    )
+    XCTAssertEqual(
+      TimelineBoardReadPath.detailTimelineTargetProjectID(
+        atY: 46,
+        projectIDs: [firstProjectID, secondProjectID],
+        rowLayouts: rowLayouts
+      ),
+      secondProjectID
+    )
+    XCTAssertNil(
+      TimelineBoardReadPath.detailTimelineTargetProjectID(
+        atY: 10,
+        projectIDs: [firstProjectID],
+        rowLayouts: rowLayouts
+      )
+    )
+  }
+
   func testDayHeaderSectionsBuildFromCurrentBars() {
     let projectID = UUID()
     let overdueTaskID = UUID()
@@ -1309,6 +1343,58 @@ final class TimelineBoardReadPathTests: XCTestCase {
     )
 
     XCTAssertEqual(ordered.map(\.taskID), [openFirstID, openSecondID])
+  }
+
+  func testUndatedProjectListPopoverEntriesIncludeOnlyOpenUndatedTasks() {
+    let undatedFirstID = UUID()
+    let undatedSecondID = UUID()
+    let dueDateID = UUID()
+    let displayedDateID = UUID()
+    let startDateID = UUID()
+    let completedID = UUID()
+    let archivedID = UUID()
+    let localCompletedOccurrenceID = UUID()
+    let date = makeDate(year: 2026, month: 5, day: 21)
+
+    let ordered = TimelineBoardReadPath.undatedProjectListPopoverEntries(
+      from: [
+        makeScheduleEntry(
+          taskID: completedID,
+          title: "Completed",
+          isCompleted: true,
+          rowOrder: 0
+        ),
+        makeScheduleEntry(taskID: undatedSecondID, title: "Second", rowOrder: 20),
+        makeScheduleEntry(
+          taskID: dueDateID,
+          title: "Due",
+          dueDate: date,
+          rowOrder: 30
+        ),
+        makeScheduleEntry(
+          taskID: displayedDateID,
+          title: "Displayed",
+          displayedDate: date,
+          rowOrder: 40
+        ),
+        makeScheduleEntry(
+          taskID: startDateID,
+          title: "Start",
+          startDate: date,
+          rowOrder: 50
+        ),
+        makeScheduleEntry(taskID: archivedID, title: "Archived", isArchived: true, rowOrder: -1),
+        makeScheduleEntry(
+          taskID: localCompletedOccurrenceID,
+          title: "Local completed occurrence",
+          rowOrder: 5,
+          isLocalCompletedRecurringOccurrence: true
+        ),
+        makeScheduleEntry(taskID: undatedFirstID, title: "First", rowOrder: 10),
+      ]
+    )
+
+    XCTAssertEqual(ordered.map(\.taskID), [undatedFirstID, undatedSecondID])
   }
 
   func testProjectListWindowEntriesIncludeCompletedTasksAfterOpenTasks() {
@@ -1643,27 +1729,30 @@ final class TimelineBoardReadPathTests: XCTestCase {
     title: String,
     isCompleted: Bool = false,
     isArchived: Bool = false,
+    displayedDate: Date? = nil,
+    startDate: Date? = nil,
     dueDate: Date? = nil,
     scheduleHasExplicitTime: Bool = false,
     rowOrder: Int,
     attachmentCount: Int = 0,
     hasReminderNoteContent: Bool = false,
     reminderNoteText: String = "",
-    recurrenceRuleRaw: String? = nil
+    recurrenceRuleRaw: String? = nil,
+    isLocalCompletedRecurringOccurrence: Bool = false
   ) -> ScheduleSliceEntry {
     ScheduleSliceEntry(
       taskID: taskID,
       parentTaskID: nil,
       title: title,
-      displayedDate: nil,
-      startDate: nil,
+      displayedDate: displayedDate,
+      startDate: startDate,
       dueDate: dueDate,
       scheduleHasExplicitTime: scheduleHasExplicitTime,
       scheduledDurationMinutes: nil,
       isCompleted: isCompleted,
       completionDate: isCompleted ? .distantPast : nil,
       recurrenceRuleRaw: recurrenceRuleRaw,
-      isLocalCompletedRecurringOccurrence: false,
+      isLocalCompletedRecurringOccurrence: isLocalCompletedRecurringOccurrence,
       attachmentCount: attachmentCount,
       hasReminderNoteContent: hasReminderNoteContent,
       reminderNoteText: reminderNoteText,

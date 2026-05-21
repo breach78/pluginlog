@@ -1,6 +1,59 @@
 import AppKit
 import SwiftUI
 
+struct TimelineDetailTaskLocalDragModifier: ViewModifier {
+  let isEnabled: Bool
+  let taskID: UUID
+  let projectIDs: [UUID]
+  let rowLayouts: [TimelineRowLayout]
+  let dayRange: ClosedRange<Int>
+  let dayColumnWidth: CGFloat
+  let dateForOffset: (Int) -> Date
+  let onMoveTaskToDate: (UUID, UUID, Date) -> Void
+
+  @State private var isDragging = false
+
+  @ViewBuilder
+  func body(content: Content) -> some View {
+    if isEnabled {
+      content
+        .scaleEffect(isDragging ? 0.98 : 1)
+        .highPriorityGesture(
+          DragGesture(minimumDistance: 6, coordinateSpace: .named(timelineDetailRowsCoordinateSpaceName))
+            .onChanged { _ in
+              if !isDragging {
+                isDragging = true
+              }
+              NSCursor.closedHand.set()
+            }
+            .onEnded { value in
+              defer {
+                isDragging = false
+                NSCursor.arrow.set()
+              }
+              guard
+                let targetOffset = TimelineBoardReadPath.detailTimelineTargetDayOffset(
+                  atX: value.location.x,
+                  dayColumnWidth: dayColumnWidth,
+                  dayRange: dayRange
+                ),
+                let targetProjectID = TimelineBoardReadPath.detailTimelineTargetProjectID(
+                  atY: value.location.y,
+                  projectIDs: projectIDs,
+                  rowLayouts: rowLayouts
+                )
+              else {
+                return
+              }
+              onMoveTaskToDate(taskID, targetProjectID, dateForOffset(targetOffset))
+            }
+        )
+    } else {
+      content
+    }
+  }
+}
+
 struct TimelineDetailTaskRowDropModifier: ViewModifier {
   let isEnabled: Bool
   let targetProjectID: UUID

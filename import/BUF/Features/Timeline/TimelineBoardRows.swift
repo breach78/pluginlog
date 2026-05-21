@@ -221,6 +221,8 @@ extension TimelineBoardView {
           timelineRow(
             for: bar,
             rowLayout: rowLayouts[index],
+            allBars: bars,
+            allRowLayouts: rowLayouts,
             showsPriorityBoundary: showsPriorityBoundary(before: index, in: bars),
             index: index,
             totalCount: bars.count,
@@ -241,11 +243,14 @@ extension TimelineBoardView {
 
     }
     .frame(width: timelineWidth, height: rowsHeight, alignment: .topLeading)
+    .coordinateSpace(name: timelineDetailRowsCoordinateSpaceName)
   }
 
   func timelineRow(
     for bar: TimelineProjectBar,
     rowLayout: TimelineRowLayout,
+    allBars: [TimelineProjectBar],
+    allRowLayouts: [TimelineRowLayout],
     showsPriorityBoundary: Bool,
     index: Int,
     totalCount: Int,
@@ -304,6 +309,8 @@ extension TimelineBoardView {
         detailTaskChips(
           for: bar,
           rowLayout: rowLayout,
+          allBars: allBars,
+          allRowLayouts: allRowLayouts,
           projectColor: projectColor
         )
       } else {
@@ -436,15 +443,23 @@ extension TimelineBoardView {
     .contentShape(Rectangle())
     .modifier(TimelineProjectDragModifier(bar: bar, draggingProjectID: $draggingProjectID))
     .simultaneousGesture(
-      TapGesture()
-        .onEnded {}
-    )
-    .simultaneousGesture(
       TapGesture(count: 2)
         .onEnded {
           openTimelineProjectListPanel(for: bar)
         }
+        .exclusively(
+          before: TapGesture()
+            .onEnded {
+              showTimelineProjectListPopover(bar.projectID)
+            }
+        )
     )
+    .popover(
+      isPresented: timelineProjectListPopoverBinding(for: bar.projectID),
+      arrowEdge: .trailing
+    ) {
+      timelineProjectListPopover(for: bar)
+    }
     .overlay(alignment: .top) {
       if showsPriorityBoundary {
         priorityBoundaryLine(for: priorityStage(for: bar))
@@ -483,7 +498,7 @@ extension TimelineBoardView {
       }
 
       if entries.isEmpty {
-        Text("할일 없음")
+        Text("날짜 없는 할일 없음")
           .font(.system(size: 12))
           .foregroundStyle(.secondary)
           .frame(maxWidth: .infinity, minHeight: 42, alignment: .center)
@@ -578,10 +593,13 @@ extension TimelineBoardView {
       }
       .buttonStyle(.plain)
     }
+    .onDrag {
+      TaskDragPayload.itemProvider(for: entry.taskID)
+    }
   }
 
   func timelineProjectListPopoverEntries(for projectID: UUID) -> [ScheduleSliceEntry] {
-    TimelineBoardReadPath.projectListPopoverEntries(
+    TimelineBoardReadPath.undatedProjectListPopoverEntries(
       from: workspaceTimelineScheduleEntriesByProjectID[projectID] ?? []
     )
   }
@@ -769,6 +787,8 @@ extension TimelineBoardView {
   func detailTaskChips(
     for bar: TimelineProjectBar,
     rowLayout: TimelineRowLayout,
+    allBars: [TimelineProjectBar],
+    allRowLayouts: [TimelineRowLayout],
     projectColor: Color
   ) -> some View {
     let groups = detailTaskChipGroups(for: bar)
@@ -779,6 +799,8 @@ extension TimelineBoardView {
             detailTaskChip(
               chip,
               projectID: bar.projectID,
+              targetProjectIDs: allBars.map(\.projectID),
+              targetRowLayouts: allRowLayouts,
               projectColor: projectColor
             )
           }
@@ -803,26 +825,27 @@ extension TimelineBoardView {
     for bar: TimelineProjectBar,
     rowLayout: TimelineRowLayout
   ) -> some View {
-    if displayMode == .detail {
-      ZStack(alignment: .topLeading) {
-        Rectangle()
-          .fill(Color.clear)
-          .contentShape(Rectangle())
-          .modifier(
-            TimelineDetailTaskRowDropModifier(
-              isEnabled: true,
-              targetProjectID: bar.projectID,
-              dayRange: dayRange,
-              dayColumnWidth: dayColumnWidth,
-              dateForOffset: { offset in
-                date(for: offset)
-              },
-              onMoveTaskToDate: { taskID, targetProjectID, targetDate in
-                moveTimelineDetailTask(taskID, to: targetProjectID, targetDate: targetDate)
-              }
-            )
+    ZStack(alignment: .topLeading) {
+      Rectangle()
+        .fill(Color.clear)
+        .contentShape(Rectangle())
+        .modifier(
+          TimelineDetailTaskRowDropModifier(
+            isEnabled: true,
+            targetProjectID: bar.projectID,
+            dayRange: dayRange,
+            dayColumnWidth: dayColumnWidth,
+            dateForOffset: { offset in
+              date(for: offset)
+            },
+            onMoveTaskToDate: { taskID, targetProjectID, targetDate in
+              activeTimelineProjectListPopoverProjectID = nil
+              moveTimelineDetailTask(taskID, to: targetProjectID, targetDate: targetDate)
+            }
           )
+        )
 
+      if displayMode == .detail {
         TimelineDetailDateContextRowRegion(
           projectID: bar.projectID,
           projectTitle: bar.title,
@@ -837,13 +860,15 @@ extension TimelineBoardView {
         )
         .frame(width: timelineWidth, height: rowLayout.metrics.height)
       }
-      .frame(width: timelineWidth, height: rowLayout.metrics.height, alignment: .topLeading)
     }
+    .frame(width: timelineWidth, height: rowLayout.metrics.height, alignment: .topLeading)
   }
 
   func detailTaskChip(
     _ chip: TimelineDetailTaskChip,
     projectID: UUID,
+    targetProjectIDs: [UUID],
+    targetRowLayouts: [TimelineRowLayout],
     projectColor: Color
   ) -> some View {
     let isCompleted = chip.style == .completed
@@ -900,9 +925,22 @@ extension TimelineBoardView {
         projectID: projectID
       )
     }
-    .onDrag {
-      TaskDragPayload.itemProvider(for: chip.taskID)
-    }
+    .modifier(
+      TimelineDetailTaskLocalDragModifier(
+        isEnabled: displayMode == .detail,
+        taskID: chip.taskID,
+        projectIDs: targetProjectIDs,
+        rowLayouts: targetRowLayouts,
+        dayRange: dayRange,
+        dayColumnWidth: dayColumnWidth,
+        dateForOffset: { offset in
+          date(for: offset)
+        },
+        onMoveTaskToDate: { taskID, targetProjectID, targetDate in
+          moveTimelineDetailTask(taskID, to: targetProjectID, targetDate: targetDate)
+        }
+      )
+    )
   }
 
   func detailTaskChipMarker(

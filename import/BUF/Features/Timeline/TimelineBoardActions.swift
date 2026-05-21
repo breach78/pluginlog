@@ -587,7 +587,6 @@ extension TimelineBoardView {
   }
 
   func showTimelineProjectListPopover(_ projectID: UUID) {
-    selectTimelineProject(projectID, commitDelay: .zero)
     activeTimelineProjectListPopoverProjectID = nil
     DispatchQueue.main.async {
       activeTimelineProjectListPopoverProjectID = projectID

@@ -285,6 +285,26 @@ enum TimelineBoardReadPath {
     return dayRange.lowerBound + clampedIndex
   }
 
+  static func detailTimelineTargetProjectID(
+    atY y: CGFloat,
+    projectIDs: [UUID],
+    rowLayouts: [TimelineRowLayout]
+  ) -> UUID? {
+    guard projectIDs.count == rowLayouts.count else { return nil }
+    for index in rowLayouts.indices {
+      let rowLayout = rowLayouts[index]
+      let minY = rowLayout.topY - rowLayout.metrics.topPadding(for: index)
+      let maxY = minY
+        + rowLayout.metrics.topPadding(for: index)
+        + rowLayout.metrics.height
+        + rowLayout.metrics.bottomPadding(for: index, totalCount: rowLayouts.count)
+      if y >= minY && y <= maxY {
+        return projectIDs[index]
+      }
+    }
+    return nil
+  }
+
   private static func detailTimelineTaskChips(
     from tasks: [TimelineProjectTaskPreview],
     style: TimelineDetailTaskChipStyle
@@ -305,6 +325,21 @@ enum TimelineBoardReadPath {
   {
     entries
       .filter { !$0.isArchived && !$0.isCompleted }
+      .sorted(by: projectListEntrySort)
+  }
+
+  static func undatedProjectListPopoverEntries(from entries: [ScheduleSliceEntry])
+    -> [ScheduleSliceEntry]
+  {
+    entries
+      .filter {
+        !$0.isArchived
+          && !$0.isCompleted
+          && !$0.isLocalCompletedRecurringOccurrence
+          && $0.displayedDate == nil
+          && $0.dueDate == nil
+          && $0.startDate == nil
+      }
       .sorted(by: projectListEntrySort)
   }
 
