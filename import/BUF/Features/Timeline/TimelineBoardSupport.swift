@@ -932,6 +932,76 @@ struct TimelineProjectRowDropModifier: ViewModifier {
   }
 }
 
+struct TimelineDetailTaskDateDropModifier: ViewModifier {
+  let isEnabled: Bool
+  let dayRange: ClosedRange<Int>
+  let dayColumnWidth: CGFloat
+  let dateForOffset: (Int) -> Date
+  let onMoveTaskToDate: (UUID, Date) -> Void
+
+  @ViewBuilder
+  func body(content: Content) -> some View {
+    if isEnabled {
+      content.onDrop(
+        of: [TaskDragPayload.textTypeIdentifier],
+        delegate: TimelineDetailTaskDateDropDelegate(
+          dayRange: dayRange,
+          dayColumnWidth: dayColumnWidth,
+          dateForOffset: dateForOffset,
+          onMoveTaskToDate: onMoveTaskToDate
+        )
+      )
+    } else {
+      content
+    }
+  }
+}
+
+struct TimelineDetailTaskDateDropDelegate: DropDelegate {
+  let dayRange: ClosedRange<Int>
+  let dayColumnWidth: CGFloat
+  let dateForOffset: (Int) -> Date
+  let onMoveTaskToDate: (UUID, Date) -> Void
+
+  func validateDrop(info: DropInfo) -> Bool {
+    !info.itemProviders(for: [TaskDragPayload.textTypeIdentifier]).isEmpty
+      && info.itemProviders(for: [ProjectDragPayload.projectType.identifier]).isEmpty
+  }
+
+  func dropUpdated(info: DropInfo) -> DropProposal? {
+    guard validateDrop(info: info), targetDate(at: info.location) != nil else {
+      return DropProposal(operation: .cancel)
+    }
+    return DropProposal(operation: .move)
+  }
+
+  func performDrop(info: DropInfo) -> Bool {
+    guard let targetDate = targetDate(at: info.location) else { return false }
+    guard let provider = info.itemProviders(for: [TaskDragPayload.textTypeIdentifier]).first else {
+      return false
+    }
+
+    provider.loadItem(forTypeIdentifier: TaskDragPayload.textTypeIdentifier, options: nil) {
+      item,
+      _ in
+      guard let taskID = TaskDragPayload.parseTaskID(from: item) else { return }
+      Task { @MainActor in
+        onMoveTaskToDate(taskID, targetDate)
+      }
+    }
+    return true
+  }
+
+  private func targetDate(at location: CGPoint) -> Date? {
+    guard dayColumnWidth > 0 else { return nil }
+    let relativeIndex = Int(floor(max(0, location.x) / dayColumnWidth))
+    let maxIndex = dayRange.upperBound - dayRange.lowerBound
+    guard maxIndex >= 0 else { return nil }
+    let clampedIndex = min(max(relativeIndex, 0), maxIndex)
+    return dateForOffset(dayRange.lowerBound + clampedIndex)
+  }
+}
+
 struct TimelineProjectDragModifier: ViewModifier {
   let bar: TimelineProjectBar
   @Binding var draggingProjectID: UUID?

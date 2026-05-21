@@ -262,6 +262,16 @@ enum TimelineBoardReadPath {
     return max(minHeight, contentHeight)
   }
 
+  static func taskEditFieldsByMovingDay(
+    _ fields: RetainedTaskEditFields,
+    to targetDate: Date,
+    calendar: Calendar
+  ) -> RetainedTaskEditFields {
+    var nextFields = fields
+    nextFields.day = calendar.startOfDay(for: targetDate)
+    return nextFields
+  }
+
   private static func detailTimelineTaskChips(
     from tasks: [TimelineProjectTaskPreview],
     style: TimelineDetailTaskChipStyle

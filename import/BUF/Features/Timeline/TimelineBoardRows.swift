@@ -276,14 +276,14 @@ extension TimelineBoardView {
 
       if let segment = segmentFrame(for: bar) {
         RoundedRectangle(cornerRadius: 6)
-          .fill(mutedProjectColor.opacity(isSelected ? 0.74 : 0.52))
+          .fill(mutedProjectColor.opacity(timelineRangeOpacity(isSelected ? 0.74 : 0.52)))
           .frame(width: segment.width, height: rowLayout.metrics.contentHeight)
           .offset(x: segment.x)
       }
 
       if let activeSegment = activeSegmentFrame(for: bar) {
         RoundedRectangle(cornerRadius: 6)
-          .fill(projectColor.opacity(isSelected ? 0.62 : 0.38))
+          .fill(projectColor.opacity(timelineRangeOpacity(isSelected ? 0.62 : 0.38)))
           .frame(width: activeSegment.width, height: rowLayout.metrics.contentHeight)
           .offset(x: activeSegment.x)
       }
@@ -337,6 +337,15 @@ extension TimelineBoardView {
       }
     }
     .contextMenu { projectContextMenu(for: bar) }
+    .modifier(
+      TimelineDetailTaskDateDropModifier(
+        isEnabled: displayMode == .detail,
+        dayRange: dayRange,
+        dayColumnWidth: dayColumnWidth,
+        dateForOffset: date(for:),
+        onMoveTaskToDate: moveTimelineDetailTask(_:to:)
+      )
+    )
   }
 
   func leftProjectRow(
@@ -773,7 +782,11 @@ extension TimelineBoardView {
       ForEach(groups) { group in
         VStack(alignment: .leading, spacing: detailTaskChipSpacing) {
           ForEach(group.visibleChips) { chip in
-            detailTaskChip(chip, projectColor: projectColor)
+            detailTaskChip(
+              chip,
+              projectID: bar.projectID,
+              projectColor: projectColor
+            )
           }
 
           if group.hiddenCount > 0 {
@@ -789,19 +802,45 @@ extension TimelineBoardView {
     }
     .frame(width: timelineWidth, height: rowLayout.metrics.height, alignment: .topLeading)
     .clipped()
-    .allowsHitTesting(false)
   }
 
-  func detailTaskChip(_ chip: TimelineDetailTaskChip, projectColor: Color) -> some View {
+  func detailTaskChip(
+    _ chip: TimelineDetailTaskChip,
+    projectID: UUID,
+    projectColor: Color
+  ) -> some View {
     let isCompleted = chip.style == .completed
     let isPlanned = chip.style == .planned
     return HStack(spacing: 2) {
-      detailTaskChipMarker(chip, projectColor: projectColor)
+      Button {
+        suppressTimelineTaskTap()
+        toggleTimelineTaskCompletion(
+          chip.taskID,
+          projectID: projectID,
+          isCompleted: isCompleted
+        )
+      } label: {
+        detailTaskChipMarker(chip, projectColor: projectColor)
+          .frame(width: 10, height: detailTaskChipHeight)
+      }
+      .buttonStyle(.plain)
+      .simultaneousGesture(
+        taskCompletionPressGesture {
+          suppressTimelineTaskTap()
+        }
+      )
 
-      Text(chip.title)
-        .font(.system(size: 10.5, weight: isCompleted ? .regular : .semibold))
-        .lineLimit(1)
-        .truncationMode(.tail)
+      Button {
+        editTimelineTaskFromProjectListWindow(taskID: chip.taskID, projectID: projectID)
+      } label: {
+        Text(chip.title)
+          .font(.system(size: 10.5, weight: isCompleted ? .regular : .semibold))
+          .lineLimit(1)
+          .truncationMode(.tail)
+          .frame(maxWidth: .infinity, alignment: .leading)
+          .contentShape(Rectangle())
+      }
+      .buttonStyle(.plain)
     }
     .foregroundStyle(isCompleted ? Color.secondary : Color.primary)
     .opacity(isCompleted ? 0.45 : (isPlanned ? 0.72 : 1))
@@ -813,6 +852,10 @@ extension TimelineBoardView {
       Rectangle()
         .fill(detailTaskChipFill(chip, projectColor: projectColor))
     )
+    .contentShape(Rectangle())
+    .onDrag {
+      TaskDragPayload.itemProvider(for: chip.taskID)
+    }
   }
 
   func detailTaskChipMarker(
@@ -832,12 +875,16 @@ extension TimelineBoardView {
   ) -> Color {
     switch chip.style {
     case .active:
-      return (chip.isOverdue ? Color.red : projectColor).opacity(0.15)
+      return Color.white.opacity(0.78)
     case .planned:
-      return projectColor.opacity(0.08)
+      return Color.white.opacity(0.62)
     case .completed:
-      return projectColor.opacity(0.06)
+      return Color.white.opacity(0.46)
     }
+  }
+
+  func timelineRangeOpacity(_ baseOpacity: Double) -> Double {
+    displayMode == .detail ? baseOpacity * 0.72 : baseOpacity
   }
 
   func detailTaskOverflowChip(hiddenCount: Int) -> some View {

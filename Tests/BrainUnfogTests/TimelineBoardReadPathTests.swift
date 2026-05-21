@@ -1070,6 +1070,38 @@ final class TimelineBoardReadPathTests: XCTestCase {
     )
   }
 
+  func testMovingTimelineTaskDayPreservesEditableTaskFields() {
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+    let originalDay = calendar.date(from: DateComponents(year: 2026, month: 5, day: 20))!
+    let targetDate = calendar.date(
+      from: DateComponents(year: 2026, month: 5, day: 22, hour: 17, minute: 45)
+    )!
+    let fields = RetainedTaskEditFields(
+      title: "Task",
+      noteText: "Note",
+      day: originalDay,
+      timeMinutes: 18 * 60 + 30,
+      durationMinutes: 75,
+      recurrenceRuleRaw: "FREQ=WEEKLY",
+      updatesRecurrence: true
+    )
+
+    let moved = TimelineBoardReadPath.taskEditFieldsByMovingDay(
+      fields,
+      to: targetDate,
+      calendar: calendar
+    )
+
+    XCTAssertEqual(moved.day, calendar.startOfDay(for: targetDate))
+    XCTAssertEqual(moved.title, fields.title)
+    XCTAssertEqual(moved.noteText, fields.noteText)
+    XCTAssertEqual(moved.timeMinutes, fields.timeMinutes)
+    XCTAssertEqual(moved.durationMinutes, fields.durationMinutes)
+    XCTAssertEqual(moved.recurrenceRuleRaw, fields.recurrenceRuleRaw)
+    XCTAssertEqual(moved.updatesRecurrence, fields.updatesRecurrence)
+  }
+
   func testDayHeaderSectionsBuildFromCurrentBars() {
     let projectID = UUID()
     let overdueTaskID = UUID()

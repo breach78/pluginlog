@@ -730,6 +730,27 @@ extension TimelineBoardView {
     }
   }
 
+  func moveTimelineDetailTask(_ taskID: UUID, to targetDate: Date) {
+    guard let projectID = timelineProjectID(containing: taskID) else { return }
+    guard let entry = scheduleEntry(taskID: taskID, projectID: projectID) else { return }
+    let previousFields = timelineTaskEditFields(for: entry)
+    let nextFields = TimelineBoardReadPath.taskEditFieldsByMovingDay(
+      previousFields,
+      to: targetDate,
+      calendar: calendar
+    )
+    guard nextFields != previousFields else { return }
+
+    Task { @MainActor in
+      try? await saveTimelineTaskEditFields(
+        nextFields,
+        projectID: projectID,
+        taskID: taskID,
+        undoFields: previousFields
+      )
+    }
+  }
+
   private func timelineTaskEditTimeMinutes(for date: Date) -> Int {
     let components = calendar.dateComponents([.hour, .minute], from: date)
     return (components.hour ?? 0) * 60 + (components.minute ?? 0)
@@ -1227,6 +1248,12 @@ extension TimelineBoardView {
 
   private func scheduleEntry(taskID: UUID, projectID: UUID) -> ScheduleSliceEntry? {
     workspaceTimelineScheduleEntriesByProjectID[projectID]?.first(where: { $0.taskID == taskID })
+  }
+
+  private func timelineProjectID(containing taskID: UUID) -> UUID? {
+    workspaceTimelineScheduleEntriesByProjectID.first { _, entries in
+      entries.contains { $0.taskID == taskID }
+    }?.key
   }
 
   private func timelineProjectStage(for projectID: UUID) -> ProjectProgressStage {
