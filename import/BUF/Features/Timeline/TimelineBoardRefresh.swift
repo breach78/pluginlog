@@ -272,6 +272,19 @@ enum TimelineBoardReadPath {
     return nextFields
   }
 
+  static func detailTimelineTargetDayOffset(
+    atX x: CGFloat,
+    dayColumnWidth: CGFloat,
+    dayRange: ClosedRange<Int>
+  ) -> Int? {
+    guard dayColumnWidth > 0 else { return nil }
+    let maxIndex = dayRange.upperBound - dayRange.lowerBound
+    guard maxIndex >= 0 else { return nil }
+    let relativeIndex = Int(floor(max(0, x) / dayColumnWidth))
+    let clampedIndex = min(max(relativeIndex, 0), maxIndex)
+    return dayRange.lowerBound + clampedIndex
+  }
+
   private static func detailTimelineTaskChips(
     from tasks: [TimelineProjectTaskPreview],
     style: TimelineDetailTaskChipStyle
@@ -559,7 +572,7 @@ enum TimelineBoardReadPath {
       }
       for entry in scheduleEntriesByProjectID[projectID] ?? [] {
         hasher.combine(entry.taskID)
-        hasher.combine(entry.renderFingerprint)
+        hasher.combine(entry.scheduleRenderFingerprint)
       }
     }
     return hasher.finalize()

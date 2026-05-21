@@ -1102,6 +1102,42 @@ final class TimelineBoardReadPathTests: XCTestCase {
     XCTAssertEqual(moved.updatesRecurrence, fields.updatesRecurrence)
   }
 
+  func testDetailTimelineTargetDayOffsetClampsIntoVisibleRange() {
+    let dayRange = -2...4
+
+    XCTAssertEqual(
+      TimelineBoardReadPath.detailTimelineTargetDayOffset(
+        atX: -40,
+        dayColumnWidth: 120,
+        dayRange: dayRange
+      ),
+      -2
+    )
+    XCTAssertEqual(
+      TimelineBoardReadPath.detailTimelineTargetDayOffset(
+        atX: 121,
+        dayColumnWidth: 120,
+        dayRange: dayRange
+      ),
+      -1
+    )
+    XCTAssertEqual(
+      TimelineBoardReadPath.detailTimelineTargetDayOffset(
+        atX: 1_200,
+        dayColumnWidth: 120,
+        dayRange: dayRange
+      ),
+      4
+    )
+    XCTAssertNil(
+      TimelineBoardReadPath.detailTimelineTargetDayOffset(
+        atX: 10,
+        dayColumnWidth: 0,
+        dayRange: dayRange
+      )
+    )
+  }
+
   func testDayHeaderSectionsBuildFromCurrentBars() {
     let projectID = UUID()
     let overdueTaskID = UUID()
@@ -1443,6 +1479,41 @@ final class TimelineBoardReadPathTests: XCTestCase {
     XCTAssertEqual(firstSignature, secondSignature)
   }
 
+  func testTimelineWorkspaceDetailSignatureIgnoresNoteBodyWhenVisibleMetadataIsUnchanged() {
+    let projectID = UUID()
+    let taskID = UUID()
+    let project = makeProject(projectID: projectID)
+    let firstEntry = makeScheduleEntry(
+      taskID: taskID,
+      title: "Task",
+      rowOrder: 0,
+      hasReminderNoteContent: true,
+      reminderNoteText: String(repeating: "첫 번째 긴 노트 ", count: 200)
+    )
+    let secondEntry = makeScheduleEntry(
+      taskID: taskID,
+      title: "Task",
+      rowOrder: 0,
+      hasReminderNoteContent: true,
+      reminderNoteText: String(repeating: "두 번째 긴 노트 ", count: 200)
+    )
+
+    let firstSignature = TimelineBoardReadPath.workspaceDetailSignature(
+      projectIDs: [projectID],
+      workspaceProjectSnapshots: [projectID: project],
+      workspaceProjectSummaries: [:],
+      scheduleEntriesByProjectID: [projectID: [firstEntry]]
+    )
+    let secondSignature = TimelineBoardReadPath.workspaceDetailSignature(
+      projectIDs: [projectID],
+      workspaceProjectSnapshots: [projectID: project],
+      workspaceProjectSummaries: [:],
+      scheduleEntriesByProjectID: [projectID: [secondEntry]]
+    )
+
+    XCTAssertEqual(firstSignature, secondSignature)
+  }
+
   func testScheduleSourceSignatureTracksNoteIconVisibility() {
     let projectID = UUID()
     let taskID = UUID()
@@ -1473,6 +1544,41 @@ final class TimelineBoardReadPathTests: XCTestCase {
       today: today,
       projectIDs: [projectID],
       projectSnapshots: [projectID: project],
+      scheduleEntriesByProjectID: [projectID: [visibleNoteEntry]]
+    )
+
+    XCTAssertNotEqual(emptySignature, visibleSignature)
+  }
+
+  func testTimelineWorkspaceDetailSignatureTracksNoteIconVisibility() {
+    let projectID = UUID()
+    let taskID = UUID()
+    let project = makeProject(projectID: projectID)
+    let emptyNoteEntry = makeScheduleEntry(
+      taskID: taskID,
+      title: "Task",
+      rowOrder: 0,
+      hasReminderNoteContent: false,
+      reminderNoteText: ""
+    )
+    let visibleNoteEntry = makeScheduleEntry(
+      taskID: taskID,
+      title: "Task",
+      rowOrder: 0,
+      hasReminderNoteContent: true,
+      reminderNoteText: "visible note"
+    )
+
+    let emptySignature = TimelineBoardReadPath.workspaceDetailSignature(
+      projectIDs: [projectID],
+      workspaceProjectSnapshots: [projectID: project],
+      workspaceProjectSummaries: [:],
+      scheduleEntriesByProjectID: [projectID: [emptyNoteEntry]]
+    )
+    let visibleSignature = TimelineBoardReadPath.workspaceDetailSignature(
+      projectIDs: [projectID],
+      workspaceProjectSnapshots: [projectID: project],
+      workspaceProjectSummaries: [:],
       scheduleEntriesByProjectID: [projectID: [visibleNoteEntry]]
     )
 

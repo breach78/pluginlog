@@ -231,6 +231,41 @@ extension TimelineBoardView {
     }
   }
 
+  func createTimelineDetailTask(_ rawTitle: String, projectID: UUID, date: Date) {
+    guard allowTimelineRetainedWrite("create-task") else { return }
+    let title = rawTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !title.isEmpty else { return }
+    Task { @MainActor in
+      do {
+        let result = try await RetainedTaskCommandFacade.createTask(
+          vaultRootURL: appState.obsidianVaultRootURL,
+          projectID: projectID,
+          title: title,
+          day: calendar.startOfDay(for: date),
+          timeMinutes: nil,
+          durationMinutes: nil,
+          calendar: calendar,
+          reminderProjectProvider: appState.reminderProjectProvider
+        )
+        appState.bumpWorkspaceTreeRevision()
+        await refreshTimelineProjectState(including: [projectID])
+        retainedTimelineCalendarBridgeDecisionsByTaskID[result.taskID] = result.calendarBridgeDecision
+        retainedTimelineCalendarBridgeWriteMarkersByTaskID[result.taskID] = result.calendarWriteMarker
+        appState.registerUndo(with: undoManager, actionName: "할일 추가") {
+          Task { @MainActor in
+            _ = await self.deleteTimelineProjectListWindowTask(
+              result.taskID,
+              projectID: projectID,
+              registerUndo: false
+            )
+          }
+        }
+      } catch {
+        appState.reportError(error, logMessage: "timeline detail quick add failed")
+      }
+    }
+  }
+
   func renameTimelineProjectListWindowTask(
     _ rawTitle: String,
     taskID: UUID,
@@ -730,24 +765,60 @@ extension TimelineBoardView {
     }
   }
 
-  func moveTimelineDetailTask(_ taskID: UUID, to targetDate: Date) {
-    guard let projectID = timelineProjectID(containing: taskID) else { return }
-    guard let entry = scheduleEntry(taskID: taskID, projectID: projectID) else { return }
+  func moveTimelineDetailTask(_ taskID: UUID, to targetProjectID: UUID, targetDate: Date) {
+    guard allowTimelineRetainedWrite("move-task") else { return }
+    guard let sourceProjectID = timelineProjectID(containing: taskID) else { return }
+    guard let entry = scheduleEntry(taskID: taskID, projectID: sourceProjectID) else { return }
     let previousFields = timelineTaskEditFields(for: entry)
     let nextFields = TimelineBoardReadPath.taskEditFieldsByMovingDay(
       previousFields,
       to: targetDate,
       calendar: calendar
     )
-    guard nextFields != previousFields else { return }
+    guard sourceProjectID != targetProjectID || nextFields != previousFields else { return }
 
     Task { @MainActor in
-      try? await saveTimelineTaskEditFields(
-        nextFields,
-        projectID: projectID,
-        taskID: taskID,
-        undoFields: previousFields
-      )
+      do {
+        if sourceProjectID == targetProjectID {
+          try await saveTimelineTaskEditFields(
+            nextFields,
+            projectID: sourceProjectID,
+            taskID: taskID,
+            undoFields: previousFields
+          )
+        } else {
+          _ = try await RetainedTaskCommandFacade.moveTask(
+            vaultRootURL: appState.obsidianVaultRootURL,
+            taskID: taskID,
+            sourceProjectID: sourceProjectID,
+            targetProjectID: targetProjectID,
+            reminderProjectProvider: appState.reminderProjectProvider
+          )
+          let result = try await RetainedTaskCommandFacade.updateTaskEditFields(
+            vaultRootURL: appState.obsidianVaultRootURL,
+            projectID: targetProjectID,
+            taskID: taskID,
+            fields: nextFields,
+            calendar: calendar,
+            reminderProjectProvider: appState.reminderProjectProvider
+          )
+          appState.bumpWorkspaceTreeRevision()
+          await refreshTimelineProjectState(including: [sourceProjectID, targetProjectID])
+          retainedTimelineCalendarBridgeDecisionsByTaskID[taskID] = result.calendarBridgeDecision
+          retainedTimelineCalendarBridgeWriteMarkersByTaskID[taskID] = result.calendarWriteMarker
+          if activeTimelineTaskEditTarget == TimelineTaskEditTarget(
+            projectID: sourceProjectID,
+            taskID: taskID
+          ) {
+            activeTimelineTaskEditTarget = TimelineTaskEditTarget(
+              projectID: targetProjectID,
+              taskID: taskID
+            )
+          }
+        }
+      } catch {
+        appState.reportError(error, logMessage: "timeline detail moveTask failed")
+      }
     }
   }
 
@@ -1150,8 +1221,40 @@ extension TimelineBoardView {
   }
 
   func moveTaskToProjectTop(taskID: UUID, targetProjectID: UUID) {
-    guard taskProjectID(for: taskID) != nil else { return }
-    guard allowTimelineMutation("move-task") else { return }
+    moveTimelineTaskToProject(taskID: taskID, targetProjectID: targetProjectID)
+  }
+
+  func moveTimelineTaskToProject(taskID: UUID, targetProjectID: UUID) {
+    guard allowTimelineRetainedWrite("move-task") else { return }
+    guard let sourceProjectID = taskProjectID(for: taskID) else { return }
+    guard sourceProjectID != targetProjectID else { return }
+
+    Task { @MainActor in
+      do {
+        let result = try await RetainedTaskCommandFacade.moveTask(
+          vaultRootURL: appState.obsidianVaultRootURL,
+          taskID: taskID,
+          sourceProjectID: sourceProjectID,
+          targetProjectID: targetProjectID,
+          reminderProjectProvider: appState.reminderProjectProvider
+        )
+        appState.bumpWorkspaceTreeRevision()
+        await refreshTimelineProjectState(including: [sourceProjectID, targetProjectID])
+        retainedTimelineCalendarBridgeDecisionsByTaskID[taskID] = result.calendarBridgeDecision
+        retainedTimelineCalendarBridgeWriteMarkersByTaskID[taskID] = result.calendarWriteMarker
+        if activeTimelineTaskEditTarget == TimelineTaskEditTarget(
+          projectID: sourceProjectID,
+          taskID: taskID
+        ) {
+          activeTimelineTaskEditTarget = TimelineTaskEditTarget(
+            projectID: targetProjectID,
+            taskID: taskID
+          )
+        }
+      } catch {
+        appState.reportError(error, logMessage: "timeline moveTaskToProject failed")
+      }
+    }
   }
 
   var pendingTimelineDeleteDialogBinding: Binding<Bool> {
@@ -1285,6 +1388,12 @@ extension TimelineBoardView {
       }
     }
     return nil
+  }
+
+  func timelineTaskMoveOptions(excluding sourceProjectID: UUID) -> [TimelineProjectMoveOption] {
+    cachedTimelineBars
+      .filter { $0.projectID != sourceProjectID }
+      .map { TimelineProjectMoveOption(id: $0.projectID, title: $0.title) }
   }
 
 }

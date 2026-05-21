@@ -295,6 +295,11 @@ extension TimelineBoardView {
           .offset(x: deadlineMarker.x)
       }
 
+      timelineDetailDateContextCells(
+        for: bar,
+        rowLayout: rowLayout
+      )
+
       if displayMode == .detail {
         detailTaskChips(
           for: bar,
@@ -313,7 +318,6 @@ extension TimelineBoardView {
     .padding(.top, interRowTopPadding(for: index, rowLayout: rowLayout))
     .padding(.bottom, interRowBottomPadding(for: index, totalCount: totalCount, rowLayout: rowLayout))
     .contentShape(Rectangle())
-    .modifier(TimelineProjectDragModifier(bar: bar, draggingProjectID: $draggingProjectID))
     .simultaneousGesture(
       TapGesture()
         .onEnded {}
@@ -336,16 +340,6 @@ extension TimelineBoardView {
           .frame(height: 2)
       }
     }
-    .contextMenu { projectContextMenu(for: bar) }
-    .modifier(
-      TimelineDetailTaskDateDropModifier(
-        isEnabled: displayMode == .detail,
-        dayRange: dayRange,
-        dayColumnWidth: dayColumnWidth,
-        dateForOffset: date(for:),
-        onMoveTaskToDate: moveTimelineDetailTask(_:to:)
-      )
-    )
   }
 
   func leftProjectRow(
@@ -804,6 +798,49 @@ extension TimelineBoardView {
     .clipped()
   }
 
+  @ViewBuilder
+  func timelineDetailDateContextCells(
+    for bar: TimelineProjectBar,
+    rowLayout: TimelineRowLayout
+  ) -> some View {
+    if displayMode == .detail {
+      ZStack(alignment: .topLeading) {
+        Rectangle()
+          .fill(Color.clear)
+          .contentShape(Rectangle())
+          .modifier(
+            TimelineDetailTaskRowDropModifier(
+              isEnabled: true,
+              targetProjectID: bar.projectID,
+              dayRange: dayRange,
+              dayColumnWidth: dayColumnWidth,
+              dateForOffset: { offset in
+                date(for: offset)
+              },
+              onMoveTaskToDate: { taskID, targetProjectID, targetDate in
+                moveTimelineDetailTask(taskID, to: targetProjectID, targetDate: targetDate)
+              }
+            )
+          )
+
+        TimelineDetailDateContextRowRegion(
+          projectID: bar.projectID,
+          projectTitle: bar.title,
+          dayRange: dayRange,
+          dayColumnWidth: dayColumnWidth,
+          dateForOffset: { offset in
+            date(for: offset)
+          },
+          onCreateTask: { title, projectID, targetDate in
+            createTimelineDetailTask(title, projectID: projectID, date: targetDate)
+          }
+        )
+        .frame(width: timelineWidth, height: rowLayout.metrics.height)
+      }
+      .frame(width: timelineWidth, height: rowLayout.metrics.height, alignment: .topLeading)
+    }
+  }
+
   func detailTaskChip(
     _ chip: TimelineDetailTaskChip,
     projectID: UUID,
@@ -849,10 +886,20 @@ extension TimelineBoardView {
     .frame(height: detailTaskChipHeight)
     .frame(maxWidth: .infinity, alignment: .leading)
     .background(
-      Rectangle()
+      RoundedRectangle(cornerRadius: 5, style: .continuous)
         .fill(detailTaskChipFill(chip, projectColor: projectColor))
     )
-    .contentShape(Rectangle())
+    .overlay {
+      RoundedRectangle(cornerRadius: 5, style: .continuous)
+        .stroke(detailTaskChipStroke(chip, projectColor: projectColor), lineWidth: 0.7)
+    }
+    .contentShape(RoundedRectangle(cornerRadius: 5, style: .continuous))
+    .contextMenu {
+      detailTaskContextMenu(
+        for: chip,
+        projectID: projectID
+      )
+    }
     .onDrag {
       TaskDragPayload.itemProvider(for: chip.taskID)
     }
@@ -880,6 +927,41 @@ extension TimelineBoardView {
       return Color.white.opacity(0.62)
     case .completed:
       return Color.white.opacity(0.46)
+    }
+  }
+
+  func detailTaskChipStroke(
+    _ chip: TimelineDetailTaskChip,
+    projectColor: Color
+  ) -> Color {
+    if chip.style == .completed {
+      return Color.secondary.opacity(0.14)
+    }
+    return (chip.isOverdue ? Color.red : projectColor).opacity(0.28)
+  }
+
+  @ViewBuilder
+  func detailTaskContextMenu(
+    for chip: TimelineDetailTaskChip,
+    projectID: UUID
+  ) -> some View {
+    Menu("이동") {
+      ForEach(timelineTaskMoveOptions(excluding: projectID)) { target in
+        Button(target.title) {
+          moveTimelineTaskToProject(taskID: chip.taskID, targetProjectID: target.id)
+        }
+      }
+    }
+    .disabled(timelineTaskMoveOptions(excluding: projectID).isEmpty)
+
+    Divider()
+
+    Button(role: .destructive) {
+      Task { @MainActor in
+        _ = await deleteTimelineProjectListWindowTask(chip.taskID, projectID: projectID)
+      }
+    } label: {
+      Label("삭제", systemImage: "trash")
     }
   }
 
