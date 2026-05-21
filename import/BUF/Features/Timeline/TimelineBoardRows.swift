@@ -780,9 +780,9 @@ extension TimelineBoardView {
             detailTaskOverflowChip(hiddenCount: group.hiddenCount)
           }
         }
-        .frame(width: max(0, dayColumnWidth - 8), alignment: .topLeading)
+        .frame(width: max(0, dayColumnWidth - 4), alignment: .topLeading)
         .offset(
-          x: CGFloat(dayOffset(for: group.date) - dayRange.lowerBound) * dayColumnWidth + 4,
+          x: CGFloat(dayOffset(for: group.date) - dayRange.lowerBound) * dayColumnWidth + 2,
           y: detailTaskChipVerticalInset
         )
       }
@@ -795,17 +795,18 @@ extension TimelineBoardView {
   func detailTaskChip(_ chip: TimelineDetailTaskChip, projectColor: Color) -> some View {
     let isCompleted = chip.style == .completed
     let isPlanned = chip.style == .planned
-    return HStack(spacing: 5) {
+    return HStack(spacing: 2) {
       detailTaskChipMarker(chip, projectColor: projectColor)
 
       Text(chip.title)
-        .font(.system(size: 11, weight: isCompleted ? .regular : .semibold))
+        .font(.system(size: 10.5, weight: isCompleted ? .regular : .semibold))
         .lineLimit(1)
         .truncationMode(.tail)
     }
     .foregroundStyle(isCompleted ? Color.secondary : Color.primary)
     .opacity(isCompleted ? 0.45 : (isPlanned ? 0.72 : 1))
-    .padding(.horizontal, 6)
+    .padding(.leading, 2)
+    .padding(.trailing, 3)
     .frame(height: detailTaskChipHeight)
     .frame(maxWidth: .infinity, alignment: .leading)
     .background(
@@ -820,9 +821,9 @@ extension TimelineBoardView {
   ) -> some View {
     let isCompleted = chip.style == .completed
     return Image(systemName: isCompleted ? "checkmark.circle.fill" : "circle")
-      .font(.system(size: 10, weight: .semibold))
+      .font(.system(size: 9, weight: .semibold))
       .foregroundStyle(chip.isOverdue ? Color.red : projectColor)
-      .frame(width: 12, height: 12)
+      .frame(width: 10, height: 10)
   }
 
   func detailTaskChipFill(
@@ -841,9 +842,9 @@ extension TimelineBoardView {
 
   func detailTaskOverflowChip(hiddenCount: Int) -> some View {
     Text("+\(hiddenCount)")
-      .font(.system(size: 11, weight: .semibold, design: .rounded))
+      .font(.system(size: 10.5, weight: .semibold, design: .rounded))
       .foregroundStyle(.secondary)
-      .padding(.horizontal, 6)
+      .padding(.horizontal, 3)
       .frame(height: detailTaskChipHeight)
       .frame(maxWidth: .infinity, alignment: .leading)
   }

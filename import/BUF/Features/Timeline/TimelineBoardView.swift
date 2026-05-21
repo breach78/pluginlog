@@ -147,11 +147,11 @@ struct TimelineBoardView: View {
   let monthLabelTopPadding: CGFloat = 1
   let rowMetrics = TimelineRowMetrics(height: 30, spacing: 8, contentInsetY: 4)
   let detailDayColumnWidth: CGFloat = 120
-  let detailRowMinHeight: CGFloat = 72
-  let detailTaskChipHeight: CGFloat = 20
-  let detailTaskChipSpacing: CGFloat = 4
-  let detailTaskChipVerticalInset: CGFloat = 8
-  let detailMaxRowsPerDay = 5
+  let detailRowMinHeight: CGFloat = 52
+  let detailTaskChipHeight: CGFloat = 16
+  let detailTaskChipSpacing: CGFloat = 2
+  let detailTaskChipVerticalInset: CGFloat = 4
+  let detailMaxRowsPerDay = 6
   let priorityDoRowHeightMultiplier: CGFloat = 1.5
   let progressMarkerSize: CGFloat = 8
   let horizontalEdgePadding: CGFloat = 16
