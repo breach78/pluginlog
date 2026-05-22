@@ -77,6 +77,7 @@ struct TimelineBoardView: View {
   let onSelectProject: (UUID) -> Void
   let onToggleProjectSelection: (UUID) -> Void
   let onOpenProjectListPanel: (UUID) -> Void
+  let onOpenScheduleDayPanel: (ScheduleMonthDetailPanelTarget) -> Void
   let onEditTask: (WorkspaceTaskEditPanelTarget) -> Void
   let onTaskDeleted: (UUID, UUID) -> Void
 
@@ -237,6 +238,7 @@ struct TimelineBoardView: View {
     onSelectProject: @escaping (UUID) -> Void,
     onToggleProjectSelection: @escaping (UUID) -> Void,
     onOpenProjectListPanel: @escaping (UUID) -> Void = { _ in },
+    onOpenScheduleDayPanel: @escaping (ScheduleMonthDetailPanelTarget) -> Void = { _ in },
     onEditTask: @escaping (WorkspaceTaskEditPanelTarget) -> Void = { _ in },
     onTaskDeleted: @escaping (UUID, UUID) -> Void = { _, _ in }
   ) {
@@ -253,6 +255,7 @@ struct TimelineBoardView: View {
     self.onSelectProject = onSelectProject
     self.onToggleProjectSelection = onToggleProjectSelection
     self.onOpenProjectListPanel = onOpenProjectListPanel
+    self.onOpenScheduleDayPanel = onOpenScheduleDayPanel
     self.onEditTask = onEditTask
     self.onTaskDeleted = onTaskDeleted
   }

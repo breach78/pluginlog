@@ -77,6 +77,9 @@ extension MainWorkspaceView {
         onOpenProjectListPanel: { projectID in
           showTimelineProjectListPanel(projectID: projectID)
         },
+        onOpenScheduleDayPanel: { target in
+          showScheduleMonthDetail(target)
+        },
         onEditTask: { target in
           showTimelineTaskEditor(target)
         },

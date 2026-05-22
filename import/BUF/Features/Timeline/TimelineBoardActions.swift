@@ -119,7 +119,28 @@ extension TimelineBoardView {
 
   func openScheduleDay(for offset: Int) {
     cancelTimelineDayHeaderOverlay()
-    appState.jumpSchedule(to: date(for: offset))
+    onOpenScheduleDayPanel(timelineScheduleDayPanelTarget(for: date(for: offset)))
+  }
+
+  func timelineScheduleDayPanelTarget(for day: Date) -> ScheduleMonthDetailPanelTarget {
+    let normalizedDay = calendar.startOfDay(for: day)
+    let taskDescriptors = ScheduleBoardReadPath.workspaceTaskDescriptors(
+      projectIDs: activeProjectIDs,
+      projectSnapshots: workspaceTimelineProjectSnapshots,
+      scheduleEntriesByProjectID: workspaceTimelineScheduleEntriesByProjectID
+    )
+    let calendarProjection = appState.resolvedScheduleCalendarOverlayProjection()
+    let items = ScheduleMonthItemFactory.items(
+      workspaceTasks: taskDescriptors,
+      foregroundEvents: calendarProjection.foregroundEvents,
+      backgroundEvents: calendarProjection.backgroundEvents,
+      calendar: calendar
+    )
+    let dayItems =
+      ScheduleMonthLayoutBuilder
+      .build(containing: normalizedDay, items: items, calendar: calendar)
+      .itemsByDay[normalizedDay] ?? []
+    return ScheduleMonthDetailPanelTarget(date: normalizedDay, items: dayItems)
   }
 
   func openTimelineProjectListWindow(for bar: TimelineProjectBar) {
