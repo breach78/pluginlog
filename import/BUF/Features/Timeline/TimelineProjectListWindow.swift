@@ -22,7 +22,6 @@ struct TimelineProjectListContent: View {
   @State private var expandedTaskID: UUID?
   @State private var expandedTaskCloseRequestID = 0
   @State private var pendingExpandedTaskIDAfterClose: UUID?
-  @State private var pendingTaskOpenTask: Task<Void, Never>?
   @State private var projectNoteText: String
   @State private var projectNoteHeight: CGFloat = 0
   @State private var lastCommittedProjectNoteText: String
@@ -106,7 +105,6 @@ struct TimelineProjectListContent: View {
       scheduleProjectNoteAutoSave()
     }
     .onDisappear {
-      cancelPendingTaskOpen()
       flushProjectNoteOnDisappear()
     }
   }
@@ -300,6 +298,9 @@ struct TimelineProjectListContent: View {
           .background {
             if expandedTaskID == task.id {
               TimelineProjectListOutsideClickMonitor {
+                if session.editingTaskID == task.id {
+                  finishInlineTitleEditingFromOutside(for: task)
+                }
                 requestExpandedTaskEditorClose()
               }
             } else if session.editingTaskID == task.id {
@@ -361,11 +362,10 @@ struct TimelineProjectListContent: View {
         taskTitleContent(task)
           .contentShape(Rectangle())
           .onTapGesture(count: 2) {
-            cancelPendingTaskOpen()
-            startEditing(task)
+            openTaskForTitleEditing(task)
           }
           .onTapGesture(count: 1) {
-            scheduleTaskOpen(task)
+            openTaskForTitleEditing(task)
           }
       }
     }
@@ -540,7 +540,6 @@ struct TimelineProjectListContent: View {
   }
 
   private func openTask(_ task: TimelineProjectListWindowSnapshot.Task) {
-    cancelPendingTaskOpen()
     if inlineEditorConfiguration != nil {
       cancelDraftIfEmpty()
       if expandedTaskID == nil {
@@ -555,20 +554,11 @@ struct TimelineProjectListContent: View {
     actions.onEditTask(task.id)
   }
 
-  private func scheduleTaskOpen(_ task: TimelineProjectListWindowSnapshot.Task) {
-    cancelPendingTaskOpen()
-    pendingTaskOpenTask = Task { @MainActor in
-      try? await Task.sleep(nanoseconds: Self.taskOpenDelayNanoseconds)
-      guard !Task.isCancelled else { return }
-      guard session.editingTaskID != task.id else { return }
-      cancelInlineEditing()
-      openTask(task)
+  private func openTaskForTitleEditing(_ task: TimelineProjectListWindowSnapshot.Task) {
+    openTask(task)
+    if inlineEditorConfiguration != nil {
+      startEditing(task)
     }
-  }
-
-  private func cancelPendingTaskOpen() {
-    pendingTaskOpenTask?.cancel()
-    pendingTaskOpenTask = nil
   }
 
   private func requestExpandedTaskEditorClose(nextExpandedTaskID: UUID? = nil) {
@@ -875,7 +865,6 @@ struct TimelineProjectListContent: View {
 
   private func startEditing(_ task: TimelineProjectListWindowSnapshot.Task) {
     guard !isRenamingTask, !isCreatingTask else { return }
-    cancelPendingTaskOpen()
     updateSession { session in
       session.startEditing(task)
     }
@@ -1270,5 +1259,4 @@ struct TimelineProjectListContent: View {
   private static let focusedTaskScrollAnchor = UnitPoint(x: 0.5, y: 0.18)
   private static let focusedDraftScrollAnchor = UnitPoint(x: 0.5, y: 0.88)
   private static let projectNoteAutoSaveDelayNanoseconds: UInt64 = 650_000_000
-  private static let taskOpenDelayNanoseconds: UInt64 = 240_000_000
 }

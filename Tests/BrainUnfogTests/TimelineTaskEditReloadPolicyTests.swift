@@ -41,6 +41,44 @@ final class TimelineTaskEditReloadPolicyTests: XCTestCase {
     )
   }
 
+  func testAuxiliarySectionPolicyExpandsSectionsWithExistingValues() {
+    XCTAssertEqual(
+      TaskEditAuxiliarySectionVisibilityPolicy.initialExpandedSections(
+        hasAttachments: true,
+        hasDate: true,
+        hasTime: false,
+        durationMinutes: nil,
+        recurrenceRuleRaw: "FREQ=DAILY;INTERVAL=1"
+      ),
+      [.attachments, .schedule, .recurrence]
+    )
+  }
+
+  func testAuxiliarySectionPolicyKeepsEmptySectionsCollapsed() {
+    XCTAssertTrue(
+      TaskEditAuxiliarySectionVisibilityPolicy.initialExpandedSections(
+        hasAttachments: false,
+        hasDate: false,
+        hasTime: false,
+        durationMinutes: nil,
+        recurrenceRuleRaw: nil
+      ).isEmpty
+    )
+  }
+
+  func testAuxiliarySectionPolicyTreatsDurationAsScheduleValue() {
+    XCTAssertEqual(
+      TaskEditAuxiliarySectionVisibilityPolicy.initialExpandedSections(
+        hasAttachments: false,
+        hasDate: false,
+        hasTime: false,
+        durationMinutes: 45,
+        recurrenceRuleRaw: nil
+      ),
+      [.schedule]
+    )
+  }
+
   func testPreservesEditorWhenReloadOnlyDropsTrailingBlankLine() {
     let current = fields(noteText: "First line\n")
     let loaded = fields(noteText: "First line")

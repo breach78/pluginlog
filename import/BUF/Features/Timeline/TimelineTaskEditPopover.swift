@@ -9,7 +9,38 @@ struct TimelineTaskEditTarget: Equatable, Sendable {
 
 enum TimelineTaskEditInitialFocus: Equatable, Sendable {
   case none
+  case title
   case note
+}
+
+enum TaskEditAuxiliarySection: Hashable {
+  case attachments
+  case schedule
+  case recurrence
+}
+
+enum TaskEditAuxiliarySectionVisibilityPolicy {
+  static func initialExpandedSections(
+    hasAttachments: Bool,
+    hasDate: Bool,
+    hasTime: Bool,
+    durationMinutes: Int?,
+    recurrenceRuleRaw: String?
+  ) -> Set<TaskEditAuxiliarySection> {
+    var sections = Set<TaskEditAuxiliarySection>()
+    if hasAttachments {
+      sections.insert(.attachments)
+    }
+    if hasDate || hasTime || durationMinutes != nil {
+      sections.insert(.schedule)
+    }
+    if let recurrenceRuleRaw,
+      !recurrenceRuleRaw.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    {
+      sections.insert(.recurrence)
+    }
+    return sections
+  }
 }
 
 struct WorkspaceTaskEditPanelTarget: Equatable, Sendable {
@@ -94,6 +125,7 @@ struct TimelineTaskEditPopoverContent: View {
   @State private var isSyncEditingActive = false
   @State private var isClosing = false
   @State private var skipCleanReloadAfterLocalSaveUntil: Date?
+  @State private var expandedAuxiliarySections: Set<TaskEditAuxiliarySection>
 
   private let calendar = Calendar.autoupdatingCurrent
   private static let autoSaveDelayNanoseconds: UInt64 = 1_200_000_000
@@ -155,6 +187,15 @@ struct TimelineTaskEditPopoverContent: View {
         attachments: initialAttachments,
         day: initialFields.day,
         timeMinutes: initialFields.timeMinutes,
+        durationMinutes: initialDurationMinutes,
+        recurrenceRuleRaw: initialFields.recurrenceRuleRaw
+      )
+    )
+    _expandedAuxiliarySections = State(
+      initialValue: TaskEditAuxiliarySectionVisibilityPolicy.initialExpandedSections(
+        hasAttachments: !initialAttachments.isEmpty,
+        hasDate: initialFields.day != nil,
+        hasTime: initialFields.timeMinutes != nil,
         durationMinutes: initialDurationMinutes,
         recurrenceRuleRaw: initialFields.recurrenceRuleRaw
       )
@@ -299,23 +340,10 @@ struct TimelineTaskEditPopoverContent: View {
       }
 
       if presentationStyle != .inlinePanel {
-        VStack(alignment: .leading, spacing: 6) {
-          Text("제목")
-            .font(TaskEditTypography.labelFont)
-            .foregroundStyle(.secondary)
-          LinkedTextEditor(
-            text: $title,
-            measuredHeight: $titleHeight,
-            font: TaskEditTypography.titleNSFont,
-            vaultRootURL: vaultRootURL,
-            allowsNewlines: false,
-            lineHeightMultiple: 1,
-            onEscape: closeEditor
-          )
-          .frame(minHeight: TaskEditTypography.titleMinimumHeight)
-          .frame(height: max(TaskEditTypography.titleMinimumHeight, titleHeight))
-          .taskEditFieldBackground(cornerRadius: 4, topPadding: 8, bottomPadding: 4)
-        }
+        titleSection
+      } else {
+        auxiliarySectionToggleBar
+          .frame(maxWidth: .infinity, alignment: .trailing)
       }
 
       VStack(alignment: .leading, spacing: 6) {
@@ -333,11 +361,17 @@ struct TimelineTaskEditPopoverContent: View {
         )
       }
 
-      attachmentSection
+      if expandedAuxiliarySections.contains(.attachments) {
+        attachmentSection
+      }
 
-      dateTimeSection
+      if expandedAuxiliarySections.contains(.schedule) {
+        dateTimeSection
+      }
 
-      recurrenceSection
+      if expandedAuxiliarySections.contains(.recurrence) {
+        recurrenceSection
+      }
 
       if let bottomContent {
         VStack(alignment: .leading, spacing: 10) {
@@ -355,6 +389,86 @@ struct TimelineTaskEditPopoverContent: View {
       }
 
     }
+  }
+
+  private var titleSection: some View {
+    VStack(alignment: .leading, spacing: 6) {
+      HStack(alignment: .center, spacing: 8) {
+        Text("제목")
+          .font(TaskEditTypography.labelFont)
+          .foregroundStyle(.secondary)
+        Spacer(minLength: 0)
+        auxiliarySectionToggleBar
+      }
+      LinkedTextEditor(
+        text: $title,
+        measuredHeight: $titleHeight,
+        font: TaskEditTypography.titleNSFont,
+        vaultRootURL: vaultRootURL,
+        allowsNewlines: false,
+        lineHeightMultiple: 1,
+        focusRequestID: initialFocus == .title ? 1 : 0,
+        onEscape: closeEditor
+      )
+      .frame(minHeight: TaskEditTypography.titleMinimumHeight)
+      .frame(height: max(TaskEditTypography.titleMinimumHeight, titleHeight))
+      .taskEditFieldBackground(cornerRadius: 4, topPadding: 8, bottomPadding: 4)
+    }
+  }
+
+  private var auxiliarySectionToggleBar: some View {
+    HStack(spacing: 6) {
+      auxiliarySectionToggleButton(
+        section: .attachments,
+        systemImage: "paperclip",
+        help: expandedAuxiliarySections.contains(.attachments) ? "첨부파일 접기" : "첨부파일 열기",
+        hasValue: !attachments.isEmpty
+      )
+      auxiliarySectionToggleButton(
+        section: .schedule,
+        systemImage: "calendar.badge.clock",
+        help: expandedAuxiliarySections.contains(.schedule) ? "날짜와 시간 접기" : "날짜와 시간 열기",
+        hasValue: hasDate || hasTime || durationMinutes != nil
+      )
+      auxiliarySectionToggleButton(
+        section: .recurrence,
+        systemImage: "repeat",
+        help: expandedAuxiliarySections.contains(.recurrence) ? "반복 접기" : "반복 열기",
+        hasValue: recurrenceDescriptor != .none
+      )
+    }
+  }
+
+  private func auxiliarySectionToggleButton(
+    section: TaskEditAuxiliarySection,
+    systemImage: String,
+    help: String,
+    hasValue: Bool
+  ) -> some View {
+    let isExpanded = expandedAuxiliarySections.contains(section)
+    return Button {
+      if isExpanded {
+        expandedAuxiliarySections.remove(section)
+      } else {
+        expandedAuxiliarySections.insert(section)
+      }
+    } label: {
+      Image(systemName: systemImage)
+        .font(.system(size: 12, weight: .semibold))
+        .foregroundStyle(
+          isExpanded
+            ? TaskEditFieldStyle.softAccentColor
+            : Color.secondary.opacity(hasValue ? 0.95 : 0.65)
+        )
+        .frame(width: 24, height: 22)
+        .background(
+          RoundedRectangle(cornerRadius: 5)
+            .fill(isExpanded ? TaskEditFieldStyle.softAccentColor.opacity(0.12) : Color.clear)
+        )
+        .contentShape(Rectangle())
+    }
+    .buttonStyle(.plain)
+    .help(help)
   }
 
   private var dateTimeSection: some View {
