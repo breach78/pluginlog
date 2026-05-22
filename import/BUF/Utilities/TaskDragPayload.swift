@@ -2,7 +2,17 @@ import Foundation
 import UniformTypeIdentifiers
 
 enum TaskDragPayload {
+  static let type = UTType(exportedAs: "com.brainunfog.timeline-task")
+  static let typeIdentifier = type.identifier
   static let textTypeIdentifier = UTType.text.identifier
+  static let plainTextTypeIdentifier = UTType.plainText.identifier
+  static let utf8PlainTextTypeIdentifier = UTType.utf8PlainText.identifier
+  static let dropTypeIdentifiers = [
+    typeIdentifier,
+    utf8PlainTextTypeIdentifier,
+    plainTextTypeIdentifier,
+    textTypeIdentifier,
+  ]
   static let taskPrefix = "buf-task:"
 
   static func payloadString(for taskID: UUID) -> String {
@@ -10,7 +20,16 @@ enum TaskDragPayload {
   }
 
   static func itemProvider(for taskID: UUID) -> NSItemProvider {
-    NSItemProvider(object: payloadString(for: taskID) as NSString)
+    let payload = payloadString(for: taskID)
+    let provider = NSItemProvider(object: payload as NSString)
+    provider.registerDataRepresentation(
+      forTypeIdentifier: typeIdentifier,
+      visibility: .all
+    ) { completion in
+      completion(payload.data(using: .utf8), nil)
+      return nil
+    }
+    return provider
   }
 
   static func parseTaskID(from item: NSSecureCoding?) -> UUID? {

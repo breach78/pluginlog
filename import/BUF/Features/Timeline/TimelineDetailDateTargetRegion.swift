@@ -66,7 +66,7 @@ struct TimelineDetailTaskRowDropModifier: ViewModifier {
   func body(content: Content) -> some View {
     if isEnabled {
       content.onDrop(
-        of: [TaskDragPayload.textTypeIdentifier],
+        of: TaskDragPayload.dropTypeIdentifiers,
         delegate: TimelineDetailTaskRowDropDelegate(
           targetProjectID: targetProjectID,
           dayRange: dayRange,
@@ -90,7 +90,7 @@ private struct TimelineDetailTaskRowDropDelegate: DropDelegate {
 
   func validateDrop(info: DropInfo) -> Bool {
     targetDate(for: info) != nil
-      && !info.itemProviders(for: [TaskDragPayload.textTypeIdentifier]).isEmpty
+      && taskProvider(for: info) != nil
       && info.itemProviders(for: [ProjectDragPayload.projectType.identifier]).isEmpty
   }
 
@@ -100,12 +100,12 @@ private struct TimelineDetailTaskRowDropDelegate: DropDelegate {
 
   func performDrop(info: DropInfo) -> Bool {
     guard let targetDate = targetDate(for: info),
-      let provider = info.itemProviders(for: [TaskDragPayload.textTypeIdentifier]).first
+      let taskProvider = taskProvider(for: info)
     else {
       return false
     }
 
-    provider.loadItem(forTypeIdentifier: TaskDragPayload.textTypeIdentifier, options: nil) {
+    taskProvider.provider.loadItem(forTypeIdentifier: taskProvider.typeIdentifier, options: nil) {
       item,
       _ in
       guard let taskID = TaskDragPayload.parseTaskID(from: item) else { return }
@@ -114,6 +114,15 @@ private struct TimelineDetailTaskRowDropDelegate: DropDelegate {
       }
     }
     return true
+  }
+
+  private func taskProvider(for info: DropInfo) -> (provider: NSItemProvider, typeIdentifier: String)? {
+    for typeIdentifier in TaskDragPayload.dropTypeIdentifiers {
+      if let provider = info.itemProviders(for: [typeIdentifier]).first {
+        return (provider, typeIdentifier)
+      }
+    }
+    return nil
   }
 
   private func targetDate(for info: DropInfo) -> Date? {

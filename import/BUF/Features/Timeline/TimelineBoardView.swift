@@ -136,6 +136,7 @@ struct TimelineBoardView: View {
   @State var immediateSelectedProjectID: UUID?
   @State var selectionCommitTask: Task<Void, Never>?
   @State var suppressedTimelineTaskTapUntil: Date = .distantPast
+  @StateObject var timelineRowsDropResolver = TimelineDetailRowsDropResolver()
 
   let displayMode: TimelineBoardDisplayMode
   let titleColumnWidth: CGFloat = 200

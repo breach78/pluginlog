@@ -9,6 +9,9 @@ enum DragPayloadCodec {
         if let value = item as? NSString {
             return value as String
         }
+        if let value = item as? Data, let decoded = String(data: value, encoding: .utf8) {
+            return decoded
+        }
         if let value = item as? NSData, let decoded = String(data: value as Data, encoding: .utf8) {
             return decoded
         }

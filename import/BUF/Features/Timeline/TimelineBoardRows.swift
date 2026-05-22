@@ -216,6 +216,19 @@ extension TimelineBoardView {
       }
       .frame(width: timelineWidth, height: rowsHeight, alignment: .topLeading)
 
+      TimelineDetailRowsDropResolverHost(
+        resolver: timelineRowsDropResolver,
+        projectIDs: bars.map(\.projectID),
+        rowLayouts: rowLayouts,
+        dayRange: dayRange,
+        dayColumnWidth: dayColumnWidth,
+        dateForOffset: { offset in
+          date(for: offset)
+        }
+      )
+      .frame(width: timelineWidth, height: rowsHeight, alignment: .topLeading)
+      .allowsHitTesting(false)
+
       VStack(alignment: .leading, spacing: 0) {
         ForEach(Array(bars.enumerated()), id: \.element.id) { index, bar in
           timelineRow(
@@ -325,6 +338,21 @@ extension TimelineBoardView {
     .padding(.top, interRowTopPadding(for: index, rowLayout: rowLayout))
     .padding(.bottom, interRowBottomPadding(for: index, totalCount: totalCount, rowLayout: rowLayout))
     .contentShape(Rectangle())
+    .modifier(
+      TimelineDetailTaskRowDropModifier(
+        isEnabled: true,
+        targetProjectID: bar.projectID,
+        dayRange: dayRange,
+        dayColumnWidth: dayColumnWidth,
+        dateForOffset: { offset in
+          date(for: offset)
+        },
+        onMoveTaskToDate: { taskID, targetProjectID, targetDate in
+          activeTimelineProjectListPopoverProjectID = nil
+          moveTimelineDetailTask(taskID, to: targetProjectID, targetDate: targetDate)
+        }
+      )
+    )
     .simultaneousGesture(
       TapGesture()
         .onEnded {}
@@ -593,9 +621,18 @@ extension TimelineBoardView {
       }
       .buttonStyle(.plain)
     }
-    .onDrag {
-      TaskDragPayload.itemProvider(for: entry.taskID)
-    }
+    .contentShape(Rectangle())
+    .modifier(
+      TimelineProjectListPopoverTaskDragModifier(
+        taskID: entry.taskID,
+        resolver: timelineRowsDropResolver,
+        onMoveTaskToDate: { taskID, targetProjectID, targetDate in
+          activeTimelineProjectListPopoverProjectID = nil
+          moveTimelineDetailTask(taskID, to: targetProjectID, targetDate: targetDate)
+        },
+        onCancel: {}
+      )
+    )
   }
 
   func timelineProjectListPopoverEntries(for projectID: UUID) -> [ScheduleSliceEntry] {
