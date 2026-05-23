@@ -31,11 +31,7 @@ struct TaskEditRecurrenceControl: View {
 
   var body: some View {
     VStack(alignment: .leading, spacing: 8) {
-      HStack(alignment: .center, spacing: 10) {
-        Text("반복")
-          .font(TaskEditTypography.controlFont)
-          .frame(width: 88, alignment: .leading)
-
+      HStack(alignment: .center, spacing: 8) {
         Picker("", selection: kindBinding) {
           ForEach(availableKinds) { kind in
             Text(kind.title).tag(kind)
@@ -44,10 +40,12 @@ struct TaskEditRecurrenceControl: View {
         .labelsHidden()
         .pickerStyle(.menu)
         .taskEditCompactControlBackground()
-      }
+        .frame(maxWidth: .infinity, alignment: .leading)
 
-      if !descriptor.isUnsupported, kindBinding.wrappedValue != .none {
-        intervalRow
+        if !descriptor.isUnsupported, kindBinding.wrappedValue != .none {
+          intervalControl
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
       }
 
       switch descriptor {
@@ -71,28 +69,22 @@ struct TaskEditRecurrenceControl: View {
       : TaskEditRecurrenceKind.allCases.filter { $0 != .unsupported }
   }
 
-  private var intervalRow: some View {
-    HStack(alignment: .center, spacing: 10) {
-      Text("간격")
+  private var intervalControl: some View {
+    HStack(spacing: 8) {
+      TextField("간격", value: intervalBinding, format: .number)
+        .textFieldStyle(.plain)
         .font(TaskEditTypography.controlFont)
-        .frame(width: 88, alignment: .leading)
-
-      HStack(spacing: 8) {
-        TextField("간격", value: intervalBinding, format: .number)
-          .textFieldStyle(.plain)
-          .font(TaskEditTypography.controlFont)
-          .monospacedDigit()
-          .multilineTextAlignment(.trailing)
-          .frame(width: 44)
-        Text(intervalUnitText)
-          .font(TaskEditTypography.controlFont)
-          .foregroundStyle(.secondary)
-        Stepper("", value: intervalBinding, in: 1...99)
-          .labelsHidden()
-          .frame(width: 54)
-      }
-      .taskEditCompactControlBackground()
+        .monospacedDigit()
+        .multilineTextAlignment(.trailing)
+        .frame(width: 44)
+      Text(intervalUnitText)
+        .font(TaskEditTypography.controlFont)
+        .foregroundStyle(.secondary)
+      Stepper("", value: intervalBinding, in: 1...99)
+        .labelsHidden()
+        .frame(width: 54)
     }
+    .taskEditCompactControlBackground()
   }
 
   private var weekdayRow: some View {

@@ -541,55 +541,7 @@ struct TimelineTaskEditPopoverContent: View {
       HStack(alignment: .center, spacing: 10) {
         dateControl
         timeControl
-      }
-
-      HStack(alignment: .center, spacing: 10) {
-        Text("듀레이션")
-          .font(TaskEditTypography.controlFont)
-          .foregroundStyle(hasDate && hasTime ? Color.primary : Color.secondary)
-          .frame(width: 88, alignment: .leading)
-
-        HStack(spacing: 8) {
-          Image(systemName: "timer")
-            .font(.system(size: 13, weight: .semibold))
-          if hasDate && hasTime {
-            Text(
-              TimelineTaskEditDurationPolicy.displayText(
-                TimelineTaskEditDurationPolicy.normalized(durationMinutes)
-              )
-            )
-            .font(TaskEditTypography.controlFont)
-            .lineLimit(1)
-            Spacer(minLength: 0)
-            HStack(spacing: 4) {
-              TextField("분", value: durationValueBinding, format: .number)
-                .textFieldStyle(.plain)
-                .font(TaskEditTypography.controlFont)
-                .monospacedDigit()
-                .multilineTextAlignment(.trailing)
-                .frame(width: 52)
-              Text("분")
-                .font(TaskEditTypography.controlFont)
-                .foregroundStyle(.secondary)
-            }
-            Stepper(
-              "",
-              value: durationValueBinding,
-              in: TimelineTaskEditDurationPolicy.minimumMinutes...TimelineTaskEditDurationPolicy.maximumMinutes,
-              step: TimelineTaskEditDurationPolicy.stepMinutes
-            )
-            .labelsHidden()
-            .frame(width: 54)
-          } else {
-            Text("시간 없음")
-              .font(TaskEditTypography.controlFont)
-              .lineLimit(1)
-            Spacer(minLength: 0)
-          }
-        }
-        .taskEditCompactControlBackground()
-        .foregroundStyle(hasDate && hasTime ? Color.primary : Color.secondary)
-        .disabled(!(hasDate && hasTime))
+        durationControl
       }
     }
     .frame(maxWidth: .infinity, alignment: .leading)
@@ -597,86 +549,97 @@ struct TimelineTaskEditPopoverContent: View {
   }
 
   private var dateControl: some View {
-    HStack(alignment: .center, spacing: 8) {
-      Toggle("날짜", isOn: $hasDate)
-        .toggleStyle(.checkbox)
-        .font(TaskEditTypography.controlFont)
-        .frame(width: 62, alignment: .leading)
-
-      Button {
-        if !hasDate {
-          hasDate = true
-        }
-        isDatePickerPresented = true
-      } label: {
-        HStack(spacing: 8) {
-          Image(systemName: "calendar")
-            .font(.system(size: 13, weight: .semibold))
-          Text(hasDate ? selectedDateText : "날짜 없음")
-            .font(TaskEditTypography.controlFont)
-            .lineLimit(1)
-          Spacer(minLength: 0)
-          Image(systemName: "chevron.down")
-            .font(.system(size: 10, weight: .semibold))
-            .foregroundStyle(.secondary)
-        }
-        .taskEditCompactControlBackground()
+    Button {
+      isDatePickerPresented = true
+    } label: {
+      HStack(spacing: 8) {
+        Image(systemName: "calendar")
+          .font(.system(size: 13, weight: .semibold))
+        Text(hasDate ? selectedDateText : "날짜 없음")
+          .font(TaskEditTypography.controlFont)
+          .lineLimit(1)
+        Spacer(minLength: 0)
+        Image(systemName: "chevron.down")
+          .font(.system(size: 10, weight: .semibold))
+          .foregroundStyle(.secondary)
       }
-      .buttonStyle(.plain)
-      .foregroundStyle(hasDate ? Color.primary : Color.secondary)
-      .popover(isPresented: $isDatePickerPresented, arrowEdge: .bottom) {
+      .taskEditCompactControlBackground()
+    }
+    .buttonStyle(.plain)
+    .foregroundStyle(hasDate ? Color.primary : Color.secondary)
+    .popover(isPresented: $isDatePickerPresented, arrowEdge: .bottom) {
+      VStack(alignment: .leading, spacing: 10) {
+        Toggle("날짜 사용", isOn: $hasDate)
+          .toggleStyle(.checkbox)
+          .font(TaskEditTypography.controlFont)
         DatePicker("", selection: $selectedDate, displayedComponents: .date)
           .datePickerStyle(.graphical)
           .labelsHidden()
-          .padding(12)
-          .frame(width: 284, alignment: .leading)
-          .background(TaskEditFieldStyle.panelBackgroundColor)
       }
+      .padding(12)
+      .frame(width: 284, alignment: .leading)
+      .background(TaskEditFieldStyle.panelBackgroundColor)
     }
     .frame(maxWidth: .infinity, alignment: .leading)
   }
 
   private var timeControl: some View {
-    HStack(alignment: .center, spacing: 8) {
-      Toggle("시간", isOn: $hasTime)
-        .toggleStyle(.checkbox)
-        .font(TaskEditTypography.controlFont)
-        .disabled(!hasDate)
-        .frame(width: 62, alignment: .leading)
-
-      Button {
-        guard hasDate else { return }
-        if !hasTime {
-          hasTime = true
-        }
-        isTimePickerPresented = true
-      } label: {
-        HStack(spacing: 8) {
-          Image(systemName: "clock")
-            .font(.system(size: 13, weight: .semibold))
-          Text(hasDate && hasTime ? selectedTimeText : "시간 없음")
-            .font(TaskEditTypography.controlFont)
-            .lineLimit(1)
-          Spacer(minLength: 0)
-          Image(systemName: "chevron.down")
-            .font(.system(size: 10, weight: .semibold))
-            .foregroundStyle(.secondary)
-        }
-        .taskEditCompactControlBackground()
+    Button {
+      guard hasDate else { return }
+      isTimePickerPresented = true
+    } label: {
+      HStack(spacing: 8) {
+        Image(systemName: "clock")
+          .font(.system(size: 13, weight: .semibold))
+        Text(hasDate && hasTime ? selectedTimeText : "시간 없음")
+          .font(TaskEditTypography.controlFont)
+          .lineLimit(1)
+        Spacer(minLength: 0)
+        Image(systemName: "chevron.down")
+          .font(.system(size: 10, weight: .semibold))
+          .foregroundStyle(.secondary)
       }
-      .buttonStyle(.plain)
-      .foregroundStyle(hasDate && hasTime ? Color.primary : Color.secondary)
-      .disabled(!hasDate)
-      .popover(isPresented: $isTimePickerPresented, arrowEdge: .bottom) {
+      .taskEditCompactControlBackground()
+    }
+    .buttonStyle(.plain)
+    .foregroundStyle(hasDate && hasTime ? Color.primary : Color.secondary)
+    .disabled(!hasDate)
+    .popover(isPresented: $isTimePickerPresented, arrowEdge: .bottom) {
+      VStack(alignment: .leading, spacing: 10) {
+        Toggle("시간 사용", isOn: $hasTime)
+          .toggleStyle(.checkbox)
+          .font(TaskEditTypography.controlFont)
+          .disabled(!hasDate)
         DatePicker("", selection: $selectedTime, displayedComponents: .hourAndMinute)
           .labelsHidden()
           .datePickerStyle(.compact)
-          .padding(12)
-          .frame(width: 148, alignment: .leading)
-          .background(TaskEditFieldStyle.panelBackgroundColor)
+          .disabled(!hasTime)
       }
+      .padding(12)
+      .frame(width: 148, alignment: .leading)
+      .background(TaskEditFieldStyle.panelBackgroundColor)
     }
     .frame(maxWidth: .infinity, alignment: .leading)
+  }
+
+  private var durationControl: some View {
+    Picker("", selection: durationValueBinding) {
+      ForEach(durationPickerOptions, id: \.self) { minutes in
+        Text(TimelineTaskEditDurationPolicy.displayText(minutes)).tag(minutes)
+      }
+    }
+    .labelsHidden()
+    .pickerStyle(.menu)
+    .taskEditCompactControlBackground()
+    .foregroundStyle(hasDate && hasTime ? Color.primary : Color.secondary)
+    .disabled(!(hasDate && hasTime))
+    .frame(maxWidth: .infinity, alignment: .leading)
+  }
+
+  private var durationPickerOptions: [Int] {
+    TimelineTaskEditDurationPolicy.pickerOptions(
+      including: TimelineTaskEditDurationPolicy.normalized(durationMinutes)
+    )
   }
 
   private var recurrenceSection: some View {
@@ -1155,6 +1118,7 @@ enum TimelineTaskEditDurationPolicy {
   static let maximumMinutes = 30 * 24 * 60
   static let stepMinutes = 5
   static let defaultMinutes = WorkspaceTaskScheduleEventStore.defaultScheduledDurationMinutes
+  static let menuMaximumMinutes = 7 * 24 * 60
 
   static func normalized(_ durationMinutes: Int?) -> Int {
     normalized(durationMinutes ?? defaultMinutes)
@@ -1175,6 +1139,9 @@ enum TimelineTaskEditDurationPolicy {
 
   static func displayText(_ durationMinutes: Int) -> String {
     let normalizedMinutes = normalized(durationMinutes)
+    if normalizedMinutes >= 24 * 60, normalizedMinutes % (24 * 60) == 0 {
+      return "\(normalizedMinutes / (24 * 60))일"
+    }
     let hours = normalizedMinutes / 60
     let minutes = normalizedMinutes % 60
     if hours == 0 {
@@ -1184,6 +1151,16 @@ enum TimelineTaskEditDurationPolicy {
       return "\(hours)시간"
     }
     return "\(hours)시간 \(minutes)분"
+  }
+
+  static func pickerOptions(including selectedMinutes: Int) -> [Int] {
+    var options = Set<Int>()
+    stride(from: 15, through: 24 * 60, by: 15).forEach { options.insert($0) }
+    stride(from: 2 * 24 * 60, through: menuMaximumMinutes, by: 24 * 60).forEach {
+      options.insert($0)
+    }
+    options.insert(normalized(selectedMinutes))
+    return options.sorted()
   }
 }
 

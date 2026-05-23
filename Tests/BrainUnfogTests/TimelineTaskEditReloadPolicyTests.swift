@@ -27,6 +27,16 @@ final class TimelineTaskEditReloadPolicyTests: XCTestCase {
     XCTAssertEqual(TimelineTaskEditDurationPolicy.displayText(90), "1시간 30분")
     XCTAssertEqual(TimelineTaskEditDurationPolicy.displayText(60), "1시간")
     XCTAssertEqual(TimelineTaskEditDurationPolicy.displayText(15), "15분")
+    XCTAssertEqual(TimelineTaskEditDurationPolicy.displayText(2 * 24 * 60), "2일")
+  }
+
+  func testDurationPolicyMenuOptionsCoverExpectedRange() {
+    let options = TimelineTaskEditDurationPolicy.pickerOptions(including: 42)
+    XCTAssertTrue(options.contains(15))
+    XCTAssertTrue(options.contains(24 * 60))
+    XCTAssertTrue(options.contains(7 * 24 * 60))
+    XCTAssertTrue(options.contains(42))
+    XCTAssertFalse(options.contains(8 * 24 * 60))
   }
 
   func testDurationPolicyPreservesMultiDayDuration() {
