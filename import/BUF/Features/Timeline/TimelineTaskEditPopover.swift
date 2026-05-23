@@ -538,11 +538,21 @@ struct TimelineTaskEditPopoverContent: View {
 
   private var dateTimeSection: some View {
     VStack(alignment: .leading, spacing: 8) {
-      HStack(alignment: .center, spacing: 10) {
-        dateControl
-        timeControl
-        durationControl
+      GeometryReader { proxy in
+        let spacing: CGFloat = 8
+        let availableWidth = max(0, proxy.size.width - (spacing * 2))
+        let unitWidth = availableWidth / 9
+
+        HStack(alignment: .center, spacing: spacing) {
+          dateControl
+            .frame(width: unitWidth * 4, alignment: .leading)
+          timeControl
+            .frame(width: unitWidth * 3, alignment: .leading)
+          durationControl
+            .frame(width: unitWidth * 2, alignment: .leading)
+        }
       }
+      .frame(height: 32)
     }
     .frame(maxWidth: .infinity, alignment: .leading)
     .tint(TaskEditFieldStyle.softAccentColor)
@@ -552,16 +562,13 @@ struct TimelineTaskEditPopoverContent: View {
     Button {
       isDatePickerPresented = true
     } label: {
-      HStack(spacing: 8) {
-        Image(systemName: "calendar")
-          .font(.system(size: 13, weight: .semibold))
+      HStack(spacing: 0) {
         Text(hasDate ? selectedDateText : "날짜 없음")
           .font(TaskEditTypography.controlFont)
           .lineLimit(1)
+          .minimumScaleFactor(0.78)
+          .allowsTightening(true)
         Spacer(minLength: 0)
-        Image(systemName: "chevron.down")
-          .font(.system(size: 10, weight: .semibold))
-          .foregroundStyle(.secondary)
       }
       .taskEditCompactControlBackground()
     }
@@ -588,16 +595,13 @@ struct TimelineTaskEditPopoverContent: View {
       guard hasDate else { return }
       isTimePickerPresented = true
     } label: {
-      HStack(spacing: 8) {
-        Image(systemName: "clock")
-          .font(.system(size: 13, weight: .semibold))
+      HStack(spacing: 0) {
         Text(hasDate && hasTime ? selectedTimeText : "시간 없음")
           .font(TaskEditTypography.controlFont)
           .lineLimit(1)
+          .minimumScaleFactor(0.78)
+          .allowsTightening(true)
         Spacer(minLength: 0)
-        Image(systemName: "chevron.down")
-          .font(.system(size: 10, weight: .semibold))
-          .foregroundStyle(.secondary)
       }
       .taskEditCompactControlBackground()
     }
@@ -748,11 +752,11 @@ struct TimelineTaskEditPopoverContent: View {
   }
 
   private var selectedDateText: String {
-    selectedDate.formatted(.dateTime.year().month(.wide).day())
+    TimelineTaskEditDisplayFormatters.dateText(for: selectedDate)
   }
 
   private var selectedTimeText: String {
-    selectedTime.formatted(.dateTime.hour().minute())
+    TimelineTaskEditDisplayFormatters.timeText(for: selectedTime)
   }
 
   private func attachmentItemProvider(for attachment: TaskEditAttachment) -> NSItemProvider {
@@ -1140,17 +1144,14 @@ enum TimelineTaskEditDurationPolicy {
   static func displayText(_ durationMinutes: Int) -> String {
     let normalizedMinutes = normalized(durationMinutes)
     if normalizedMinutes >= 24 * 60, normalizedMinutes % (24 * 60) == 0 {
-      return "\(normalizedMinutes / (24 * 60))일"
+      return "\(normalizedMinutes / (24 * 60))D"
     }
     let hours = normalizedMinutes / 60
     let minutes = normalizedMinutes % 60
     if hours == 0 {
-      return "\(minutes)분"
+      return "\(minutes)"
     }
-    if minutes == 0 {
-      return "\(hours)시간"
-    }
-    return "\(hours)시간 \(minutes)분"
+    return String(format: "%d:%02d", hours, minutes)
   }
 
   static func pickerOptions(including selectedMinutes: Int) -> [Int] {
@@ -1161,6 +1162,30 @@ enum TimelineTaskEditDurationPolicy {
     }
     options.insert(normalized(selectedMinutes))
     return options.sorted()
+  }
+}
+
+private enum TimelineTaskEditDisplayFormatters {
+  private static let dateFormatter: DateFormatter = {
+    let formatter = DateFormatter()
+    formatter.locale = Locale(identifier: "en_US_POSIX")
+    formatter.dateFormat = "yyyy-MM-dd"
+    return formatter
+  }()
+
+  private static let timeFormatter: DateFormatter = {
+    let formatter = DateFormatter()
+    formatter.locale = Locale(identifier: "en_US_POSIX")
+    formatter.dateFormat = "HH:mm"
+    return formatter
+  }()
+
+  static func dateText(for date: Date) -> String {
+    dateFormatter.string(from: date)
+  }
+
+  static func timeText(for date: Date) -> String {
+    timeFormatter.string(from: date)
   }
 }
 

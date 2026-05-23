@@ -158,7 +158,9 @@ struct DailyJournalWindowContent: View {
   private func loadInitialEntriesIfNeeded() {
     guard entries.isEmpty, let store else { return }
     do {
-      entries = try store.entries(startingAt: Date(), count: 1)
+      let today = try store.entries(startingAt: Date(), count: 1)
+      let previous = try store.precedingEntries(before: Date(), count: 1)
+      entries = today + previous
       loadErrorText = nil
     } catch {
       loadErrorText = "저널을 불러오지 못했습니다."

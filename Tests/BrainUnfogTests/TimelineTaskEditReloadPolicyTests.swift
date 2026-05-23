@@ -24,10 +24,10 @@ final class TimelineTaskEditReloadPolicyTests: XCTestCase {
   }
 
   func testDurationPolicyFormatsDurationForDisplay() {
-    XCTAssertEqual(TimelineTaskEditDurationPolicy.displayText(90), "1시간 30분")
-    XCTAssertEqual(TimelineTaskEditDurationPolicy.displayText(60), "1시간")
-    XCTAssertEqual(TimelineTaskEditDurationPolicy.displayText(15), "15분")
-    XCTAssertEqual(TimelineTaskEditDurationPolicy.displayText(2 * 24 * 60), "2일")
+    XCTAssertEqual(TimelineTaskEditDurationPolicy.displayText(90), "1:30")
+    XCTAssertEqual(TimelineTaskEditDurationPolicy.displayText(60), "1:00")
+    XCTAssertEqual(TimelineTaskEditDurationPolicy.displayText(15), "15")
+    XCTAssertEqual(TimelineTaskEditDurationPolicy.displayText(2 * 24 * 60), "2D")
   }
 
   func testDurationPolicyMenuOptionsCoverExpectedRange() {
