@@ -41,6 +41,32 @@ enum TaskEditAuxiliarySectionVisibilityPolicy {
     }
     return sections
   }
+
+  static func isVisible(
+    _ section: TaskEditAuxiliarySection,
+    expandedSections: Set<TaskEditAuxiliarySection>,
+    hasValue: Bool
+  ) -> Bool {
+    hasValue || expandedSections.contains(section)
+  }
+
+  static func toggledSections(
+    _ expandedSections: Set<TaskEditAuxiliarySection>,
+    section: TaskEditAuxiliarySection,
+    hasValue: Bool
+  ) -> Set<TaskEditAuxiliarySection> {
+    var nextSections = expandedSections
+    if hasValue {
+      nextSections.insert(section)
+      return nextSections
+    }
+    if nextSections.contains(section) {
+      nextSections.remove(section)
+    } else {
+      nextSections.insert(section)
+    }
+    return nextSections
+  }
 }
 
 struct WorkspaceTaskEditPanelTarget: Equatable, Sendable {
@@ -95,6 +121,7 @@ struct TimelineTaskEditPopoverContent: View {
   let onSyncEditingChanged: (Bool) -> Void
   let onSyncEditingActivity: () -> Void
   let bottomContent: AnyView?
+  private let externalExpandedAuxiliarySections: Binding<Set<TaskEditAuxiliarySection>>?
   let closeRequestID: Int
   let initialFocus: TimelineTaskEditInitialFocus
   let onCancel: () -> Void
@@ -125,7 +152,7 @@ struct TimelineTaskEditPopoverContent: View {
   @State private var isSyncEditingActive = false
   @State private var isClosing = false
   @State private var skipCleanReloadAfterLocalSaveUntil: Date?
-  @State private var expandedAuxiliarySections: Set<TaskEditAuxiliarySection>
+  @State private var localExpandedAuxiliarySections: Set<TaskEditAuxiliarySection>
 
   private let calendar = Calendar.autoupdatingCurrent
   private static let autoSaveDelayNanoseconds: UInt64 = 1_200_000_000
@@ -141,6 +168,7 @@ struct TimelineTaskEditPopoverContent: View {
     onSyncEditingChanged: @escaping (Bool) -> Void = { _ in },
     onSyncEditingActivity: @escaping () -> Void = {},
     bottomContent: AnyView? = nil,
+    expandedAuxiliarySections: Binding<Set<TaskEditAuxiliarySection>>? = nil,
     closeRequestID: Int = 0,
     initialFocus: TimelineTaskEditInitialFocus = .none,
     onCancel: @escaping () -> Void
@@ -166,6 +194,7 @@ struct TimelineTaskEditPopoverContent: View {
     self.onSyncEditingChanged = onSyncEditingChanged
     self.onSyncEditingActivity = onSyncEditingActivity
     self.bottomContent = bottomContent
+    self.externalExpandedAuxiliarySections = expandedAuxiliarySections
     self.closeRequestID = closeRequestID
     self.initialFocus = initialFocus
     self.onCancel = onCancel
@@ -191,7 +220,7 @@ struct TimelineTaskEditPopoverContent: View {
         recurrenceRuleRaw: initialFields.recurrenceRuleRaw
       )
     )
-    _expandedAuxiliarySections = State(
+    _localExpandedAuxiliarySections = State(
       initialValue: TaskEditAuxiliarySectionVisibilityPolicy.initialExpandedSections(
         hasAttachments: !initialAttachments.isEmpty,
         hasDate: initialFields.day != nil,
@@ -341,9 +370,6 @@ struct TimelineTaskEditPopoverContent: View {
 
       if presentationStyle != .inlinePanel {
         titleSection
-      } else {
-        auxiliarySectionToggleBar
-          .frame(maxWidth: .infinity, alignment: .trailing)
       }
 
       VStack(alignment: .leading, spacing: 6) {
@@ -361,15 +387,15 @@ struct TimelineTaskEditPopoverContent: View {
         )
       }
 
-      if expandedAuxiliarySections.contains(.attachments) {
+      if isAuxiliarySectionVisible(.attachments) {
         attachmentSection
       }
 
-      if expandedAuxiliarySections.contains(.schedule) {
+      if isAuxiliarySectionVisible(.schedule) {
         dateTimeSection
       }
 
-      if expandedAuxiliarySections.contains(.recurrence) {
+      if isAuxiliarySectionVisible(.recurrence) {
         recurrenceSection
       }
 
@@ -421,19 +447,19 @@ struct TimelineTaskEditPopoverContent: View {
       auxiliarySectionToggleButton(
         section: .attachments,
         systemImage: "paperclip",
-        help: expandedAuxiliarySections.contains(.attachments) ? "첨부파일 접기" : "첨부파일 열기",
+        help: isAuxiliarySectionVisible(.attachments) ? "첨부파일 보기" : "첨부파일 열기",
         hasValue: !attachments.isEmpty
       )
       auxiliarySectionToggleButton(
         section: .schedule,
         systemImage: "calendar.badge.clock",
-        help: expandedAuxiliarySections.contains(.schedule) ? "날짜와 시간 접기" : "날짜와 시간 열기",
+        help: isAuxiliarySectionVisible(.schedule) ? "날짜와 시간 보기" : "날짜와 시간 열기",
         hasValue: hasDate || hasTime || durationMinutes != nil
       )
       auxiliarySectionToggleButton(
         section: .recurrence,
         systemImage: "repeat",
-        help: expandedAuxiliarySections.contains(.recurrence) ? "반복 접기" : "반복 열기",
+        help: isAuxiliarySectionVisible(.recurrence) ? "반복 보기" : "반복 열기",
         hasValue: recurrenceDescriptor != .none
       )
     }
@@ -445,13 +471,9 @@ struct TimelineTaskEditPopoverContent: View {
     help: String,
     hasValue: Bool
   ) -> some View {
-    let isExpanded = expandedAuxiliarySections.contains(section)
+    let isExpanded = isAuxiliarySectionVisible(section)
     return Button {
-      if isExpanded {
-        expandedAuxiliarySections.remove(section)
-      } else {
-        expandedAuxiliarySections.insert(section)
-      }
+      toggleAuxiliarySection(section, hasValue: hasValue)
     } label: {
       Image(systemName: systemImage)
         .font(.system(size: 12, weight: .semibold))
@@ -471,83 +493,54 @@ struct TimelineTaskEditPopoverContent: View {
     .help(help)
   }
 
+  private func isAuxiliarySectionVisible(_ section: TaskEditAuxiliarySection) -> Bool {
+    TaskEditAuxiliarySectionVisibilityPolicy.isVisible(
+      section,
+      expandedSections: expandedAuxiliarySectionsValue,
+      hasValue: auxiliarySectionHasValue(section)
+    )
+  }
+
+  private func toggleAuxiliarySection(
+    _ section: TaskEditAuxiliarySection,
+    hasValue: Bool
+  ) {
+    expandedAuxiliarySectionsValue = TaskEditAuxiliarySectionVisibilityPolicy.toggledSections(
+      expandedAuxiliarySectionsValue,
+      section: section,
+      hasValue: hasValue
+    )
+  }
+
+  private var expandedAuxiliarySectionsValue: Set<TaskEditAuxiliarySection> {
+    get {
+      externalExpandedAuxiliarySections?.wrappedValue ?? localExpandedAuxiliarySections
+    }
+    nonmutating set {
+      if let externalExpandedAuxiliarySections {
+        externalExpandedAuxiliarySections.wrappedValue = newValue
+      } else {
+        localExpandedAuxiliarySections = newValue
+      }
+    }
+  }
+
+  private func auxiliarySectionHasValue(_ section: TaskEditAuxiliarySection) -> Bool {
+    switch section {
+    case .attachments:
+      return !attachments.isEmpty
+    case .schedule:
+      return hasDate || hasTime || durationMinutes != nil
+    case .recurrence:
+      return recurrenceDescriptor != .none
+    }
+  }
+
   private var dateTimeSection: some View {
     VStack(alignment: .leading, spacing: 8) {
       HStack(alignment: .center, spacing: 10) {
-        Toggle("날짜", isOn: $hasDate)
-          .toggleStyle(.checkbox)
-          .font(TaskEditTypography.controlFont)
-          .frame(width: 88, alignment: .leading)
-
-        Button {
-          if !hasDate {
-            hasDate = true
-          }
-          isDatePickerPresented = true
-        } label: {
-          HStack(spacing: 8) {
-            Image(systemName: "calendar")
-              .font(.system(size: 13, weight: .semibold))
-            Text(hasDate ? selectedDateText : "날짜 없음")
-              .font(TaskEditTypography.controlFont)
-              .lineLimit(1)
-            Spacer(minLength: 0)
-            Image(systemName: "chevron.down")
-              .font(.system(size: 10, weight: .semibold))
-              .foregroundStyle(.secondary)
-          }
-          .taskEditCompactControlBackground()
-        }
-        .buttonStyle(.plain)
-        .foregroundStyle(hasDate ? Color.primary : Color.secondary)
-        .popover(isPresented: $isDatePickerPresented, arrowEdge: .bottom) {
-          DatePicker("", selection: $selectedDate, displayedComponents: .date)
-            .datePickerStyle(.graphical)
-            .labelsHidden()
-            .padding(12)
-            .frame(width: 284, alignment: .leading)
-            .background(TaskEditFieldStyle.panelBackgroundColor)
-        }
-      }
-
-      HStack(alignment: .center, spacing: 10) {
-        Toggle("시간", isOn: $hasTime)
-          .toggleStyle(.checkbox)
-          .font(TaskEditTypography.controlFont)
-          .disabled(!hasDate)
-          .frame(width: 88, alignment: .leading)
-
-        Button {
-          guard hasDate else { return }
-          if !hasTime {
-            hasTime = true
-          }
-          isTimePickerPresented = true
-        } label: {
-          HStack(spacing: 8) {
-            Image(systemName: "clock")
-              .font(.system(size: 13, weight: .semibold))
-            Text(hasDate && hasTime ? selectedTimeText : "시간 없음")
-              .font(TaskEditTypography.controlFont)
-              .lineLimit(1)
-            Spacer(minLength: 0)
-            Image(systemName: "chevron.down")
-              .font(.system(size: 10, weight: .semibold))
-              .foregroundStyle(.secondary)
-          }
-          .taskEditCompactControlBackground()
-        }
-        .buttonStyle(.plain)
-        .foregroundStyle(hasDate && hasTime ? Color.primary : Color.secondary)
-        .disabled(!hasDate)
-        .popover(isPresented: $isTimePickerPresented, arrowEdge: .bottom) {
-          DatePicker("", selection: $selectedTime, displayedComponents: .hourAndMinute)
-            .labelsHidden()
-            .datePickerStyle(.compact)
-            .padding(12)
-            .frame(width: 148, alignment: .leading)
-            .background(TaskEditFieldStyle.panelBackgroundColor)
-        }
+        dateControl
+        timeControl
       }
 
       HStack(alignment: .center, spacing: 10) {
@@ -603,6 +596,89 @@ struct TimelineTaskEditPopoverContent: View {
     .tint(TaskEditFieldStyle.softAccentColor)
   }
 
+  private var dateControl: some View {
+    HStack(alignment: .center, spacing: 8) {
+      Toggle("날짜", isOn: $hasDate)
+        .toggleStyle(.checkbox)
+        .font(TaskEditTypography.controlFont)
+        .frame(width: 62, alignment: .leading)
+
+      Button {
+        if !hasDate {
+          hasDate = true
+        }
+        isDatePickerPresented = true
+      } label: {
+        HStack(spacing: 8) {
+          Image(systemName: "calendar")
+            .font(.system(size: 13, weight: .semibold))
+          Text(hasDate ? selectedDateText : "날짜 없음")
+            .font(TaskEditTypography.controlFont)
+            .lineLimit(1)
+          Spacer(minLength: 0)
+          Image(systemName: "chevron.down")
+            .font(.system(size: 10, weight: .semibold))
+            .foregroundStyle(.secondary)
+        }
+        .taskEditCompactControlBackground()
+      }
+      .buttonStyle(.plain)
+      .foregroundStyle(hasDate ? Color.primary : Color.secondary)
+      .popover(isPresented: $isDatePickerPresented, arrowEdge: .bottom) {
+        DatePicker("", selection: $selectedDate, displayedComponents: .date)
+          .datePickerStyle(.graphical)
+          .labelsHidden()
+          .padding(12)
+          .frame(width: 284, alignment: .leading)
+          .background(TaskEditFieldStyle.panelBackgroundColor)
+      }
+    }
+    .frame(maxWidth: .infinity, alignment: .leading)
+  }
+
+  private var timeControl: some View {
+    HStack(alignment: .center, spacing: 8) {
+      Toggle("시간", isOn: $hasTime)
+        .toggleStyle(.checkbox)
+        .font(TaskEditTypography.controlFont)
+        .disabled(!hasDate)
+        .frame(width: 62, alignment: .leading)
+
+      Button {
+        guard hasDate else { return }
+        if !hasTime {
+          hasTime = true
+        }
+        isTimePickerPresented = true
+      } label: {
+        HStack(spacing: 8) {
+          Image(systemName: "clock")
+            .font(.system(size: 13, weight: .semibold))
+          Text(hasDate && hasTime ? selectedTimeText : "시간 없음")
+            .font(TaskEditTypography.controlFont)
+            .lineLimit(1)
+          Spacer(minLength: 0)
+          Image(systemName: "chevron.down")
+            .font(.system(size: 10, weight: .semibold))
+            .foregroundStyle(.secondary)
+        }
+        .taskEditCompactControlBackground()
+      }
+      .buttonStyle(.plain)
+      .foregroundStyle(hasDate && hasTime ? Color.primary : Color.secondary)
+      .disabled(!hasDate)
+      .popover(isPresented: $isTimePickerPresented, arrowEdge: .bottom) {
+        DatePicker("", selection: $selectedTime, displayedComponents: .hourAndMinute)
+          .labelsHidden()
+          .datePickerStyle(.compact)
+          .padding(12)
+          .frame(width: 148, alignment: .leading)
+          .background(TaskEditFieldStyle.panelBackgroundColor)
+      }
+    }
+    .frame(maxWidth: .infinity, alignment: .leading)
+  }
+
   private var recurrenceSection: some View {
     TaskEditRecurrenceControl(
       descriptor: $recurrenceDescriptor,
@@ -624,10 +700,6 @@ struct TimelineTaskEditPopoverContent: View {
 
   private var attachmentSection: some View {
     VStack(alignment: .leading, spacing: 8) {
-      Text("첨부파일")
-        .font(TaskEditTypography.labelFont)
-        .foregroundStyle(.secondary)
-
       VStack(alignment: .leading, spacing: 7) {
         ForEach(attachmentItems) { attachment in
           HStack(spacing: 8) {

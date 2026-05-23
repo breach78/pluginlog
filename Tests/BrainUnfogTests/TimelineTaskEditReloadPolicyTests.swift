@@ -79,6 +79,45 @@ final class TimelineTaskEditReloadPolicyTests: XCTestCase {
     )
   }
 
+  func testAuxiliarySectionPolicyKeepsValuedSectionsVisible() {
+    XCTAssertTrue(
+      TaskEditAuxiliarySectionVisibilityPolicy.isVisible(
+        .schedule,
+        expandedSections: [],
+        hasValue: true
+      )
+    )
+  }
+
+  func testAuxiliarySectionPolicyDoesNotCollapseValuedSectionOnToggle() {
+    XCTAssertEqual(
+      TaskEditAuxiliarySectionVisibilityPolicy.toggledSections(
+        [.schedule],
+        section: .schedule,
+        hasValue: true
+      ),
+      [.schedule]
+    )
+  }
+
+  func testAuxiliarySectionPolicyTogglesEmptySections() {
+    XCTAssertEqual(
+      TaskEditAuxiliarySectionVisibilityPolicy.toggledSections(
+        [],
+        section: .attachments,
+        hasValue: false
+      ),
+      [.attachments]
+    )
+    XCTAssertTrue(
+      TaskEditAuxiliarySectionVisibilityPolicy.toggledSections(
+        [.attachments],
+        section: .attachments,
+        hasValue: false
+      ).isEmpty
+    )
+  }
+
   func testPreservesEditorWhenReloadOnlyDropsTrailingBlankLine() {
     let current = fields(noteText: "First line\n")
     let loaded = fields(noteText: "First line")

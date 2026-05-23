@@ -22,6 +22,7 @@ struct TimelineProjectListContent: View {
   @State private var expandedTaskID: UUID?
   @State private var expandedTaskCloseRequestID = 0
   @State private var pendingExpandedTaskIDAfterClose: UUID?
+  @State private var expandedTaskAuxiliarySections: [UUID: Set<TaskEditAuxiliarySection>] = [:]
   @State private var projectNoteText: String
   @State private var projectNoteHeight: CGFloat = 0
   @State private var lastCommittedProjectNoteText: String
@@ -99,6 +100,9 @@ struct TimelineProjectListContent: View {
       guard let expandedTaskID else { return }
       if !nextSnapshot.tasks.contains(where: { $0.id == expandedTaskID }) {
         self.expandedTaskID = nil
+      }
+      expandedTaskAuxiliarySections = expandedTaskAuxiliarySections.filter { taskID, _ in
+        nextSnapshot.tasks.contains(where: { $0.id == taskID })
       }
     }
     .onChange(of: projectNoteText) { _, _ in
@@ -433,7 +437,11 @@ struct TimelineProjectListContent: View {
           taskTitleLabel(for: task)
         }
 
-        if let dateText = task.dateText {
+        if session.editingTaskID == task.id,
+          let configuration = inlineEditorConfiguration
+        {
+          taskEditAuxiliaryControls(for: task, configuration: configuration)
+        } else if let dateText = task.dateText {
           Text(dateText)
             .font(projectListDateFont)
             .foregroundStyle(task.isOverdue ? Color.red : Color.secondary)
@@ -452,6 +460,180 @@ struct TimelineProjectListContent: View {
         )
           .frame(maxWidth: .infinity, alignment: .leading)
       }
+    }
+  }
+
+  private func taskEditAuxiliaryControls(
+    for task: TimelineProjectListWindowSnapshot.Task,
+    configuration: TimelineProjectListInlineEditorConfiguration
+  ) -> some View {
+    HStack(spacing: 5) {
+      taskEditAuxiliaryButton(
+        for: task,
+        configuration: configuration,
+        section: .attachments,
+        systemImage: "paperclip",
+        title: nil,
+        help: "첨부파일"
+      )
+
+      taskEditAuxiliaryButton(
+        for: task,
+        configuration: configuration,
+        section: .schedule,
+        systemImage: task.dateText == nil ? "calendar.badge.clock" : nil,
+        title: task.dateText,
+        help: "날짜와 시간"
+      )
+
+      taskEditAuxiliaryButton(
+        for: task,
+        configuration: configuration,
+        section: .recurrence,
+        systemImage: "repeat",
+        title: nil,
+        help: "반복"
+      )
+    }
+    .font(projectListDateFont.weight(.semibold))
+    .imageScale(.small)
+    .fixedSize(horizontal: true, vertical: false)
+  }
+
+  private func taskEditAuxiliaryButton(
+    for task: TimelineProjectListWindowSnapshot.Task,
+    configuration: TimelineProjectListInlineEditorConfiguration,
+    section: TaskEditAuxiliarySection,
+    systemImage: String?,
+    title: String?,
+    help: String
+  ) -> some View {
+    let hasValue = taskEditAuxiliarySectionHasValue(
+      section,
+      task: task,
+      configuration: configuration
+    )
+    let isVisible = TaskEditAuxiliarySectionVisibilityPolicy.isVisible(
+      section,
+      expandedSections: expandedTaskAuxiliarySectionsValue(for: task, configuration: configuration),
+      hasValue: hasValue
+    )
+    return Button {
+      toggleTaskEditAuxiliarySection(
+        section,
+        task: task,
+        configuration: configuration,
+        hasValue: hasValue
+      )
+    } label: {
+      Group {
+        if let title {
+          Text(title)
+            .lineLimit(1)
+        } else if let systemImage {
+          Image(systemName: systemImage)
+        } else {
+          EmptyView()
+        }
+      }
+      .foregroundStyle(isVisible ? projectColor.opacity(0.9) : Color.secondary.opacity(0.72))
+      .padding(.horizontal, title == nil ? 0 : 4)
+      .frame(minWidth: title == nil ? 22 : 0, minHeight: 20)
+      .background(
+        RoundedRectangle(cornerRadius: 5)
+          .fill(isVisible ? projectColor.opacity(0.08) : Color.clear)
+      )
+      .contentShape(Rectangle())
+    }
+    .buttonStyle(.plain)
+    .help(help)
+  }
+
+  private func expandedTaskAuxiliarySectionsBinding(
+    for task: TimelineProjectListWindowSnapshot.Task,
+    configuration: TimelineProjectListInlineEditorConfiguration
+  ) -> Binding<Set<TaskEditAuxiliarySection>> {
+    Binding(
+      get: {
+        expandedTaskAuxiliarySectionsValue(for: task, configuration: configuration)
+      },
+      set: { nextSections in
+        expandedTaskAuxiliarySections[task.id] = nextSections
+      }
+    )
+  }
+
+  private func expandedTaskAuxiliarySectionsValue(
+    for task: TimelineProjectListWindowSnapshot.Task,
+    configuration: TimelineProjectListInlineEditorConfiguration
+  ) -> Set<TaskEditAuxiliarySection> {
+    expandedTaskAuxiliarySections[task.id]
+      ?? initialTaskAuxiliarySections(for: task, configuration: configuration)
+  }
+
+  private func toggleTaskEditAuxiliarySection(
+    _ section: TaskEditAuxiliarySection,
+    task: TimelineProjectListWindowSnapshot.Task,
+    configuration: TimelineProjectListInlineEditorConfiguration,
+    hasValue: Bool
+  ) {
+    expandedTaskAuxiliarySections[task.id] =
+      TaskEditAuxiliarySectionVisibilityPolicy.toggledSections(
+        expandedTaskAuxiliarySectionsValue(for: task, configuration: configuration),
+        section: section,
+        hasValue: hasValue
+      )
+  }
+
+  private func initialTaskAuxiliarySections(
+    for task: TimelineProjectListWindowSnapshot.Task,
+    configuration: TimelineProjectListInlineEditorConfiguration
+  ) -> Set<TaskEditAuxiliarySection> {
+    let fields = configuration.initialFields(task)
+    let attachments = TaskEditAttachmentService.attachments(
+      in: fields.noteText,
+      vaultRootURL: configuration.vaultRootURL
+    )
+    return TaskEditAuxiliarySectionVisibilityPolicy.initialExpandedSections(
+      hasAttachments: !attachments.isEmpty || task.metadataIndicators.attachmentCount > 0,
+      hasDate: fields.day != nil || task.dateText != nil,
+      hasTime: fields.timeMinutes != nil,
+      durationMinutes: TimelineTaskEditDurationPolicy.savedDuration(
+        hasDate: fields.day != nil,
+        hasTime: fields.timeMinutes != nil,
+        durationMinutes: fields.durationMinutes
+      ),
+      recurrenceRuleRaw: fields.recurrenceRuleRaw
+    )
+  }
+
+  private func taskEditAuxiliarySectionHasValue(
+    _ section: TaskEditAuxiliarySection,
+    task: TimelineProjectListWindowSnapshot.Task,
+    configuration: TimelineProjectListInlineEditorConfiguration
+  ) -> Bool {
+    let fields = configuration.initialFields(task)
+    switch section {
+    case .attachments:
+      return task.metadataIndicators.attachmentCount > 0
+        || !TaskEditAttachmentService.attachments(
+          in: fields.noteText,
+          vaultRootURL: configuration.vaultRootURL
+        ).isEmpty
+    case .schedule:
+      let duration = TimelineTaskEditDurationPolicy.savedDuration(
+        hasDate: fields.day != nil,
+        hasTime: fields.timeMinutes != nil,
+        durationMinutes: fields.durationMinutes
+      )
+      return task.dateText != nil
+        || fields.day != nil
+        || fields.timeMinutes != nil
+        || duration != nil
+    case .recurrence:
+      return task.metadataIndicators.isRecurring
+        || !(fields.recurrenceRuleRaw?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+          ?? true)
     }
   }
 
@@ -524,6 +706,10 @@ struct TimelineProjectListContent: View {
           configuration.onSyncEditingChanged(task.id, isEditing)
         },
         onSyncEditingActivity: configuration.onSyncEditingActivity,
+        expandedAuxiliarySections: expandedTaskAuxiliarySectionsBinding(
+          for: task,
+          configuration: configuration
+        ),
         closeRequestID: expandedTaskCloseRequestID,
         initialFocus: configuration.initialExpandedTaskID == task.id
           ? configuration.initialFocus
@@ -572,6 +758,7 @@ struct TimelineProjectListContent: View {
 
   private func completeExpandedTaskEditorClose(for taskID: UUID) {
     guard expandedTaskID == taskID else { return }
+    expandedTaskAuxiliarySections.removeValue(forKey: taskID)
     let nextTaskID = pendingExpandedTaskIDAfterClose
     pendingExpandedTaskIDAfterClose = nil
     guard let nextTaskID, visibleTasks.contains(where: { $0.id == nextTaskID }) else {
