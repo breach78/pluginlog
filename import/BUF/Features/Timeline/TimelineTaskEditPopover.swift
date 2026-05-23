@@ -1220,12 +1220,10 @@ enum TimelineTaskEditReloadPolicy {
 }
 
 enum TaskEditTypography {
-  static let scale: CGFloat = 1.3
-  static let headerSize: CGFloat = 12 * scale
-  static let panelTextSize: CGFloat = headerSize * 0.9
-  static let labelSize: CGFloat = panelTextSize
-  static let bodySize: CGFloat = panelTextSize
-  static let titleSize: CGFloat = panelTextSize
+  static let headerSize: CGFloat = 15
+  static let labelSize: CGFloat = 15
+  static let bodySize: CGFloat = 15
+  static let titleSize: CGFloat = 15
   static let titleMinimumHeight: CGFloat = 32
   static let noteMinimumHeight: CGFloat = 150
 

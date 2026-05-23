@@ -1407,9 +1407,9 @@ struct TimelineProjectListContent: View {
   private var projectNoteNSFont: NSFont {
     switch presentation {
     case .window:
-      return .systemFont(ofSize: 12)
+      return .systemFont(ofSize: 14)
     case .embedded:
-      return AppInputTypography.nsFont(size: max(Self.embeddedTextSize - 1, 10))
+      return AppInputTypography.nsFont(size: 15)
     }
   }
 
@@ -1440,7 +1440,7 @@ struct TimelineProjectListContent: View {
     session.openTaskIDs
   }
 
-  static let embeddedTextSize: CGFloat = 12 * 1.3 * 0.9
+  static let embeddedTextSize: CGFloat = 15
   private static let taskInsertionAnimation = Animation.easeOut(duration: 0.16)
   private static let taskListBottomScrollReserve: CGFloat = 72
   private static let focusedTaskScrollAnchor = UnitPoint(x: 0.5, y: 0.18)
