@@ -1225,9 +1225,7 @@ struct TimelineProjectListContent: View {
   }
 
   private func scrollInitialFocusedTaskIntoView(with proxy: ScrollViewProxy) {
-    guard inlineEditorConfiguration?.initialFocus == .note,
-      let taskID = inlineEditorConfiguration?.initialExpandedTaskID
-    else {
+    guard let taskID = inlineEditorConfiguration?.initialExpandedTaskID else {
       return
     }
 
@@ -1443,7 +1441,7 @@ struct TimelineProjectListContent: View {
   static let embeddedTextSize: CGFloat = 15
   private static let taskInsertionAnimation = Animation.easeOut(duration: 0.16)
   private static let taskListBottomScrollReserve: CGFloat = 72
-  private static let focusedTaskScrollAnchor = UnitPoint(x: 0.5, y: 0.18)
+  private static let focusedTaskScrollAnchor = UnitPoint(x: 0.5, y: 0.5)
   private static let focusedDraftScrollAnchor = UnitPoint(x: 0.5, y: 0.88)
   private static let projectNoteAutoSaveDelayNanoseconds: UInt64 = 650_000_000
 }
