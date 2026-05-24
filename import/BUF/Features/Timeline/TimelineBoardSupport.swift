@@ -212,6 +212,22 @@ struct TimelineDetailTaskChipGroup: Identifiable, Equatable, Sendable {
   }
 }
 
+struct TimelineCalendarEventChip: Identifiable, Equatable, Sendable {
+  let id: String
+  let date: Date
+  let event: ScheduleCalendarEvent
+}
+
+struct TimelineCalendarEventGroup: Identifiable, Equatable, Sendable {
+  var id: Date { date }
+  let date: Date
+  let events: [TimelineCalendarEventChip]
+
+  var renderedRowCount: Int {
+    events.count
+  }
+}
+
 struct TaskProjectMoveSnapshot {
   let movedTaskIDs: [UUID]
   let taskProjectIDs: [UUID: UUID]

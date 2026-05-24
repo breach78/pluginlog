@@ -262,6 +262,101 @@ enum TimelineBoardReadPath {
     return max(minHeight, contentHeight)
   }
 
+  static func timelineCalendarEventGroups(
+    from projection: ScheduleCalendarOverlayProjection,
+    visibleDateRange: ClosedRange<Date>,
+    calendar: Calendar
+  ) -> [TimelineCalendarEventGroup] {
+    timelineCalendarEventGroups(
+      from: projection.foregroundEvents,
+      visibleDateRange: visibleDateRange,
+      calendar: calendar
+    )
+  }
+
+  static func timelineCalendarEventGroups(
+    from events: [ScheduleCalendarEvent],
+    visibleDateRange: ClosedRange<Date>,
+    calendar: Calendar
+  ) -> [TimelineCalendarEventGroup] {
+    let visibleStartDay = calendar.startOfDay(for: visibleDateRange.lowerBound)
+    let visibleEndDay = calendar.startOfDay(for: visibleDateRange.upperBound)
+    guard visibleStartDay <= visibleEndDay else { return [] }
+
+    var eventsByDay: [Date: [TimelineCalendarEventChip]] = [:]
+    for event in events {
+      guard let eventDays = timelineCalendarEventDayRange(for: event, calendar: calendar) else {
+        continue
+      }
+
+      let lowerDay = max(eventDays.lowerBound, visibleStartDay)
+      let upperDay = min(eventDays.upperBound, visibleEndDay)
+      guard lowerDay <= upperDay else { continue }
+
+      var day = lowerDay
+      while day <= upperDay {
+        eventsByDay[day, default: []].append(
+          TimelineCalendarEventChip(
+            id: "\(event.id)-\(Int(day.timeIntervalSinceReferenceDate))",
+            date: day,
+            event: event
+          )
+        )
+        guard let nextDay = calendar.date(byAdding: .day, value: 1, to: day),
+          nextDay > day
+        else {
+          break
+        }
+        day = nextDay
+      }
+    }
+
+    return eventsByDay.keys.sorted().map { day in
+      TimelineCalendarEventGroup(
+        date: day,
+        events: (eventsByDay[day] ?? []).sorted(by: timelineCalendarEventSort)
+      )
+    }
+  }
+
+  private static func timelineCalendarEventDayRange(
+    for event: ScheduleCalendarEvent,
+    calendar: Calendar
+  ) -> ClosedRange<Date>? {
+    let startDay = calendar.startOfDay(for: event.startDate)
+    var endReference = event.startDate
+    if event.endDate > event.startDate,
+      let exclusiveEndReference = calendar.date(byAdding: .second, value: -1, to: event.endDate)
+    {
+      endReference = max(event.startDate, exclusiveEndReference)
+    }
+    let endDay = calendar.startOfDay(for: endReference)
+    guard startDay <= endDay else { return nil }
+    return startDay...endDay
+  }
+
+  private static func timelineCalendarEventSort(
+    _ lhs: TimelineCalendarEventChip,
+    _ rhs: TimelineCalendarEventChip
+  ) -> Bool {
+    let lhsEvent = lhs.event
+    let rhsEvent = rhs.event
+    if lhsEvent.isAllDay != rhsEvent.isAllDay {
+      return lhsEvent.isAllDay && !rhsEvent.isAllDay
+    }
+    if lhsEvent.startDate != rhsEvent.startDate {
+      return lhsEvent.startDate < rhsEvent.startDate
+    }
+    if lhsEvent.endDate != rhsEvent.endDate {
+      return lhsEvent.endDate < rhsEvent.endDate
+    }
+    let titleComparison = lhsEvent.title.localizedStandardCompare(rhsEvent.title)
+    if titleComparison != .orderedSame {
+      return titleComparison == .orderedAscending
+    }
+    return lhsEvent.id.localizedStandardCompare(rhsEvent.id) == .orderedAscending
+  }
+
   static func taskEditFieldsByMovingDay(
     _ fields: RetainedTaskEditFields,
     to targetDate: Date,
@@ -834,6 +929,73 @@ extension TimelineBoardView {
     cachedTimelineBarsPresentationSignature = nil
     cachedTimelineDayHeaderSections = [:]
     cachedTimelineDayHeaderSourceSignature = nil
+  }
+
+  func timelineCalendarEventGroups() -> [TimelineCalendarEventGroup] {
+    guard showsTimelineCalendarRow else { return [] }
+    return TimelineBoardReadPath.timelineCalendarEventGroups(
+      from: appState.resolvedScheduleCalendarOverlayProjection(),
+      visibleDateRange: TimelineBoardReadPath.renderedTimelineBadgeDateRange(
+        anchorDate: anchorDate,
+        dayRange: dayRange,
+        calendar: calendar
+      ),
+      calendar: calendar
+    )
+  }
+
+  func timelineCalendarRowHeight(for groups: [TimelineCalendarEventGroup]) -> CGFloat {
+    guard showsTimelineCalendarRow else { return 0 }
+    let maxRenderedRows = groups.map(\.renderedRowCount).max() ?? 0
+    return TimelineBoardReadPath.detailTimelineRowHeight(
+      renderedRowCount: maxRenderedRows,
+      minHeight: timelineCalendarRowMinHeight,
+      chipHeight: detailTaskChipHeight,
+      chipSpacing: detailTaskChipSpacing,
+      verticalInset: detailTaskChipVerticalInset
+    )
+  }
+
+  func timelineProjectRowsTopInset(calendarRowHeight: CGFloat) -> CGFloat {
+    guard showsTimelineCalendarRow else { return 0 }
+    return calendarRowHeight + rowMetrics.spacing
+  }
+
+  func timelineCalendarPresentationSignature(
+    for groups: [TimelineCalendarEventGroup],
+    rowHeight: CGFloat,
+    accessDenied: Bool
+  ) -> Int {
+    var hasher = Hasher()
+    hasher.combine(displayMode.rawValue)
+    hasher.combine(Int(rowHeight.rounded()))
+    hasher.combine(accessDenied)
+    hasher.combine(groups.count)
+    for group in groups {
+      hasher.combine(group.date.timeIntervalSinceReferenceDate)
+      hasher.combine(group.events.count)
+      for chip in group.events {
+        hasher.combine(chip.id)
+        hasher.combine(chip.event.title)
+        hasher.combine(chip.event.calendarTitle)
+        hasher.combine(chip.event.calendarColorHex)
+        hasher.combine(chip.event.startDate.timeIntervalSinceReferenceDate)
+        hasher.combine(chip.event.endDate.timeIntervalSinceReferenceDate)
+        hasher.combine(chip.event.isAllDay)
+      }
+    }
+    return hasher.finalize()
+  }
+
+  func refreshTimelineCalendarOverlayIfNeeded() async {
+    guard showsTimelineCalendarRow, isActive else { return }
+    await appState.refreshScheduleCalendarOverlay(
+      visibleRange: TimelineBoardReadPath.dateRange(
+        forDayOffsets: dayRange,
+        anchorDate: anchorDate,
+        calendar: calendar
+      )
+    )
   }
 
   @discardableResult

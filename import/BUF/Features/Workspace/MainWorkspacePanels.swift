@@ -80,6 +80,9 @@ extension MainWorkspaceView {
         onOpenScheduleDayPanel: { target in
           showScheduleMonthDetail(target)
         },
+        onEditCalendarEvent: { event in
+          showCalendarEventEditor(event)
+        },
         onEditTask: { target in
           showTimelineTaskEditor(target)
         },

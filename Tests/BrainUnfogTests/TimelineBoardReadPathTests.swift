@@ -1070,6 +1070,193 @@ final class TimelineBoardReadPathTests: XCTestCase {
     )
   }
 
+  func testTimelineCalendarEventGroupsUseForegroundEventsOnly() {
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+    let day = calendar.date(from: DateComponents(year: 2026, month: 5, day: 24))!
+    let visibleEvent = makeCalendarEvent(
+      id: "visible",
+      title: "Visible",
+      startDate: calendar.date(from: DateComponents(
+        year: 2026,
+        month: 5,
+        day: 24,
+        hour: 10
+      ))!,
+      endDate: calendar.date(from: DateComponents(
+        year: 2026,
+        month: 5,
+        day: 24,
+        hour: 11
+      ))!
+    )
+    let backgroundEvent = makeCalendarEvent(
+      id: "background",
+      title: "Background",
+      startDate: visibleEvent.startDate,
+      endDate: visibleEvent.endDate
+    )
+    let projection = ScheduleCalendarOverlayProjection(
+      calendarSources: [],
+      foregroundEvents: [visibleEvent],
+      backgroundEvents: [backgroundEvent],
+      calendarsSignature: 1,
+      visibleEventsSignature: 2,
+      accessDenied: false
+    )
+
+    let groups = TimelineBoardReadPath.timelineCalendarEventGroups(
+      from: projection,
+      visibleDateRange: day...day,
+      calendar: calendar
+    )
+
+    XCTAssertEqual(groups.map(\.date), [day])
+    XCTAssertEqual(groups.first?.events.map(\.event.id), ["visible"])
+  }
+
+  func testTimelineCalendarEventGroupsExcludeEventsOutsideVisibleRange() {
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+    let day = calendar.date(from: DateComponents(year: 2026, month: 5, day: 24))!
+    let inside = makeCalendarEvent(
+      id: "inside",
+      title: "Inside",
+      startDate: calendar.date(from: DateComponents(
+        year: 2026,
+        month: 5,
+        day: 24,
+        hour: 9
+      ))!,
+      endDate: calendar.date(from: DateComponents(
+        year: 2026,
+        month: 5,
+        day: 24,
+        hour: 10
+      ))!
+    )
+    let outside = makeCalendarEvent(
+      id: "outside",
+      title: "Outside",
+      startDate: calendar.date(from: DateComponents(
+        year: 2026,
+        month: 5,
+        day: 26,
+        hour: 9
+      ))!,
+      endDate: calendar.date(from: DateComponents(
+        year: 2026,
+        month: 5,
+        day: 26,
+        hour: 10
+      ))!
+    )
+
+    let groups = TimelineBoardReadPath.timelineCalendarEventGroups(
+      from: [outside, inside],
+      visibleDateRange: day...day,
+      calendar: calendar
+    )
+
+    XCTAssertEqual(groups.map(\.date), [day])
+    XCTAssertEqual(groups.first?.events.map(\.event.id), ["inside"])
+  }
+
+  func testTimelineCalendarEventGroupsSortAllDayThenTimeThenTitle() {
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+    let day = calendar.date(from: DateComponents(year: 2026, month: 5, day: 24))!
+    let allDay = makeCalendarEvent(
+      id: "all-day",
+      title: "All Day",
+      startDate: day,
+      endDate: calendar.date(byAdding: .day, value: 1, to: day)!,
+      isAllDay: true
+    )
+    let earlyB = makeCalendarEvent(
+      id: "early-b",
+      title: "Beta",
+      startDate: calendar.date(from: DateComponents(
+        year: 2026,
+        month: 5,
+        day: 24,
+        hour: 9
+      ))!,
+      endDate: calendar.date(from: DateComponents(
+        year: 2026,
+        month: 5,
+        day: 24,
+        hour: 10
+      ))!
+    )
+    let earlyA = makeCalendarEvent(
+      id: "early-a",
+      title: "Alpha",
+      startDate: earlyB.startDate,
+      endDate: earlyB.endDate
+    )
+    let late = makeCalendarEvent(
+      id: "late",
+      title: "Late",
+      startDate: calendar.date(from: DateComponents(
+        year: 2026,
+        month: 5,
+        day: 24,
+        hour: 13
+      ))!,
+      endDate: calendar.date(from: DateComponents(
+        year: 2026,
+        month: 5,
+        day: 24,
+        hour: 14
+      ))!
+    )
+
+    let groups = TimelineBoardReadPath.timelineCalendarEventGroups(
+      from: [late, earlyB, allDay, earlyA],
+      visibleDateRange: day...day,
+      calendar: calendar
+    )
+
+    XCTAssertEqual(
+      groups.first?.events.map(\.event.id),
+      ["all-day", "early-a", "early-b", "late"]
+    )
+  }
+
+  func testTimelineCalendarEventGroupsRepeatMultiDayEventsOnEachOverlappingDay() {
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+    let firstVisibleDay = calendar.date(from: DateComponents(year: 2026, month: 5, day: 24))!
+    let secondVisibleDay = calendar.date(from: DateComponents(year: 2026, month: 5, day: 25))!
+    let thirdVisibleDay = calendar.date(from: DateComponents(year: 2026, month: 5, day: 26))!
+    let event = makeCalendarEvent(
+      id: "multi",
+      title: "Multi",
+      startDate: calendar.date(from: DateComponents(
+        year: 2026,
+        month: 5,
+        day: 23,
+        hour: 23
+      ))!,
+      endDate: calendar.date(from: DateComponents(
+        year: 2026,
+        month: 5,
+        day: 26,
+        hour: 1
+      ))!
+    )
+
+    let groups = TimelineBoardReadPath.timelineCalendarEventGroups(
+      from: [event],
+      visibleDateRange: firstVisibleDay...thirdVisibleDay,
+      calendar: calendar
+    )
+
+    XCTAssertEqual(groups.map(\.date), [firstVisibleDay, secondVisibleDay, thirdVisibleDay])
+    XCTAssertEqual(groups.map { $0.events.map(\.event.id) }, [["multi"], ["multi"], ["multi"]])
+  }
+
   func testMovingTimelineTaskDayPreservesEditableTaskFields() {
     var calendar = Calendar(identifier: .gregorian)
     calendar.timeZone = TimeZone(secondsFromGMT: 0)!
@@ -1794,6 +1981,33 @@ final class TimelineBoardReadPathTests: XCTestCase {
       rowOrder: 0,
       createdAt: .distantPast,
       isArchived: isArchived
+    )
+  }
+
+  private func makeCalendarEvent(
+    id: String,
+    title: String,
+    startDate: Date,
+    endDate: Date,
+    isAllDay: Bool = false
+  ) -> ScheduleCalendarEvent {
+    ScheduleCalendarEvent(
+      id: id,
+      eventIdentifier: id,
+      externalIdentifier: id,
+      occurrenceDate: nil,
+      calendarIdentifier: "calendar",
+      calendarTitle: "Calendar",
+      calendarColorHex: "#0A84FF",
+      title: title,
+      notes: "",
+      startDate: startDate,
+      endDate: endDate,
+      isAllDay: isAllDay,
+      isRecurring: false,
+      isDetached: false,
+      canEditTiming: true,
+      editTimingRestrictionReason: nil
     )
   }
 

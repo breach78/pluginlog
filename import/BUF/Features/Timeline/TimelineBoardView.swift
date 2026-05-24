@@ -9,6 +9,9 @@ import SwiftUI
 struct TimelineBoardView: View {
   struct TimelineBoardSnapshot {
     let bars: [TimelineProjectBar]
+    let calendarEventGroups: [TimelineCalendarEventGroup]
+    let calendarRowHeight: CGFloat
+    let calendarPresentationSignature: Int
     let watchedSourceSignature: Int
     let rowLayouts: [TimelineRowLayout]
     let barsPresentationSignature: Int
@@ -78,6 +81,7 @@ struct TimelineBoardView: View {
   let onToggleProjectSelection: (UUID) -> Void
   let onOpenProjectListPanel: (UUID) -> Void
   let onOpenScheduleDayPanel: (ScheduleMonthDetailPanelTarget) -> Void
+  let onEditCalendarEvent: (ScheduleCalendarEvent) -> Void
   let onEditTask: (WorkspaceTaskEditPanelTarget) -> Void
   let onTaskDeleted: (UUID, UUID) -> Void
 
@@ -154,6 +158,7 @@ struct TimelineBoardView: View {
   let detailTaskChipSpacing: CGFloat = 2
   let detailTaskChipVerticalInset: CGFloat = 4
   let detailMaxRowsPerDay = 6
+  let timelineCalendarRowMinHeight: CGFloat = 52
   let priorityDoRowHeightMultiplier: CGFloat = 1.5
   let progressMarkerSize: CGFloat = 8
   let horizontalEdgePadding: CGFloat = 16
@@ -192,6 +197,20 @@ struct TimelineBoardView: View {
       return detailDayColumnWidth
     }
     return min(max(appState.timelineDayColumnWidth, 22), 88)
+  }
+
+  var showsTimelineCalendarRow: Bool {
+    displayMode == .detail
+  }
+
+  var timelineCalendarOverlayRefreshSignature: Int {
+    var hasher = Hasher()
+    hasher.combine(displayMode.rawValue)
+    hasher.combine(isActive)
+    hasher.combine(anchorDate.timeIntervalSinceReferenceDate)
+    hasher.combine(dayRange.lowerBound)
+    hasher.combine(dayRange.upperBound)
+    return hasher.finalize()
   }
 
   var calendar: Calendar { Calendar.autoupdatingCurrent }
@@ -239,6 +258,7 @@ struct TimelineBoardView: View {
     onToggleProjectSelection: @escaping (UUID) -> Void,
     onOpenProjectListPanel: @escaping (UUID) -> Void = { _ in },
     onOpenScheduleDayPanel: @escaping (ScheduleMonthDetailPanelTarget) -> Void = { _ in },
+    onEditCalendarEvent: @escaping (ScheduleCalendarEvent) -> Void = { _ in },
     onEditTask: @escaping (WorkspaceTaskEditPanelTarget) -> Void = { _ in },
     onTaskDeleted: @escaping (UUID, UUID) -> Void = { _, _ in }
   ) {
@@ -256,6 +276,7 @@ struct TimelineBoardView: View {
     self.onToggleProjectSelection = onToggleProjectSelection
     self.onOpenProjectListPanel = onOpenProjectListPanel
     self.onOpenScheduleDayPanel = onOpenScheduleDayPanel
+    self.onEditCalendarEvent = onEditCalendarEvent
     self.onEditTask = onEditTask
     self.onTaskDeleted = onTaskDeleted
   }
@@ -285,10 +306,22 @@ struct TimelineBoardView: View {
         workspaceProjectSummaries: workspaceTimelineProjectSummaries,
         scheduleEntriesByProjectID: workspaceTimelineScheduleEntriesByProjectID
       )
-    let rowLayouts = buildRowLayouts(for: bars)
+    let calendarEventGroups = timelineCalendarEventGroups()
+    let calendarRowHeight = timelineCalendarRowHeight(for: calendarEventGroups)
+    let rowLayouts = buildRowLayouts(
+      for: bars,
+      topInset: timelineProjectRowsTopInset(calendarRowHeight: calendarRowHeight)
+    )
 
     return TimelineBoardSnapshot(
       bars: bars,
+      calendarEventGroups: calendarEventGroups,
+      calendarRowHeight: calendarRowHeight,
+      calendarPresentationSignature: timelineCalendarPresentationSignature(
+        for: calendarEventGroups,
+        rowHeight: calendarRowHeight,
+        accessDenied: appState.resolvedScheduleCalendarOverlayProjection().accessDenied
+      ),
       watchedSourceSignature: watchedSourceSignature,
       rowLayouts: rowLayouts,
       barsPresentationSignature:
@@ -344,6 +377,9 @@ struct TimelineBoardView: View {
     }
     .task(id: activeProjectIDs) {
       await seedTimelineProjectManualOrderFromRemindersIfNeeded(for: activeProjectIDs)
+    }
+    .task(id: timelineCalendarOverlayRefreshSignature) {
+      await refreshTimelineCalendarOverlayIfNeeded()
     }
     .onChange(of: snapshot.watchedSourceSignature) { _, newSignature in
       guard isActive, !appState.isEditorMotionSuppressed else { return }
@@ -547,6 +583,7 @@ struct TimelineBoardView: View {
       visibleUpperOffset: visibleUpperOffset,
       boardVersion: boardContentSignature(
         barsPresentationSignature: snapshot.barsPresentationSignature,
+        calendarPresentationSignature: snapshot.calendarPresentationSignature,
         rowsHeight: rowsHeight,
         activeTimelineTaskBadgeID: activeTimelineTaskBadgeID,
         selectedProjectID: selectedProjectID,
@@ -556,6 +593,7 @@ struct TimelineBoardView: View {
       ),
       leftVersion: pinnedLeftSignature(
         barsPresentationSignature: snapshot.barsPresentationSignature,
+        calendarPresentationSignature: snapshot.calendarPresentationSignature,
         rowsHeight: rowsHeight,
         visibleLowerOffset: visibleLowerOffset,
         visibleUpperOffset: visibleUpperOffset,
@@ -672,16 +710,20 @@ struct TimelineBoardView: View {
           clearTimelineTaskBadgeTriggerHover(deferClose: true)
         }
       ) {
-          boardContent(
-            bars: snapshot.bars,
-            rowLayouts: snapshot.rowLayouts,
-            rowsHeight: viewport.rowsHeight,
+        boardContent(
+          bars: snapshot.bars,
+          calendarEventGroups: snapshot.calendarEventGroups,
+          calendarRowHeight: snapshot.calendarRowHeight,
+          rowLayouts: snapshot.rowLayouts,
+          rowsHeight: viewport.rowsHeight,
           visibleLowerOffset: viewport.visibleLowerOffset,
           visibleUpperOffset: viewport.visibleUpperOffset
         )
       } pinnedLeft: {
         leftColumnContent(
           bars: snapshot.bars,
+          calendarEventGroups: snapshot.calendarEventGroups,
+          calendarRowHeight: snapshot.calendarRowHeight,
           rowLayouts: snapshot.rowLayouts,
           rowsHeight: viewport.rowsHeight,
           visibleLowerOffset: viewport.visibleLowerOffset,
@@ -750,6 +792,7 @@ struct TimelineBoardView: View {
 
   private func boardContentSignature(
     barsPresentationSignature: Int,
+    calendarPresentationSignature: Int,
     rowsHeight: CGFloat,
     activeTimelineTaskBadgeID: String?,
     selectedProjectID: UUID?,
@@ -759,6 +802,7 @@ struct TimelineBoardView: View {
   ) -> Int {
     var hasher = Hasher()
     hasher.combine(barsPresentationSignature)
+    hasher.combine(calendarPresentationSignature)
     hasher.combine(anchorDate.timeIntervalSinceReferenceDate)
     hasher.combine(dayRange.lowerBound)
     hasher.combine(dayRange.upperBound)
@@ -776,6 +820,7 @@ struct TimelineBoardView: View {
 
   private func pinnedLeftSignature(
     barsPresentationSignature: Int,
+    calendarPresentationSignature: Int,
     rowsHeight: CGFloat,
     visibleLowerOffset: Int,
     visibleUpperOffset: Int,
@@ -788,6 +833,7 @@ struct TimelineBoardView: View {
   ) -> Int {
     var hasher = Hasher()
     hasher.combine(barsPresentationSignature)
+    hasher.combine(calendarPresentationSignature)
     hasher.combine(Int(rowsHeight.rounded()))
     hasher.combine(displayMode.rawValue)
     hasher.combine(visibleLowerOffset)

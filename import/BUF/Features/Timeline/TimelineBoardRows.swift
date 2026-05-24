@@ -15,6 +15,8 @@ enum TimelinePriorityBoundaryPolicy {
 extension TimelineBoardView {
   func boardContent(
     bars: [TimelineProjectBar],
+    calendarEventGroups: [TimelineCalendarEventGroup],
+    calendarRowHeight: CGFloat,
     rowLayouts: [TimelineRowLayout],
     rowsHeight: CGFloat,
     visibleLowerOffset: Int,
@@ -29,6 +31,8 @@ extension TimelineBoardView {
           .frame(width: timelineWidth, height: headerHeight)
         timelineRowsCanvas(
           bars: bars,
+          calendarEventGroups: calendarEventGroups,
+          calendarRowHeight: calendarRowHeight,
           rowLayouts: rowLayouts,
           rowsHeight: rowsHeight,
           visibleLowerOffset: visibleLowerOffset,
@@ -44,6 +48,8 @@ extension TimelineBoardView {
 
   func leftColumnContent(
     bars: [TimelineProjectBar],
+    calendarEventGroups: [TimelineCalendarEventGroup],
+    calendarRowHeight: CGFloat,
     rowLayouts: [TimelineRowLayout],
     rowsHeight: CGFloat,
     visibleLowerOffset: Int,
@@ -78,6 +84,15 @@ extension TimelineBoardView {
       VStack(alignment: .leading, spacing: 0) {
         ZStack(alignment: .topLeading) {
           VStack(alignment: .leading, spacing: 0) {
+            if showsTimelineCalendarRow {
+              leftTimelineCalendarRow(
+                groups: calendarEventGroups,
+                rowHeight: calendarRowHeight
+              )
+              Color.clear
+                .frame(height: rowMetrics.spacing)
+            }
+
             ForEach(Array(bars.enumerated()), id: \.element.id) { index, bar in
               leftProjectRow(
                 for: bar,
@@ -198,6 +213,8 @@ extension TimelineBoardView {
 
   func timelineRowsCanvas(
     bars: [TimelineProjectBar],
+    calendarEventGroups: [TimelineCalendarEventGroup],
+    calendarRowHeight: CGFloat,
     rowLayouts: [TimelineRowLayout],
     rowsHeight: CGFloat,
     visibleLowerOffset: Int,
@@ -229,7 +246,19 @@ extension TimelineBoardView {
       .frame(width: timelineWidth, height: rowsHeight, alignment: .topLeading)
       .allowsHitTesting(false)
 
+      if showsTimelineCalendarRow {
+        timelineCalendarRow(
+          groups: calendarEventGroups,
+          rowHeight: calendarRowHeight
+        )
+      }
+
       VStack(alignment: .leading, spacing: 0) {
+        if showsTimelineCalendarRow {
+          Color.clear
+            .frame(height: timelineProjectRowsTopInset(calendarRowHeight: calendarRowHeight))
+        }
+
         ForEach(Array(bars.enumerated()), id: \.element.id) { index, bar in
           timelineRow(
             for: bar,
@@ -257,6 +286,129 @@ extension TimelineBoardView {
     }
     .frame(width: timelineWidth, height: rowsHeight, alignment: .topLeading)
     .coordinateSpace(name: timelineDetailRowsCoordinateSpaceName)
+  }
+
+  func timelineCalendarRow(
+    groups: [TimelineCalendarEventGroup],
+    rowHeight: CGFloat
+  ) -> some View {
+    ZStack(alignment: .topLeading) {
+      RoundedRectangle(cornerRadius: 6, style: .continuous)
+        .fill(Color.gray.opacity(0.06))
+        .frame(width: timelineWidth, height: rowHeight)
+
+      if appState.resolvedScheduleCalendarOverlayProjection().accessDenied {
+        Text("캘린더 접근 권한 필요")
+          .font(.system(size: 11, weight: .semibold))
+          .foregroundStyle(.secondary)
+          .padding(.horizontal, 8)
+          .frame(width: dayColumnWidth, height: rowHeight, alignment: .center)
+      }
+
+      ForEach(groups) { group in
+        VStack(alignment: .leading, spacing: detailTaskChipSpacing) {
+          ForEach(group.events) { chip in
+            timelineCalendarEventChip(chip)
+          }
+        }
+        .frame(width: max(0, dayColumnWidth - 4), alignment: .topLeading)
+        .offset(
+          x: CGFloat(dayOffset(for: group.date) - dayRange.lowerBound) * dayColumnWidth + 2,
+          y: detailTaskChipVerticalInset
+        )
+      }
+    }
+    .frame(width: timelineWidth, height: rowHeight, alignment: .topLeading)
+    .clipped()
+  }
+
+  func leftTimelineCalendarRow(
+    groups: [TimelineCalendarEventGroup],
+    rowHeight: CGFloat
+  ) -> some View {
+    let eventCount = groups.reduce(0) { $0 + $1.events.count }
+    return HStack(spacing: 7) {
+      Image(systemName: "calendar")
+        .font(.system(size: 11, weight: .semibold))
+        .foregroundStyle(.secondary)
+
+      Text("캘린더")
+        .font(.system(size: 12, weight: .semibold))
+        .foregroundStyle(.primary)
+        .lineLimit(1)
+
+      Spacer(minLength: 0)
+
+      if appState.resolvedScheduleCalendarOverlayProjection().accessDenied {
+        Text("권한 필요")
+          .font(.system(size: 10, weight: .semibold))
+          .foregroundStyle(.secondary)
+      } else if eventCount > 0 {
+        Text("\(eventCount)")
+          .font(.system(size: 10, weight: .semibold, design: .rounded))
+          .foregroundStyle(.secondary)
+      }
+    }
+    .padding(.horizontal, 12)
+    .frame(width: titleColumnWidth, height: rowHeight, alignment: .leading)
+    .background(
+      RoundedRectangle(cornerRadius: 6, style: .continuous)
+        .fill(Color.gray.opacity(0.05))
+    )
+  }
+
+  func timelineCalendarEventChip(_ chip: TimelineCalendarEventChip) -> some View {
+    let eventColor = ColorHexCodec.color(from: chip.event.calendarColorHex) ?? .accentColor
+    return Button {
+      onEditCalendarEvent(chip.event)
+    } label: {
+      HStack(spacing: 3) {
+        Circle()
+          .fill(eventColor)
+          .frame(width: 5, height: 5)
+
+        if let timeText = timelineCalendarEventTimeText(for: chip.event) {
+          Text(timeText)
+            .font(.system(size: 9.5, weight: .semibold))
+            .foregroundStyle(.secondary)
+            .lineLimit(1)
+        }
+
+        Text(TimelineBoardReadPath.timelinePreviewTitle(for: chip.event.title))
+          .font(.system(size: 10.5, weight: .semibold))
+          .foregroundStyle(.primary)
+          .lineLimit(1)
+          .truncationMode(.tail)
+          .frame(maxWidth: .infinity, alignment: .leading)
+      }
+      .padding(.leading, 4)
+      .padding(.trailing, 3)
+      .frame(height: detailTaskChipHeight)
+      .frame(maxWidth: .infinity, alignment: .leading)
+      .background(
+        RoundedRectangle(cornerRadius: 5, style: .continuous)
+          .fill(eventColor.opacity(0.12))
+      )
+      .overlay {
+        RoundedRectangle(cornerRadius: 5, style: .continuous)
+          .stroke(eventColor.opacity(0.26), lineWidth: 0.7)
+      }
+      .contentShape(RoundedRectangle(cornerRadius: 5, style: .continuous))
+    }
+    .buttonStyle(.plain)
+    .help(timelineCalendarEventHelpText(for: chip.event))
+  }
+
+  func timelineCalendarEventTimeText(for event: ScheduleCalendarEvent) -> String? {
+    event.isAllDay ? nil : ScheduleMonthDayTimeFormatter.timeText(from: event.startDate)
+  }
+
+  func timelineCalendarEventHelpText(for event: ScheduleCalendarEvent) -> String {
+    let title = TimelineBoardReadPath.timelinePreviewTitle(for: event.title)
+    if let timeText = timelineCalendarEventTimeText(for: event) {
+      return "\(timeText) \(title) · \(event.calendarTitle)"
+    }
+    return "\(title) · \(event.calendarTitle)"
   }
 
   func timelineRow(
@@ -1249,8 +1401,11 @@ extension TimelineBoardView {
     )
   }
 
-  func buildRowLayouts(for bars: [TimelineProjectBar]) -> [TimelineRowLayout] {
-    var nextTopY: CGFloat = 0
+  func buildRowLayouts(
+    for bars: [TimelineProjectBar],
+    topInset: CGFloat = 0
+  ) -> [TimelineRowLayout] {
+    var nextTopY: CGFloat = max(0, topInset)
     return bars.map { bar in
       let metrics = rowMetrics(for: bar)
       defer {
