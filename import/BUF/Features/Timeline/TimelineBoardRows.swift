@@ -159,7 +159,7 @@ extension TimelineBoardView {
 
   var timelineHeaderStripSection: some View {
     HStack(spacing: 0) {
-      ForEach(dayOffsets, id: \.self) { offset in
+      ForEach(dayRange, id: \.self) { offset in
         dayHeaderCell(offset: offset)
       }
     }
@@ -225,7 +225,7 @@ extension TimelineBoardView {
     return ZStack(alignment: .topLeading) {
       Canvas { context, _ in
         var gridPath = Path()
-        for index in dayOffsets.indices {
+        for index in 0..<dayCount {
           let x = CGFloat(index) * dayColumnWidth
           gridPath.addRect(CGRect(x: x, y: 0, width: 1, height: rowsHeight))
         }
@@ -249,7 +249,8 @@ extension TimelineBoardView {
       if showsTimelineCalendarRow {
         timelineCalendarRow(
           groups: calendarEventGroups,
-          rowHeight: calendarRowHeight
+          rowHeight: calendarRowHeight,
+          isInteractive: !isTimelineScrolling
         )
       }
 
@@ -290,7 +291,8 @@ extension TimelineBoardView {
 
   func timelineCalendarRow(
     groups: [TimelineCalendarEventGroup],
-    rowHeight: CGFloat
+    rowHeight: CGFloat,
+    isInteractive: Bool
   ) -> some View {
     ZStack(alignment: .topLeading) {
       RoundedRectangle(cornerRadius: 6, style: .continuous)
@@ -320,6 +322,7 @@ extension TimelineBoardView {
     }
     .frame(width: timelineWidth, height: rowHeight, alignment: .topLeading)
     .clipped()
+    .allowsHitTesting(isInteractive)
   }
 
   func leftTimelineCalendarRow(

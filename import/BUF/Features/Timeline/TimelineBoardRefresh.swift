@@ -801,6 +801,8 @@ extension TimelineBoardView {
         retainedTimelineReadBlocker = nil
         retainedTimelineCalendarBridgeDecisionsByTaskID = [:]
         retainedTimelineCalendarBridgeWriteMarkersByTaskID = [:]
+        workspaceTimelineProjectionRevision += 1
+        workspaceDetailSignatureCache.invalidate()
         invalidateWorkspaceTimelineProjectionCaches()
       }
       workspaceTimelineLastLoadSignature = loadSignature
@@ -844,6 +846,8 @@ extension TimelineBoardView {
       retainedTimelineCalendarBridgeDecisionsByTaskID =
         resolvedRead.calendarBridgeDecisionsByTaskID
       retainedTimelineCalendarBridgeWriteMarkersByTaskID = nextWriteMarkers
+      workspaceTimelineProjectionRevision += 1
+      workspaceDetailSignatureCache.invalidate()
       invalidateWorkspaceTimelineProjectionCaches()
       rebuildWorkspaceTimelineProjectionCachesAfterMutation()
     }
@@ -913,6 +917,8 @@ extension TimelineBoardView {
       retainedTimelineCalendarBridgeDecisionsByTaskID =
         visibleProjection.calendarBridgeDecisionsByTaskID
       retainedTimelineCalendarBridgeWriteMarkersByTaskID = nextWriteMarkers
+      workspaceTimelineProjectionRevision += 1
+      workspaceDetailSignatureCache.invalidate()
       invalidateWorkspaceTimelineProjectionCaches()
       rebuildWorkspaceTimelineProjectionCachesAfterMutation()
     }
@@ -929,19 +935,60 @@ extension TimelineBoardView {
     cachedTimelineBarsPresentationSignature = nil
     cachedTimelineDayHeaderSections = [:]
     cachedTimelineDayHeaderSourceSignature = nil
+    timelineCalendarCache.invalidate()
+    workspaceDetailSignatureCache.invalidate()
+    timelineRowLayoutCache.invalidate()
   }
 
-  func timelineCalendarEventGroups() -> [TimelineCalendarEventGroup] {
-    guard showsTimelineCalendarRow else { return [] }
-    return TimelineBoardReadPath.timelineCalendarEventGroups(
-      from: appState.resolvedScheduleCalendarOverlayProjection(),
-      visibleDateRange: TimelineBoardReadPath.renderedTimelineBadgeDateRange(
-        anchorDate: anchorDate,
-        dayRange: dayRange,
+  func timelineCalendarSnapshot() -> TimelineCalendarSnapshot {
+    guard showsTimelineCalendarRow else {
+      return TimelineCalendarSnapshot(
+        groups: [],
+        rowHeight: 0,
+        presentationSignature: 0,
+        sourceSignature: 0
+      )
+    }
+
+    let projection = appState.resolvedScheduleCalendarOverlayProjection()
+    let sourceSignature = timelineCalendarSourceSignature(for: projection)
+    return timelineCalendarCache.resolve(sourceSignature: sourceSignature) {
+      let groups = TimelineBoardReadPath.timelineCalendarEventGroups(
+        from: projection,
+        visibleDateRange: TimelineBoardReadPath.renderedTimelineBadgeDateRange(
+          anchorDate: anchorDate,
+          dayRange: dayRange,
+          calendar: calendar
+        ),
         calendar: calendar
-      ),
-      calendar: calendar
-    )
+      )
+      let rowHeight = timelineCalendarRowHeight(for: groups)
+      let presentationSignature = timelineCalendarPresentationSignature(
+        for: groups,
+        rowHeight: rowHeight,
+        accessDenied: projection.accessDenied
+      )
+      return TimelineCalendarSnapshot(
+        groups: groups,
+        rowHeight: rowHeight,
+        presentationSignature: presentationSignature,
+        sourceSignature: sourceSignature
+      )
+    }
+  }
+
+  private func timelineCalendarSourceSignature(
+    for projection: ScheduleCalendarOverlayProjection
+  ) -> Int {
+    var hasher = Hasher()
+    hasher.combine(displayMode.rawValue)
+    hasher.combine(anchorDate.timeIntervalSinceReferenceDate)
+    hasher.combine(dayRange.lowerBound)
+    hasher.combine(dayRange.upperBound)
+    hasher.combine(projection.calendarsSignature)
+    hasher.combine(projection.visibleEventsSignature)
+    hasher.combine(projection.accessDenied)
+    return hasher.finalize()
   }
 
   func timelineCalendarRowHeight(for groups: [TimelineCalendarEventGroup]) -> CGFloat {
@@ -1298,20 +1345,61 @@ extension TimelineBoardView {
     workspaceProjectSummaries: [UUID: ProjectSummaryRecord],
     scheduleEntriesByProjectID: [UUID: [ScheduleSliceEntry]]
   ) -> Int {
-    var hasher = Hasher()
-    hasher.combine(projectIDs)
-    hasher.combine(projectListSortMode)
-    for projectID in projectIDs {
-      hasher.combine(timelineProjectManualOrder[projectID])
-    }
-    hasher.combine(
+    let workspaceDetailSignature = workspaceDetailSignatureCache.resolve(
+      sourceSignature: timelineWorkspaceDetailSignatureSourceSignature(projectIDs: projectIDs)
+    ) {
       TimelineBoardReadPath.workspaceDetailSignature(
         projectIDs: projectIDs,
         workspaceProjectSnapshots: workspaceProjectSnapshots,
         workspaceProjectSummaries: workspaceProjectSummaries,
         scheduleEntriesByProjectID: scheduleEntriesByProjectID
       )
+    }
+
+    var hasher = Hasher()
+    hasher.combine(projectIDs)
+    hasher.combine(projectListSortMode)
+    for projectID in projectIDs {
+      hasher.combine(timelineProjectManualOrder[projectID])
+    }
+    hasher.combine(workspaceDetailSignature)
+    return hasher.finalize()
+  }
+
+  private func timelineWorkspaceDetailSignatureSourceSignature(
+    projectIDs: [UUID]
+  ) -> Int {
+    var hasher = Hasher()
+    hasher.combine(projectIDs)
+    hasher.combine(workspaceTimelineProjectionRevision)
+    return hasher.finalize()
+  }
+
+  func timelineRowLayouts(
+    for bars: [TimelineProjectBar],
+    barsPresentationSignature: Int,
+    topInset: CGFloat
+  ) -> [TimelineRowLayout] {
+    let sourceSignature = timelineRowLayoutSourceSignature(
+      barsPresentationSignature: barsPresentationSignature,
+      topInset: topInset
     )
+    return timelineRowLayoutCache.resolve(sourceSignature: sourceSignature) {
+      buildRowLayouts(for: bars, topInset: topInset)
+    }
+  }
+
+  private func timelineRowLayoutSourceSignature(
+    barsPresentationSignature: Int,
+    topInset: CGFloat
+  ) -> Int {
+    var hasher = Hasher()
+    hasher.combine(displayMode.rawValue)
+    hasher.combine(barsPresentationSignature)
+    hasher.combine(anchorDate.timeIntervalSinceReferenceDate)
+    hasher.combine(dayRange.lowerBound)
+    hasher.combine(dayRange.upperBound)
+    hasher.combine(Double(topInset))
     return hasher.finalize()
   }
 

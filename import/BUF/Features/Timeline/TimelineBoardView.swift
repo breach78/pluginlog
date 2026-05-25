@@ -7,6 +7,13 @@ import SwiftUI
 // Action/undo ownership: TimelineBoardActions.swift
 // Refresh/scroll ownership: TimelineBoardRefresh.swift
 struct TimelineBoardView: View {
+  struct TimelineCalendarSnapshot {
+    let groups: [TimelineCalendarEventGroup]
+    let rowHeight: CGFloat
+    let presentationSignature: Int
+    let sourceSignature: Int
+  }
+
   struct TimelineBoardSnapshot {
     let bars: [TimelineProjectBar]
     let calendarEventGroups: [TimelineCalendarEventGroup]
@@ -62,6 +69,86 @@ struct TimelineBoardView: View {
       self.suppressedDayHeaderHoverEvents = suppressedDayHeaderHoverEvents
       self.lastHorizontalOffset = lastHorizontalOffset
       self.lastVerticalOffset = lastVerticalOffset
+    }
+  }
+
+  final class TimelineCalendarProjectionCache: ObservableObject {
+    private var cachedSourceSignature: Int?
+    private var cachedSnapshot: TimelineCalendarSnapshot?
+
+    func resolve(
+      sourceSignature: Int,
+      build: () -> TimelineCalendarSnapshot
+    ) -> TimelineCalendarSnapshot {
+      if let cachedSourceSignature,
+        cachedSourceSignature == sourceSignature,
+        let cachedSnapshot
+      {
+        return cachedSnapshot
+      }
+
+      let snapshot = build()
+      cachedSourceSignature = sourceSignature
+      cachedSnapshot = snapshot
+      return snapshot
+    }
+
+    func invalidate() {
+      cachedSourceSignature = nil
+      cachedSnapshot = nil
+    }
+  }
+
+  final class TimelineWorkspaceDetailSignatureCache: ObservableObject {
+    private var cachedSourceSignature: Int?
+    private var cachedSignature: Int?
+
+    func resolve(
+      sourceSignature: Int,
+      build: () -> Int
+    ) -> Int {
+      if let cachedSourceSignature,
+        cachedSourceSignature == sourceSignature,
+        let cachedSignature
+      {
+        return cachedSignature
+      }
+
+      let signature = build()
+      cachedSourceSignature = sourceSignature
+      cachedSignature = signature
+      return signature
+    }
+
+    func invalidate() {
+      cachedSourceSignature = nil
+      cachedSignature = nil
+    }
+  }
+
+  final class TimelineRowLayoutProjectionCache: ObservableObject {
+    private var cachedSourceSignature: Int?
+    private var cachedLayouts: [TimelineRowLayout] = []
+
+    func resolve(
+      sourceSignature: Int,
+      build: () -> [TimelineRowLayout]
+    ) -> [TimelineRowLayout] {
+      if let cachedSourceSignature,
+        cachedSourceSignature == sourceSignature
+      {
+        return cachedLayouts
+      }
+
+      let layouts = build()
+      cachedSourceSignature = sourceSignature
+      cachedLayouts = layouts
+      return layouts
+    }
+
+    func invalidate() {
+      cachedSourceSignature = nil
+      cachedLayouts = []
     }
   }
 
@@ -122,6 +209,9 @@ struct TimelineBoardView: View {
   @State var cachedTimelineDayHeaderSections: [Date: [TimelineDayHeaderOverlayProjectSection]]
     = [:]
   @State var cachedTimelineDayHeaderSourceSignature: Int?
+  @StateObject var timelineCalendarCache = TimelineCalendarProjectionCache()
+  @StateObject var workspaceDetailSignatureCache = TimelineWorkspaceDetailSignatureCache()
+  @StateObject var timelineRowLayoutCache = TimelineRowLayoutProjectionCache()
   @State var hoveredTimelineDayHeaderOffset: Int?
   @State var activeTimelineDayHeaderOffset: Int?
   @State var timelineDayHeaderShowWorkItem: DispatchWorkItem?
@@ -130,6 +220,7 @@ struct TimelineBoardView: View {
   @State var activeTimelineTaskEditTarget: TimelineTaskEditTarget?
   @State var timelineProjectManualOrder = TimelineProjectManualOrderStore.load()
   @State var didReconcileTimelineProjectBoardOrder = false
+  @State var workspaceTimelineProjectionRevision = 0
   @State var workspaceTimelineLoadGeneration = 0
   @State var workspaceTimelineLastLoadSignature: Int?
   @State var midnightRefreshTimer: Timer?
@@ -214,8 +305,8 @@ struct TimelineBoardView: View {
   }
 
   var calendar: Calendar { Calendar.autoupdatingCurrent }
-  var dayOffsets: [Int] { Array(dayRange) }
-  var timelineWidth: CGFloat { CGFloat(dayOffsets.count) * dayColumnWidth }
+  var dayCount: Int { dayRange.upperBound - dayRange.lowerBound + 1 }
+  var timelineWidth: CGFloat { CGFloat(dayCount) * dayColumnWidth }
   var activeProjectIDs: [UUID] {
     TimelineBoardReadPath.visibleProjectIDs(
       projectIDs,
@@ -306,28 +397,25 @@ struct TimelineBoardView: View {
         workspaceProjectSummaries: workspaceTimelineProjectSummaries,
         scheduleEntriesByProjectID: workspaceTimelineScheduleEntriesByProjectID
       )
-    let calendarEventGroups = timelineCalendarEventGroups()
-    let calendarRowHeight = timelineCalendarRowHeight(for: calendarEventGroups)
-    let rowLayouts = buildRowLayouts(
+    let barsPresentationSignature =
+      hasCachedSnapshot
+      ? (cachedTimelineBarsPresentationSignature ?? timelineSignature(for: bars))
+      : timelineSignature(for: bars)
+    let calendarSnapshot = timelineCalendarSnapshot()
+    let rowLayouts = timelineRowLayouts(
       for: bars,
-      topInset: timelineProjectRowsTopInset(calendarRowHeight: calendarRowHeight)
+      barsPresentationSignature: barsPresentationSignature,
+      topInset: timelineProjectRowsTopInset(calendarRowHeight: calendarSnapshot.rowHeight)
     )
 
     return TimelineBoardSnapshot(
       bars: bars,
-      calendarEventGroups: calendarEventGroups,
-      calendarRowHeight: calendarRowHeight,
-      calendarPresentationSignature: timelineCalendarPresentationSignature(
-        for: calendarEventGroups,
-        rowHeight: calendarRowHeight,
-        accessDenied: appState.resolvedScheduleCalendarOverlayProjection().accessDenied
-      ),
+      calendarEventGroups: calendarSnapshot.groups,
+      calendarRowHeight: calendarSnapshot.rowHeight,
+      calendarPresentationSignature: calendarSnapshot.presentationSignature,
       watchedSourceSignature: watchedSourceSignature,
       rowLayouts: rowLayouts,
-      barsPresentationSignature:
-        hasCachedSnapshot
-        ? (cachedTimelineBarsPresentationSignature ?? timelineSignature(for: bars))
-        : timelineSignature(for: bars)
+      barsPresentationSignature: barsPresentationSignature
     )
   }
 
