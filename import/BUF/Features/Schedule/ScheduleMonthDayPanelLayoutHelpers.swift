@@ -86,10 +86,7 @@ extension ScheduleMonthDaySchedulePanel {
   }
 
   static func timeLabel(hour: Int) -> String {
-    if hour == 0 { return "오전 12" }
-    if hour < 12 { return "오전 \(hour)" }
-    if hour == 12 { return "오후 12" }
-    return "오후 \(hour - 12)"
+    String(format: "%02d", hour)
   }
 
   static let timeGutterWidth: CGFloat = ScheduleUITokens.MonthDayPanel.timeGutterWidth

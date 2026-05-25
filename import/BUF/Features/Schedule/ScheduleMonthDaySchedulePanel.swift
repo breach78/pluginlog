@@ -440,6 +440,7 @@ struct ScheduleMonthDaySchedulePanel: View {
           .offset(
             y: CGFloat(hour) * Self.hourHeight
               + ScheduleUITokens.MonthDayPanel.timeAxisLabelTopPadding
+              - 8
           )
       }
     }
