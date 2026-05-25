@@ -810,13 +810,94 @@ extension MainWorkspaceView {
   }
 
   func updateScheduleMonthDetailAfterMovedItem(_ item: ScheduleMonthItem) {
-    guard let target = activeWorkspaceScheduleMonthDetailTarget else { return }
-    activeWorkspaceScheduleMonthDetailTarget =
-      ScheduleMonthDetailTargetUpdater.applyingMovedItem(
-        item,
-        to: target,
-        calendar: .autoupdatingCurrent
+    applyScheduleMonthDetailItemMutation(itemID: item.id, updatedItem: item)
+  }
+
+  private func applyScheduleMonthDetailItemMutation(
+    itemID: String,
+    updatedItem: ScheduleMonthItem?
+  ) {
+    let calendar = Calendar.autoupdatingCurrent
+    activeWorkspaceScheduleMonthDetailTarget = activeWorkspaceScheduleMonthDetailTarget.map {
+      ScheduleMonthDetailTargetUpdater.applyingItemMutation(
+        itemID: itemID,
+        updatedItem: updatedItem,
+        to: $0,
+        calendar: calendar
       )
+    }
+    previousWorkspaceScheduleMonthDetailTarget = previousWorkspaceScheduleMonthDetailTarget.map {
+      ScheduleMonthDetailTargetUpdater.applyingItemMutation(
+        itemID: itemID,
+        updatedItem: updatedItem,
+        to: $0,
+        calendar: calendar
+      )
+    }
+  }
+
+  private func applyScheduleMonthDetailTaskEditFields(
+    _ fields: RetainedTaskEditFields,
+    taskID: UUID
+  ) {
+    let calendar = Calendar.autoupdatingCurrent
+    let itemID = "workspace-task-\(taskID.uuidString)"
+    activeWorkspaceScheduleMonthDetailTarget = applyingScheduleMonthDetailTaskEditFields(
+      fields,
+      itemID: itemID,
+      target: activeWorkspaceScheduleMonthDetailTarget,
+      calendar: calendar
+    )
+    previousWorkspaceScheduleMonthDetailTarget = applyingScheduleMonthDetailTaskEditFields(
+      fields,
+      itemID: itemID,
+      target: previousWorkspaceScheduleMonthDetailTarget,
+      calendar: calendar
+    )
+  }
+
+  private func applyingScheduleMonthDetailTaskEditFields(
+    _ fields: RetainedTaskEditFields,
+    itemID: String,
+    target: ScheduleMonthDetailPanelTarget?,
+    calendar: Calendar
+  ) -> ScheduleMonthDetailPanelTarget? {
+    guard let target else { return nil }
+    guard let existingItem = target.items.first(where: { $0.id == itemID }) else { return target }
+    let updatedItem: ScheduleMonthItem?
+    if let day = fields.day {
+      updatedItem = ScheduleMonthItem(
+        id: existingItem.id,
+        source: existingItem.source,
+        title: TimelineBoardReadPath.timelinePreviewTitle(for: fields.title),
+        subtitle: existingItem.subtitle,
+        startDate: scheduleMonthDetailStartDate(
+          day: day,
+          timeMinutes: fields.timeMinutes,
+          calendar: calendar
+        ),
+        endDate: scheduleMonthDetailEndDate(
+          day: day,
+          timeMinutes: fields.timeMinutes,
+          durationMinutes: fields.durationMinutes,
+          calendar: calendar
+        ),
+        isAllDay: fields.timeMinutes == nil,
+        colorHex: existingItem.colorHex,
+        isCompleted: existingItem.isCompleted,
+        isPreparationSlot: existingItem.isPreparationSlot,
+        isBackgroundCalendar: existingItem.isBackgroundCalendar,
+        calendarEvent: existingItem.calendarEvent
+      )
+    } else {
+      updatedItem = nil
+    }
+    return ScheduleMonthDetailTargetUpdater.applyingItemMutation(
+      itemID: itemID,
+      updatedItem: updatedItem,
+      to: target,
+      calendar: calendar
+    )
   }
 
   func openScheduleMonthDetailItem(_ item: ScheduleMonthItem) {
@@ -851,7 +932,9 @@ extension MainWorkspaceView {
       registerUndo: true
     )
     guard didSave else { return nil }
-    return scheduleMonthDetailItem(item, isCompleted: isCompleted)
+    let updatedItem = scheduleMonthDetailItem(item, isCompleted: isCompleted)
+    applyScheduleMonthDetailItemMutation(itemID: item.id, updatedItem: updatedItem)
+    return updatedItem
   }
 
   func updateScheduleMonthDetailItemSchedule(
@@ -860,9 +943,10 @@ extension MainWorkspaceView {
     timeMinutes: Int?,
     durationMinutes: Int?
   ) async -> ScheduleMonthItem? {
+    let updatedItem: ScheduleMonthItem?
     switch item.source {
     case .workspaceTask(let taskID, let projectID):
-      return await updateScheduleMonthDetailTaskSchedule(
+      updatedItem = await updateScheduleMonthDetailTaskSchedule(
         item,
         taskID: taskID,
         projectID: projectID,
@@ -871,13 +955,17 @@ extension MainWorkspaceView {
         durationMinutes: durationMinutes
       )
     case .calendarEvent:
-      return await updateScheduleMonthDetailCalendarEventSchedule(
+      updatedItem = await updateScheduleMonthDetailCalendarEventSchedule(
         item,
         day: day,
         timeMinutes: timeMinutes,
         durationMinutes: durationMinutes
       )
     }
+    if let updatedItem {
+      applyScheduleMonthDetailItemMutation(itemID: item.id, updatedItem: updatedItem)
+    }
+    return updatedItem
   }
 
   func createScheduleMonthDetailTask(
@@ -920,7 +1008,7 @@ extension MainWorkspaceView {
     }
 
     let descriptor = workspaceProjectDescriptorsByID[projectID]
-    return ScheduleMonthItem(
+    let createdItem = ScheduleMonthItem(
       id: "workspace-task-\(taskID.uuidString)",
       source: .workspaceTask(taskID: taskID, projectID: projectID),
       title: title.trimmingCharacters(in: .whitespacesAndNewlines),
@@ -939,18 +1027,25 @@ extension MainWorkspaceView {
       isBackgroundCalendar: false,
       calendarEvent: nil
     )
+    applyScheduleMonthDetailItemMutation(itemID: createdItem.id, updatedItem: createdItem)
+    return createdItem
   }
 
   func deleteScheduleMonthDetailItem(
     _ item: ScheduleMonthItem,
     scope: ScheduleCalendarRecurringEditScope?
   ) async -> Bool {
+    let didDelete: Bool
     switch item.source {
     case .workspaceTask(let taskID, let projectID):
-      return await deleteScheduleMonthDetailTask(taskID: taskID, projectID: projectID)
+      didDelete = await deleteScheduleMonthDetailTask(taskID: taskID, projectID: projectID)
     case .calendarEvent:
-      return await deleteScheduleMonthDetailCalendarEvent(item, scope: scope ?? .thisEvent)
+      didDelete = await deleteScheduleMonthDetailCalendarEvent(item, scope: scope ?? .thisEvent)
     }
+    if didDelete {
+      applyScheduleMonthDetailItemMutation(itemID: item.id, updatedItem: nil)
+    }
+    return didDelete
   }
 
   private func deleteScheduleMonthDetailTask(taskID: UUID, projectID: UUID) async -> Bool {
@@ -1274,6 +1369,7 @@ extension MainWorkspaceView {
         reminderProjectProvider: appState.reminderProjectProvider
       )
       appState.bumpWorkspaceTreeRevision()
+      applyScheduleMonthDetailTaskEditFields(fields, taskID: taskID)
       if registerUndo, let previousFields, previousFields != fields {
         appState.registerUndo(with: undoManager, actionName: "할일 편집") {
           Task { @MainActor in

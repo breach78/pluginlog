@@ -233,10 +233,19 @@ enum ScheduleMonthDetailTargetUpdater {
     to target: ScheduleMonthDetailPanelTarget,
     calendar: Calendar
   ) -> ScheduleMonthDetailPanelTarget {
+    applyingItemMutation(itemID: item.id, updatedItem: item, to: target, calendar: calendar)
+  }
+
+  static func applyingItemMutation(
+    itemID: String,
+    updatedItem: ScheduleMonthItem?,
+    to target: ScheduleMonthDetailPanelTarget,
+    calendar: Calendar
+  ) -> ScheduleMonthDetailPanelTarget {
     let targetDay = calendar.startOfDay(for: target.date)
-    var items = target.items.filter { $0.id != item.id }
-    if containsItem(item, on: targetDay, calendar: calendar) {
-      items.append(item)
+    var items = target.items.filter { $0.id != itemID }
+    if let updatedItem, containsItem(updatedItem, on: targetDay, calendar: calendar) {
+      items.append(updatedItem)
     }
     items.sort {
       itemSortKey($0, calendar: calendar) < itemSortKey($1, calendar: calendar)

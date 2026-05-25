@@ -966,6 +966,64 @@ final class ScheduleMonthModelTests: XCTestCase {
     XCTAssertTrue(updated.items.isEmpty)
   }
 
+  func testScheduleMonthDetailTargetUpdaterReplacesExistingItemSchedule() throws {
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+    let may9 = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 5, day: 9, hour: 9)))
+    let may9End = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 5, day: 9, hour: 10)))
+    let movedStart = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 5, day: 9, hour: 14)))
+    let movedEnd = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 5, day: 9, hour: 15)))
+    let item = makeMonthItem(
+      id: "workspace-task-\(UUID().uuidString)",
+      source: .workspaceTask(taskID: UUID(), projectID: UUID()),
+      startDate: may9,
+      endDate: may9End,
+      isAllDay: false
+    )
+    let movedItem = makeMonthItem(
+      id: item.id,
+      source: item.source,
+      startDate: movedStart,
+      endDate: movedEnd,
+      isAllDay: false
+    )
+    let target = ScheduleMonthDetailPanelTarget(date: may9, items: [item])
+
+    let updated = ScheduleMonthDetailTargetUpdater.applyingItemMutation(
+      itemID: item.id,
+      updatedItem: movedItem,
+      to: target,
+      calendar: calendar
+    )
+
+    XCTAssertEqual(updated.items.map(\.id), [item.id])
+    XCTAssertEqual(updated.items.first?.startDate, movedStart)
+    XCTAssertEqual(updated.items.first?.endDate, movedEnd)
+  }
+
+  func testScheduleMonthDetailTargetUpdaterRemovesDeletedItem() throws {
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+    let may9 = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 5, day: 9)))
+    let item = makeMonthItem(
+      id: "workspace-task-\(UUID().uuidString)",
+      source: .workspaceTask(taskID: UUID(), projectID: UUID()),
+      startDate: may9,
+      endDate: try XCTUnwrap(calendar.date(byAdding: .day, value: 1, to: may9)),
+      isAllDay: true
+    )
+    let target = ScheduleMonthDetailPanelTarget(date: may9, items: [item])
+
+    let updated = ScheduleMonthDetailTargetUpdater.applyingItemMutation(
+      itemID: item.id,
+      updatedItem: nil,
+      to: target,
+      calendar: calendar
+    )
+
+    XCTAssertTrue(updated.items.isEmpty)
+  }
+
   func testScheduleMonthItemAppliesDateOnlyPreviewWithoutDroppingTime() throws {
     var calendar = Calendar(identifier: .gregorian)
     calendar.timeZone = TimeZone(secondsFromGMT: 0)!
