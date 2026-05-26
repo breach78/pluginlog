@@ -1145,6 +1145,8 @@ struct UnifiedTimelineBoardScrollView<
       self.onTaskBadgeHoverCleared = onTaskBadgeHoverCleared
       super.init()
       documentView.addSubview(boardHosting)
+      documentView.addSubview(topOverlayContainer)
+      documentView.addSubview(leftOverlayContainer)
       leftOverlayContainer.addSubview(leftHosting)
       topOverlayContainer.addSubview(topHosting)
     }
@@ -1265,11 +1267,24 @@ struct UnifiedTimelineBoardScrollView<
       headerHeight: CGFloat
     ) {
       guard let scrollView else { return }
-      let bounds = scrollView.contentView.bounds
+      layoutPinnedOverlays(
+        visibleBounds: scrollView.contentView.bounds,
+        boardSize: boardSize,
+        titleColumnWidth: titleColumnWidth,
+        headerHeight: headerHeight
+      )
+    }
+
+    func layoutPinnedOverlays(
+      visibleBounds bounds: CGRect,
+      boardSize: CGSize,
+      titleColumnWidth: CGFloat,
+      headerHeight: CGFloat
+    ) {
       let timelineWidth = max(0, boardSize.width - titleColumnWidth)
 
       let leftFrame = CGRect(
-        x: bounds.origin.x,
+        x: 0,
         y: 0,
         width: titleColumnWidth,
         height: boardSize.height
@@ -1285,7 +1300,7 @@ struct UnifiedTimelineBoardScrollView<
 
       let topFrame = CGRect(
         x: titleColumnWidth,
-        y: bounds.origin.y,
+        y: 0,
         width: timelineWidth,
         height: headerHeight
       )
@@ -1499,7 +1514,6 @@ struct UnifiedTimelineBoardScrollView<
       coordinator?.clearDayHeaderHover()
       coordinator?.clearTaskBadgeHover()
     }
-
     context.coordinator.leftHosting.wantsLayer = true
     context.coordinator.topHosting.wantsLayer = true
     context.coordinator.leftOverlayContainer.wantsLayer = true
@@ -1507,8 +1521,8 @@ struct UnifiedTimelineBoardScrollView<
 
     scrollView.contentView.wantsLayer = true
     scrollView.contentView.layer?.masksToBounds = true
-    scrollView.contentView.addSubview(context.coordinator.topOverlayContainer)
-    scrollView.contentView.addSubview(context.coordinator.leftOverlayContainer)
+    scrollView.addFloatingSubview(context.coordinator.topOverlayContainer, for: .vertical)
+    scrollView.addFloatingSubview(context.coordinator.leftOverlayContainer, for: .horizontal)
 
     scrollView.contentView.postsBoundsChangedNotifications = true
     scrollView.contentView.postsFrameChangedNotifications = true
