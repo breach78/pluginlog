@@ -33,6 +33,7 @@ struct TimelineBoardView: View {
     let visibleLowerOffset: Int
     let visibleUpperOffset: Int
     let boardVersion: Int
+    let cornerVersion: Int
     let leftVersion: Int
     let topVersion: Int
     let shouldPublishVerticalOffset: Bool
@@ -683,6 +684,7 @@ struct TimelineBoardView: View {
         dropIndicator: projectDropIndicator,
         taskDropTargetProjectID: taskDropTargetProjectID
       ),
+      cornerVersion: pinnedCornerSignature(),
       leftVersion: pinnedLeftSignature(
         barsPresentationSignature: snapshot.barsPresentationSignature,
         calendarPresentationSignature: snapshot.calendarPresentationSignature,
@@ -759,6 +761,7 @@ struct TimelineBoardView: View {
         dayRange: dayRange,
         dayColumnWidth: dayColumnWidth,
         boardContentVersion: viewport.boardVersion,
+        pinnedCornerVersion: viewport.cornerVersion,
         pinnedLeftVersion: viewport.leftVersion,
         pinnedTopVersion: viewport.topVersion,
         scrollRequestGeneration: scrollRequestGeneration,
@@ -811,8 +814,10 @@ struct TimelineBoardView: View {
           visibleLowerOffset: viewport.visibleLowerOffset,
           visibleUpperOffset: viewport.visibleUpperOffset
         )
+      } pinnedCorner: {
+        leftColumnHeaderContent
       } pinnedLeft: {
-        leftColumnContent(
+        leftColumnScrollableContent(
           bars: snapshot.bars,
           calendarEventGroups: snapshot.calendarEventGroups,
           calendarRowHeight: snapshot.calendarRowHeight,
@@ -938,6 +943,13 @@ struct TimelineBoardView: View {
     hasher.combine(dropIndicator?.targetProjectID)
     hasher.combine(dropIndicator?.placement == .before)
     hasher.combine(taskDropTargetProjectID)
+    return hasher.finalize()
+  }
+
+  private func pinnedCornerSignature() -> Int {
+    var hasher = Hasher()
+    hasher.combine(projectListSortMode.rawValue)
+    hasher.combine(isCreatingProject)
     return hasher.finalize()
   }
 

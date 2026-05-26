@@ -967,7 +967,7 @@ struct TimelineProjectDragModifier: ViewModifier {
 
 @MainActor
 struct UnifiedTimelineBoardScrollView<
-  BoardContent: View, PinnedLeft: View, PinnedTop: View
+  BoardContent: View, PinnedCorner: View, PinnedLeft: View, PinnedTop: View
 >: NSViewRepresentable {
   let boardSize: CGSize
   let titleColumnWidth: CGFloat
@@ -975,6 +975,7 @@ struct UnifiedTimelineBoardScrollView<
   let dayRange: ClosedRange<Int>
   let dayColumnWidth: CGFloat
   let boardContentVersion: Int
+  let pinnedCornerVersion: Int
   let pinnedLeftVersion: Int
   let pinnedTopVersion: Int
   let scrollRequestGeneration: Int
@@ -995,6 +996,7 @@ struct UnifiedTimelineBoardScrollView<
   let onTaskBadgeHoverCleared: () -> Void
 
   let boardContent: BoardContent
+  let pinnedCorner: PinnedCorner
   let pinnedLeft: PinnedLeft
   let pinnedTop: PinnedTop
 
@@ -1005,6 +1007,7 @@ struct UnifiedTimelineBoardScrollView<
     dayRange: ClosedRange<Int>,
     dayColumnWidth: CGFloat,
     boardContentVersion: Int,
+    pinnedCornerVersion: Int,
     pinnedLeftVersion: Int,
     pinnedTopVersion: Int,
     scrollRequestGeneration: Int,
@@ -1023,6 +1026,7 @@ struct UnifiedTimelineBoardScrollView<
     onTaskBadgeHover: @escaping (String, Bool) -> Void,
     onTaskBadgeHoverCleared: @escaping () -> Void,
     @ViewBuilder boardContent: () -> BoardContent,
+    @ViewBuilder pinnedCorner: () -> PinnedCorner,
     @ViewBuilder pinnedLeft: () -> PinnedLeft,
     @ViewBuilder pinnedTop: () -> PinnedTop
   ) {
@@ -1032,6 +1036,7 @@ struct UnifiedTimelineBoardScrollView<
     self.dayRange = dayRange
     self.dayColumnWidth = dayColumnWidth
     self.boardContentVersion = boardContentVersion
+    self.pinnedCornerVersion = pinnedCornerVersion
     self.pinnedLeftVersion = pinnedLeftVersion
     self.pinnedTopVersion = pinnedTopVersion
     self.scrollRequestGeneration = scrollRequestGeneration
@@ -1050,6 +1055,7 @@ struct UnifiedTimelineBoardScrollView<
     self.onTaskBadgeHover = onTaskBadgeHover
     self.onTaskBadgeHoverCleared = onTaskBadgeHoverCleared
     self.boardContent = boardContent()
+    self.pinnedCorner = pinnedCorner()
     self.pinnedLeft = pinnedLeft()
     self.pinnedTop = pinnedTop()
   }
@@ -1058,11 +1064,14 @@ struct UnifiedTimelineBoardScrollView<
   final class Coordinator: NSObject {
     let documentView = FlippedTimelineDocumentView()
     let boardHosting: ScrollPassthroughHostingView<BoardContent>
+    let cornerHosting: ScrollPassthroughHostingView<PinnedCorner>
     let leftHosting: ScrollPassthroughHostingView<PinnedLeft>
     let topHosting: ScrollPassthroughHostingView<PinnedTop>
+    let cornerOverlayContainer = TimelinePinnedOverlayContainerView()
     let leftOverlayContainer = TimelinePinnedOverlayContainerView()
     let topOverlayContainer = TimelinePinnedOverlayContainerView()
     var lastBoardContentVersion: Int
+    var lastPinnedCornerVersion: Int
     var lastPinnedLeftVersion: Int
     var lastPinnedTopVersion: Int
     var offsetX: Binding<CGFloat>
@@ -1095,9 +1104,11 @@ struct UnifiedTimelineBoardScrollView<
 
     init(
       boardContent: BoardContent,
+      pinnedCorner: PinnedCorner,
       pinnedLeft: PinnedLeft,
       pinnedTop: PinnedTop,
       boardContentVersion: Int,
+      pinnedCornerVersion: Int,
       pinnedLeftVersion: Int,
       pinnedTopVersion: Int,
       offsetX: Binding<CGFloat>,
@@ -1120,9 +1131,11 @@ struct UnifiedTimelineBoardScrollView<
       onTaskBadgeHoverCleared: @escaping () -> Void
     ) {
       self.boardHosting = ScrollPassthroughHostingView(rootView: boardContent)
+      self.cornerHosting = ScrollPassthroughHostingView(rootView: pinnedCorner)
       self.leftHosting = ScrollPassthroughHostingView(rootView: pinnedLeft)
       self.topHosting = ScrollPassthroughHostingView(rootView: pinnedTop)
       self.lastBoardContentVersion = boardContentVersion
+      self.lastPinnedCornerVersion = pinnedCornerVersion
       self.lastPinnedLeftVersion = pinnedLeftVersion
       self.lastPinnedTopVersion = pinnedTopVersion
       self.offsetX = offsetX
@@ -1147,6 +1160,7 @@ struct UnifiedTimelineBoardScrollView<
       documentView.addSubview(boardHosting)
       documentView.addSubview(topOverlayContainer)
       documentView.addSubview(leftOverlayContainer)
+      cornerOverlayContainer.addSubview(cornerHosting)
       leftOverlayContainer.addSubview(leftHosting)
       topOverlayContainer.addSubview(topHosting)
     }
@@ -1282,6 +1296,29 @@ struct UnifiedTimelineBoardScrollView<
       headerHeight: CGFloat
     ) {
       let timelineWidth = max(0, boardSize.width - titleColumnWidth)
+      let cornerLeadingBleed: CGFloat = 80
+      let cornerTopBleed: CGFloat = 80
+      let cornerTrailingBleed: CGFloat = 4
+
+      let cornerFrame = CGRect(
+        x: bounds.minX - cornerLeadingBleed,
+        y: -cornerTopBleed,
+        width: titleColumnWidth + cornerLeadingBleed + cornerTrailingBleed,
+        height: headerHeight + cornerTopBleed
+      )
+      if !cornerOverlayContainer.frame.equalTo(cornerFrame) {
+        cornerOverlayContainer.frame = cornerFrame
+      }
+
+      let cornerContentFrame = CGRect(
+        x: cornerLeadingBleed,
+        y: cornerTopBleed,
+        width: titleColumnWidth,
+        height: headerHeight
+      )
+      if !cornerHosting.frame.equalTo(cornerContentFrame) {
+        cornerHosting.frame = cornerContentFrame
+      }
 
       let leftFrame = CGRect(
         x: 0,
@@ -1457,9 +1494,11 @@ struct UnifiedTimelineBoardScrollView<
   func makeCoordinator() -> Coordinator {
     Coordinator(
       boardContent: boardContent,
+      pinnedCorner: pinnedCorner,
       pinnedLeft: pinnedLeft,
       pinnedTop: pinnedTop,
       boardContentVersion: boardContentVersion,
+      pinnedCornerVersion: pinnedCornerVersion,
       pinnedLeftVersion: pinnedLeftVersion,
       pinnedTopVersion: pinnedTopVersion,
       offsetX: $offsetX,
@@ -1515,14 +1554,20 @@ struct UnifiedTimelineBoardScrollView<
       coordinator?.clearTaskBadgeHover()
     }
     context.coordinator.leftHosting.wantsLayer = true
+    context.coordinator.cornerHosting.wantsLayer = true
     context.coordinator.topHosting.wantsLayer = true
     context.coordinator.leftOverlayContainer.wantsLayer = true
+    context.coordinator.cornerOverlayContainer.wantsLayer = true
     context.coordinator.topOverlayContainer.wantsLayer = true
+    context.coordinator.cornerOverlayContainer.layer?.backgroundColor =
+      NSColor.windowBackgroundColor.cgColor
+    context.coordinator.cornerOverlayContainer.layer?.zPosition = 10
 
     scrollView.contentView.wantsLayer = true
     scrollView.contentView.layer?.masksToBounds = true
     scrollView.addFloatingSubview(context.coordinator.topOverlayContainer, for: .vertical)
     scrollView.addFloatingSubview(context.coordinator.leftOverlayContainer, for: .horizontal)
+    scrollView.addFloatingSubview(context.coordinator.cornerOverlayContainer, for: .vertical)
 
     scrollView.contentView.postsBoundsChangedNotifications = true
     scrollView.contentView.postsFrameChangedNotifications = true
@@ -1559,6 +1604,10 @@ struct UnifiedTimelineBoardScrollView<
     if coordinator.lastBoardContentVersion != boardContentVersion {
       coordinator.boardHosting.rootView = boardContent
       coordinator.lastBoardContentVersion = boardContentVersion
+    }
+    if coordinator.lastPinnedCornerVersion != pinnedCornerVersion {
+      coordinator.cornerHosting.rootView = pinnedCorner
+      coordinator.lastPinnedCornerVersion = pinnedCornerVersion
     }
     if coordinator.lastPinnedLeftVersion != pinnedLeftVersion {
       coordinator.leftHosting.rootView = pinnedLeft

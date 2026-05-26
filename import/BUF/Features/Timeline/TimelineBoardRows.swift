@@ -46,7 +46,34 @@ extension TimelineBoardView {
       alignment: .topLeading)
   }
 
-  func leftColumnContent(
+  var leftColumnHeaderContent: some View {
+    HStack(spacing: 8) {
+      WorkspaceProjectSortButton(
+        sortMode: Binding(
+          get: { projectListSortMode },
+          set: { projectListSortMode = $0 }
+        ),
+        context: .timeline
+      )
+
+      Button {
+        isNewProjectSheetPresented = true
+      } label: {
+        Image(systemName: "plus.circle.fill")
+          .font(.caption.weight(.semibold))
+      }
+      .buttonStyle(.plain)
+      .disabled(isCreatingProject)
+      .help("새 프로젝트 생성")
+
+      Spacer(minLength: 0)
+    }
+    .padding(.horizontal, 12)
+    .frame(width: titleColumnWidth, height: headerHeight, alignment: .leading)
+    .background(Color(nsColor: .windowBackgroundColor))
+  }
+
+  func leftColumnScrollableContent(
     bars: [TimelineProjectBar],
     calendarEventGroups: [TimelineCalendarEventGroup],
     calendarRowHeight: CGFloat,
@@ -56,30 +83,8 @@ extension TimelineBoardView {
     visibleUpperOffset: Int
   ) -> some View {
     VStack(spacing: 0) {
-      HStack(spacing: 8) {
-        WorkspaceProjectSortButton(
-          sortMode: Binding(
-            get: { projectListSortMode },
-            set: { projectListSortMode = $0 }
-          ),
-          context: .timeline
-        )
-
-        Button {
-          isNewProjectSheetPresented = true
-        } label: {
-          Image(systemName: "plus.circle.fill")
-            .font(.caption.weight(.semibold))
-        }
-        .buttonStyle(.plain)
-        .disabled(isCreatingProject)
-        .help("새 프로젝트 생성")
-
-        Spacer(minLength: 0)
-      }
-      .padding(.horizontal, 12)
-      .frame(width: titleColumnWidth, height: headerHeight, alignment: .leading)
-      .background(Color(nsColor: .windowBackgroundColor))
+      Color.clear
+        .frame(width: titleColumnWidth, height: headerHeight)
 
       VStack(alignment: .leading, spacing: 0) {
         ZStack(alignment: .topLeading) {
