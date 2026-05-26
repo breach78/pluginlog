@@ -628,6 +628,10 @@ final class FlippedTimelineDocumentView: NSView {
   override var isFlipped: Bool { true }
 }
 
+final class TimelinePinnedOverlayContainerView: NSView {
+  override var isFlipped: Bool { true }
+}
+
 @MainActor
 final class TimelineOverlayHoverExclusionRegistry {
   static let shared = TimelineOverlayHoverExclusionRegistry()
@@ -1056,6 +1060,8 @@ struct UnifiedTimelineBoardScrollView<
     let boardHosting: ScrollPassthroughHostingView<BoardContent>
     let leftHosting: ScrollPassthroughHostingView<PinnedLeft>
     let topHosting: ScrollPassthroughHostingView<PinnedTop>
+    let leftOverlayContainer = TimelinePinnedOverlayContainerView()
+    let topOverlayContainer = TimelinePinnedOverlayContainerView()
     var lastBoardContentVersion: Int
     var lastPinnedLeftVersion: Int
     var lastPinnedTopVersion: Int
@@ -1139,6 +1145,8 @@ struct UnifiedTimelineBoardScrollView<
       self.onTaskBadgeHoverCleared = onTaskBadgeHoverCleared
       super.init()
       documentView.addSubview(boardHosting)
+      leftOverlayContainer.addSubview(leftHosting)
+      topOverlayContainer.addSubview(topHosting)
     }
 
     func noteUserScrollActivity() {
@@ -1219,7 +1227,8 @@ struct UnifiedTimelineBoardScrollView<
         titleColumnWidth: titleColumnWidth,
         headerHeight: headerHeight
       )
-      clearDayHeaderHover()
+      // Scroll start already cancels SwiftUI overlays; avoid rescheduling detach work every tick.
+      clearDayHeaderHover(notifyCleared: false)
     }
 
     @objc func frameDidChange(_ notification: Notification) {
@@ -1265,8 +1274,13 @@ struct UnifiedTimelineBoardScrollView<
         width: titleColumnWidth,
         height: boardSize.height
       )
-      if !leftHosting.frame.equalTo(leftFrame) {
-        leftHosting.frame = leftFrame
+      if !leftOverlayContainer.frame.equalTo(leftFrame) {
+        leftOverlayContainer.frame = leftFrame
+      }
+
+      let leftContentFrame = CGRect(origin: .zero, size: leftFrame.size)
+      if !leftHosting.frame.equalTo(leftContentFrame) {
+        leftHosting.frame = leftContentFrame
       }
 
       let topFrame = CGRect(
@@ -1275,8 +1289,13 @@ struct UnifiedTimelineBoardScrollView<
         width: timelineWidth,
         height: headerHeight
       )
-      if !topHosting.frame.equalTo(topFrame) {
-        topHosting.frame = topFrame
+      if !topOverlayContainer.frame.equalTo(topFrame) {
+        topOverlayContainer.frame = topFrame
+      }
+
+      let topContentFrame = CGRect(origin: .zero, size: topFrame.size)
+      if !topHosting.frame.equalTo(topContentFrame) {
+        topHosting.frame = topContentFrame
       }
     }
 
@@ -1449,8 +1468,8 @@ struct UnifiedTimelineBoardScrollView<
     )
   }
 
-  func makeNSView(context: Context) -> NSScrollView {
-    let scrollView = TimelineInteractionScrollView()
+	  func makeNSView(context: Context) -> NSScrollView {
+	    let scrollView = TimelineInteractionScrollView()
     let clipView = FlippedTimelineClipView()
     clipView.drawsBackground = false
     scrollView.contentView = clipView
@@ -1483,11 +1502,13 @@ struct UnifiedTimelineBoardScrollView<
 
     context.coordinator.leftHosting.wantsLayer = true
     context.coordinator.topHosting.wantsLayer = true
+    context.coordinator.leftOverlayContainer.wantsLayer = true
+    context.coordinator.topOverlayContainer.wantsLayer = true
 
     scrollView.contentView.wantsLayer = true
     scrollView.contentView.layer?.masksToBounds = true
-    scrollView.contentView.addSubview(context.coordinator.topHosting)
-    scrollView.contentView.addSubview(context.coordinator.leftHosting)
+    scrollView.contentView.addSubview(context.coordinator.topOverlayContainer)
+    scrollView.contentView.addSubview(context.coordinator.leftOverlayContainer)
 
     scrollView.contentView.postsBoundsChangedNotifications = true
     scrollView.contentView.postsFrameChangedNotifications = true
@@ -1503,8 +1524,19 @@ struct UnifiedTimelineBoardScrollView<
       name: NSView.frameDidChangeNotification,
       object: scrollView.contentView
     )
-
     return scrollView
+  }
+
+  func sizeThatFits(
+    _ proposal: ProposedViewSize,
+    nsView: NSScrollView,
+    context: Context
+  ) -> CGSize? {
+    let fallbackSize = nsView.frame.size == .zero ? boardSize : nsView.frame.size
+    return CGSize(
+      width: proposal.width ?? fallbackSize.width,
+      height: proposal.height ?? fallbackSize.height
+    )
   }
 
   func updateNSView(_ scrollView: NSScrollView, context: Context) {

@@ -72,6 +72,10 @@ struct TimelineBoardView: View {
     }
   }
 
+  final class TimelineScrollRuntimeState: ObservableObject {
+    var idleWorkItem: DispatchWorkItem?
+  }
+
   final class TimelineCalendarProjectionCache: ObservableObject {
     private var cachedSourceSignature: Int?
     private var cachedSnapshot: TimelineCalendarSnapshot?
@@ -227,7 +231,7 @@ struct TimelineBoardView: View {
   @State var isHoveringPinnedLeftColumn = false
   @State var overlayMetricsCache = TimelineOverlayMetricsCache()
   @State var timelineScrollSession: TimelineScrollSessionMetrics?
-  @State var timelineScrollIdleWorkItem: DispatchWorkItem?
+  @StateObject var timelineScrollRuntime = TimelineScrollRuntimeState()
   @State var didPrewarmTimelineScrollMode = false
   @State var immediateSelectedProjectID: UUID?
   @State var selectionCommitTask: Task<Void, Never>?
@@ -981,11 +985,11 @@ struct TimelineBoardView: View {
       timelineScrollSession?.lastVerticalOffset = clampedY
     }
 
-    timelineScrollIdleWorkItem?.cancel()
+    timelineScrollRuntime.idleWorkItem?.cancel()
     let workItem = DispatchWorkItem {
       finishTimelineScrollSession(reason: "idle")
     }
-    timelineScrollIdleWorkItem = workItem
+    timelineScrollRuntime.idleWorkItem = workItem
     DispatchQueue.main.asyncAfter(deadline: .now() + timelineScrollIdleDelay, execute: workItem)
   }
 
@@ -1000,8 +1004,8 @@ struct TimelineBoardView: View {
   }
 
   func finishTimelineScrollSession(reason: String) {
-    timelineScrollIdleWorkItem?.cancel()
-    timelineScrollIdleWorkItem = nil
+    timelineScrollRuntime.idleWorkItem?.cancel()
+    timelineScrollRuntime.idleWorkItem = nil
 
     guard let session = timelineScrollSession else { return }
     timelineScrollSession = nil
@@ -1015,8 +1019,8 @@ struct TimelineBoardView: View {
   }
 
   func cancelTimelineScrollSession() {
-    timelineScrollIdleWorkItem?.cancel()
-    timelineScrollIdleWorkItem = nil
+    timelineScrollRuntime.idleWorkItem?.cancel()
+    timelineScrollRuntime.idleWorkItem = nil
     timelineScrollSession = nil
   }
 
