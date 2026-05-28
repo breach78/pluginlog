@@ -310,10 +310,14 @@ struct ScheduleScreenFrameReporter: NSViewRepresentable {
 }
 
 enum ScheduleMonthDayTimeFormatter {
-  static func timeText(from date: Date) -> String {
+  private static let formatter: DateFormatter = {
     let formatter = DateFormatter()
     formatter.locale = Locale(identifier: "ko_KR")
     formatter.dateFormat = "a h:mm"
+    return formatter
+  }()
+
+  static func timeText(from date: Date) -> String {
     return formatter.string(from: date)
   }
 }

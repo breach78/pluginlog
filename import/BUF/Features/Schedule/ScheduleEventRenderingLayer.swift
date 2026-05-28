@@ -102,15 +102,15 @@ struct ScheduleCircleStrokeOverlay: View {
   }
 }
 
-struct ScheduleTaskBlockSurface: View {
+struct ScheduleTaskBlockSurface<Content: View>: View {
   let color: Color
   let isSelected: Bool
   let isCompleted: Bool
   let isPreparationSlot: Bool
   let selectionHighlightColor: Color
-  private let content: AnyView
+  private let content: Content
 
-  init<Content: View>(
+  init(
     color: Color,
     isSelected: Bool,
     isCompleted: Bool,
@@ -123,7 +123,7 @@ struct ScheduleTaskBlockSurface: View {
     self.isCompleted = isCompleted
     self.isPreparationSlot = isPreparationSlot
     self.selectionHighlightColor = selectionHighlightColor
-    self.content = AnyView(content())
+    self.content = content()
   }
 
   var body: some View {
@@ -164,19 +164,19 @@ struct ScheduleTaskBlockSurface: View {
   }
 }
 
-struct ScheduleEventBlockSurface: View {
+struct ScheduleEventBlockSurface<Content: View>: View {
   let color: Color
   let isBackgroundCalendar: Bool
-  private let content: AnyView
+  private let content: Content
 
-  init<Content: View>(
+  init(
     color: Color,
     isBackgroundCalendar: Bool = false,
     @ViewBuilder content: () -> Content
   ) {
     self.color = color
     self.isBackgroundCalendar = isBackgroundCalendar
-    self.content = AnyView(content())
+    self.content = content()
   }
 
   var body: some View {

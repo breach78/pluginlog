@@ -632,6 +632,43 @@ final class TimelinePinnedOverlayContainerView: NSView {
   override var isFlipped: Bool { true }
 }
 
+struct TimelinePinnedCornerOverlayLayout {
+  static let defaultLeadingBleed: CGFloat = 80
+  static let defaultTopBleed: CGFloat = 80
+  static let defaultTrailingBleed: CGFloat = 4
+
+  let overlayFrame: CGRect
+  let contentFrame: CGRect
+
+  init(
+    visibleBounds: CGRect,
+    titleColumnWidth: CGFloat,
+    headerHeight: CGFloat,
+    leadingBleed: CGFloat = Self.defaultLeadingBleed,
+    topBleed: CGFloat = Self.defaultTopBleed,
+    trailingBleed: CGFloat = Self.defaultTrailingBleed
+  ) {
+    let leadingBleed = max(0, leadingBleed)
+    let topBleed = max(0, topBleed)
+    let trailingBleed = max(0, trailingBleed)
+    let titleColumnWidth = max(0, titleColumnWidth)
+    let headerHeight = max(0, headerHeight)
+
+    overlayFrame = CGRect(
+      x: visibleBounds.minX - leadingBleed,
+      y: -topBleed,
+      width: titleColumnWidth + leadingBleed + trailingBleed,
+      height: headerHeight + topBleed
+    )
+    contentFrame = CGRect(
+      x: leadingBleed,
+      y: topBleed,
+      width: titleColumnWidth,
+      height: headerHeight
+    )
+  }
+}
+
 @MainActor
 final class TimelineOverlayHoverExclusionRegistry {
   static let shared = TimelineOverlayHoverExclusionRegistry()
@@ -1296,28 +1333,17 @@ struct UnifiedTimelineBoardScrollView<
       headerHeight: CGFloat
     ) {
       let timelineWidth = max(0, boardSize.width - titleColumnWidth)
-      let cornerLeadingBleed: CGFloat = 80
-      let cornerTopBleed: CGFloat = 80
-      let cornerTrailingBleed: CGFloat = 4
-
-      let cornerFrame = CGRect(
-        x: bounds.minX - cornerLeadingBleed,
-        y: -cornerTopBleed,
-        width: titleColumnWidth + cornerLeadingBleed + cornerTrailingBleed,
-        height: headerHeight + cornerTopBleed
+      let cornerLayout = TimelinePinnedCornerOverlayLayout(
+        visibleBounds: bounds,
+        titleColumnWidth: titleColumnWidth,
+        headerHeight: headerHeight
       )
-      if !cornerOverlayContainer.frame.equalTo(cornerFrame) {
-        cornerOverlayContainer.frame = cornerFrame
+      if !cornerOverlayContainer.frame.equalTo(cornerLayout.overlayFrame) {
+        cornerOverlayContainer.frame = cornerLayout.overlayFrame
       }
 
-      let cornerContentFrame = CGRect(
-        x: cornerLeadingBleed,
-        y: cornerTopBleed,
-        width: titleColumnWidth,
-        height: headerHeight
-      )
-      if !cornerHosting.frame.equalTo(cornerContentFrame) {
-        cornerHosting.frame = cornerContentFrame
+      if !cornerHosting.frame.equalTo(cornerLayout.contentFrame) {
+        cornerHosting.frame = cornerLayout.contentFrame
       }
 
       let leftFrame = CGRect(
