@@ -29,6 +29,14 @@ enum TaskDragPayload {
       completion(payload.data(using: .utf8), nil)
       return nil
     }
+    let scheduleMonthPayload = ScheduleMonthDragPayload.payloadString(for: .task(taskID))
+    provider.registerDataRepresentation(
+      forTypeIdentifier: ScheduleMonthDragPayload.typeIdentifier,
+      visibility: .all
+    ) { completion in
+      completion(scheduleMonthPayload.data(using: .utf8), nil)
+      return nil
+    }
     return provider
   }
 

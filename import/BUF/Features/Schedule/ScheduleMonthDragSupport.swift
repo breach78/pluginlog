@@ -70,6 +70,9 @@ enum ScheduleMonthDragPayload {
         .task($0)
       }
     }
+    if let taskID = TaskDragPayload.parseTaskID(from: trimmed) {
+      return .task(taskID)
+    }
     if trimmed.hasPrefix(calendarEventPrefix) {
       let eventID = String(trimmed.dropFirst(calendarEventPrefix.count))
       return eventID.isEmpty ? nil : .calendarEvent(eventID)

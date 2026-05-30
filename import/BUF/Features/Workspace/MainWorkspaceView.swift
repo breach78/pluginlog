@@ -487,6 +487,7 @@ struct MainWorkspaceView: View {
   @State var isRollingOverdueTasksToToday = false
   @State var activeWorkspaceProjectListPanelProjectID: UUID?
   @State var activeWorkspaceTaskEditPanelTarget: WorkspaceTaskEditPanelTarget?
+  @State var workspaceTaskEditFocusRequestID = 0
   @State var activeWorkspaceCalendarEventEditPanelTarget: WorkspaceCalendarEventEditPanelTarget?
   @State var activeWorkspaceScheduleMonthDetailTarget: ScheduleMonthDetailPanelTarget?
   @State var previousWorkspaceScheduleMonthDetailTarget: ScheduleMonthDetailPanelTarget?

@@ -193,6 +193,9 @@ extension MainWorkspaceView {
 
   func showTimelineTaskEditor(_ target: WorkspaceTaskEditPanelTarget) {
     guard shouldOpenWorkspaceTaskEditor() else { return }
+    workspaceTaskEditFocusRequestID &+= 1
+    let requestedFocus: TimelineTaskEditInitialFocus =
+      target.initialFocus == .none ? .note : target.initialFocus
     showArchive = false
     inspectorSelection = nil
     activeWorkspaceProjectListPanelProjectID = nil
@@ -201,7 +204,13 @@ extension MainWorkspaceView {
     previousWorkspaceScheduleMonthDetailTarget = nil
     appState.isHoveringTimelineTaskBadgeOverlay = false
     appState.isHoveringTimelineDayHeaderOverlay = false
-    activeWorkspaceTaskEditPanelTarget = target
+    activeWorkspaceTaskEditPanelTarget = WorkspaceTaskEditPanelTarget(
+      projectID: target.projectID,
+      taskID: target.taskID,
+      initialFields: target.initialFields,
+      initialFocus: requestedFocus,
+      focusRequestID: workspaceTaskEditFocusRequestID
+    )
     selectProjectContext(target.projectID)
   }
 
@@ -645,7 +654,8 @@ extension MainWorkspaceView {
           projectID: targetProjectID,
           taskID: taskID,
           initialFields: activeTarget.initialFields,
-          initialFocus: activeTarget.initialFocus
+          initialFocus: activeTarget.initialFocus,
+          focusRequestID: activeTarget.focusRequestID
         )
       }
       appState.bumpWorkspaceTreeRevision()

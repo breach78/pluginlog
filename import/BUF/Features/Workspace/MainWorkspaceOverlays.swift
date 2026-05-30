@@ -206,6 +206,7 @@ extension MainWorkspaceView {
     let inlineEditorConfiguration = TimelineProjectListInlineEditorConfiguration(
       initialExpandedTaskID: target.taskID,
       initialFocus: target.initialFocus,
+      initialFocusRequestID: target.focusRequestID,
       workspaceTreeRevision: appState.workspaceTreeRevision,
       vaultRootURL: appState.obsidianVaultRootURL,
       initialFields: { task in

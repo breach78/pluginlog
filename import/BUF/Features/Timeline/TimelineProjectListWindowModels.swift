@@ -136,6 +136,7 @@ struct TimelineProjectListActions {
 struct TimelineProjectListInlineEditorConfiguration {
   let initialExpandedTaskID: UUID?
   let initialFocus: TimelineTaskEditInitialFocus
+  let initialFocusRequestID: Int
   let workspaceTreeRevision: Int
   let vaultRootURL: URL?
   let initialFields: (TimelineProjectListWindowSnapshot.Task) -> RetainedTaskEditFields

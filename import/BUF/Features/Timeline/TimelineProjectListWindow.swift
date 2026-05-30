@@ -22,6 +22,8 @@ struct TimelineProjectListContent: View {
   @State private var expandedTaskID: UUID?
   @State private var expandedTaskCloseRequestID = 0
   @State private var pendingExpandedTaskIDAfterClose: UUID?
+  @State private var taskEditFocusRequests: [UUID: Int] = [:]
+  @State private var taskEditFocuses: [UUID: TimelineTaskEditInitialFocus] = [:]
   @State private var expandedTaskAuxiliarySections: [UUID: Set<TaskEditAuxiliarySection>] = [:]
   @State private var projectNoteText: String
   @State private var projectNoteHeight: CGFloat = 0
@@ -100,6 +102,12 @@ struct TimelineProjectListContent: View {
       guard let expandedTaskID else { return }
       if !nextSnapshot.tasks.contains(where: { $0.id == expandedTaskID }) {
         self.expandedTaskID = nil
+      }
+      taskEditFocusRequests = taskEditFocusRequests.filter { taskID, _ in
+        nextSnapshot.tasks.contains(where: { $0.id == taskID })
+      }
+      taskEditFocuses = taskEditFocuses.filter { taskID, _ in
+        nextSnapshot.tasks.contains(where: { $0.id == taskID })
       }
       expandedTaskAuxiliarySections = expandedTaskAuxiliarySections.filter { taskID, _ in
         nextSnapshot.tasks.contains(where: { $0.id == taskID })
@@ -284,6 +292,9 @@ struct TimelineProjectListContent: View {
               } preview: {
                 TimelineProjectListHiddenDragPreview()
               }
+              .draggable(TaskDragPayload.payloadString(for: task.id)) {
+                TimelineProjectListHiddenDragPreview()
+              }
               .onDrop(
                 of: [UTType.text.identifier],
                 delegate: TimelineProjectListTaskDropDelegate(
@@ -302,10 +313,14 @@ struct TimelineProjectListContent: View {
           .background {
             if expandedTaskID == task.id {
               TimelineProjectListOutsideClickMonitor {
-                if session.editingTaskID == task.id {
-                  finishInlineTitleEditingFromOutside(for: task)
+                let closingTaskID = task.id
+                DispatchQueue.main.async {
+                  guard expandedTaskID == closingTaskID else { return }
+                  if session.editingTaskID == closingTaskID {
+                    finishInlineTitleEditingFromOutside(for: task)
+                  }
+                  requestExpandedTaskEditorClose()
                 }
-                requestExpandedTaskEditorClose()
               }
             } else if session.editingTaskID == task.id {
               TimelineProjectListOutsideClickMonitor {
@@ -364,13 +379,6 @@ struct TimelineProjectListContent: View {
         taskTitleContent(task)
       } else {
         taskTitleContent(task)
-          .contentShape(Rectangle())
-          .onTapGesture(count: 2) {
-            openTaskForTitleEditing(task)
-          }
-          .onTapGesture(count: 1) {
-            openTaskForTitleEditing(task)
-          }
       }
     }
     .padding(.horizontal, 18)
@@ -459,6 +467,10 @@ struct TimelineProjectListContent: View {
           presentation: presentation
         )
           .frame(maxWidth: .infinity, alignment: .leading)
+          .contentShape(Rectangle())
+          .onTapGesture {
+            openTaskForNoteEditing(task)
+          }
       }
     }
   }
@@ -648,6 +660,19 @@ struct TimelineProjectListContent: View {
       taskMetadataIndicators(task.metadataIndicators, isCompleted: task.isCompleted)
     }
     .frame(maxWidth: .infinity, alignment: .leading)
+    .contentShape(Rectangle())
+    .simultaneousGesture(
+      TapGesture(count: 2)
+        .onEnded {
+          openTaskForTitleEditing(task)
+        }
+        .exclusively(
+          before: TapGesture()
+            .onEnded {
+              openTaskForNoteEditing(task)
+            }
+        )
+    )
     .layoutPriority(1)
   }
 
@@ -690,6 +715,7 @@ struct TimelineProjectListContent: View {
       TimelineTaskEditPopoverContent(
         initialFields: configuration.initialFields(task),
         presentationStyle: .inlinePanel,
+        dragTaskID: task.id,
         reloadToken: TaskEditReloadToken.workspacePanel(
           projectID: snapshot.projectID,
           taskID: task.id,
@@ -711,9 +737,18 @@ struct TimelineProjectListContent: View {
           configuration: configuration
         ),
         closeRequestID: expandedTaskCloseRequestID,
-        initialFocus: configuration.initialExpandedTaskID == task.id
-          ? configuration.initialFocus
-          : .none,
+        initialFocus: taskEditFocuses[task.id]
+          ?? (
+            configuration.initialExpandedTaskID == task.id
+              ? configuration.initialFocus
+              : .none
+          ),
+        focusRequestID: taskEditFocusRequests[task.id]
+          ?? (
+            configuration.initialExpandedTaskID == task.id
+              ? configuration.initialFocusRequestID
+              : 0
+          ),
         onCancel: {
           completeExpandedTaskEditorClose(for: task.id)
         }
@@ -726,14 +761,23 @@ struct TimelineProjectListContent: View {
   }
 
   private func openTask(_ task: TimelineProjectListWindowSnapshot.Task) {
+    openTask(task, focus: .note)
+  }
+
+  private func openTask(
+    _ task: TimelineProjectListWindowSnapshot.Task,
+    focus: TimelineTaskEditInitialFocus
+  ) {
     if inlineEditorConfiguration != nil {
       cancelDraftIfEmpty()
+      taskEditFocuses[task.id] = focus
+      taskEditFocusRequests[task.id, default: 0] &+= 1
       if expandedTaskID == nil {
         expandedTaskID = task.id
       } else if expandedTaskID == task.id {
         return
       } else {
-        requestExpandedTaskEditorClose(nextExpandedTaskID: task.id)
+        switchExpandedTaskEditor(to: task.id)
       }
       return
     }
@@ -741,10 +785,15 @@ struct TimelineProjectListContent: View {
   }
 
   private func openTaskForTitleEditing(_ task: TimelineProjectListWindowSnapshot.Task) {
-    openTask(task)
+    openTask(task, focus: .title)
     if inlineEditorConfiguration != nil {
       startEditing(task)
     }
+  }
+
+  private func openTaskForNoteEditing(_ task: TimelineProjectListWindowSnapshot.Task) {
+    cancelInlineEditing()
+    openTask(task, focus: .note)
   }
 
   private func requestExpandedTaskEditorClose(nextExpandedTaskID: UUID? = nil) {
@@ -756,12 +805,24 @@ struct TimelineProjectListContent: View {
     expandedTaskCloseRequestID &+= 1
   }
 
+  private func switchExpandedTaskEditor(to taskID: UUID) {
+    if let currentTaskID = expandedTaskID {
+      expandedTaskAuxiliarySections.removeValue(forKey: currentTaskID)
+      taskEditFocusRequests.removeValue(forKey: currentTaskID)
+      taskEditFocuses.removeValue(forKey: currentTaskID)
+    }
+    pendingExpandedTaskIDAfterClose = nil
+    expandedTaskID = taskID
+  }
+
   private func completeExpandedTaskEditorClose(for taskID: UUID) {
     guard expandedTaskID == taskID else { return }
     expandedTaskAuxiliarySections.removeValue(forKey: taskID)
     let nextTaskID = pendingExpandedTaskIDAfterClose
     pendingExpandedTaskIDAfterClose = nil
     guard let nextTaskID, visibleTasks.contains(where: { $0.id == nextTaskID }) else {
+      taskEditFocusRequests.removeValue(forKey: taskID)
+      taskEditFocuses.removeValue(forKey: taskID)
       expandedTaskID = nil
       return
     }
@@ -804,7 +865,10 @@ struct TimelineProjectListContent: View {
         onSubmit: {
           submitInlineDraft(anchor: anchor)
         },
-        onEscape: cancelDraftIfEmpty
+        onEscape: cancelDraftIfEmpty,
+        onTab: {
+          submitInlineDraftAndOpenNote(anchor: anchor)
+        }
       )
       .frame(height: 22)
     }
@@ -1167,28 +1231,55 @@ struct TimelineProjectListContent: View {
   }
 
   private func submitInlineDraft(anchor _: TimelineProjectListDraftAnchor) {
-    let title = session.draftTitle.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard !title.isEmpty, !isRenamingTask else { return }
-    let temporaryID = UUID()
-    guard submitDraftOptimistically(temporaryID: temporaryID) != nil else { return }
-    pendingCreateCount += 1
+    guard let create = beginInlineDraftCreate() else { return }
 
     writeQueue.enqueue {
       defer { pendingCreateCount = max(0, pendingCreateCount - 1) }
-      guard let createdTask = await actions.onCreateTask(snapshot.projectID, title) else {
+      guard let createdTask = await actions.onCreateTask(snapshot.projectID, create.title) else {
         updateSession { session in
-          session.failOptimisticCreate(temporaryID: temporaryID)
+          session.failOptimisticCreate(temporaryID: create.temporaryID)
         }
         return
       }
 
       MotionTransaction.withoutAnimation {
         updateSession { session in
-          session.resolveOptimisticCreate(temporaryID: temporaryID, createdTask: createdTask)
+          session.resolveOptimisticCreate(temporaryID: create.temporaryID, createdTask: createdTask)
         }
       }
       enqueueTaskOrderSave(registerUndo: false)
     }
+  }
+
+  private func submitInlineDraftAndOpenNote(anchor _: TimelineProjectListDraftAnchor) {
+    guard let create = beginInlineDraftCreate() else { return }
+
+    writeQueue.enqueue {
+      defer { pendingCreateCount = max(0, pendingCreateCount - 1) }
+      guard let createdTask = await actions.onCreateTask(snapshot.projectID, create.title) else {
+        updateSession { session in
+          session.failOptimisticCreate(temporaryID: create.temporaryID)
+        }
+        return
+      }
+
+      MotionTransaction.withoutAnimation {
+        updateSession { session in
+          session.resolveOptimisticCreate(temporaryID: create.temporaryID, createdTask: createdTask)
+        }
+      }
+      openTask(createdTask, focus: .note)
+      enqueueTaskOrderSave(registerUndo: false)
+    }
+  }
+
+  private func beginInlineDraftCreate() -> (temporaryID: UUID, title: String)? {
+    let title = session.draftTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !title.isEmpty, !isRenamingTask else { return nil }
+    let temporaryID = UUID()
+    guard submitDraftOptimistically(temporaryID: temporaryID) != nil else { return nil }
+    pendingCreateCount += 1
+    return (temporaryID, title)
   }
 
   private func focusDraft(_ anchor: TimelineProjectListDraftAnchor) {

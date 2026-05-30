@@ -5,22 +5,19 @@ private struct ScheduleBackgroundStripeOverlay: View {
   let lineColor: Color
 
   var body: some View {
-    GeometryReader { proxy in
-      Canvas { context, size in
-        var path = Path()
-        let spacing: CGFloat = 9
-        let diagonal = size.height + 24
-        var startX: CGFloat = -size.height
+    Canvas { context, size in
+      var path = Path()
+      let spacing: CGFloat = 9
+      let diagonal = size.height + 24
+      var startX: CGFloat = -size.height
 
-        while startX <= size.width + size.height {
-          path.move(to: CGPoint(x: startX, y: size.height))
-          path.addLine(to: CGPoint(x: startX + diagonal, y: 0))
-          startX += spacing
-        }
-
-        context.stroke(path, with: .color(lineColor), lineWidth: 1.3)
+      while startX <= size.width + size.height {
+        path.move(to: CGPoint(x: startX, y: size.height))
+        path.addLine(to: CGPoint(x: startX + diagonal, y: 0))
+        startX += spacing
       }
-      .frame(width: proxy.size.width, height: proxy.size.height)
+
+      context.stroke(path, with: .color(lineColor), lineWidth: 1.3)
     }
     .allowsHitTesting(false)
   }

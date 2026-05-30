@@ -23,6 +23,7 @@ enum AppOwnedWorkspaceStoreError: LocalizedError {
 
 actor AppOwnedWorkspaceStore {
   private static let localCompletedRecurringMarker = "::app-completed::"
+  private static let reminderCompletedRecurringMarker = "::completed::"
 
   enum ReminderImportCoverage: Sendable {
     case full
@@ -1138,8 +1139,22 @@ actor AppOwnedWorkspaceStore {
         is_completed = excluded.is_completed,
         completion_date = excluded.completion_date,
         start_date = excluded.start_date,
-        due_date = excluded.due_date,
-        schedule_has_explicit_time = excluded.schedule_has_explicit_time,
+        due_date = CASE
+          WHEN app_tasks.is_completed = 1
+            AND excluded.is_completed = 1
+            AND app_tasks.schedule_has_explicit_time = 1
+            AND excluded.schedule_has_explicit_time = 0
+          THEN app_tasks.due_date
+          ELSE excluded.due_date
+        END,
+        schedule_has_explicit_time = CASE
+          WHEN app_tasks.is_completed = 1
+            AND excluded.is_completed = 1
+            AND app_tasks.schedule_has_explicit_time = 1
+            AND excluded.schedule_has_explicit_time = 0
+          THEN app_tasks.schedule_has_explicit_time
+          ELSE excluded.schedule_has_explicit_time
+        END,
         scheduled_duration_minutes = COALESCE(
           excluded.scheduled_duration_minutes,
           app_tasks.scheduled_duration_minutes
@@ -2133,8 +2148,7 @@ actor AppOwnedWorkspaceStore {
   private func completedRecurringBaseIdentifier(
     from externalIdentifier: String
   ) -> String? {
-    let marker = "::completed::"
-    guard let markerRange = externalIdentifier.range(of: marker) else { return nil }
+    guard let markerRange = externalIdentifier.range(of: Self.reminderCompletedRecurringMarker) else { return nil }
     let baseIdentifier = String(externalIdentifier[..<markerRange.lowerBound])
     return baseIdentifier.isEmpty ? nil : baseIdentifier
   }
@@ -2186,12 +2200,24 @@ actor AppOwnedWorkspaceStore {
     return occurrenceKey.isEmpty ? nil : occurrenceKey
   }
 
+  private static func reminderCompletedRecurringOccurrenceKey(
+    from externalIdentifier: String
+  ) -> String? {
+    guard let markerRange = externalIdentifier.range(of: reminderCompletedRecurringMarker) else {
+      return nil
+    }
+    let occurrenceKey = String(externalIdentifier[markerRange.upperBound...])
+    return occurrenceKey.isEmpty ? nil : occurrenceKey
+  }
+
   private static func localCompletedRecurringOccurrenceSchedule(
     from externalIdentifier: String,
     fallbackDueDate: Date?,
     fallbackHasExplicitTime: Bool
   ) -> (dueDate: Date?, hasExplicitTime: Bool) {
-    guard let occurrenceKey = localCompletedRecurringOccurrenceKey(from: externalIdentifier) else {
+    guard let occurrenceKey = localCompletedRecurringOccurrenceKey(from: externalIdentifier)
+      ?? reminderCompletedRecurringOccurrenceKey(from: externalIdentifier)
+    else {
       return (fallbackDueDate, fallbackHasExplicitTime)
     }
     guard occurrenceKey != "undated" else {

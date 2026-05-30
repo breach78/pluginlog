@@ -74,6 +74,7 @@ struct WorkspaceTaskEditPanelTarget: Equatable, Sendable {
   let taskID: UUID
   let initialFields: RetainedTaskEditFields
   var initialFocus: TimelineTaskEditInitialFocus = .none
+  var focusRequestID = 0
 }
 
 enum TaskEditReloadToken {
@@ -111,19 +112,90 @@ private struct PendingAttachmentRename: Identifiable, Equatable {
   }
 }
 
+private struct TaskEditDateTimeControlLayout: Layout {
+  private let spacing: CGFloat = 8
+  private let widthWeights: [CGFloat] = [4, 3, 2]
+
+  func sizeThatFits(
+    proposal: ProposedViewSize,
+    subviews: Subviews,
+    cache: inout ()
+  ) -> CGSize {
+    let spacingWidth = spacing * CGFloat(max(0, subviews.count - 1))
+    let idealWidth = subviews.reduce(spacingWidth) { partialWidth, subview in
+      partialWidth + subview.sizeThatFits(.unspecified).width
+    }
+    let idealHeight = subviews.reduce(CGFloat.zero) { partialHeight, subview in
+      max(partialHeight, subview.sizeThatFits(.unspecified).height)
+    }
+
+    return CGSize(
+      width: proposal.width ?? idealWidth,
+      height: proposal.height ?? idealHeight
+    )
+  }
+
+  func placeSubviews(
+    in bounds: CGRect,
+    proposal: ProposedViewSize,
+    subviews: Subviews,
+    cache: inout ()
+  ) {
+    let spacingWidth = spacing * CGFloat(max(0, subviews.count - 1))
+    let availableWidth = max(0, bounds.width - spacingWidth)
+    let totalWeight = widthWeights.reduce(CGFloat.zero, +)
+    var x = bounds.minX
+
+    for index in subviews.indices {
+      let weight = widthWeights.indices.contains(index) ? widthWeights[index] : 1
+      let width = totalWeight > 0 ? availableWidth * weight / totalWeight : 0
+      subviews[index].place(
+        at: CGPoint(x: x, y: bounds.midY),
+        anchor: .leading,
+        proposal: ProposedViewSize(width: width, height: bounds.height)
+      )
+      x += width + spacing
+    }
+  }
+}
+
+private struct TaskEditDragPayloadModifier: ViewModifier {
+  let taskID: UUID?
+
+  @ViewBuilder
+  func body(content: Content) -> some View {
+    if let taskID {
+      content.onDrag {
+        TaskDragPayload.itemProvider(for: taskID)
+      } preview: {
+        TimelineProjectListHiddenDragPreview()
+      }
+    } else {
+      content
+    }
+  }
+}
+
+private extension View {
+  func taskEditDragPayload(taskID: UUID?) -> some View {
+    modifier(TaskEditDragPayloadModifier(taskID: taskID))
+  }
+}
+
 struct TimelineTaskEditPopoverContent: View {
   let initialFields: RetainedTaskEditFields
   let presentationStyle: TimelineTaskEditPresentationStyle
+  let dragTaskID: UUID?
   let reloadToken: String
   let vaultRootURL: URL?
   let loadFields: () async -> RetainedTaskEditFields
   let saveFields: (RetainedTaskEditFields) async throws -> Void
   let onSyncEditingChanged: (Bool) -> Void
   let onSyncEditingActivity: () -> Void
-  let bottomContent: AnyView?
   private let externalExpandedAuxiliarySections: Binding<Set<TaskEditAuxiliarySection>>?
   let closeRequestID: Int
   let initialFocus: TimelineTaskEditInitialFocus
+  let focusRequestID: Int
   let onCancel: () -> Void
 
   @State private var title: String
@@ -161,16 +233,17 @@ struct TimelineTaskEditPopoverContent: View {
   init(
     initialFields: RetainedTaskEditFields,
     presentationStyle: TimelineTaskEditPresentationStyle = .popover,
+    dragTaskID: UUID? = nil,
     reloadToken: String = "initial",
     vaultRootURL: URL? = nil,
     loadFields: @escaping () async -> RetainedTaskEditFields,
     saveFields: @escaping (RetainedTaskEditFields) async throws -> Void,
     onSyncEditingChanged: @escaping (Bool) -> Void = { _ in },
     onSyncEditingActivity: @escaping () -> Void = {},
-    bottomContent: AnyView? = nil,
     expandedAuxiliarySections: Binding<Set<TaskEditAuxiliarySection>>? = nil,
     closeRequestID: Int = 0,
     initialFocus: TimelineTaskEditInitialFocus = .none,
+    focusRequestID: Int = 0,
     onCancel: @escaping () -> Void
   ) {
     let initialNoteText = TaskEditAttachmentService.noteTextByRemovingAttachmentLinks(
@@ -187,16 +260,17 @@ struct TimelineTaskEditPopoverContent: View {
     )
     self.initialFields = initialFields
     self.presentationStyle = presentationStyle
+    self.dragTaskID = dragTaskID
     self.reloadToken = reloadToken
     self.vaultRootURL = vaultRootURL
     self.loadFields = loadFields
     self.saveFields = saveFields
     self.onSyncEditingChanged = onSyncEditingChanged
     self.onSyncEditingActivity = onSyncEditingActivity
-    self.bottomContent = bottomContent
     self.externalExpandedAuxiliarySections = expandedAuxiliarySections
     self.closeRequestID = closeRequestID
     self.initialFocus = initialFocus
+    self.focusRequestID = focusRequestID
     self.onCancel = onCancel
     _title = State(initialValue: initialFields.title)
     _noteText = State(initialValue: initialNoteText)
@@ -344,6 +418,7 @@ struct TimelineTaskEditPopoverContent: View {
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .topLeading)
         .background(TaskEditFieldStyle.panelBackgroundColor)
+        .taskEditDragPayload(taskID: dragTaskID)
     }
   }
 
@@ -382,7 +457,7 @@ struct TimelineTaskEditPopoverContent: View {
           text: $noteText,
           measuredHeight: $noteHeight,
           vaultRootURL: vaultRootURL,
-          focusRequestID: initialFocus == .note ? 1 : 0,
+          focusRequestID: initialFocus == .note ? max(1, focusRequestID) : 0,
           onEscape: closeEditor
         )
       }
@@ -397,14 +472,6 @@ struct TimelineTaskEditPopoverContent: View {
 
       if isAuxiliarySectionVisible(.recurrence) {
         recurrenceSection
-      }
-
-      if let bottomContent {
-        VStack(alignment: .leading, spacing: 10) {
-          Divider()
-          bottomContent
-        }
-        .padding(.top, 4)
       }
 
       if let errorText {
@@ -433,7 +500,7 @@ struct TimelineTaskEditPopoverContent: View {
         vaultRootURL: vaultRootURL,
         allowsNewlines: false,
         lineHeightMultiple: 1,
-        focusRequestID: initialFocus == .title ? 1 : 0,
+        focusRequestID: initialFocus == .title ? max(1, focusRequestID) : 0,
         onEscape: closeEditor
       )
       .frame(minHeight: TaskEditTypography.titleMinimumHeight)
@@ -538,20 +605,12 @@ struct TimelineTaskEditPopoverContent: View {
 
   private var dateTimeSection: some View {
     VStack(alignment: .leading, spacing: 8) {
-      GeometryReader { proxy in
-        let spacing: CGFloat = 8
-        let availableWidth = max(0, proxy.size.width - (spacing * 2))
-        let unitWidth = availableWidth / 9
-
-        HStack(alignment: .center, spacing: spacing) {
-          dateControl
-            .frame(width: unitWidth * 4, alignment: .leading)
-          timeControl
-            .frame(width: unitWidth * 3, alignment: .leading)
-          durationControl
-            .frame(width: unitWidth * 2, alignment: .leading)
-        }
+      TaskEditDateTimeControlLayout {
+        dateControl
+        timeControl
+        durationControl
       }
+      .frame(maxWidth: .infinity)
       .frame(height: 32)
     }
     .frame(maxWidth: .infinity, alignment: .leading)

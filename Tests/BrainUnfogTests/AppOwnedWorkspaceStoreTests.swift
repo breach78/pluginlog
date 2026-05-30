@@ -1591,6 +1591,95 @@ final class AppOwnedWorkspaceStoreTests: XCTestCase {
     XCTAssertEqual(snapshot.tasks.map(\.identity.reminderExternalIdentifier), ["active-external"])
   }
 
+  func testCompletedTaskKeepsExplicitScheduleWhenLaterImportLosesTime() async throws {
+    let store = AppOwnedWorkspaceStore(containerRootURL: try makeTemporaryDirectory())
+    let importedAt = Date(timeIntervalSinceReferenceDate: 416)
+    let timedDueDate = try XCTUnwrap(
+      Self.calendar.date(from: DateComponents(year: 2026, month: 5, day: 29, hour: 9))
+    )
+    let allDayDueDate = try XCTUnwrap(
+      Self.calendar.date(from: DateComponents(year: 2026, month: 5, day: 29))
+    )
+    let initial = Self.reminderItem(
+      identifier: "scenario-edit-1",
+      title: "시나리오 수정 1",
+      isCompleted: true,
+      completionDate: timedDueDate,
+      dueDate: timedDueDate,
+      scheduleHasExplicitTime: true,
+      scheduledDurationMinutes: 45,
+      createdAt: importedAt
+    )
+    let flattened = Self.reminderItem(
+      identifier: "scenario-edit-1",
+      title: "시나리오 수정 1",
+      isCompleted: true,
+      completionDate: timedDueDate,
+      dueDate: allDayDueDate,
+      scheduleHasExplicitTime: false,
+      scheduledDurationMinutes: nil,
+      createdAt: importedAt.addingTimeInterval(10)
+    )
+
+    try await store.replaceReminderSnapshot(
+      Self.batch(items: [initial], createdAt: importedAt),
+      importedAt: importedAt,
+      coverage: .full
+    )
+    try await store.replaceReminderSnapshot(
+      Self.batch(items: [flattened], createdAt: importedAt.addingTimeInterval(10)),
+      importedAt: importedAt.addingTimeInterval(10),
+      coverage: .full
+    )
+    let snapshot = try await store.loadRetainedWorkspaceSnapshot(projectIDs: [])
+    let task = try XCTUnwrap(snapshot.tasks.first)
+
+    XCTAssertTrue(task.isCompleted)
+    XCTAssertEqual(task.schedule.parsedDate, timedDueDate)
+    XCTAssertTrue(task.schedule.hasExplicitTime)
+    XCTAssertEqual(task.schedule.durationMinutes, 45)
+  }
+
+  func testCompletedRecurringOccurrenceUsesScheduleEncodedInExternalIdentifier()
+    async throws
+  {
+    let store = AppOwnedWorkspaceStore(containerRootURL: try makeTemporaryDirectory())
+    let importedAt = Date(timeIntervalSinceReferenceDate: 417)
+    let timedDueDate = try XCTUnwrap(
+      Self.calendar.date(from: DateComponents(year: 2026, month: 5, day: 29, hour: 10))
+    )
+    let allDayDueDate = try XCTUnwrap(
+      Self.calendar.date(from: DateComponents(year: 2026, month: 5, day: 29))
+    )
+    let rawDate = try XCTUnwrap(
+      ReminderScheduleMetadataCodec.encodeDate(timedDueDate, hasExplicitTime: true)
+    )
+    let completed = Self.reminderItem(
+      identifier: "scenario-edit-1-completed",
+      externalIdentifier: "scenario-edit-1::completed::\(rawDate)",
+      title: "시나리오 수정 1",
+      isCompleted: true,
+      completionDate: timedDueDate,
+      dueDate: allDayDueDate,
+      scheduleHasExplicitTime: false,
+      scheduledDurationMinutes: 30,
+      createdAt: importedAt
+    )
+
+    try await store.replaceReminderSnapshot(
+      Self.batch(items: [completed], createdAt: importedAt),
+      importedAt: importedAt,
+      coverage: .full
+    )
+    let snapshot = try await store.loadRetainedWorkspaceSnapshot(projectIDs: [])
+    let task = try XCTUnwrap(snapshot.tasks.first)
+
+    XCTAssertTrue(task.isCompleted)
+    XCTAssertEqual(task.schedule.parsedDate, timedDueDate)
+    XCTAssertTrue(task.schedule.hasExplicitTime)
+    XCTAssertEqual(task.schedule.durationMinutes, 30)
+  }
+
   func testReplaceReminderSnapshotKeepsRecurringTaskIDWhenExternalIdentifierChanges()
     async throws
   {

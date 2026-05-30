@@ -24,9 +24,9 @@ struct LegacySidebarProjectDropModifier: ViewModifier {
   @Binding var sidebarTaskDropTargetProjectID: UUID?
   let onPerformTaskDrop: (UUID, UUID) -> Void
 
+  @ViewBuilder
   func body(content: Content) -> some View {
-    guard let projectID else { return AnyView(content) }
-    return AnyView(
+    if let projectID {
       content.onDrop(
         of: [UTType.text.identifier],
         delegate: WorkspaceProjectTaskDropDelegate(
@@ -35,7 +35,9 @@ struct LegacySidebarProjectDropModifier: ViewModifier {
           onPerformTaskDrop: onPerformTaskDrop
         )
       )
-    )
+    } else {
+      content
+    }
   }
 }
 

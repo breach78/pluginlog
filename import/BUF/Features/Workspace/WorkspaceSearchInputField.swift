@@ -190,10 +190,12 @@ struct EscapeAwareTextField: NSViewRepresentable {
   var focusRingType: NSFocusRingType = .default
   let onSubmit: () -> Void
   let onEscape: () -> Void
+  var onTab: (() -> Void)?
 
   final class CommandTextField: NSTextField {
     var onSubmitCommand: (() -> Void)?
     var onEscapeCommand: (() -> Void)?
+    var onTabCommand: (() -> Void)?
 
     override func keyDown(with event: NSEvent) {
       switch event.keyCode {
@@ -201,6 +203,12 @@ struct EscapeAwareTextField: NSViewRepresentable {
         onSubmitCommand?()
       case 53:
         onEscapeCommand?()
+      case 48:
+        if let onTabCommand {
+          onTabCommand()
+        } else {
+          super.keyDown(with: event)
+        }
       default:
         super.keyDown(with: event)
       }
@@ -265,6 +273,10 @@ struct EscapeAwareTextField: NSViewRepresentable {
         return true
       case #selector(NSResponder.cancelOperation(_:)):
         handleEscapeCommand()
+        return true
+      case #selector(NSResponder.insertTab(_:)):
+        guard let onTab = parent.onTab else { return false }
+        onTab()
         return true
       default:
         return false
@@ -370,6 +382,9 @@ struct EscapeAwareTextField: NSViewRepresentable {
     field.onEscapeCommand = { [weak coordinator = context.coordinator] in
       coordinator?.handleEscapeCommand()
     }
+    field.onTabCommand = { [weak coordinator = context.coordinator] in
+      coordinator?.parent.onTab?()
+    }
     return field
   }
 
@@ -380,6 +395,9 @@ struct EscapeAwareTextField: NSViewRepresentable {
     }
     field.onEscapeCommand = { [weak coordinator = context.coordinator] in
       coordinator?.handleEscapeCommand()
+    }
+    field.onTabCommand = { [weak coordinator = context.coordinator] in
+      coordinator?.parent.onTab?()
     }
     let targetFont = AppInputTypography.nsFont(size: AppInputTypography.defaultPointSize)
     if field.font?.fontName != targetFont.fontName
