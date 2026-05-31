@@ -28,6 +28,7 @@ struct ProjectOutlineTextEditor: NSViewRepresentable {
   @Binding var measuredHeight: CGFloat
 
   let isFocused: Bool
+  let focusRequestID: UInt64
   let font: NSFont
   let onCommand: (ProjectOutlineTextCommand) -> Void
   let onFocus: () -> Void
@@ -87,21 +88,30 @@ struct ProjectOutlineTextEditor: NSViewRepresentable {
     textView.blurHandler = { [weak coordinator = context.coordinator] in
       coordinator?.parent.onBlur()
     }
+    var needsHeightUpdate = false
     if textView.font != font {
       textView.font = font
       textView.typingAttributes = [.font: font]
+      needsHeightUpdate = true
     }
     if textView.string != text {
       context.coordinator.isApplyingText = true
       textView.string = text
       context.coordinator.isApplyingText = false
+      needsHeightUpdate = true
     }
-    context.coordinator.updateWrappingWidth(from: scrollView)
-    context.coordinator.updateMeasuredHeight()
-    if isFocused, !context.coordinator.lastIsFocused {
+    if context.coordinator.updateWrappingWidth(from: scrollView) {
+      needsHeightUpdate = true
+    }
+    if needsHeightUpdate {
+      context.coordinator.updateMeasuredHeight()
+    }
+    if isFocused,
+      context.coordinator.lastFocusRequestID != focusRequestID
+    {
       context.coordinator.applyFocusIfNeeded()
+      context.coordinator.lastFocusRequestID = focusRequestID
     }
-    context.coordinator.lastIsFocused = isFocused
   }
 
   final class CommandTextView: NSTextView {
@@ -198,7 +208,7 @@ struct ProjectOutlineTextEditor: NSViewRepresentable {
     var parent: ProjectOutlineTextEditor
     weak var textView: CommandTextView?
     var isApplyingText = false
-    var lastIsFocused = false
+    var lastFocusRequestID: UInt64 = 0
 
     init(parent: ProjectOutlineTextEditor) {
       self.parent = parent
@@ -220,7 +230,7 @@ struct ProjectOutlineTextEditor: NSViewRepresentable {
 
     func updateMeasuredHeight() {
       guard let textView else { return }
-      updateWrappingWidth(from: textView.enclosingScrollView)
+      _ = updateWrappingWidth(from: textView.enclosingScrollView)
       guard let textContainer = textView.textContainer else { return }
       textView.layoutManager?.ensureLayout(for: textContainer)
       let usedRect = textView.layoutManager?.usedRect(for: textContainer) ?? .zero
@@ -230,8 +240,8 @@ struct ProjectOutlineTextEditor: NSViewRepresentable {
       }
     }
 
-    func updateWrappingWidth(from scrollView: NSScrollView?) {
-      guard let textView, let textContainer = textView.textContainer else { return }
+    func updateWrappingWidth(from scrollView: NSScrollView?) -> Bool {
+      guard let textView, let textContainer = textView.textContainer else { return false }
       let width = max(1, scrollView?.contentSize.width ?? textView.bounds.width)
       if abs(textContainer.containerSize.width - width) > 0.5 {
         textContainer.containerSize = NSSize(
@@ -239,11 +249,19 @@ struct ProjectOutlineTextEditor: NSViewRepresentable {
           height: CGFloat.greatestFiniteMagnitude
         )
         textView.frame.size.width = width
+        return true
       }
+      return false
     }
 
     func applyFocusIfNeeded() {
-      guard let textView, let window = textView.window else { return }
+      guard let textView else { return }
+      guard let window = textView.window else {
+        DispatchQueue.main.async { [weak self] in
+          self?.applyFocusIfNeeded()
+        }
+        return
+      }
       guard window.firstResponder !== textView else { return }
       window.makeFirstResponder(textView)
     }

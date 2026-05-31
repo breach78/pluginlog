@@ -17,6 +17,7 @@ struct ProjectOutlinerView: View {
   let onOpenTaskSection: (UUID, TaskEditAuxiliarySection) -> Void
 
   @State private var focusedBlockID: UUID?
+  @State private var focusRequestID: UInt64 = 0
   @State private var zoomRootBlockID: UUID?
   @State private var blockToRevealAfterZoomOut: UUID?
   @State private var rowHeights: [UUID: CGFloat] = [:]
@@ -35,7 +36,7 @@ struct ProjectOutlinerView: View {
           Button("첫 불릿 추가", systemImage: "plus") {
             let block = ProjectOutlineBlock(depth: 0, text: "")
             document.blocks = [block]
-            focusedBlockID = block.id
+            requestFocus(block.id)
           }
           .buttonStyle(.borderless)
           .padding(.horizontal, 18)
@@ -50,6 +51,7 @@ struct ProjectOutlinerView: View {
                 task: block.taskBinding?.taskID.flatMap { tasksByID[$0] },
                 projectColor: projectColor,
                 isFocused: focusedBlockID == blockID,
+                focusRequestID: focusRequestID,
                 displayDepth: displayDepth(for: block),
                 hidesMarker: zoomRootBlockID == blockID,
                 isCreatingTask: pendingTaskBlockIDs.contains(blockID),
@@ -65,9 +67,7 @@ struct ProjectOutlinerView: View {
                 onCommand: { command in
                   handle(command, blockID: blockID)
                 },
-                onFocus: {
-                  focusedBlockID = blockID
-                },
+                onFocus: { requestFocus(blockID) },
                 onDeleteBlock: {
                   deleteBlock(blockID: blockID)
                 },
@@ -82,7 +82,6 @@ struct ProjectOutlinerView: View {
                   draggingBlockID = blockID
                 }
               )
-              .id(blockID)
               .onDrop(
                 of: [UTType.text.identifier],
                 delegate: ProjectOutlineBlockDropDelegate(
@@ -128,10 +127,7 @@ struct ProjectOutlinerView: View {
   private func binding(for blockID: UUID) -> Binding<ProjectOutlineBlock>? {
     guard document.blocks.contains(where: { $0.id == blockID }) else { return nil }
     return Binding(
-      get: {
-        document.blocks.first(where: { $0.id == blockID })
-          ?? ProjectOutlineBlock(id: blockID, depth: 0, text: "")
-      },
+      get: { document.blocks.first(where: { $0.id == blockID })! },
       set: { nextBlock in
         guard let index = document.blocks.firstIndex(where: { $0.id == blockID }) else {
           return
@@ -173,17 +169,17 @@ struct ProjectOutlinerView: View {
     case .commandShiftUp:
       guard !isFirstVisibleChildOfZoomRoot(blockID) else { return }
       if ProjectOutlineMutationEngine.moveBlockUp(id: blockID, in: &document) {
-        focusedBlockID = blockID
+        requestFocus(blockID)
       }
     case .commandShiftDown:
       guard !isLastVisibleChildOfZoomRoot(blockID) else { return }
       if ProjectOutlineMutationEngine.moveBlockDown(id: blockID, in: &document) {
-        focusedBlockID = blockID
+        requestFocus(blockID)
       }
     case .commandUp, .commandDown:
       toggleFold(blockID: blockID)
     case .escape:
-      focusedBlockID = nil
+      requestFocus(nil)
     case .convertToTask:
       convertBlockToPendingTask(blockID)
     case .zoomIn:
@@ -215,7 +211,7 @@ struct ProjectOutlinerView: View {
         blockID: blockID,
         in: &document
       ) {
-        focusedBlockID = result.focusedBlockID
+        requestFocus(result.focusedBlockID)
       }
       return
     }
@@ -225,7 +221,7 @@ struct ProjectOutlinerView: View {
       textOffset: offset,
       in: &document
     ) {
-      focusedBlockID = result.focusedBlockID
+      requestFocus(result.focusedBlockID)
     }
   }
 
@@ -240,7 +236,7 @@ struct ProjectOutlinerView: View {
       taskID: nil,
       taskExternalIdentifier: nil
     )
-    focusedBlockID = blockID
+    requestFocus(blockID)
   }
 
   private func handleCommandEnter(blockID: UUID) {
@@ -299,7 +295,7 @@ struct ProjectOutlinerView: View {
             .foregroundStyle(Color.secondary.opacity(0.5))
           Button(blockTitle(for: ancestorID)) {
             zoomRootBlockID = ancestorID
-            focusedBlockID = ancestorID
+            requestFocus(ancestorID)
           }
           .buttonStyle(.plain)
           .foregroundStyle(Color.secondary)
@@ -311,7 +307,7 @@ struct ProjectOutlinerView: View {
           .lineLimit(1)
           .foregroundStyle(Color.primary.opacity(0.72))
       }
-      .font(.system(size: 12, weight: .semibold))
+      .font(projectOutlinerChipFont)
       .padding(.horizontal, 18)
       .padding(.bottom, 8)
     }
@@ -337,11 +333,11 @@ struct ProjectOutlinerView: View {
 
   private func zoomIn(blockID: UUID) {
     guard ProjectOutlineMutationEngine.hasChildren(blockID: blockID, in: document) else {
-      focusedBlockID = blockID
+      requestFocus(blockID)
       return
     }
     zoomRootBlockID = blockID
-    focusedBlockID = blockID
+    requestFocus(blockID)
   }
 
   private func zoomOutOneLevel() {
@@ -351,14 +347,14 @@ struct ProjectOutlinerView: View {
       for: zoomRootBlockID,
       in: document
     )
-    focusedBlockID = zoomRootBlockID
+    requestFocus(zoomRootBlockID)
   }
 
   private func zoomHome() {
     guard let zoomRootBlockID else { return }
     blockToRevealAfterZoomOut = zoomRootBlockID
     self.zoomRootBlockID = nil
-    focusedBlockID = zoomRootBlockID
+    requestFocus(zoomRootBlockID)
   }
 
   private func zoomToSibling(previous: Bool) {
@@ -368,14 +364,19 @@ struct ProjectOutlinerView: View {
       : ProjectOutlineMutationEngine.nextSiblingID(for: zoomRootBlockID, in: document)
     guard let nextID else { return }
     self.zoomRootBlockID = nextID
-    focusedBlockID = nextID
+    requestFocus(nextID)
   }
 
   private func focusAdjacentBlock(from blockID: UUID, offset: Int) {
     guard let currentPosition = visibleBlockIDs.firstIndex(of: blockID) else { return }
     let nextPosition = currentPosition + offset
     guard visibleBlockIDs.indices.contains(nextPosition) else { return }
-    focusedBlockID = visibleBlockIDs[nextPosition]
+    requestFocus(visibleBlockIDs[nextPosition])
+  }
+
+  private func requestFocus(_ blockID: UUID?) {
+    focusedBlockID = blockID
+    focusRequestID &+= 1
   }
 
   private func isDirectChildOfZoomRoot(_ blockID: UUID) -> Bool {
@@ -419,6 +420,7 @@ private struct ProjectOutlineRowView: View {
   let task: TimelineProjectListWindowSnapshot.Task?
   let projectColor: Color
   let isFocused: Bool
+  let focusRequestID: UInt64
   let displayDepth: Int
   let hidesMarker: Bool
   let isCreatingTask: Bool
@@ -463,6 +465,7 @@ private struct ProjectOutlineRowView: View {
           text: $block.text,
           measuredHeight: $measuredHeight,
           isFocused: isFocused,
+          focusRequestID: focusRequestID,
           font: projectOutlinerNSFont,
           onCommand: onCommand,
           onFocus: onFocus
@@ -555,6 +558,7 @@ private struct ProjectOutlineRowView: View {
             text: taskTitleBinding(for: task),
             measuredHeight: $measuredHeight,
             isFocused: isFocused,
+            focusRequestID: focusRequestID,
             font: projectOutlinerNSFont,
             onCommand: { command in
               submitTaskTitle(task)
@@ -577,6 +581,7 @@ private struct ProjectOutlineRowView: View {
               text: $block.text,
               measuredHeight: $measuredHeight,
               isFocused: isFocused,
+              focusRequestID: focusRequestID,
               font: projectOutlinerNSFont,
               onCommand: onCommand,
               onFocus: onFocus,
@@ -697,10 +702,13 @@ private struct ProjectOutlineDropIndicatorLine: View {
   }
 }
 
-private let projectOutlinerFont = Font.system(size: 18, weight: .regular)
-private let projectOutlinerChipFont = Font.system(size: 12, weight: .semibold)
+private let projectOutlinerFont = Font.custom("SansMonoCJKFinalDraft", size: 18)
+private let projectOutlinerChipFont = Font.custom("SansMonoCJKFinalDraft-Bold", size: 12)
 
 @MainActor
 private var projectOutlinerNSFont: NSFont {
-  NSFont.systemFont(ofSize: 18)
+  guard let font = NSFont(name: "SansMonoCJKFinalDraft", size: 18) else {
+    fatalError("Missing font: SansMonoCJKFinalDraft")
+  }
+  return font
 }
