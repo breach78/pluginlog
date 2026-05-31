@@ -282,6 +282,24 @@ struct ProjectOutlineMutationEngineTests {
     #expect(document.blocks.map(\.text) == ["current"])
   }
 
+  @Test func backspaceAtStartDoesNotDeletePreviousEmptyBlockWithChildren() {
+    let ids = Self.ids()
+    var document = ProjectOutlineDocument(blocks: [
+      ProjectOutlineBlock(id: ids[0], depth: 0, text: ""),
+      ProjectOutlineBlock(id: ids[1], depth: 1, text: "child"),
+      ProjectOutlineBlock(id: ids[2], depth: 0, text: "current"),
+    ])
+
+    let didHandle = ProjectOutlineMutationEngine.backspaceAtStart(
+      blockID: ids[1],
+      in: &document
+    )
+
+    #expect(!didHandle)
+    #expect(document.blocks.map(\.id) == [ids[0], ids[1], ids[2]])
+    #expect(document.blocks.map(\.depth) == [0, 1, 0])
+  }
+
   @Test func backspaceAtStartMergesNormalBlocks() {
     let ids = Self.ids()
     var document = ProjectOutlineDocument(blocks: [
@@ -295,7 +313,26 @@ struct ProjectOutlineMutationEngineTests {
     )
 
     #expect(didHandle)
+    #expect(document.blocks.map(\.id) == [ids[0]])
     #expect(document.blocks.map(\.text) == ["first second"])
+  }
+
+  @Test func backspaceAtStartDoesNotMergeBlockWithChildren() {
+    let ids = Self.ids()
+    var document = ProjectOutlineDocument(blocks: [
+      ProjectOutlineBlock(id: ids[0], depth: 0, text: "first "),
+      ProjectOutlineBlock(id: ids[1], depth: 0, text: "second"),
+      ProjectOutlineBlock(id: ids[2], depth: 1, text: "child"),
+    ])
+
+    let didHandle = ProjectOutlineMutationEngine.backspaceAtStart(
+      blockID: ids[1],
+      in: &document
+    )
+
+    #expect(!didHandle)
+    #expect(document.blocks.map(\.text) == ["first ", "second", "child"])
+    #expect(document.blocks.map(\.depth) == [0, 0, 1])
   }
 
   @Test func backspaceAtStartDoesNotMergeTaskBlocks() {

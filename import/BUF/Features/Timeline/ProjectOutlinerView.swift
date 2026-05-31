@@ -289,7 +289,15 @@ struct ProjectOutlinerView: View {
   }
 
   private func handleBackspaceAtStart(blockID: UUID) {
-    _ = ProjectOutlineMutationEngine.backspaceAtStart(blockID: blockID, in: &document)
+    let visibleIDsBeforeMutation = visibleBlockIDs
+    let previousID = visibleIDsBeforeMutation
+      .firstIndex(of: blockID)
+      .flatMap { index in index > 0 ? visibleIDsBeforeMutation[index - 1] : nil }
+    let didHandle = ProjectOutlineMutationEngine.backspaceAtStart(blockID: blockID, in: &document)
+    guard didHandle else { return }
+    if !document.blocks.contains(where: { $0.id == blockID }) {
+      requestFocus(previousID, placement: .end)
+    }
   }
 
   private func deleteBlock(blockID: UUID) {
@@ -725,7 +733,7 @@ private struct ProjectOutlineRowView: View {
 
   private func taskContent(_ task: TimelineProjectListWindowSnapshot.Task?) -> some View {
     VStack(alignment: .leading, spacing: 5) {
-      HStack(alignment: .firstTextBaseline, spacing: 8) {
+      HStack(alignment: .top, spacing: 8) {
         if let task {
           ProjectOutlineTextEditor(
             text: taskTitleBinding(for: task),

@@ -84,9 +84,13 @@ struct ProjectOutlineTextEditor: NSViewRepresentable {
     textView.isHorizontallyResizable = false
     textView.isVerticallyResizable = true
     textView.autoresizingMask = [.width]
+    textView.minSize = NSSize(width: 0, height: 24)
+    textView.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
+    textView.frame = CGRect(x: 0, y: 0, width: 1, height: max(24, measuredHeight))
     textView.allowsUndo = true
     textView.font = font
     textView.string = text
+    textView.layoutManager?.delegate = context.coordinator
 
     scrollView.documentView = textView
     context.coordinator.textView = textView
@@ -126,8 +130,10 @@ struct ProjectOutlineTextEditor: NSViewRepresentable {
     if context.coordinator.updateWrappingWidth(from: scrollView) {
       needsHeightUpdate = true
     }
-    if needsHeightUpdate {
+    if needsHeightUpdate || textView.frame.height < 1 {
       context.coordinator.updateMeasuredHeight()
+    } else {
+      context.coordinator.syncTextViewFrame(height: measuredHeight)
     }
     if isFocused,
       context.coordinator.lastFocusRequestID != focusRequestID
@@ -285,11 +291,12 @@ struct ProjectOutlineTextEditor: NSViewRepresentable {
   }
 
   @MainActor
-  final class Coordinator: NSObject, NSTextViewDelegate {
+  final class Coordinator: NSObject, NSTextViewDelegate, @preconcurrency NSLayoutManagerDelegate {
     var parent: ProjectOutlineTextEditor
     weak var textView: CommandTextView?
     var isApplyingText = false
     var lastFocusRequestID: UInt64 = 0
+    private var isMeasuringHeight = false
 
     init(parent: ProjectOutlineTextEditor) {
       self.parent = parent
@@ -309,16 +316,47 @@ struct ProjectOutlineTextEditor: NSViewRepresentable {
       parent.onBlur()
     }
 
-    func updateMeasuredHeight() {
+    func layoutManager(
+      _ layoutManager: NSLayoutManager,
+      didCompleteLayoutFor textContainer: NSTextContainer?,
+      atEnd layoutFinishedFlag: Bool
+    ) {
+      guard layoutFinishedFlag else { return }
+      updateMeasuredHeight(ensureLayout: false)
+    }
+
+    func updateMeasuredHeight(ensureLayout: Bool = true) {
+      guard !isMeasuringHeight else { return }
       guard let textView else { return }
+      isMeasuringHeight = true
+      defer { isMeasuringHeight = false }
       _ = updateWrappingWidth(from: textView.enclosingScrollView)
       guard let textContainer = textView.textContainer else { return }
-      textView.layoutManager?.ensureLayout(for: textContainer)
+      if ensureLayout {
+        textView.layoutManager?.ensureLayout(for: textContainer)
+      }
       let usedRect = textView.layoutManager?.usedRect(for: textContainer) ?? .zero
       let height = max(24, ceil(usedRect.height + textView.textContainerInset.height * 2 + 2))
+      syncTextViewFrame(height: height)
       if abs(parent.measuredHeight - height) > 0.5 {
         parent.measuredHeight = height
       }
+      if let scrollView = textView.enclosingScrollView,
+        scrollView.contentView.bounds.origin.y != 0
+      {
+        scrollView.contentView.scroll(to: .zero)
+        scrollView.reflectScrolledClipView(scrollView.contentView)
+      }
+    }
+
+    func syncTextViewFrame(height: CGFloat) {
+      guard let textView else { return }
+      let width = max(1, textView.enclosingScrollView?.contentSize.width ?? textView.frame.width)
+      if abs(textView.frame.width - width) > 0.5 || abs(textView.frame.height - height) > 0.5 {
+        textView.frame = CGRect(x: 0, y: 0, width: width, height: height)
+      }
+      textView.needsDisplay = true
+      textView.enclosingScrollView?.needsDisplay = true
     }
 
     func updateWrappingWidth(from scrollView: NSScrollView?) -> Bool {
@@ -332,6 +370,7 @@ struct ProjectOutlineTextEditor: NSViewRepresentable {
         textView.frame.size.width = width
         return true
       }
+      syncTextViewFrame(height: max(24, parent.measuredHeight))
       return false
     }
 

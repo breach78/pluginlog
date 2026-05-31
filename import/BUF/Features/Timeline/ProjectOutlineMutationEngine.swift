@@ -297,6 +297,7 @@ enum ProjectOutlineMutationEngine {
 
     let previousIndex = visible[visiblePosition - 1]
     if document.blocks[previousIndex].text.isEmpty, !document.blocks[previousIndex].isTaskBlock {
+      guard !hasChildren(at: previousIndex, in: document) else { return false }
       document.blocks.remove(at: previousIndex)
       return true
     }
@@ -306,6 +307,7 @@ enum ProjectOutlineMutationEngine {
     else {
       return outdentBlock(id: blockID, in: &document)
     }
+    guard !hasChildren(at: index, in: document) else { return false }
 
     let currentText = document.blocks[index].text
     document.blocks[previousIndex].text += currentText
