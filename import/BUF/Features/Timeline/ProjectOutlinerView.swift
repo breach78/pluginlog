@@ -616,6 +616,7 @@ private struct ProjectOutlineRowView: View {
 
   @State private var taskTitleDraft = ""
   @State private var taskTitleDraftTaskID: UUID?
+  @State private var scheduleMenuTaskID: UUID?
 
   var body: some View {
     HStack(alignment: .top, spacing: 8) {
@@ -785,9 +786,7 @@ private struct ProjectOutlineRowView: View {
         Spacer(minLength: 8)
 
         if let task {
-          scheduleChip(for: task)
-
-          recurrenceChip(for: task)
+          scheduleMenuChip(for: task)
         }
       }
     }
@@ -805,13 +804,19 @@ private struct ProjectOutlineRowView: View {
     }
   }
 
-  private func scheduleChip(for task: TimelineProjectListWindowSnapshot.Task) -> some View {
+  private func scheduleMenuChip(for task: TimelineProjectListWindowSnapshot.Task) -> some View {
     Button {
-      onOpenTaskSection(task.id, .schedule)
+      scheduleMenuTaskID = task.id
     } label: {
       if let dateText = task.dateText {
-        Text(dateText)
-          .lineLimit(1)
+        HStack(spacing: 3) {
+          Text(dateText)
+            .lineLimit(1)
+          if task.metadataIndicators.isRecurring {
+            Image(systemName: "repeat")
+              .imageScale(.small)
+          }
+        }
       } else {
         Image(systemName: "calendar.badge.clock")
       }
@@ -825,28 +830,28 @@ private struct ProjectOutlineRowView: View {
       RoundedRectangle(cornerRadius: 5)
         .fill(task.dateText == nil ? Color.clear : projectColor.opacity(0.08))
     )
-    .help("날짜와 시간")
-  }
-
-  private func recurrenceChip(for task: TimelineProjectListWindowSnapshot.Task) -> some View {
-    HStack(spacing: 3) {
-      if recurringCompletionCount > 0 {
-        Text("\(recurringCompletionCount)")
-          .foregroundStyle(projectColor)
-          .monospacedDigit()
-      }
-      Button {
-        onOpenTaskSection(task.id, .recurrence)
-      } label: {
-        Image(systemName: "repeat")
-      }
-      .buttonStyle(.plain)
-      .foregroundStyle(
-        task.metadataIndicators.isRecurring ? Color.secondary : Color.secondary.opacity(0.45)
+    .help("날짜와 반복")
+    .popover(
+      isPresented: Binding(
+        get: { scheduleMenuTaskID == task.id },
+        set: { isPresented in
+          if !isPresented {
+            scheduleMenuTaskID = nil
+          }
+        }
+      ),
+      arrowEdge: .bottom
+    ) {
+      ProjectOutlineScheduleMenu(
+        task: task,
+        recurringCompletionCount: recurringCompletionCount,
+        projectColor: projectColor,
+        onSelect: { section in
+          scheduleMenuTaskID = nil
+          onOpenTaskSection(task.id, section)
+        }
       )
-      .help("반복")
     }
-    .font(projectOutlinerChipFont)
   }
 
   private func taskTitleBinding(for task: TimelineProjectListWindowSnapshot.Task) -> Binding<String> {
@@ -884,6 +889,68 @@ private struct ProjectOutlineDropIndicatorLine: View {
       .frame(height: 2)
       .cornerRadius(1)
       .allowsHitTesting(false)
+  }
+}
+
+private struct ProjectOutlineScheduleMenu: View {
+  let task: TimelineProjectListWindowSnapshot.Task
+  let recurringCompletionCount: Int
+  let projectColor: Color
+  let onSelect: (TaskEditAuxiliarySection) -> Void
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 4) {
+      Button {
+        onSelect(.schedule)
+      } label: {
+        menuRow(
+          systemImage: "calendar.badge.clock",
+          title: "날짜와 시간",
+          detail: task.dateText
+        )
+      }
+      .buttonStyle(.plain)
+
+      Button {
+        onSelect(.recurrence)
+      } label: {
+        menuRow(
+          systemImage: "repeat",
+          title: "반복",
+          detail: recurrenceDetail
+        )
+      }
+      .buttonStyle(.plain)
+    }
+    .padding(8)
+    .frame(width: 176, alignment: .leading)
+    .font(projectOutlinerChipFont)
+  }
+
+  private var recurrenceDetail: String? {
+    if recurringCompletionCount > 0 {
+      return "\(recurringCompletionCount)"
+    }
+    return task.metadataIndicators.isRecurring ? "설정됨" : nil
+  }
+
+  private func menuRow(systemImage: String, title: String, detail: String?) -> some View {
+    HStack(spacing: 8) {
+      Image(systemName: systemImage)
+        .foregroundStyle(projectColor.opacity(0.9))
+        .frame(width: 18)
+      Text(title)
+        .foregroundStyle(Color.primary)
+      Spacer(minLength: 8)
+      if let detail {
+        Text(detail)
+          .lineLimit(1)
+          .foregroundStyle(Color.secondary)
+      }
+    }
+    .padding(.horizontal, 6)
+    .padding(.vertical, 5)
+    .contentShape(Rectangle())
   }
 }
 
