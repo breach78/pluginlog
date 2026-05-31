@@ -21,6 +21,15 @@ enum ProjectOutlineTextCommand {
   case zoomNextSibling
   case focusPrevious
   case focusNext
+  case extendBlockSelectionUp
+  case extendBlockSelectionDown
+  case exitBlockSelectionUp
+  case exitBlockSelectionDown
+  case exitBlockSelectionLeft
+  case exitBlockSelectionRight
+  case clearBlockSelection
+  case deleteBlockSelection
+  case selectAllVisibleBlocks
 }
 
 enum ProjectOutlineFocusPlacement {
@@ -36,6 +45,7 @@ struct ProjectOutlineTextEditor: NSViewRepresentable {
   let isFocused: Bool
   let focusRequestID: UInt64
   let focusPlacement: ProjectOutlineFocusPlacement
+  let isBlockSelectionActive: Bool
   let font: NSFont
   let onCommand: (ProjectOutlineTextCommand) -> Void
   let onFocus: () -> Void
@@ -56,6 +66,9 @@ struct ProjectOutlineTextEditor: NSViewRepresentable {
     textView.delegate = context.coordinator
     textView.commandHandler = { [weak coordinator = context.coordinator] command in
       coordinator?.parent.onCommand(command)
+    }
+    textView.isBlockSelectionActiveProvider = { [weak coordinator = context.coordinator] in
+      coordinator?.parent.isBlockSelectionActive ?? false
     }
     textView.focusHandler = { [weak coordinator = context.coordinator] in
       coordinator?.parent.onFocus()
@@ -88,6 +101,9 @@ struct ProjectOutlineTextEditor: NSViewRepresentable {
     guard let textView = scrollView.documentView as? CommandTextView else { return }
     textView.commandHandler = { [weak coordinator = context.coordinator] command in
       coordinator?.parent.onCommand(command)
+    }
+    textView.isBlockSelectionActiveProvider = { [weak coordinator = context.coordinator] in
+      coordinator?.parent.isBlockSelectionActive ?? false
     }
     textView.focusHandler = { [weak coordinator = context.coordinator] in
       coordinator?.parent.onFocus()
@@ -125,6 +141,8 @@ struct ProjectOutlineTextEditor: NSViewRepresentable {
     var commandHandler: ((ProjectOutlineTextCommand) -> Void)?
     var focusHandler: (() -> Void)?
     var blurHandler: (() -> Void)?
+    var isBlockSelectionActiveProvider: (() -> Bool)?
+    private var lastSelectAllDate: Date?
 
     override func mouseDown(with event: NSEvent) {
       focusHandler?()
@@ -143,6 +161,47 @@ struct ProjectOutlineTextEditor: NSViewRepresentable {
       let hasNavigationModifier = isCommand || isShift || modifiers.contains(.option)
         || modifiers.contains(.control)
       let key = event.charactersIgnoringModifiers
+
+      if isBlockSelectionActiveProvider?() == true {
+        switch event.keyCode {
+        case 126 where isCommand && isShift:
+          commandHandler?(.commandShiftUp)
+        case 125 where isCommand && isShift:
+          commandHandler?(.commandShiftDown)
+        case 126 where isShift:
+          commandHandler?(.extendBlockSelectionUp)
+        case 125 where isShift:
+          commandHandler?(.extendBlockSelectionDown)
+        case 126:
+          commandHandler?(.exitBlockSelectionUp)
+        case 125:
+          commandHandler?(.exitBlockSelectionDown)
+        case 123:
+          commandHandler?(.exitBlockSelectionLeft)
+        case 124:
+          commandHandler?(.exitBlockSelectionRight)
+        case 51, 117:
+          commandHandler?(.deleteBlockSelection)
+        case 53:
+          commandHandler?(.clearBlockSelection)
+        default:
+          super.keyDown(with: event)
+        }
+        return
+      }
+
+      if isCommand, key == "a" {
+        let now = Date()
+        if let lastSelectAllDate, now.timeIntervalSince(lastSelectAllDate) < 0.8 {
+          self.lastSelectAllDate = nil
+          setSelectedRange(NSRange(location: 0, length: 0))
+          commandHandler?(.selectAllVisibleBlocks)
+        } else {
+          lastSelectAllDate = now
+          selectAll(nil)
+        }
+        return
+      }
 
       if isCommand, key == "." {
         commandHandler?(.zoomIn)
@@ -190,6 +249,13 @@ struct ProjectOutlineTextEditor: NSViewRepresentable {
         where !hasNavigationModifier && selectedRange().location == string.utf16.count
           && selectedRange().length == 0:
         commandHandler?(.focusNext)
+      case 126
+        where isShift && !isCommand && selectedRange().location == 0:
+        commandHandler?(.extendBlockSelectionUp)
+      case 125
+        where isShift && !isCommand && selectedRange().location + selectedRange().length
+          == string.utf16.count:
+        commandHandler?(.extendBlockSelectionDown)
       case 126 where isCommand && isShift:
         commandHandler?(.commandShiftUp)
       case 125 where isCommand && isShift:

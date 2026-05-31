@@ -19,6 +19,7 @@ struct ProjectOutlinerView: View {
   @State private var focusedBlockID: UUID?
   @State private var focusRequestID: UInt64 = 0
   @State private var focusPlacement: ProjectOutlineFocusPlacement = .preserve
+  @State private var blockSelection: ProjectOutlineBlockSelection?
   @State private var zoomRootBlockID: UUID?
   @State private var blockToRevealAfterZoomOut: UUID?
   @State private var rowHeights: [UUID: CGFloat] = [:]
@@ -54,6 +55,8 @@ struct ProjectOutlinerView: View {
                 isFocused: focusedBlockID == blockID,
                 focusRequestID: focusRequestID,
                 focusPlacement: focusedBlockID == blockID ? focusPlacement : .preserve,
+                isBlockSelectionActive: blockSelection != nil,
+                isBlockSelected: selectedBlockIDs.contains(blockID),
                 displayDepth: displayDepth(for: block),
                 hidesMarker: zoomRootBlockID == blockID,
                 isCreatingTask: pendingTaskBlockIDs.contains(blockID),
@@ -69,7 +72,10 @@ struct ProjectOutlinerView: View {
                 onCommand: { command in
                   handle(command, blockID: blockID)
                 },
-                onFocus: { requestFocus(blockID) },
+                onFocus: {
+                  blockSelection = nil
+                  requestFocus(blockID)
+                },
                 onDeleteBlock: {
                   deleteBlock(blockID: blockID)
                 },
@@ -124,6 +130,20 @@ struct ProjectOutlinerView: View {
       focusRootID: zoomRootBlockID
     )
     .map { document.blocks[$0].id }
+  }
+
+  private var selectedBlockIDs: Set<UUID> {
+    guard let blockSelection else { return [] }
+    return Set(
+      blockSelection.selectedIDs(
+        in: visibleBlockIDs,
+        depths: visibleDepthsByID
+      )
+    )
+  }
+
+  private var visibleDepthsByID: [UUID: Int] {
+    Dictionary(uniqueKeysWithValues: document.blocks.map { ($0.id, $0.depth) })
   }
 
   private func binding(for blockID: UUID) -> Binding<ProjectOutlineBlock>? {
@@ -198,6 +218,24 @@ struct ProjectOutlinerView: View {
       focusAdjacentBlock(from: blockID, offset: -1, placement: .end)
     case .focusNext:
       focusAdjacentBlock(from: blockID, offset: 1, placement: .start)
+    case .extendBlockSelectionUp:
+      extendBlockSelection(from: blockID, offset: -1)
+    case .extendBlockSelectionDown:
+      extendBlockSelection(from: blockID, offset: 1)
+    case .exitBlockSelectionUp:
+      exitBlockSelection(offset: -1)
+    case .exitBlockSelectionDown:
+      exitBlockSelection(offset: 1)
+    case .exitBlockSelectionLeft:
+      exitBlockSelectionToHorizontalEdge(start: true)
+    case .exitBlockSelectionRight:
+      exitBlockSelectionToHorizontalEdge(start: false)
+    case .clearBlockSelection:
+      clearBlockSelection(focusAnchor: true)
+    case .deleteBlockSelection:
+      deleteSelectedBlocks()
+    case .selectAllVisibleBlocks:
+      selectAllVisibleBlocks(anchor: blockID)
     }
   }
 
@@ -265,6 +303,77 @@ struct ProjectOutlinerView: View {
         in: &document
       )
     }
+  }
+
+  private func extendBlockSelection(from blockID: UUID, offset: Int) {
+    let visibleIDs = visibleBlockIDs
+    let anchorID = blockSelection?.anchorID ?? blockID
+    let selectedIDs = blockSelection?.selectedIDs(
+      in: visibleIDs,
+      depths: visibleDepthsByID
+    )
+    let edgeID = offset < 0 ? selectedIDs?.first : selectedIDs?.last
+    guard let currentPosition = visibleIDs.firstIndex(of: edgeID ?? blockID) else { return }
+    let nextPosition = currentPosition + offset
+    let nextHeadID = visibleIDs.indices.contains(nextPosition)
+      ? visibleIDs[nextPosition]
+      : visibleIDs[currentPosition]
+    blockSelection = ProjectOutlineBlockSelection(anchorID: anchorID, headID: nextHeadID)
+    requestFocus(anchorID)
+  }
+
+  private func exitBlockSelection(offset: Int) {
+    let visibleIDs = visibleBlockIDs
+    guard let blockSelection,
+      let targetID = blockSelection.adjacentID(
+        afterSelectionBy: offset,
+        in: visibleIDs,
+        depths: visibleDepthsByID
+      )
+    else {
+      clearBlockSelection(focusAnchor: true)
+      return
+    }
+    self.blockSelection = nil
+    requestFocus(targetID, placement: offset < 0 ? .end : .start)
+  }
+
+  private func exitBlockSelectionToHorizontalEdge(start: Bool) {
+    guard let blockSelection else { return }
+    let visibleIDs = visibleBlockIDs
+    let selectedIDs = blockSelection.selectedIDs(
+      in: visibleIDs,
+      depths: visibleDepthsByID
+    )
+    let targetID = start
+      ? selectedIDs.first
+      : selectedIDs.last
+    self.blockSelection = nil
+    requestFocus(targetID ?? blockSelection.anchorID, placement: start ? .start : .end)
+  }
+
+  private func clearBlockSelection(focusAnchor: Bool) {
+    let anchorID = blockSelection?.anchorID
+    blockSelection = nil
+    if focusAnchor {
+      requestFocus(anchorID, placement: .preserve)
+    }
+  }
+
+  private func selectAllVisibleBlocks(anchor blockID: UUID) {
+    guard let lastID = visibleBlockIDs.last else { return }
+    blockSelection = ProjectOutlineBlockSelection(anchorID: blockID, headID: lastID)
+    requestFocus(blockID)
+  }
+
+  private func deleteSelectedBlocks() {
+    let selectedIDs = selectedBlockIDs
+    guard !selectedIDs.isEmpty else { return }
+    for blockID in visibleBlockIDs.reversed() where selectedIDs.contains(blockID) {
+      deleteBlock(blockID: blockID)
+    }
+    blockSelection = nil
+    requestFocus(nil)
   }
 
   private func toggleFold(blockID: UUID) {
@@ -417,6 +526,60 @@ struct ProjectOutlinerView: View {
   }
 }
 
+struct ProjectOutlineBlockSelection {
+  let anchorID: UUID
+  let headID: UUID
+
+  func selectedIDs(in visibleIDs: [UUID], depths: [UUID: Int]) -> [UUID] {
+    guard let anchorIndex = visibleIDs.firstIndex(of: anchorID),
+      let headIndex = visibleIDs.firstIndex(of: headID)
+    else {
+      return []
+    }
+    let bounds = min(anchorIndex, headIndex)...max(anchorIndex, headIndex)
+    let baseIDs = Array(visibleIDs[bounds])
+    let expanded = Set(baseIDs.flatMap { subtreeVisibleIDs(for: $0, in: visibleIDs, depths: depths) })
+    return visibleIDs.filter { expanded.contains($0) }
+  }
+
+  func adjacentID(afterSelectionBy offset: Int, in visibleIDs: [UUID], depths: [UUID: Int]) -> UUID? {
+    let ids = selectedIDs(in: visibleIDs, depths: depths)
+    guard let first = ids.first,
+      let last = ids.last,
+      let firstIndex = visibleIDs.firstIndex(of: first),
+      let lastIndex = visibleIDs.firstIndex(of: last)
+    else {
+      return nil
+    }
+    let targetIndex = offset < 0 ? firstIndex - 1 : lastIndex + 1
+    guard visibleIDs.indices.contains(targetIndex) else {
+      return offset < 0 ? first : last
+    }
+    return visibleIDs[targetIndex]
+  }
+
+  private func subtreeVisibleIDs(
+    for blockID: UUID,
+    in visibleIDs: [UUID],
+    depths: [UUID: Int]
+  ) -> [UUID] {
+    guard let rootIndex = visibleIDs.firstIndex(of: blockID),
+      let rootDepth = depths[blockID]
+    else {
+      return []
+    }
+    var result = [blockID]
+    var index = rootIndex + 1
+    while visibleIDs.indices.contains(index) {
+      let id = visibleIDs[index]
+      guard let depth = depths[id], depth > rootDepth else { break }
+      result.append(id)
+      index += 1
+    }
+    return result
+  }
+}
+
 private struct ProjectOutlineRowView: View {
   @Binding var block: ProjectOutlineBlock
   let task: TimelineProjectListWindowSnapshot.Task?
@@ -424,6 +587,8 @@ private struct ProjectOutlineRowView: View {
   let isFocused: Bool
   let focusRequestID: UInt64
   let focusPlacement: ProjectOutlineFocusPlacement
+  let isBlockSelectionActive: Bool
+  let isBlockSelected: Bool
   let displayDepth: Int
   let hidesMarker: Bool
   let isCreatingTask: Bool
@@ -470,6 +635,7 @@ private struct ProjectOutlineRowView: View {
           isFocused: isFocused,
           focusRequestID: focusRequestID,
           focusPlacement: focusPlacement,
+          isBlockSelectionActive: isBlockSelectionActive,
           font: projectOutlinerNSFont,
           onCommand: onCommand,
           onFocus: onFocus
@@ -480,6 +646,8 @@ private struct ProjectOutlineRowView: View {
     }
     .padding(.horizontal, 18)
     .padding(.vertical, 3)
+    .frame(maxWidth: .infinity, alignment: .leading)
+    .background(isBlockSelected ? Color.accentColor.opacity(0.12) : Color.clear)
     .overlay(alignment: dropPlacement == .before ? .topLeading : .bottomLeading) {
       if dropPlacement == .before || dropPlacement == .after {
         ProjectOutlineDropIndicatorLine()
@@ -565,6 +733,7 @@ private struct ProjectOutlineRowView: View {
             isFocused: isFocused,
             focusRequestID: focusRequestID,
             focusPlacement: focusPlacement,
+            isBlockSelectionActive: isBlockSelectionActive,
             font: projectOutlinerNSFont,
             onCommand: { command in
               submitTaskTitle(task)
@@ -589,6 +758,7 @@ private struct ProjectOutlineRowView: View {
               isFocused: isFocused,
               focusRequestID: focusRequestID,
               focusPlacement: focusPlacement,
+              isBlockSelectionActive: isBlockSelectionActive,
               font: projectOutlinerNSFont,
               onCommand: onCommand,
               onFocus: onFocus,
