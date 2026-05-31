@@ -473,6 +473,31 @@ final class AppOwnedRetainedTaskCommandServiceTests: XCTestCase {
   }
 
   @MainActor
+  func testProjectNoteCreationFallsBackToReminderIdentifierWhenExternalIDIsDelayed() async throws {
+    let fixture = try await makeEnabledStoreFixture()
+    let provider = FakeAppOwnedReminderProjectProvider()
+    provider.createdTaskMetadata = ReminderTaskRemoteMetadata(
+      identifier: "note-identifier",
+      externalIdentifier: nil,
+      modifiedAt: Date(timeIntervalSinceReferenceDate: 720)
+    )
+
+    let savedNote = try await RetainedProjectCommandFacade.setProjectNote(
+      vaultRootURL: fixture.vaultRoot,
+      projectID: fixture.projectID,
+      noteText: "지연된 외부 id",
+      reminderProjectProvider: provider
+    )
+    let snapshot = try await fixture.store.loadRetainedWorkspaceSnapshot(projectIDs: [fixture.projectID])
+    let project = try XCTUnwrap(snapshot.projects.first)
+
+    XCTAssertEqual(savedNote, "지연된 외부 id")
+    XCTAssertEqual(provider.presentationUpdates, ["note-identifier": 9])
+    XCTAssertEqual(project.noteMarkdown, "지연된 외부 id")
+    XCTAssertTrue(project.tasks.isEmpty)
+  }
+
+  @MainActor
   func testAppOwnedProjectAndTaskOrderingDoNotCreateRawProjects() async throws {
     let fixture = try await makeEnabledStoreFixture(taskExternalIdentifier: "task-1")
     let taskID = ReminderProjectionIdentity.taskID(for: "task-1")

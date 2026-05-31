@@ -138,7 +138,23 @@ struct ProjectOutlinerView: View {
       toggleFold(blockID: blockID)
     case .escape:
       focusedBlockID = nil
+    case .convertToTask:
+      convertBlockToPendingTask(blockID)
     }
+  }
+
+  private func convertBlockToPendingTask(_ blockID: UUID) {
+    guard let index = document.blocks.firstIndex(where: { $0.id == blockID }),
+      !document.blocks[index].isTaskBlock
+    else {
+      return
+    }
+    document.blocks[index].text = ""
+    document.blocks[index].taskBinding = ProjectOutlineTaskBinding(
+      taskID: nil,
+      taskExternalIdentifier: nil
+    )
+    focusedBlockID = blockID
   }
 
   private func handleCommandEnter(blockID: UUID) {
@@ -265,7 +281,7 @@ private struct ProjectOutlineRowView: View {
           guard let task else { return }
           onToggleTaskCompletion(task.id, task.isCompleted)
         } label: {
-          Image(systemName: task?.isCompleted == true ? "checkmark.circle.fill" : "circle")
+          Image(systemName: task?.isCompleted == true ? "checkmark.square.fill" : "square")
             .font(.system(size: 14))
             .foregroundStyle(task?.isCompleted == true ? projectColor : Color.secondary)
             .frame(width: 18, height: 22)
@@ -320,9 +336,25 @@ private struct ProjectOutlineRowView: View {
               }
             }
         } else {
-          Text(isCreatingTask ? "할일 생성 중..." : "불러오는 중...")
-            .font(projectOutlinerFont)
-            .foregroundStyle(Color.secondary)
+          if block.taskBinding?.taskID == nil {
+            TextField("할일", text: $block.text)
+              .textFieldStyle(.plain)
+              .font(projectOutlinerFont)
+              .focused($isTaskTitleFocused)
+              .disabled(isCreatingTask)
+              .onSubmit {
+                commitPendingTaskIfNeeded()
+              }
+              .onChange(of: isTaskTitleFocused) { _, focused in
+                if !focused {
+                  commitPendingTaskIfNeeded()
+                }
+              }
+          } else {
+            Text("불러오는 중...")
+              .font(projectOutlinerFont)
+              .foregroundStyle(Color.secondary)
+          }
         }
 
         Spacer(minLength: 8)
@@ -361,6 +393,17 @@ private struct ProjectOutlineRowView: View {
       if let task, taskTitleDraft.isEmpty {
         taskTitleDraft = task.title
       }
+      if task == nil, block.taskBinding?.taskID == nil, isFocused {
+        DispatchQueue.main.async {
+          isTaskTitleFocused = true
+        }
+      }
+    }
+    .onChange(of: isFocused) { _, focused in
+      guard task == nil, block.taskBinding?.taskID == nil, focused else { return }
+      DispatchQueue.main.async {
+        isTaskTitleFocused = true
+      }
     }
   }
 
@@ -375,6 +418,15 @@ private struct ProjectOutlineRowView: View {
     let title = taskTitleDraft.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !title.isEmpty, title != task.title else { return }
     onRenameTask(task.id, title)
+  }
+
+  private func commitPendingTaskIfNeeded() {
+    guard block.taskBinding?.taskID == nil,
+      !block.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    else {
+      return
+    }
+    onCommand(.commandEnter)
   }
 }
 

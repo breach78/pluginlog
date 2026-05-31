@@ -40,7 +40,7 @@ enum ProjectOutlineMarkdownCodec {
 
   private static func line(from block: ProjectOutlineBlock) -> String {
     let indent = String(repeating: "  ", count: max(0, block.depth))
-    if let binding = block.taskBinding {
+    if let binding = block.taskBinding, binding.taskID != nil {
       return indent + "- " + ProjectOutlineTaskMarkerCodec.marker(
         blockID: block.id,
         binding: binding

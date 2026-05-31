@@ -192,9 +192,16 @@ enum AppOwnedRetainedProjectCommandService {
       dueDate: nil,
       hasExplicitTime: false,
       noteText: noteText
-    ), let externalIdentifier = normalized(metadata.externalIdentifier) else {
+    ) else {
       throw RetainedTaskCommandError.retainedProjectionFailed(
-        "created project note reminder missing external id"
+        "created project note reminder missing metadata"
+      )
+    }
+    guard let externalIdentifier = normalized(metadata.externalIdentifier)
+      ?? normalized(metadata.identifier)
+    else {
+      throw RetainedTaskCommandError.retainedProjectionFailed(
+        "created project note reminder missing identifier"
       )
     }
 

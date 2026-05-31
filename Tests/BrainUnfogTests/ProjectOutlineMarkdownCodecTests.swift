@@ -48,4 +48,42 @@ struct ProjectOutlineMarkdownCodecTests {
     #expect(decoded.blocks.map(\.depth) == document.blocks.map(\.depth))
     #expect(decoded.blocks.map(\.text) == document.blocks.map(\.text))
   }
+
+  @Test func pendingTaskBlockWithoutReminderIDDoesNotPersistTaskMarker() {
+    let document = ProjectOutlineDocument(blocks: [
+      ProjectOutlineBlock(
+        depth: 0,
+        text: "할일 제목",
+        taskBinding: ProjectOutlineTaskBinding(taskID: nil, taskExternalIdentifier: nil)
+      ),
+    ])
+
+    let markdown = ProjectOutlineMarkdownCodec.markdown(from: document)
+    let decoded = ProjectOutlineMarkdownCodec.document(from: markdown)
+
+    #expect(markdown == "- 할일 제목")
+    #expect(decoded.blocks.first?.taskBinding == nil)
+    #expect(decoded.blocks.first?.text == "할일 제목")
+  }
+
+  @Test func checkboxInputPolicyConvertsOnlyCompletedMarkerAtCaretEnd() {
+    #expect(
+      ProjectOutlineCheckboxInputPolicy.shouldConvertToTask(
+        text: "[]",
+        selectedRange: NSRange(location: 2, length: 0)
+      )
+    )
+    #expect(
+      ProjectOutlineCheckboxInputPolicy.shouldConvertToTask(
+        text: "[ ]",
+        selectedRange: NSRange(location: 3, length: 0)
+      )
+    )
+    #expect(
+      !ProjectOutlineCheckboxInputPolicy.shouldConvertToTask(
+        text: "[] 제목",
+        selectedRange: NSRange(location: 2, length: 0)
+      )
+    )
+  }
 }

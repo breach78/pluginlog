@@ -13,6 +13,7 @@ enum ProjectOutlineTextCommand {
   case commandUp
   case commandDown
   case escape
+  case convertToTask
 }
 
 struct ProjectOutlineTextEditor: NSViewRepresentable {
@@ -80,8 +81,9 @@ struct ProjectOutlineTextEditor: NSViewRepresentable {
       context.coordinator.isApplyingText = true
       textView.string = text
       context.coordinator.isApplyingText = false
-      context.coordinator.updateMeasuredHeight()
     }
+    context.coordinator.updateWrappingWidth(from: scrollView)
+    context.coordinator.updateMeasuredHeight()
     if isFocused {
       context.coordinator.applyFocusIfNeeded()
     }
@@ -115,6 +117,12 @@ struct ProjectOutlineTextEditor: NSViewRepresentable {
         commandHandler?(.shiftTab)
       case 48:
         commandHandler?(.tab)
+      case 49
+        where ProjectOutlineCheckboxInputPolicy.shouldConvertToTask(
+          text: string,
+          selectedRange: selectedRange()
+        ):
+        commandHandler?(.convertToTask)
       case 51 where selectedRange().location == 0 && selectedRange().length == 0:
         commandHandler?(.backspaceAtStart)
       case 117 where selectedRange().location == string.utf16.count && selectedRange().length == 0:
@@ -165,10 +173,25 @@ struct ProjectOutlineTextEditor: NSViewRepresentable {
 
     func updateMeasuredHeight() {
       guard let textView else { return }
-      textView.layoutManager?.ensureLayout(for: textView.textContainer!)
-      let height = max(24, textView.intrinsicContentSize.height + 2)
+      updateWrappingWidth(from: textView.enclosingScrollView)
+      guard let textContainer = textView.textContainer else { return }
+      textView.layoutManager?.ensureLayout(for: textContainer)
+      let usedRect = textView.layoutManager?.usedRect(for: textContainer) ?? .zero
+      let height = max(24, ceil(usedRect.height + textView.textContainerInset.height * 2 + 2))
       if abs(parent.measuredHeight - height) > 0.5 {
         parent.measuredHeight = height
+      }
+    }
+
+    func updateWrappingWidth(from scrollView: NSScrollView?) {
+      guard let textView, let textContainer = textView.textContainer else { return }
+      let width = max(1, scrollView?.contentSize.width ?? textView.bounds.width)
+      if abs(textContainer.containerSize.width - width) > 0.5 {
+        textContainer.containerSize = NSSize(
+          width: width,
+          height: CGFloat.greatestFiniteMagnitude
+        )
+        textView.frame.size.width = width
       }
     }
 
@@ -177,5 +200,15 @@ struct ProjectOutlineTextEditor: NSViewRepresentable {
       guard window.firstResponder !== textView else { return }
       window.makeFirstResponder(textView)
     }
+  }
+}
+
+enum ProjectOutlineCheckboxInputPolicy {
+  static func shouldConvertToTask(text: String, selectedRange: NSRange) -> Bool {
+    guard selectedRange.length == 0 else { return false }
+    let nsText = text as NSString
+    guard selectedRange.location == nsText.length else { return false }
+    let prefix = nsText.substring(to: selectedRange.location)
+    return prefix == "[]" || prefix == "[ ]"
   }
 }
