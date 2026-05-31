@@ -23,12 +23,19 @@ enum ProjectOutlineTextCommand {
   case focusNext
 }
 
+enum ProjectOutlineFocusPlacement {
+  case preserve
+  case start
+  case end
+}
+
 struct ProjectOutlineTextEditor: NSViewRepresentable {
   @Binding var text: String
   @Binding var measuredHeight: CGFloat
 
   let isFocused: Bool
   let focusRequestID: UInt64
+  let focusPlacement: ProjectOutlineFocusPlacement
   let font: NSFont
   let onCommand: (ProjectOutlineTextCommand) -> Void
   let onFocus: () -> Void
@@ -133,6 +140,8 @@ struct ProjectOutlineTextEditor: NSViewRepresentable {
       let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
       let isCommand = modifiers.contains(.command)
       let isShift = modifiers.contains(.shift)
+      let hasNavigationModifier = isCommand || isShift || modifiers.contains(.option)
+        || modifiers.contains(.control)
       let key = event.charactersIgnoringModifiers
 
       if isCommand, key == "." {
@@ -175,6 +184,12 @@ struct ProjectOutlineTextEditor: NSViewRepresentable {
         commandHandler?(.backspaceAtStart)
       case 117 where selectedRange().location == string.utf16.count && selectedRange().length == 0:
         commandHandler?(.deleteAtEnd)
+      case 123 where !hasNavigationModifier && selectedRange().location == 0 && selectedRange().length == 0:
+        commandHandler?(.focusPrevious)
+      case 124
+        where !hasNavigationModifier && selectedRange().location == string.utf16.count
+          && selectedRange().length == 0:
+        commandHandler?(.focusNext)
       case 126 where isCommand && isShift:
         commandHandler?(.commandShiftUp)
       case 125 where isCommand && isShift:
@@ -262,8 +277,21 @@ struct ProjectOutlineTextEditor: NSViewRepresentable {
         }
         return
       }
-      guard window.firstResponder !== textView else { return }
-      window.makeFirstResponder(textView)
+      if window.firstResponder !== textView {
+        window.makeFirstResponder(textView)
+      }
+      applyFocusPlacement(to: textView)
+    }
+
+    private func applyFocusPlacement(to textView: NSTextView) {
+      switch parent.focusPlacement {
+      case .preserve:
+        return
+      case .start:
+        textView.setSelectedRange(NSRange(location: 0, length: 0))
+      case .end:
+        textView.setSelectedRange(NSRange(location: textView.string.utf16.count, length: 0))
+      }
     }
   }
 }

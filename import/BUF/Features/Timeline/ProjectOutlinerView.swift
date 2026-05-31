@@ -18,6 +18,7 @@ struct ProjectOutlinerView: View {
 
   @State private var focusedBlockID: UUID?
   @State private var focusRequestID: UInt64 = 0
+  @State private var focusPlacement: ProjectOutlineFocusPlacement = .preserve
   @State private var zoomRootBlockID: UUID?
   @State private var blockToRevealAfterZoomOut: UUID?
   @State private var rowHeights: [UUID: CGFloat] = [:]
@@ -52,6 +53,7 @@ struct ProjectOutlinerView: View {
                 projectColor: projectColor,
                 isFocused: focusedBlockID == blockID,
                 focusRequestID: focusRequestID,
+                focusPlacement: focusedBlockID == blockID ? focusPlacement : .preserve,
                 displayDepth: displayDepth(for: block),
                 hidesMarker: zoomRootBlockID == blockID,
                 isCreatingTask: pendingTaskBlockIDs.contains(blockID),
@@ -193,9 +195,9 @@ struct ProjectOutlinerView: View {
     case .zoomNextSibling:
       zoomToSibling(previous: false)
     case .focusPrevious:
-      focusAdjacentBlock(from: blockID, offset: -1)
+      focusAdjacentBlock(from: blockID, offset: -1, placement: .end)
     case .focusNext:
-      focusAdjacentBlock(from: blockID, offset: 1)
+      focusAdjacentBlock(from: blockID, offset: 1, placement: .start)
     }
   }
 
@@ -359,15 +361,23 @@ struct ProjectOutlinerView: View {
     requestFocus(nextID)
   }
 
-  private func focusAdjacentBlock(from blockID: UUID, offset: Int) {
+  private func focusAdjacentBlock(
+    from blockID: UUID,
+    offset: Int,
+    placement: ProjectOutlineFocusPlacement
+  ) {
     guard let currentPosition = visibleBlockIDs.firstIndex(of: blockID) else { return }
     let nextPosition = currentPosition + offset
     guard visibleBlockIDs.indices.contains(nextPosition) else { return }
-    requestFocus(visibleBlockIDs[nextPosition])
+    requestFocus(visibleBlockIDs[nextPosition], placement: placement)
   }
 
-  private func requestFocus(_ blockID: UUID?) {
+  private func requestFocus(
+    _ blockID: UUID?,
+    placement: ProjectOutlineFocusPlacement = .preserve
+  ) {
     focusedBlockID = blockID
+    focusPlacement = placement
     focusRequestID &+= 1
   }
 
@@ -413,6 +423,7 @@ private struct ProjectOutlineRowView: View {
   let projectColor: Color
   let isFocused: Bool
   let focusRequestID: UInt64
+  let focusPlacement: ProjectOutlineFocusPlacement
   let displayDepth: Int
   let hidesMarker: Bool
   let isCreatingTask: Bool
@@ -458,6 +469,7 @@ private struct ProjectOutlineRowView: View {
           measuredHeight: $measuredHeight,
           isFocused: isFocused,
           focusRequestID: focusRequestID,
+          focusPlacement: focusPlacement,
           font: projectOutlinerNSFont,
           onCommand: onCommand,
           onFocus: onFocus
@@ -552,6 +564,7 @@ private struct ProjectOutlineRowView: View {
             measuredHeight: $measuredHeight,
             isFocused: isFocused,
             focusRequestID: focusRequestID,
+            focusPlacement: focusPlacement,
             font: projectOutlinerNSFont,
             onCommand: { command in
               submitTaskTitle(task)
@@ -575,6 +588,7 @@ private struct ProjectOutlineRowView: View {
               measuredHeight: $measuredHeight,
               isFocused: isFocused,
               focusRequestID: focusRequestID,
+              focusPlacement: focusPlacement,
               font: projectOutlinerNSFont,
               onCommand: onCommand,
               onFocus: onFocus,
