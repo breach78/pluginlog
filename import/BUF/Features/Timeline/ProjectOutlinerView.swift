@@ -276,9 +276,7 @@ struct ProjectOutlinerView: View {
 
   @ViewBuilder
   private var zoomBreadcrumb: some View {
-    if let currentZoomRootID = zoomRootBlockID,
-      let root = document.blocks.first(where: { $0.id == currentZoomRootID })
-    {
+    if let currentZoomRootID = zoomRootBlockID {
       let ancestors = ProjectOutlineMutationEngine.ancestorIDs(
         for: currentZoomRootID,
         in: document
@@ -300,12 +298,6 @@ struct ProjectOutlinerView: View {
           .buttonStyle(.plain)
           .foregroundStyle(Color.secondary)
         }
-
-        Text("›")
-          .foregroundStyle(Color.secondary.opacity(0.5))
-        Text(blockDisplayTitle(root))
-          .lineLimit(1)
-          .foregroundStyle(Color.primary.opacity(0.72))
       }
       .font(projectOutlinerChipFont)
       .padding(.horizontal, 18)
@@ -449,7 +441,7 @@ private struct ProjectOutlineRowView: View {
             .fill(Color.secondary.opacity(0.12))
             .frame(width: 1)
             .frame(maxHeight: .infinity)
-            .padding(.horizontal, 9.5)
+            .padding(.horizontal, projectOutlinerIndentGuideHorizontalPadding)
         }
       }
       .frame(height: max(24, measuredHeight))
@@ -479,14 +471,14 @@ private struct ProjectOutlineRowView: View {
     .overlay(alignment: dropPlacement == .before ? .topLeading : .bottomLeading) {
       if dropPlacement == .before || dropPlacement == .after {
         ProjectOutlineDropIndicatorLine()
-          .padding(.leading, CGFloat(displayDepth) * 20 + 40)
+          .padding(.leading, CGFloat(displayDepth) * projectOutlinerIndentWidth + projectOutlinerDropIndicatorBaseLeading)
           .padding(.trailing, 18)
       }
     }
     .overlay(alignment: .leading) {
       if dropPlacement == .child {
         ProjectOutlineDropIndicatorLine()
-          .padding(.leading, CGFloat(displayDepth + 1) * 20 + 40)
+          .padding(.leading, CGFloat(displayDepth + 1) * projectOutlinerIndentWidth + projectOutlinerDropIndicatorBaseLeading)
           .padding(.trailing, 18)
       }
     }
@@ -536,7 +528,8 @@ private struct ProjectOutlineRowView: View {
             .fill(hasChildren && !block.childrenCollapsed ? Color.clear : Color.secondary.opacity(0.28))
             .overlay(Circle().stroke(Color.secondary.opacity(0.28), lineWidth: 1))
             .frame(width: hasChildren ? 7 : 6, height: hasChildren ? 7 : 6)
-            .frame(width: 18, height: 22)
+            .frame(width: projectOutlinerBulletHitSize, height: projectOutlinerBulletHitSize)
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
       }
@@ -702,12 +695,16 @@ private struct ProjectOutlineDropIndicatorLine: View {
   }
 }
 
-private let projectOutlinerFont = Font.custom("SansMonoCJKFinalDraft", size: 18)
+private let projectOutlinerFont = Font.custom("SansMonoCJKFinalDraft", size: 15)
 private let projectOutlinerChipFont = Font.custom("SansMonoCJKFinalDraft-Bold", size: 12)
+private let projectOutlinerBulletHitSize: CGFloat = 21
+private let projectOutlinerIndentWidth: CGFloat = 40
+private let projectOutlinerIndentGuideHorizontalPadding = (projectOutlinerIndentWidth - 1) / 2
+private let projectOutlinerDropIndicatorBaseLeading: CGFloat = 40
 
 @MainActor
 private var projectOutlinerNSFont: NSFont {
-  guard let font = NSFont(name: "SansMonoCJKFinalDraft", size: 18) else {
+  guard let font = NSFont(name: "SansMonoCJKFinalDraft", size: 15) else {
     fatalError("Missing font: SansMonoCJKFinalDraft")
   }
   return font

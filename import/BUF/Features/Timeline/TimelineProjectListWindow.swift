@@ -1070,8 +1070,13 @@ struct TimelineProjectListContent: View {
     let normalizedNextText = TimelineProjectNoteAutoSavePolicy.normalized(nextText)
     projectNoteAutoSaveTask?.cancel()
     projectNoteAutoSaveTask = nil
-    projectNoteText = normalizedNextText
-    projectOutlineDocument = Self.outlineDocument(from: normalizedNextText)
+    if projectNoteText != normalizedNextText {
+      projectNoteText = normalizedNextText
+    }
+    let currentMarkdown = Self.markdown(from: projectOutlineDocument)
+    if currentMarkdown != normalizedNextText {
+      projectOutlineDocument = Self.outlineDocument(from: normalizedNextText)
+    }
     lastCommittedProjectNoteText = normalizedNextText
     projectNoteErrorText = nil
   }
