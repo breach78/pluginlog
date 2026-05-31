@@ -227,6 +227,7 @@ struct TimelineProjectListContent: View {
       ProjectOutlinerView(
         document: $projectOutlineDocument,
         tasks: session.tasks,
+        projectTitle: snapshot.title,
         projectColor: projectColor,
         pendingTaskBlockIDs: pendingOutlineTaskBlockIDs,
         recurringCompletionCounts: recurringCompletionCounts,

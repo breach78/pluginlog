@@ -175,6 +175,62 @@ struct ProjectOutlineMutationEngineTests {
     #expect(document.blocks.map(\.depth) == [0, 1, 0])
   }
 
+  @Test func enterOnTaskBlockCreatesNormalSiblingAfterTaskSubtree() {
+    let ids = Self.ids()
+    var document = ProjectOutlineDocument(blocks: [
+      ProjectOutlineBlock(
+        id: ids[0],
+        depth: 0,
+        text: "",
+        taskBinding: .init(taskID: ids[0], taskExternalIdentifier: "task")
+      ),
+      ProjectOutlineBlock(id: ids[1], depth: 1, text: "child"),
+      ProjectOutlineBlock(id: ids[2], depth: 0, text: "next"),
+    ])
+
+    let result = ProjectOutlineMutationEngine.insertSiblingAfterSubtree(
+      blockID: ids[0],
+      in: &document
+    )
+
+    #expect(result?.focusedBlockID == document.blocks[2].id)
+    #expect(document.blocks.map(\.text) == ["", "child", "", "next"])
+    #expect(document.blocks.map(\.depth) == [0, 1, 0, 0])
+    #expect(document.blocks[2].taskBinding == nil)
+  }
+
+  @Test func zoomVisibleIndicesTreatFocusRootAsTemporaryRoot() {
+    let ids = Self.ids()
+    let document = ProjectOutlineDocument(blocks: [
+      ProjectOutlineBlock(id: ids[0], depth: 0, text: "A"),
+      ProjectOutlineBlock(id: ids[1], depth: 1, text: "A.1"),
+      ProjectOutlineBlock(id: ids[2], depth: 2, text: "A.1.a"),
+      ProjectOutlineBlock(id: ids[3], depth: 0, text: "B"),
+    ])
+
+    let visible = ProjectOutlineMutationEngine.visibleIndices(
+      in: document,
+      focusRootID: ids[1]
+    )
+
+    #expect(visible == [1, 2])
+  }
+
+  @Test func zoomHelpersReturnAncestorsAndSiblings() {
+    let ids = Self.ids()
+    let document = ProjectOutlineDocument(blocks: [
+      ProjectOutlineBlock(id: ids[0], depth: 0, text: "A"),
+      ProjectOutlineBlock(id: ids[1], depth: 1, text: "A.1"),
+      ProjectOutlineBlock(id: ids[2], depth: 1, text: "A.2"),
+      ProjectOutlineBlock(id: ids[3], depth: 2, text: "A.2.a"),
+    ])
+
+    #expect(ProjectOutlineMutationEngine.parentID(for: ids[3], in: document) == ids[2])
+    #expect(ProjectOutlineMutationEngine.ancestorIDs(for: ids[3], in: document) == [ids[0], ids[2]])
+    #expect(ProjectOutlineMutationEngine.previousSiblingID(for: ids[2], in: document) == ids[1])
+    #expect(ProjectOutlineMutationEngine.nextSiblingID(for: ids[1], in: document) == ids[2])
+  }
+
   @Test func enterAtStartInsertsSiblingBeforeAndKeepsFocusOnCurrentBlock() {
     let ids = Self.ids()
     var document = ProjectOutlineDocument(blocks: [

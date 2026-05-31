@@ -23,6 +23,41 @@ enum ProjectOutlineMutationEngine {
     return indices
   }
 
+  static func visibleIndices(
+    in document: ProjectOutlineDocument,
+    focusRootID: UUID?
+  ) -> [Int] {
+    guard let focusRootID,
+      let rootIndex = document.blocks.firstIndex(where: { $0.id == focusRootID })
+    else {
+      return visibleIndices(in: document)
+    }
+
+    let rootRange = subtreeRange(at: rootIndex, in: document)
+    var indices: [Int] = []
+    var collapsedDepth: Int?
+
+    for index in rootRange {
+      let block = document.blocks[index]
+      if let hiddenDepth = collapsedDepth {
+        if block.depth > hiddenDepth {
+          continue
+        }
+        collapsedDepth = nil
+      }
+
+      indices.append(index)
+      if index != rootIndex,
+        block.childrenCollapsed,
+        hasChildren(at: index, in: document)
+      {
+        collapsedDepth = block.depth
+      }
+    }
+
+    return indices
+  }
+
   static func subtreeRange(at index: Int, in document: ProjectOutlineDocument) -> Range<Int> {
     guard document.blocks.indices.contains(index) else { return index..<index }
     let depth = document.blocks[index].depth
@@ -33,12 +68,72 @@ enum ProjectOutlineMutationEngine {
     return index..<end
   }
 
+  @discardableResult
+  static func insertSiblingAfterSubtree(
+    blockID: UUID,
+    in document: inout ProjectOutlineDocument
+  ) -> ProjectOutlineInsertionResult? {
+    guard let index = document.blocks.firstIndex(where: { $0.id == blockID }) else {
+      return nil
+    }
+    let inserted = ProjectOutlineBlock(depth: document.blocks[index].depth, text: "")
+    document.blocks.insert(inserted, at: subtreeRange(at: index, in: document).upperBound)
+    return ProjectOutlineInsertionResult(insertedBlockID: inserted.id, focusedBlockID: inserted.id)
+  }
+
   static func hasChildren(at index: Int, in document: ProjectOutlineDocument) -> Bool {
     let next = index + 1
     guard document.blocks.indices.contains(index), document.blocks.indices.contains(next) else {
       return false
     }
     return document.blocks[next].depth > document.blocks[index].depth
+  }
+
+  static func hasChildren(blockID: UUID, in document: ProjectOutlineDocument) -> Bool {
+    guard let index = document.blocks.firstIndex(where: { $0.id == blockID }) else {
+      return false
+    }
+    return hasChildren(at: index, in: document)
+  }
+
+  static func parentID(for blockID: UUID, in document: ProjectOutlineDocument) -> UUID? {
+    guard let index = document.blocks.firstIndex(where: { $0.id == blockID }),
+      let parentIndex = parentIndex(for: index, in: document)
+    else {
+      return nil
+    }
+    return document.blocks[parentIndex].id
+  }
+
+  static func ancestorIDs(for blockID: UUID, in document: ProjectOutlineDocument) -> [UUID] {
+    guard let index = document.blocks.firstIndex(where: { $0.id == blockID }) else {
+      return []
+    }
+    var ancestors: [UUID] = []
+    var currentIndex = index
+    while let parentIndex = parentIndex(for: currentIndex, in: document) {
+      ancestors.insert(document.blocks[parentIndex].id, at: 0)
+      currentIndex = parentIndex
+    }
+    return ancestors
+  }
+
+  static func previousSiblingID(for blockID: UUID, in document: ProjectOutlineDocument) -> UUID? {
+    guard let index = document.blocks.firstIndex(where: { $0.id == blockID }),
+      let siblingIndex = previousSiblingIndex(before: index, in: document)
+    else {
+      return nil
+    }
+    return document.blocks[siblingIndex].id
+  }
+
+  static func nextSiblingID(for blockID: UUID, in document: ProjectOutlineDocument) -> UUID? {
+    guard let index = document.blocks.firstIndex(where: { $0.id == blockID }),
+      let siblingIndex = nextSiblingIndex(after: index, in: document)
+    else {
+      return nil
+    }
+    return document.blocks[siblingIndex].id
   }
 
   @discardableResult

@@ -14,6 +14,13 @@ enum ProjectOutlineTextCommand {
   case commandDown
   case escape
   case convertToTask
+  case zoomIn
+  case zoomOut
+  case zoomHome
+  case zoomPreviousSibling
+  case zoomNextSibling
+  case focusPrevious
+  case focusNext
 }
 
 struct ProjectOutlineTextEditor: NSViewRepresentable {
@@ -24,6 +31,7 @@ struct ProjectOutlineTextEditor: NSViewRepresentable {
   let font: NSFont
   let onCommand: (ProjectOutlineTextCommand) -> Void
   let onFocus: () -> Void
+  var onBlur: () -> Void = {}
 
   func makeCoordinator() -> Coordinator {
     Coordinator(parent: self)
@@ -43,6 +51,9 @@ struct ProjectOutlineTextEditor: NSViewRepresentable {
     }
     textView.focusHandler = { [weak coordinator = context.coordinator] in
       coordinator?.parent.onFocus()
+    }
+    textView.blurHandler = { [weak coordinator = context.coordinator] in
+      coordinator?.parent.onBlur()
     }
     textView.drawsBackground = false
     textView.textContainerInset = NSSize(width: 0, height: 1)
@@ -73,6 +84,9 @@ struct ProjectOutlineTextEditor: NSViewRepresentable {
     textView.focusHandler = { [weak coordinator = context.coordinator] in
       coordinator?.parent.onFocus()
     }
+    textView.blurHandler = { [weak coordinator = context.coordinator] in
+      coordinator?.parent.onBlur()
+    }
     if textView.font != font {
       textView.font = font
       textView.typingAttributes = [.font: font]
@@ -84,14 +98,16 @@ struct ProjectOutlineTextEditor: NSViewRepresentable {
     }
     context.coordinator.updateWrappingWidth(from: scrollView)
     context.coordinator.updateMeasuredHeight()
-    if isFocused {
+    if isFocused, !context.coordinator.lastIsFocused {
       context.coordinator.applyFocusIfNeeded()
     }
+    context.coordinator.lastIsFocused = isFocused
   }
 
   final class CommandTextView: NSTextView {
     var commandHandler: ((ProjectOutlineTextCommand) -> Void)?
     var focusHandler: (() -> Void)?
+    var blurHandler: (() -> Void)?
 
     override func mouseDown(with event: NSEvent) {
       focusHandler?()
@@ -107,6 +123,28 @@ struct ProjectOutlineTextEditor: NSViewRepresentable {
       let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
       let isCommand = modifiers.contains(.command)
       let isShift = modifiers.contains(.shift)
+      let key = event.charactersIgnoringModifiers
+
+      if isCommand, key == "." {
+        commandHandler?(.zoomIn)
+        return
+      }
+      if isCommand, key == "," {
+        commandHandler?(.zoomOut)
+        return
+      }
+      if isCommand, key == "'" {
+        commandHandler?(.zoomHome)
+        return
+      }
+      if isCommand, isShift, key == "[" {
+        commandHandler?(.zoomPreviousSibling)
+        return
+      }
+      if isCommand, isShift, key == "]" {
+        commandHandler?(.zoomNextSibling)
+        return
+      }
 
       switch event.keyCode {
       case 36 where isCommand, 76 where isCommand:
@@ -135,6 +173,10 @@ struct ProjectOutlineTextEditor: NSViewRepresentable {
         commandHandler?(.commandUp)
       case 125 where isCommand:
         commandHandler?(.commandDown)
+      case 126 where selectedRange().location == 0 && selectedRange().length == 0:
+        commandHandler?(.focusPrevious)
+      case 125 where selectedRange().location == string.utf16.count && selectedRange().length == 0:
+        commandHandler?(.focusNext)
       case 53:
         commandHandler?(.escape)
       default:
@@ -156,6 +198,7 @@ struct ProjectOutlineTextEditor: NSViewRepresentable {
     var parent: ProjectOutlineTextEditor
     weak var textView: CommandTextView?
     var isApplyingText = false
+    var lastIsFocused = false
 
     init(parent: ProjectOutlineTextEditor) {
       self.parent = parent
@@ -169,6 +212,10 @@ struct ProjectOutlineTextEditor: NSViewRepresentable {
 
     func textDidBeginEditing(_ notification: Notification) {
       parent.onFocus()
+    }
+
+    func textDidEndEditing(_ notification: Notification) {
+      parent.onBlur()
     }
 
     func updateMeasuredHeight() {
