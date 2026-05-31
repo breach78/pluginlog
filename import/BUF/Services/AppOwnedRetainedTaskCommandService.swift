@@ -574,6 +574,9 @@ enum AppOwnedRetainedTaskCommandService {
   ) async throws -> RetainedTaskDeletionResult {
     let task = try await store.taskReference(projectID: projectID, taskID: taskID)
     let didRemoveReminder = try reminderProjectProvider.removeTaskReminder(for: reminderReference(task))
+    guard !reminderProjectProvider.isDryRunDeletionEnabled else {
+      throw RetainedTaskCommandError.retainedProjectionFailed("dry-run deletion enabled")
+    }
     if !didRemoveReminder {
       AppLogger.sync.info(
         "deleteTask continuing after missing reminder for task \(taskID.uuidString, privacy: .public)"

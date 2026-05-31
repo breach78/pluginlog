@@ -26,13 +26,16 @@ struct TimelineProjectListContent: View {
   @State private var taskEditFocuses: [UUID: TimelineTaskEditInitialFocus] = [:]
   @State private var expandedTaskAuxiliarySections: [UUID: Set<TaskEditAuxiliarySection>] = [:]
   @State private var projectNoteText: String
-  @State private var projectNoteHeight: CGFloat = 0
+  @State private var projectOutlineDocument: ProjectOutlineDocument
   @State private var lastCommittedProjectNoteText: String
   @State private var projectNoteAutoSaveTask: Task<Void, Never>?
   @State private var isSavingProjectNote = false
   @State private var saveProjectNoteAgainAfterCurrent = false
   @State private var projectNoteErrorText: String?
+  @State private var showsLowerTaskList = false
   @State private var draftScrollRequestID = 0
+  @State private var pendingOutlineTaskBlockIDs: Set<UUID> = []
+  @State private var recurringCompletionCounts: [UUID: Int] = [:]
 
   init(
     snapshot: TimelineProjectListWindowSnapshot,
@@ -59,6 +62,9 @@ struct TimelineProjectListContent: View {
     _showsTaskNotes = State(initialValue: displayPreferences.showsTaskNotes)
     _expandedTaskID = State(initialValue: inlineEditorConfiguration?.initialExpandedTaskID)
     _projectNoteText = State(initialValue: snapshot.projectNoteText)
+    _projectOutlineDocument = State(
+      initialValue: Self.outlineDocument(from: snapshot.projectNoteText)
+    )
     _lastCommittedProjectNoteText = State(
       initialValue: TimelineProjectNoteAutoSavePolicy.normalized(snapshot.projectNoteText)
     )
@@ -99,6 +105,7 @@ struct TimelineProjectListContent: View {
     .onChange(of: snapshot) { _, nextSnapshot in
       sessionStore.applySnapshot(nextSnapshot)
       applyProjectNoteTextFromSnapshot(nextSnapshot.projectNoteText)
+      pruneOutlineTaskBindings(knownTaskIDs: Set(nextSnapshot.tasks.map(\.id)))
       guard let expandedTaskID else { return }
       if !nextSnapshot.tasks.contains(where: { $0.id == expandedTaskID }) {
         self.expandedTaskID = nil
@@ -112,9 +119,15 @@ struct TimelineProjectListContent: View {
       expandedTaskAuxiliarySections = expandedTaskAuxiliarySections.filter { taskID, _ in
         nextSnapshot.tasks.contains(where: { $0.id == taskID })
       }
+      recurringCompletionCounts = recurringCompletionCounts.filter { taskID, _ in
+        nextSnapshot.tasks.contains(where: { $0.id == taskID })
+      }
     }
     .onChange(of: projectNoteText) { _, _ in
       scheduleProjectNoteAutoSave()
+    }
+    .onChange(of: projectOutlineDocument) { _, nextDocument in
+      applyProjectOutlineDocumentChange(nextDocument)
     }
     .onDisappear {
       flushProjectNoteOnDisappear()
@@ -210,28 +223,27 @@ struct TimelineProjectListContent: View {
   }
 
   private var projectNoteSection: some View {
-    VStack(alignment: .leading, spacing: 0) {
-      ZStack(alignment: .topTrailing) {
-        LinkedTextEditor(
-          text: $projectNoteText,
-          measuredHeight: $projectNoteHeight,
-          font: projectNoteNSFont,
-          vaultRootURL: inlineEditorConfiguration?.vaultRootURL,
-          allowsNewlines: true,
-          lineHeightMultiple: 1.08,
-          markdownPresentationMode: .livePreview,
-          allowsMailMessageDrops: true
-        )
-        .frame(minHeight: projectNoteMinimumHeight)
-        .frame(height: max(projectNoteMinimumHeight, projectNoteHeight))
-        .timelineProjectNoteFieldBackground()
+    ZStack(alignment: .topTrailing) {
+      ProjectOutlinerView(
+        document: $projectOutlineDocument,
+        tasks: session.tasks,
+        projectColor: projectColor,
+        pendingTaskBlockIDs: pendingOutlineTaskBlockIDs,
+        recurringCompletionCounts: recurringCompletionCounts,
+        onCreateTaskBlock: createOutlineTaskBlock,
+        onRenameTask: renameOutlineTask,
+        onToggleTaskCompletion: toggleTaskCompletion,
+        onDeleteTaskBlock: deleteOutlineTaskBlock,
+        onOpenTask: openOutlineTask,
+        onOpenTaskSection: openOutlineTaskSection
+      )
+      .timelineProjectNoteFieldBackground()
 
-        if projectNoteErrorText != nil {
-          Image(systemName: "exclamationmark.circle")
-            .font(.system(size: 12, weight: .medium))
-            .foregroundStyle(.red)
-            .padding(8)
-        }
+      if projectNoteErrorText != nil {
+        Image(systemName: "exclamationmark.circle")
+          .font(.system(size: 12, weight: .medium))
+          .foregroundStyle(.red)
+          .padding(8)
       }
     }
     .padding(.horizontal, 18)
@@ -246,7 +258,7 @@ struct TimelineProjectListContent: View {
 
           Divider()
 
-          taskListSection
+          lowerTaskListSection
 
           Color.clear
             .frame(height: Self.taskListBottomScrollReserve)
@@ -260,6 +272,27 @@ struct TimelineProjectListContent: View {
         scrollFocusedDraftIntoView(anchor, with: proxy)
       }
     }
+  }
+
+  private var lowerTaskListSection: some View {
+    DisclosureGroup(isExpanded: $showsLowerTaskList) {
+      taskListSection
+    } label: {
+      HStack(spacing: 8) {
+        Image(systemName: "checklist")
+          .font(.system(size: 12, weight: .semibold))
+        Text("할일 목록")
+          .font(projectListCountFont)
+        Text("\(visibleTasks.count)")
+          .font(projectListCountFont)
+          .foregroundStyle(.secondary)
+        Spacer(minLength: 0)
+      }
+      .contentShape(Rectangle())
+      .padding(.horizontal, 18)
+      .padding(.vertical, 10)
+    }
+    .disclosureGroupStyle(.automatic)
   }
 
   @ViewBuilder
@@ -952,17 +985,23 @@ struct TimelineProjectListContent: View {
 
   private func toggleTaskCompletion(_ taskID: UUID, isCompleted: Bool) {
     guard !completingTaskIDs.contains(taskID) else { return }
+    let wasRecurring = session.tasks.first(where: { $0.id == taskID })?.metadataIndicators.isRecurring == true
     completingTaskIDs.insert(taskID)
     Task { @MainActor in
       let didToggle = await actions.onToggleTaskCompletion(taskID, isCompleted)
       completingTaskIDs.remove(taskID)
       guard didToggle else { return }
-      setTaskCompletion(
-        taskID,
-        isCompleted: TimelineTaskCompletionTogglePolicy.nextIsCompleted(
-          currentIsCompleted: isCompleted
-        )
+      let nextIsCompleted = TimelineTaskCompletionTogglePolicy.nextIsCompleted(
+        currentIsCompleted: isCompleted
       )
+      setTaskCompletion(taskID, isCompleted: nextIsCompleted)
+      if wasRecurring && nextIsCompleted {
+        Task { @MainActor in
+          try? await Task.sleep(nanoseconds: 2_000_000_000)
+          recurringCompletionCounts[taskID, default: 0] += 1
+          setTaskCompletion(taskID, isCompleted: false)
+        }
+      }
       enqueueTaskOrderSave(registerUndo: false)
     }
   }
@@ -975,6 +1014,7 @@ struct TimelineProjectListContent: View {
       let didDelete = await actions.onDeleteTask(snapshot.projectID, taskID)
       deletingTaskIDs.remove(taskID)
       guard didDelete else { return }
+      removeOutlineTaskBlock(for: taskID)
       removeTaskFromWindow(taskID)
       enqueueTaskOrderSave(registerUndo: false)
     }
@@ -1030,8 +1070,16 @@ struct TimelineProjectListContent: View {
     projectNoteAutoSaveTask?.cancel()
     projectNoteAutoSaveTask = nil
     projectNoteText = normalizedNextText
+    projectOutlineDocument = Self.outlineDocument(from: normalizedNextText)
     lastCommittedProjectNoteText = normalizedNextText
     projectNoteErrorText = nil
+  }
+
+  private func applyProjectOutlineDocumentChange(_ document: ProjectOutlineDocument) {
+    let markdown = Self.markdown(from: document)
+    if projectNoteText != markdown {
+      projectNoteText = markdown
+    }
   }
 
   @MainActor
@@ -1079,6 +1127,7 @@ struct TimelineProjectListContent: View {
       }
       return true
     }
+    validateOutlineTaskBindingsBeforeSave()
     let noteText = TimelineProjectNoteAutoSavePolicy.normalized(projectNoteText)
     guard TimelineProjectNoteAutoSavePolicy.isDirty(
       currentText: noteText,
@@ -1114,6 +1163,14 @@ struct TimelineProjectListContent: View {
     return true
   }
 
+  private func validateOutlineTaskBindingsBeforeSave() {
+    pruneOutlineTaskBindings(knownTaskIDs: Set(session.tasks.map(\.id)))
+    let markdown = Self.markdown(from: projectOutlineDocument)
+    if projectNoteText != markdown {
+      projectNoteText = markdown
+    }
+  }
+
   private func startEditing(_ task: TimelineProjectListWindowSnapshot.Task) {
     guard !isRenamingTask, !isCreatingTask else { return }
     updateSession { session in
@@ -1124,6 +1181,124 @@ struct TimelineProjectListContent: View {
         session.focusedEditingTaskID = task.id
       }
     }
+  }
+
+  private func createOutlineTaskBlock(_ blockID: UUID) {
+    guard !isCreatingTask,
+      let blockIndex = projectOutlineDocument.blocks.firstIndex(where: { $0.id == blockID })
+    else {
+      return
+    }
+    let title = projectOutlineDocument.blocks[blockIndex].text
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !title.isEmpty else { return }
+    pendingCreateCount += 1
+
+    Task { @MainActor in
+      pendingOutlineTaskBlockIDs.insert(blockID)
+      defer {
+        pendingCreateCount = max(0, pendingCreateCount - 1)
+        pendingOutlineTaskBlockIDs.remove(blockID)
+      }
+      guard let createdTask = await actions.onCreateTask(snapshot.projectID, title) else {
+        projectNoteErrorText = "할일 생성 실패"
+        return
+      }
+      updateSession { session in
+        session.insertCreatedTask(createdTask, after: nil)
+      }
+      guard let currentIndex = projectOutlineDocument.blocks.firstIndex(where: { $0.id == blockID })
+      else {
+        return
+      }
+      projectOutlineDocument.blocks[currentIndex].text = ""
+      projectOutlineDocument.blocks[currentIndex].taskBinding = ProjectOutlineTaskBinding(
+        taskID: createdTask.id,
+        taskExternalIdentifier: nil
+      )
+      projectNoteErrorText = nil
+      enqueueTaskOrderSave(registerUndo: false)
+    }
+  }
+
+  private func renameOutlineTask(_ taskID: UUID, title: String) {
+    guard !isRenamingTask else { return }
+    isRenamingTask = true
+    Task { @MainActor in
+      defer { isRenamingTask = false }
+      guard let updatedTask = await actions.onRenameTask(snapshot.projectID, taskID, title) else {
+        projectNoteErrorText = "이름 변경 실패"
+        return
+      }
+      replaceTask(updatedTask)
+      projectNoteErrorText = nil
+    }
+  }
+
+  private func deleteOutlineTaskBlock(_ blockID: UUID) {
+    guard let block = projectOutlineDocument.blocks.first(where: { $0.id == blockID }),
+      let taskID = block.taskBinding?.taskID
+    else {
+      _ = ProjectOutlineMutationEngine.deleteBlockReattachingChildren(
+        id: blockID,
+        in: &projectOutlineDocument
+      )
+      return
+    }
+    guard !deletingTaskIDs.contains(taskID) else { return }
+    deletingTaskIDs.insert(taskID)
+    Task { @MainActor in
+      let didDelete = await actions.onDeleteTask(snapshot.projectID, taskID)
+      deletingTaskIDs.remove(taskID)
+      guard didDelete else { return }
+      _ = ProjectOutlineMutationEngine.deleteBlockReattachingChildren(
+        id: blockID,
+        in: &projectOutlineDocument
+      )
+      removeTaskFromWindow(taskID)
+      enqueueTaskOrderSave(registerUndo: false)
+    }
+  }
+
+  private func removeOutlineTaskBlock(for taskID: UUID) {
+    guard let block = projectOutlineDocument.blocks.first(where: {
+      $0.taskBinding?.taskID == taskID
+    }) else {
+      return
+    }
+    _ = ProjectOutlineMutationEngine.deleteBlockReattachingChildren(
+      id: block.id,
+      in: &projectOutlineDocument
+    )
+  }
+
+  private func pruneOutlineTaskBindings(knownTaskIDs: Set<UUID>) {
+    let orphanBlockIDs = projectOutlineDocument.blocks.compactMap { block -> UUID? in
+      guard let taskID = block.taskBinding?.taskID else { return nil }
+      return knownTaskIDs.contains(taskID) ? nil : block.id
+    }
+    guard !orphanBlockIDs.isEmpty else { return }
+    for blockID in orphanBlockIDs {
+      _ = ProjectOutlineMutationEngine.deleteBlockReattachingChildren(
+        id: blockID,
+        in: &projectOutlineDocument
+      )
+    }
+  }
+
+  private func openOutlineTask(_ taskID: UUID) {
+    guard let task = session.tasks.first(where: { $0.id == taskID }) else { return }
+    openTask(task, focus: .none)
+  }
+
+  private func openOutlineTaskSection(_ taskID: UUID, section: TaskEditAuxiliarySection) {
+    guard let task = session.tasks.first(where: { $0.id == taskID }) else { return }
+    if let configuration = inlineEditorConfiguration {
+      var sections = expandedTaskAuxiliarySectionsValue(for: task, configuration: configuration)
+      sections.insert(section)
+      expandedTaskAuxiliarySections[taskID] = sections
+    }
+    openTask(task, focus: .none)
   }
 
   private func submitInlineTitle(
@@ -1445,6 +1620,26 @@ struct TimelineProjectListContent: View {
 
   private var projectColor: Color {
     ColorHexCodec.color(from: snapshot.colorHex) ?? .accentColor
+  }
+
+  private static func outlineDocument(from markdown: String) -> ProjectOutlineDocument {
+    let document = ProjectOutlineMarkdownCodec.document(from: markdown)
+    if document.blocks.isEmpty {
+      return ProjectOutlineDocument(blocks: [ProjectOutlineBlock(depth: 0, text: "")])
+    }
+    return document
+  }
+
+  private static func markdown(from document: ProjectOutlineDocument) -> String {
+    if document.blocks.count == 1,
+      let block = document.blocks.first,
+      block.text.isEmpty,
+      block.taskBinding == nil,
+      !block.childrenCollapsed
+    {
+      return ""
+    }
+    return ProjectOutlineMarkdownCodec.markdown(from: document)
   }
 
   private var projectListTitleFont: Font {

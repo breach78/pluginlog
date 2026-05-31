@@ -137,6 +137,30 @@ final class AppOwnedRetainedTaskCommandServiceTests: XCTestCase {
   }
 
   @MainActor
+  func testDeleteTaskDryRunDoesNotRemoveLocalRow() async throws {
+    let fixture = try await makeEnabledStoreFixture(taskExternalIdentifier: "dry-run-reminder")
+    let provider = FakeAppOwnedReminderProjectProvider()
+    provider.isDryRunDeletionEnabled = true
+    let taskID = ReminderProjectionIdentity.taskID(for: "dry-run-reminder")
+
+    do {
+      _ = try await RetainedTaskCommandFacade.deleteTask(
+        vaultRootURL: fixture.vaultRoot,
+        projectID: fixture.projectID,
+        taskID: taskID,
+        reminderProjectProvider: provider
+      )
+      XCTFail("Expected dry-run deletion to stop local row deletion")
+    } catch RetainedTaskCommandError.retainedProjectionFailed(let message) {
+      XCTAssertEqual(message, "dry-run deletion enabled")
+    }
+
+    let snapshot = try await fixture.store.loadRetainedWorkspaceSnapshot(projectIDs: [fixture.projectID])
+    XCTAssertEqual(provider.removedTaskExternalIdentifiers, ["dry-run-reminder"])
+    XCTAssertEqual(snapshot.projects.first?.tasks.first?.identity.reminderExternalIdentifier, "dry-run-reminder")
+  }
+
+  @MainActor
   func testAppOwnedScheduleEditRemovesUnwritableStaleReminderAfterRefresh() async throws {
     let start = try XCTUnwrap(
       Self.calendar.date(from: DateComponents(year: 2026, month: 5, day: 2, hour: 9, minute: 30))
@@ -1383,6 +1407,7 @@ private final class FakeAppOwnedReminderProjectProvider: ReminderProjectProvider
   var recurrenceUpdate: (String?, String?)?
   var removedTaskExternalIdentifiers: [String?] = []
   var removeTaskReminderResult = true
+  var isDryRunDeletionEnabled = false
   var remoteTaskSnapshot: ReminderTaskRemoteSnapshot?
   var fetchedImportSnapshotBatch: ReminderImportSnapshotBatch?
   var presentationUpdates: [String: Int] = [:]

@@ -256,6 +256,11 @@ struct TimelineProjectListSession {
     }
   }
 
+  mutating func insertCreatedTask(_ task: Task, after anchorID: UUID?) {
+    insertTask(task, after: anchorID)
+    replaceAnchorID(task.id, with: task.id)
+  }
+
   var openTaskIDs: [UUID] {
     TimelineProjectListTaskOrderPolicy.openTaskIDs(from: tasks)
   }

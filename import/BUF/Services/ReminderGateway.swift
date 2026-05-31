@@ -39,6 +39,8 @@ protocol ReminderGateway: AnyObject {
 }
 
 extension ReminderGateway {
+  var isDryRunDeletionEnabled: Bool { false }
+
   func fetchReminders(in calendars: [EKCalendar], scope: ReminderFetchScope) async throws
     -> [EKReminder]
   {
@@ -71,8 +73,18 @@ private struct ReminderSnapshot: @unchecked Sendable {
 
 @MainActor
 final class EventKitReminderGateway: ReminderGateway {
+#if DEBUG
+  static let dryRunDeletion = true
+#else
+  static let dryRunDeletion = false
+#endif
+
   let eventStore = EKEventStore()
   private let userDefaults: UserDefaults
+
+  var isDryRunDeletionEnabled: Bool {
+    Self.dryRunDeletion
+  }
 
   init(userDefaults: UserDefaults = .standard) {
     self.userDefaults = userDefaults
@@ -330,6 +342,15 @@ final class EventKitReminderGateway: ReminderGateway {
   }
 
   func remove(_ reminder: EKReminder) throws {
+    guard !Self.dryRunDeletion else {
+      let title = reminder.title ?? ""
+      print("[DRY RUN] Would delete: \(title)")
+      AppLogger.sync.info(
+        "[DRY RUN] Would delete reminder. calendar=\(reminder.calendar.calendarIdentifier, privacy: .public) id=\(reminder.calendarItemIdentifier, privacy: .public) title=\(title, privacy: .public)"
+      )
+      return
+    }
+
     do {
       try performAppAuthoredMutation {
         try eventStore.remove(reminder, commit: true)
@@ -685,6 +706,7 @@ struct ReminderProjectCleanupResult: Sendable {
 @MainActor
 protocol ReminderProjectProvider: AnyObject {
   var reminderGateway: ReminderGateway? { get }
+  var isDryRunDeletionEnabled: Bool { get }
   var defaultCalendarIdentifierForNewReminders: String? { get }
 
   func requestAccess() async throws -> Bool
@@ -755,6 +777,7 @@ extension ReminderProjectProvider {
 
 extension ReminderProjectProvider {
   var reminderGateway: ReminderGateway? { nil }
+  var isDryRunDeletionEnabled: Bool { reminderGateway?.isDryRunDeletionEnabled ?? false }
 
   func fetchProjectListsInCurrentOrder() async throws -> [ReminderProjectListSnapshot] {
     guard let gateway = reminderGateway else { return [] }
