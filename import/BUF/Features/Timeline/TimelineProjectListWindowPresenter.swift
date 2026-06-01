@@ -52,7 +52,8 @@ final class TimelineProjectListWindowPresenter {
     onRenameTask: @escaping (UUID, UUID, String) async -> TimelineProjectListWindowSnapshot.Task?,
     onDeleteTask: @escaping (UUID, UUID) async -> Bool,
     onRenameProject: @escaping (UUID, String) -> Void,
-    onSaveProjectNote: @escaping (UUID, String) async -> String? = { _, _ in nil }
+    onSaveProjectNote: @escaping (UUID, String) async -> String? = { _, _ in nil },
+    inlineEditorConfiguration: TimelineProjectListInlineEditorConfiguration? = nil
   ) {
     present(
       snapshot: snapshot,
@@ -65,18 +66,21 @@ final class TimelineProjectListWindowPresenter {
         onDeleteTask: onDeleteTask,
         onRenameProject: onRenameProject,
         onSaveProjectNote: onSaveProjectNote
-      )
+      ),
+      inlineEditorConfiguration: inlineEditorConfiguration
     )
   }
 
   func present(
     snapshot: TimelineProjectListWindowSnapshot,
-    actions: TimelineProjectListActions
+    actions: TimelineProjectListActions,
+    inlineEditorConfiguration: TimelineProjectListInlineEditorConfiguration? = nil
   ) {
     let content = TimelineProjectListContent(
       snapshot: snapshot,
       presentation: .window,
-      actions: actions
+      actions: actions,
+      inlineEditorConfiguration: inlineEditorConfiguration
     )
 
     pruneClosedWindows()

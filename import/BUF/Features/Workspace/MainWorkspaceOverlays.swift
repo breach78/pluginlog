@@ -203,50 +203,12 @@ extension MainWorkspaceView {
   }
 
   func workspaceTaskEditPanel(_ target: WorkspaceTaskEditPanelTarget) -> some View {
-    let inlineEditorConfiguration = TimelineProjectListInlineEditorConfiguration(
+    let inlineEditorConfiguration = workspaceProjectListInlineEditorConfiguration(
+      projectID: target.projectID,
       initialExpandedTaskID: target.taskID,
       initialFocus: target.initialFocus,
       initialFocusRequestID: target.focusRequestID,
-      workspaceTreeRevision: appState.workspaceTreeRevision,
-      vaultRootURL: appState.obsidianVaultRootURL,
-      initialFields: { task in
-        task.id == target.taskID
-          ? target.initialFields
-          : timelineTaskEditFallbackFields(title: task.title, date: nil)
-      },
-      loadFields: { taskID, fallback in
-        await loadTimelineTaskEditFields(
-          projectID: target.projectID,
-          taskID: taskID,
-          fallback: fallback
-        )
-      },
-      saveFields: { taskID, fields in
-        try await saveTimelineTaskEditFields(
-          fields,
-          projectID: target.projectID,
-          taskID: taskID
-        )
-      },
-      onSyncEditingChanged: { taskID, isEditing in
-        let syncSessionID = TaskEditSyncSessionID.workspacePanel(
-          projectID: target.projectID,
-          taskID: taskID
-        )
-        if isEditing {
-          appState.beginEditorSession(
-            id: syncSessionID,
-            syncRelevant: true,
-            contentID: taskID,
-            projectID: target.projectID
-          )
-        } else {
-          appState.endEditorSession(id: syncSessionID)
-        }
-      },
-      onSyncEditingActivity: {
-        appState.notifyEditorActivity()
-      }
+      initialFields: target.initialFields
     )
 
     return WorkspaceTaskEditProjectListHost(

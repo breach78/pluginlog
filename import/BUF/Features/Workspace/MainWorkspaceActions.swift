@@ -251,6 +251,60 @@ extension MainWorkspaceView {
     openWorkspaceProjectListWindow(projectID: target.projectID)
   }
 
+  func workspaceProjectListInlineEditorConfiguration(
+    projectID: UUID,
+    initialExpandedTaskID: UUID? = nil,
+    initialFocus: TimelineTaskEditInitialFocus = .none,
+    initialFocusRequestID: Int = 0,
+    initialFields: RetainedTaskEditFields? = nil
+  ) -> TimelineProjectListInlineEditorConfiguration {
+    TimelineProjectListInlineEditorConfiguration(
+      initialExpandedTaskID: initialExpandedTaskID,
+      initialFocus: initialFocus,
+      initialFocusRequestID: initialFocusRequestID,
+      workspaceTreeRevision: appState.workspaceTreeRevision,
+      vaultRootURL: appState.obsidianVaultRootURL,
+      initialFields: { task in
+        task.id == initialExpandedTaskID
+          ? initialFields ?? timelineTaskEditFallbackFields(title: task.title, date: nil)
+          : timelineTaskEditFallbackFields(title: task.title, date: nil)
+      },
+      loadFields: { taskID, fallback in
+        await loadTimelineTaskEditFields(
+          projectID: projectID,
+          taskID: taskID,
+          fallback: fallback
+        )
+      },
+      saveFields: { taskID, fields in
+        try await saveTimelineTaskEditFields(
+          fields,
+          projectID: projectID,
+          taskID: taskID
+        )
+      },
+      onSyncEditingChanged: { taskID, isEditing in
+        let syncSessionID = TaskEditSyncSessionID.workspacePanel(
+          projectID: projectID,
+          taskID: taskID
+        )
+        if isEditing {
+          appState.beginEditorSession(
+            id: syncSessionID,
+            syncRelevant: true,
+            contentID: taskID,
+            projectID: projectID
+          )
+        } else {
+          appState.endEditorSession(id: syncSessionID)
+        }
+      },
+      onSyncEditingActivity: {
+        appState.notifyEditorActivity()
+      }
+    )
+  }
+
   func workspaceProjectListActions(projectID: UUID) -> TimelineProjectListActions {
     TimelineProjectListActions(
       onToggleTaskCompletion: { taskID, isCompleted in
@@ -323,7 +377,10 @@ extension MainWorkspaceView {
 
       TimelineProjectListWindowPresenter.shared.present(
         snapshot: snapshot,
-        actions: workspaceProjectListActions(projectID: projectID)
+        actions: workspaceProjectListActions(projectID: projectID),
+        inlineEditorConfiguration: workspaceProjectListInlineEditorConfiguration(
+          projectID: projectID
+        )
       )
     }
   }

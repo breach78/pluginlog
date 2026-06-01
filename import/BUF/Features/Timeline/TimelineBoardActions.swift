@@ -190,7 +190,47 @@ extension TimelineBoardView {
           noteText,
           projectID: projectID
         )
-      }
+      },
+      inlineEditorConfiguration: timelineProjectListInlineEditorConfiguration(
+        projectID: projectID
+      )
+    )
+  }
+
+  func timelineProjectListInlineEditorConfiguration(
+    projectID: UUID
+  ) -> TimelineProjectListInlineEditorConfiguration {
+    TimelineProjectListInlineEditorConfiguration(
+      initialExpandedTaskID: nil,
+      initialFocus: .none,
+      initialFocusRequestID: 0,
+      workspaceTreeRevision: appState.workspaceTreeRevision,
+      vaultRootURL: appState.obsidianVaultRootURL,
+      initialFields: { task in
+        RetainedTaskEditFields(
+          title: task.title,
+          noteText: "",
+          day: nil,
+          timeMinutes: nil,
+          durationMinutes: nil
+        )
+      },
+      loadFields: { taskID, fallback in
+        await loadTimelineTaskEditFields(
+          projectID: projectID,
+          taskID: taskID,
+          fallback: fallback
+        )
+      },
+      saveFields: { taskID, fields in
+        try await saveTimelineTaskEditFields(
+          fields,
+          projectID: projectID,
+          taskID: taskID
+        )
+      },
+      onSyncEditingChanged: { _, _ in },
+      onSyncEditingActivity: {}
     )
   }
 

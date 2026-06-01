@@ -231,6 +231,7 @@ struct TimelineProjectListContent: View {
         projectColor: projectColor,
         pendingTaskBlockIDs: pendingOutlineTaskBlockIDs,
         recurringCompletionCounts: recurringCompletionCounts,
+        taskEditConfiguration: inlineEditorConfiguration,
         onCreateTaskBlock: createOutlineTaskBlock,
         onRenameTask: renameOutlineTask,
         onToggleTaskCompletion: toggleTaskCompletion,

@@ -9,6 +9,7 @@ struct ProjectOutlinerView: View {
   let projectColor: Color
   let pendingTaskBlockIDs: Set<UUID>
   let recurringCompletionCounts: [UUID: Int]
+  let taskEditConfiguration: TimelineProjectListInlineEditorConfiguration?
   let onCreateTaskBlock: (UUID) -> Void
   let onRenameTask: (UUID, String) -> Void
   let onToggleTaskCompletion: (UUID, Bool) -> Void
@@ -63,6 +64,7 @@ struct ProjectOutlinerView: View {
                 recurringCompletionCount: block.taskBinding?.taskID.flatMap {
                   recurringCompletionCounts[$0]
                 } ?? 0,
+                taskEditConfiguration: taskEditConfiguration,
                 hasChildren: hasChildren(blockID: blockID),
                 dropPlacement: dropIndicator?.targetID == blockID ? dropIndicator?.placement : nil,
                 measuredHeight: Binding(
@@ -601,6 +603,7 @@ private struct ProjectOutlineRowView: View {
   let hidesMarker: Bool
   let isCreatingTask: Bool
   let recurringCompletionCount: Int
+  let taskEditConfiguration: TimelineProjectListInlineEditorConfiguration?
   let hasChildren: Bool
   let dropPlacement: ProjectOutlineDropPlacement?
   @Binding var measuredHeight: CGFloat
@@ -842,15 +845,33 @@ private struct ProjectOutlineRowView: View {
       ),
       arrowEdge: .bottom
     ) {
-      ProjectOutlineScheduleMenu(
-        task: task,
-        recurringCompletionCount: recurringCompletionCount,
-        projectColor: projectColor,
-        onSelect: { section in
-          scheduleMenuTaskID = nil
-          onOpenTaskSection(task.id, section)
-        }
-      )
+      if let taskEditConfiguration {
+        ProjectOutlineSchedulePopover(
+          task: task,
+          initialFields: taskEditConfiguration.initialFields(task),
+          loadFields: {
+            await taskEditConfiguration.loadFields(
+              task.id,
+              taskEditConfiguration.initialFields(task)
+            )
+          },
+          saveFields: { fields in
+            try await taskEditConfiguration.saveFields(task.id, fields)
+          },
+          recurringCompletionCount: recurringCompletionCount,
+          projectColor: projectColor
+        )
+      } else {
+        ProjectOutlineScheduleFallbackMenu(
+          task: task,
+          recurringCompletionCount: recurringCompletionCount,
+          projectColor: projectColor,
+          onSelect: { section in
+            scheduleMenuTaskID = nil
+            onOpenTaskSection(task.id, section)
+          }
+        )
+      }
     }
   }
 
@@ -892,7 +913,7 @@ private struct ProjectOutlineDropIndicatorLine: View {
   }
 }
 
-private struct ProjectOutlineScheduleMenu: View {
+private struct ProjectOutlineScheduleFallbackMenu: View {
   let task: TimelineProjectListWindowSnapshot.Task
   let recurringCompletionCount: Int
   let projectColor: Color
