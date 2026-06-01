@@ -82,4 +82,30 @@ struct ProjectOutlineAttachmentInlineCodecTests {
     #expect(markdown == "[A\\]B.pdf](raw/assets/A%5DB.pdf)")
     #expect(parsed.first?.displayName == "A]B.pdf")
   }
+
+  @Test func containsAttachmentRecognizesOnlyAttachmentLinks() {
+    #expect(ProjectOutlineAttachmentInlineCodec.containsAttachment(in: "[A](raw/assets/A.pdf)"))
+    #expect(!ProjectOutlineAttachmentInlineCodec.containsAttachment(in: "[A](https://example.com)"))
+  }
+
+  @Test func attachmentChipUsesRegularFontScale() throws {
+    let font = NSFont.systemFont(ofSize: 15)
+    let attachment = ProjectOutlineInlineAttachment(
+      displayName: "Report.pdf",
+      relativePath: "raw/assets/Report.pdf",
+      fileURL: URL(fileURLWithPath: "/tmp/vault/raw/assets/Report.pdf")
+    )
+
+    let attributed = ProjectOutlineAttachmentInlineCodec.attributedChip(
+      for: attachment,
+      font: font
+    )
+    let textAttachment = try #require(
+      attributed.attribute(.attachment, at: 0, effectiveRange: nil)
+        as? ProjectOutlineAttachmentTextAttachment
+    )
+
+    #expect(textAttachment.image?.size.height ?? 0 <= 21)
+    #expect(textAttachment.bounds.height <= 21)
+  }
 }

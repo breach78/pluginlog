@@ -36,6 +36,14 @@ final class ProjectOutlineAttachmentTextAttachment: NSTextAttachment {
     self.outlineAttachment = attachment
     super.init(data: nil, ofType: nil)
     image = ProjectOutlineAttachmentChipRenderer.image(for: attachment, font: font)
+    if let image {
+      bounds = NSRect(
+        x: 0,
+        y: font.descender + 1,
+        width: image.size.width,
+        height: image.size.height
+      )
+    }
   }
 
   required init?(coder: NSCoder) {
@@ -122,6 +130,10 @@ enum ProjectOutlineAttachmentInlineCodec {
 
   static func attachments(in markdown: String, vaultRootURL: URL?) -> [ProjectOutlineInlineAttachment] {
     attachmentMatches(in: markdown).map { $0.attachment(vaultRootURL: vaultRootURL) }
+  }
+
+  static func containsAttachment(in markdown: String) -> Bool {
+    !attachmentMatches(in: markdown).isEmpty
   }
 
   static func markdownByReplacingAttachment(
@@ -225,31 +237,27 @@ enum ProjectOutlineAttachmentInlineCodec {
 private enum ProjectOutlineAttachmentChipRenderer {
   static func image(for attachment: ProjectOutlineInlineAttachment, font: NSFont) -> NSImage {
     let label = attachment.displayName as NSString
-    let labelFont = NSFontManager.shared.convert(font, toHaveTrait: .boldFontMask)
     let attributes: [NSAttributedString.Key: Any] = [
-      .font: labelFont,
+      .font: font,
       .foregroundColor: NSColor.labelColor,
     ]
     let textSize = label.size(withAttributes: attributes)
-    let height: CGFloat = max(22, ceil(textSize.height) + 6)
-    let width: CGFloat = min(260, ceil(textSize.width) + 34)
+    let height: CGFloat = max(18, ceil(textSize.height) + 1)
+    let width: CGFloat = min(240, ceil(textSize.width) + 24)
     let image = NSImage(size: NSSize(width: width, height: height))
     image.lockFocus()
     defer { image.unlockFocus() }
 
     let rect = NSRect(x: 0, y: 0, width: width, height: height)
-    NSColor.controlBackgroundColor.withAlphaComponent(0.86).setFill()
-    NSBezierPath(roundedRect: rect, xRadius: 5, yRadius: 5).fill()
-
-    NSColor.secondaryLabelColor.setStroke()
-    NSBezierPath(roundedRect: rect.insetBy(dx: 0.5, dy: 0.5), xRadius: 5, yRadius: 5).stroke()
+    NSColor(calibratedWhite: 0.8, alpha: 1).setFill()
+    NSBezierPath(roundedRect: rect, xRadius: 4, yRadius: 4).fill()
 
     if let icon = NSImage(systemSymbolName: "paperclip", accessibilityDescription: nil) {
-      icon.size = NSSize(width: 13, height: 13)
-      icon.draw(in: NSRect(x: 8, y: (height - 13) / 2, width: 13, height: 13))
+      icon.size = NSSize(width: 11, height: 11)
+      icon.draw(in: NSRect(x: 6, y: (height - 11) / 2, width: 11, height: 11))
     }
     label.draw(
-      in: NSRect(x: 26, y: (height - textSize.height) / 2 - 1, width: width - 32, height: textSize.height + 2),
+      in: NSRect(x: 20, y: (height - textSize.height) / 2 - 1, width: width - 24, height: textSize.height + 2),
       withAttributes: attributes
     )
     return image

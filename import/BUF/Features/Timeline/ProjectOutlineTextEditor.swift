@@ -44,6 +44,12 @@ enum ProjectOutlineAttachmentTextAction {
   case delete(ProjectOutlineInlineAttachment)
 }
 
+struct ProjectOutlineAttachmentHit: Equatable {
+  let attachment: ProjectOutlineInlineAttachment
+  let range: NSRange
+  let bounds: NSRect
+}
+
 struct ProjectOutlineTextEditor: NSViewRepresentable {
   @Binding var text: String
   @Binding var measuredHeight: CGFloat
@@ -74,6 +80,7 @@ struct ProjectOutlineTextEditor: NSViewRepresentable {
     scrollView.borderType = .noBorder
 
     let textView = CommandTextView()
+    textView.vaultRootURL = vaultRootURL
     textView.delegate = context.coordinator
     textView.commandHandler = { [weak coordinator = context.coordinator] command in
       coordinator?.handle(command)
@@ -125,6 +132,7 @@ struct ProjectOutlineTextEditor: NSViewRepresentable {
   func updateNSView(_ scrollView: NSScrollView, context: Context) {
     context.coordinator.parent = self
     guard let textView = scrollView.documentView as? CommandTextView else { return }
+    textView.vaultRootURL = vaultRootURL
     textView.commandHandler = { [weak coordinator = context.coordinator] command in
       coordinator?.handle(command)
     }
@@ -182,20 +190,89 @@ struct ProjectOutlineTextEditor: NSViewRepresentable {
     var isBlockSelectionActiveProvider: (() -> Bool)?
     var fileDropHandler: (([URL], Int) -> Void)?
     var attachmentActionHandler: ((ProjectOutlineAttachmentTextAction) -> Void)?
+    var vaultRootURL: URL?
     private var lastSelectAllDate: Date?
     private var contextAttachment: ProjectOutlineInlineAttachment?
+    private var pendingAttachmentMouseDown: (hit: ProjectOutlineAttachmentHit, event: NSEvent)?
 
     override func mouseDown(with event: NSEvent) {
       focusHandler?()
-      if let attachment = attachment(at: event) {
-        attachmentActionHandler?(.open(attachment))
+      if let hit = attachmentHit(at: event) {
+        setSelectedRange(hit.range)
+        pendingAttachmentMouseDown = (hit, event)
         return
       }
+      pendingAttachmentMouseDown = nil
       super.mouseDown(with: event)
     }
 
+    override func mouseDragged(with event: NSEvent) {
+      guard let pendingAttachmentMouseDown else {
+        super.mouseDragged(with: event)
+        return
+      }
+      let distance = hypot(
+        event.locationInWindow.x - pendingAttachmentMouseDown.event.locationInWindow.x,
+        event.locationInWindow.y - pendingAttachmentMouseDown.event.locationInWindow.y
+      )
+      guard distance >= 3 else { return }
+      let hit = pendingAttachmentMouseDown.hit
+      self.pendingAttachmentMouseDown = nil
+      let draggingItem = NSDraggingItem(
+        pasteboardWriter: ProjectOutlineAttachmentDragProvider.pasteboardWriter(
+          for: hit.attachment
+        )
+      )
+      let image = (textStorage?.attribute(.attachment, at: hit.range.location, effectiveRange: nil)
+        as? ProjectOutlineAttachmentTextAttachment)?.image
+      draggingItem.setDraggingFrame(hit.bounds, contents: image)
+      beginDraggingSession(with: [draggingItem], event: pendingAttachmentMouseDown.event, source: self)
+    }
+
+    override func mouseUp(with event: NSEvent) {
+      if let pendingAttachmentMouseDown {
+        self.pendingAttachmentMouseDown = nil
+        attachmentActionHandler?(.open(pendingAttachmentMouseDown.hit.attachment))
+        return
+      }
+      super.mouseUp(with: event)
+    }
+
+    override func copy(_ sender: Any?) {
+      guard writeSelectedMarkdownToPasteboard() else {
+        super.copy(sender)
+        return
+      }
+    }
+
+    override func cut(_ sender: Any?) {
+      guard writeSelectedMarkdownToPasteboard() else {
+        super.cut(sender)
+        return
+      }
+      replaceCharacters(in: selectedRange(), with: "")
+      didChangeText()
+    }
+
+    override func paste(_ sender: Any?) {
+      guard let string = NSPasteboard.general.string(forType: .string),
+        ProjectOutlineAttachmentInlineCodec.containsAttachment(in: string)
+      else {
+        super.paste(sender)
+        return
+      }
+      let attributed = ProjectOutlineAttachmentInlineCodec.attributedString(
+        from: string,
+        vaultRootURL: vaultRootURL,
+        font: font ?? NSFont.systemFont(ofSize: NSFont.systemFontSize)
+      )
+      textStorage?.replaceCharacters(in: selectedRange(), with: attributed)
+      setSelectedRange(NSRange(location: selectedRange().location + attributed.length, length: 0))
+      didChangeText()
+    }
+
     override func menu(for event: NSEvent) -> NSMenu? {
-      guard let attachment = attachment(at: event) else {
+      guard let attachment = attachmentHit(at: event)?.attachment else {
         return super.menu(for: event)
       }
       contextAttachment = attachment
@@ -242,6 +319,13 @@ struct ProjectOutlineTextEditor: NSViewRepresentable {
         return super.draggingEntered(sender)
       }
       return .copy
+    }
+
+    override func draggingSession(
+      _ session: NSDraggingSession,
+      sourceOperationMaskFor context: NSDraggingContext
+    ) -> NSDragOperation {
+      .copy
     }
 
     override func prepareForDragOperation(_ sender: NSDraggingInfo) -> Bool {
@@ -391,26 +475,64 @@ struct ProjectOutlineTextEditor: NSViewRepresentable {
       commandHandler?(.enter(offset: selectedRange().location))
     }
 
-    private func attachment(at event: NSEvent) -> ProjectOutlineInlineAttachment? {
+    func attachmentHit(at event: NSEvent) -> ProjectOutlineAttachmentHit? {
       let point = convert(event.locationInWindow, from: nil)
-      let index = characterIndexForInsertion(at: point)
-      return attachment(near: index)
+      return attachmentHit(at: point)
     }
 
-    private func attachment(near index: Int) -> ProjectOutlineInlineAttachment? {
-      guard textStorage?.length ?? 0 > 0 else { return nil }
-      let length = textStorage?.length ?? 0
-      let candidates = [index, index - 1].filter { $0 >= 0 && $0 < length }
+    func attachmentHit(at point: NSPoint) -> ProjectOutlineAttachmentHit? {
+      guard let layoutManager, let textContainer, textStorage?.length ?? 0 > 0 else {
+        return nil
+      }
+      let containerPoint = NSPoint(
+        x: point.x - textContainerOrigin.x,
+        y: point.y - textContainerOrigin.y
+      )
+      let glyphIndex = layoutManager.glyphIndex(
+        for: containerPoint,
+        in: textContainer,
+        fractionOfDistanceThroughGlyph: nil
+      )
+      guard glyphIndex < layoutManager.numberOfGlyphs else { return nil }
+      let characterIndex = layoutManager.characterIndexForGlyph(at: glyphIndex)
+      let candidates = [characterIndex, characterIndex - 1]
+        .filter { $0 >= 0 && $0 < (textStorage?.length ?? 0) }
       for candidate in candidates {
+        var effectiveRange = NSRange(location: 0, length: 0)
         if let attachment = textStorage?.attribute(
           ProjectOutlineAttachmentInlineCodec.attachmentAttribute,
           at: candidate,
-          effectiveRange: nil
+          effectiveRange: &effectiveRange
         ) as? ProjectOutlineInlineAttachment {
-          return attachment
+          let glyphRange = layoutManager.glyphRange(
+            forCharacterRange: effectiveRange,
+            actualCharacterRange: nil
+          )
+          var bounds = layoutManager.boundingRect(forGlyphRange: glyphRange, in: textContainer)
+          bounds.origin.x += textContainerOrigin.x
+          bounds.origin.y += textContainerOrigin.y
+          guard bounds.insetBy(dx: -1, dy: -1).contains(point) else { continue }
+          return ProjectOutlineAttachmentHit(
+            attachment: attachment,
+            range: effectiveRange,
+            bounds: bounds
+          )
         }
       }
       return nil
+    }
+
+    private func writeSelectedMarkdownToPasteboard() -> Bool {
+      let selectedRange = selectedRange()
+      guard selectedRange.length > 0,
+        let selected = textStorage?.attributedSubstring(from: selectedRange)
+      else {
+        return false
+      }
+      let markdown = ProjectOutlineAttachmentInlineCodec.markdown(from: selected)
+      NSPasteboard.general.clearContents()
+      NSPasteboard.general.setString(markdown, forType: .string)
+      return true
     }
 
     private func fileURLs(from pasteboard: NSPasteboard) -> [URL] {
