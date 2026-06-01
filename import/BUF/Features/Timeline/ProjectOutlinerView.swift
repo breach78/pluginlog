@@ -15,6 +15,7 @@ struct ProjectOutlinerView: View {
   let onRenameTask: (UUID, String) -> Void
   let onToggleTaskCompletion: (UUID, Bool) -> Void
   let onDeleteTaskBlock: (UUID) -> Void
+  let onDeleteTask: (UUID) -> Void
   let onOpenTask: (UUID) -> Void
   let onOpenTaskSection: (UUID, TaskEditAuxiliarySection) -> Void
   let onImportAttachmentFiles: (UUID, [URL], Int) -> Void
@@ -318,7 +319,7 @@ struct ProjectOutlinerView: View {
   }
 
   private func handleBackspaceAtStart(blockID: UUID) {
-    if deleteTaskBlockAtStart(blockID: blockID) {
+    if mergeTaskBackspaceAtStart(blockID: blockID) {
       return
     }
     let visibleIDsBeforeMutation = visibleBlockIDs
@@ -341,19 +342,51 @@ struct ProjectOutlinerView: View {
     }
   }
 
-  private func deleteTaskBlockAtStart(blockID: UUID) -> Bool {
-    guard let block = document.blocks.first(where: { $0.id == blockID }),
-      block.isTaskBlock
-    else {
+  private func mergeTaskBackspaceAtStart(blockID: UUID) -> Bool {
+    guard let currentIndex = document.blocks.firstIndex(where: { $0.id == blockID }) else {
       return false
     }
     let visibleIDsBeforeMutation = visibleBlockIDs
-    let previousID = visibleIDsBeforeMutation
-      .firstIndex(of: blockID)
-      .flatMap { index in index > 0 ? visibleIDsBeforeMutation[index - 1] : nil }
-    deleteBlock(blockID: blockID)
-    requestFocus(previousID, placement: .end)
+    guard let visiblePosition = visibleIDsBeforeMutation.firstIndex(of: blockID),
+      visiblePosition > 0,
+      let previousIndex = document.blocks.firstIndex(where: {
+        $0.id == visibleIDsBeforeMutation[visiblePosition - 1]
+      })
+    else {
+      return false
+    }
+
+    let currentBlock = document.blocks[currentIndex]
+    let previousBlock = document.blocks[previousIndex]
+    guard currentBlock.isTaskBlock || previousBlock.isTaskBlock else { return false }
+    guard !ProjectOutlineMutationEngine.hasChildren(at: currentIndex, in: document) else {
+      return true
+    }
+
+    let previousText = displayText(for: previousBlock)
+    let currentText = displayText(for: currentBlock)
+    let focusOffset = previousText.utf16.count
+    let mergedText = previousText + currentText
+
+    if let previousTaskID = previousBlock.taskBinding?.taskID {
+      document.blocks[previousIndex].text = mergedText
+      onRenameTask(previousTaskID, mergedText)
+    } else if previousBlock.isTaskBlock {
+      document.blocks[previousIndex].text = mergedText
+    } else {
+      document.blocks[previousIndex].text = mergedText
+    }
+
+    if let currentTaskID = currentBlock.taskBinding?.taskID {
+      onDeleteTask(currentTaskID)
+    }
+    document.blocks.remove(at: currentIndex)
+    requestFocus(previousBlock.id, placement: .offset(focusOffset))
     return true
+  }
+
+  private func displayText(for block: ProjectOutlineBlock) -> String {
+    block.taskBinding?.taskID.flatMap { tasksByID[$0]?.title } ?? block.text
   }
 
   private func deleteBlock(blockID: UUID) {
@@ -907,6 +940,9 @@ private struct ProjectOutlineRowView: View {
       guard !isFocused, let task, let title else { return }
       taskTitleDraftTaskID = task.id
       taskTitleDraft = title
+      if block.text == title {
+        block.text = ""
+      }
     }
   }
 
@@ -981,9 +1017,16 @@ private struct ProjectOutlineRowView: View {
   private func taskTitleBinding(for task: TimelineProjectListWindowSnapshot.Task) -> Binding<String> {
     Binding(
       get: {
-        taskTitleDraftTaskID == task.id ? taskTitleDraft : task.title
+        if !block.text.isEmpty {
+          return block.text
+        }
+        if taskTitleDraftTaskID == task.id {
+          return taskTitleDraft
+        }
+        return task.title
       },
       set: {
+        block.text = ""
         taskTitleDraftTaskID = task.id
         taskTitleDraft = $0
       }

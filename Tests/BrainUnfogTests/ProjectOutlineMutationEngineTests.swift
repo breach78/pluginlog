@@ -265,7 +265,7 @@ struct ProjectOutlineMutationEngineTests {
     #expect(result?.focusedBlockID == document.blocks[1].id)
   }
 
-  @Test func backspaceAtStartDeletesPreviousEmptyBlockOnly() {
+  @Test func backspaceAtStartMergesIntoPreviousEmptyBlock() {
     let ids = Self.ids()
     var document = ProjectOutlineDocument(blocks: [
       ProjectOutlineBlock(id: ids[0], depth: 0, text: ""),
@@ -278,11 +278,11 @@ struct ProjectOutlineMutationEngineTests {
     )
 
     #expect(didHandle)
-    #expect(document.blocks.map(\.id) == [ids[1]])
+    #expect(document.blocks.map(\.id) == [ids[0]])
     #expect(document.blocks.map(\.text) == ["current"])
   }
 
-  @Test func backspaceAtStartDoesNotDeletePreviousEmptyBlockWithChildren() {
+  @Test func backspaceAtStartMergesIntoPreviousVisibleBlockWhenParentHasChildren() {
     let ids = Self.ids()
     var document = ProjectOutlineDocument(blocks: [
       ProjectOutlineBlock(id: ids[0], depth: 0, text: ""),
@@ -291,13 +291,14 @@ struct ProjectOutlineMutationEngineTests {
     ])
 
     let didHandle = ProjectOutlineMutationEngine.backspaceAtStart(
-      blockID: ids[1],
+      blockID: ids[2],
       in: &document
     )
 
-    #expect(!didHandle)
-    #expect(document.blocks.map(\.id) == [ids[0], ids[1], ids[2]])
-    #expect(document.blocks.map(\.depth) == [0, 1, 0])
+    #expect(didHandle)
+    #expect(document.blocks.map(\.id) == [ids[0], ids[1]])
+    #expect(document.blocks.map(\.text) == ["", "childcurrent"])
+    #expect(document.blocks.map(\.depth) == [0, 1])
   }
 
   @Test func backspaceAtStartMergesNormalBlocks() {
@@ -331,6 +332,22 @@ struct ProjectOutlineMutationEngineTests {
     #expect(document.blocks.map(\.text) == ["앞뒤"])
     #expect(result.focusedBlockID == ids[0])
     #expect(result.focusOffset == "앞".utf16.count)
+  }
+
+  @Test func backspaceAtStartDeletesCurrentEmptyBlockAndFocusesPreviousEnd() throws {
+    let ids = Self.ids()
+    var document = ProjectOutlineDocument(blocks: [
+      ProjectOutlineBlock(id: ids[0], depth: 0, text: "previous"),
+      ProjectOutlineBlock(id: ids[1], depth: 0, text: ""),
+    ])
+
+    let result = try #require(
+      ProjectOutlineMutationEngine.backspaceAtStartResult(blockID: ids[1], in: &document)
+    )
+
+    #expect(document.blocks.map(\.id) == [ids[0]])
+    #expect(result.focusedBlockID == ids[0])
+    #expect(result.focusOffset == "previous".utf16.count)
   }
 
   @Test func backspaceAtStartDoesNotMergeBlockWithChildren() {

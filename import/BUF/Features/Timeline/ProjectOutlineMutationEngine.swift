@@ -306,12 +306,6 @@ enum ProjectOutlineMutationEngine {
     }
 
     let previousIndex = visible[visiblePosition - 1]
-    if document.blocks[previousIndex].text.isEmpty, !document.blocks[previousIndex].isTaskBlock {
-      guard !hasChildren(at: previousIndex, in: document) else { return nil }
-      document.blocks.remove(at: previousIndex)
-      return ProjectOutlineBackspaceResult(focusedBlockID: blockID, focusOffset: nil)
-    }
-
     guard !document.blocks[previousIndex].isTaskBlock,
       !document.blocks[index].isTaskBlock
     else {
@@ -320,6 +314,14 @@ enum ProjectOutlineMutationEngine {
         : nil
     }
     guard !hasChildren(at: index, in: document) else { return nil }
+
+    if document.blocks[index].text.isEmpty {
+      document.blocks.remove(at: index)
+      return ProjectOutlineBackspaceResult(
+        focusedBlockID: document.blocks[previousIndex].id,
+        focusOffset: document.blocks[previousIndex].text.utf16.count
+      )
+    }
 
     let mergeOffset = document.blocks[previousIndex].text.utf16.count
     let currentText = document.blocks[index].text

@@ -264,6 +264,7 @@ struct TimelineProjectListContent: View {
         onRenameTask: renameOutlineTask,
         onToggleTaskCompletion: toggleTaskCompletion,
         onDeleteTaskBlock: deleteOutlineTaskBlock,
+        onDeleteTask: deleteOutlineTask,
         onOpenTask: openOutlineTask,
         onOpenTaskSection: openOutlineTaskSection,
         onImportAttachmentFiles: importOutlineAttachmentFiles,
@@ -1232,9 +1233,10 @@ struct TimelineProjectListContent: View {
   private func appendMissingOutlineTaskBlocksIfNeeded(
     tasks: [TimelineProjectListWindowSnapshot.Task]
   ) {
+    let appendableTasks = tasks.filter { !deletingTaskIDs.contains($0.id) }
     let didAppend = ProjectOutlineTaskListMigrationPolicy.appendMissingTaskBlocks(
       to: &projectOutlineDocument,
-      taskIDs: tasks.map(\.id)
+      taskIDs: appendableTasks.map(\.id)
     )
     guard didAppend else { return }
     applyProjectOutlineDocumentChange(projectOutlineDocument)
@@ -1442,6 +1444,18 @@ struct TimelineProjectListContent: View {
         id: blockID,
         in: &projectOutlineDocument
       )
+      removeTaskFromWindow(taskID)
+      enqueueTaskOrderSave(registerUndo: false)
+    }
+  }
+
+  private func deleteOutlineTask(_ taskID: UUID) {
+    guard !deletingTaskIDs.contains(taskID) else { return }
+    deletingTaskIDs.insert(taskID)
+    Task { @MainActor in
+      let didDelete = await actions.onDeleteTask(snapshot.projectID, taskID)
+      deletingTaskIDs.remove(taskID)
+      guard didDelete else { return }
       removeTaskFromWindow(taskID)
       enqueueTaskOrderSave(registerUndo: false)
     }
