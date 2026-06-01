@@ -368,17 +368,6 @@ enum ProjectOutlineMutationEngine {
       return nil
     }
 
-    if document.blocks[index].text.isEmpty {
-      if document.blocks[index].depth > 0 {
-        if !outdentBlock(id: blockID, in: &document),
-          let currentIndex = document.blocks.firstIndex(where: { $0.id == blockID })
-        {
-          document.blocks[currentIndex].depth = max(0, document.blocks[currentIndex].depth - 1)
-        }
-      }
-      return ProjectOutlineInsertionResult(insertedBlockID: nil, focusedBlockID: blockID)
-    }
-
     let clampedOffset = min(max(0, textOffset), document.blocks[index].text.count)
     if clampedOffset == 0 {
       let inserted = ProjectOutlineBlock(depth: document.blocks[index].depth, text: "")

@@ -70,7 +70,7 @@ struct ProjectOutlinerView: View {
                   recurringCompletionCounts[$0]
                 } ?? 0,
                 taskEditConfiguration: taskEditConfiguration,
-                hasChildren: hasChildren(blockID: blockID),
+                hasChildren: hasVisibleChildren(blockID: blockID),
                 isCollapsed: block.childrenCollapsed,
                 dropPlacement: dropIndicator?.targetID == blockID ? dropIndicator?.placement : nil,
                 measuredHeight: Binding(
@@ -185,9 +185,12 @@ struct ProjectOutlinerView: View {
     )
   }
 
-  private func hasChildren(blockID: UUID) -> Bool {
-    guard let index = document.blocks.firstIndex(where: { $0.id == blockID }) else { return false }
-    return ProjectOutlineMutationEngine.hasChildren(at: index, in: document)
+  private func hasVisibleChildren(blockID: UUID) -> Bool {
+    ProjectOutlineVisibilityPolicy.hasVisibleChildren(
+      blockID: blockID,
+      in: document,
+      hiddenTaskIDs: hiddenTaskIDs
+    )
   }
 
   private func displayDepth(for block: ProjectOutlineBlock) -> Int {
@@ -439,7 +442,7 @@ struct ProjectOutlinerView: View {
 
   private func toggleFold(blockID: UUID) {
     guard let index = document.blocks.firstIndex(where: { $0.id == blockID }),
-      ProjectOutlineMutationEngine.hasChildren(at: index, in: document)
+      hasVisibleChildren(blockID: blockID)
     else {
       return
     }
@@ -496,7 +499,7 @@ struct ProjectOutlinerView: View {
   }
 
   private func zoomIn(blockID: UUID) {
-    guard ProjectOutlineMutationEngine.hasChildren(blockID: blockID, in: document) else {
+    guard hasVisibleChildren(blockID: blockID) else {
       requestFocus(blockID)
       return
     }

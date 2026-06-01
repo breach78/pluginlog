@@ -34,4 +34,28 @@ enum ProjectOutlineVisibilityPolicy {
     }
     return visible
   }
+
+  static func hasVisibleChildren(
+    blockID: UUID,
+    in document: ProjectOutlineDocument,
+    hiddenTaskIDs: Set<UUID>
+  ) -> Bool {
+    guard let index = document.blocks.firstIndex(where: { $0.id == blockID }) else {
+      return false
+    }
+    let parentDepth = document.blocks[index].depth
+    var cursor = index + 1
+    while document.blocks.indices.contains(cursor), document.blocks[cursor].depth > parentDepth {
+      let child = document.blocks[cursor]
+      if child.depth == parentDepth + 1 {
+        if let taskID = child.taskBinding?.taskID, hiddenTaskIDs.contains(taskID) {
+          cursor = ProjectOutlineMutationEngine.subtreeRange(at: cursor, in: document).upperBound
+          continue
+        }
+        return true
+      }
+      cursor += 1
+    }
+    return false
+  }
 }

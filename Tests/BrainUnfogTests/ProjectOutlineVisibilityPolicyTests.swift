@@ -59,4 +59,38 @@ struct ProjectOutlineVisibilityPolicyTests {
 
     #expect(visible == [0, 2])
   }
+
+  @Test func visibleChildrenIgnoreHiddenCompletedTaskSubtrees() throws {
+    let parentID = try #require(UUID(uuidString: "00000000-0000-0000-0000-000000000001"))
+    let completedTaskID = try #require(UUID(uuidString: "11111111-1111-1111-1111-111111111111"))
+    let visibleTaskID = try #require(UUID(uuidString: "22222222-2222-2222-2222-222222222222"))
+    let document = ProjectOutlineDocument(blocks: [
+      ProjectOutlineBlock(id: parentID, depth: 0, text: "부모"),
+      ProjectOutlineBlock(
+        depth: 1,
+        text: "",
+        taskBinding: ProjectOutlineTaskBinding(
+          taskID: completedTaskID,
+          taskExternalIdentifier: nil
+        )
+      ),
+      ProjectOutlineBlock(depth: 2, text: "완료 항목의 숨겨진 자식"),
+      ProjectOutlineBlock(
+        depth: 0,
+        text: "",
+        taskBinding: ProjectOutlineTaskBinding(
+          taskID: visibleTaskID,
+          taskExternalIdentifier: nil
+        )
+      ),
+    ])
+
+    let hasChildren = ProjectOutlineVisibilityPolicy.hasVisibleChildren(
+      blockID: parentID,
+      in: document,
+      hiddenTaskIDs: [completedTaskID]
+    )
+
+    #expect(!hasChildren)
+  }
 }

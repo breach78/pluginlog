@@ -248,7 +248,7 @@ struct ProjectOutlineMutationEngineTests {
     #expect(result?.focusedBlockID == ids[0])
   }
 
-  @Test func enterOnEmptyIndentedBlockOutdentsInsteadOfDeleting() {
+  @Test func enterOnEmptyIndentedBlockCreatesNextEmptySibling() {
     let ids = Self.ids()
     var document = ProjectOutlineDocument(blocks: [
       ProjectOutlineBlock(id: ids[0], depth: 1, text: ""),
@@ -260,9 +260,9 @@ struct ProjectOutlineMutationEngineTests {
       in: &document
     )
 
-    #expect(document.blocks.map(\.id) == [ids[0]])
-    #expect(document.blocks.map(\.depth) == [0])
-    #expect(result?.focusedBlockID == ids[0])
+    #expect(document.blocks.map(\.text) == ["", ""])
+    #expect(document.blocks.map(\.depth) == [1, 1])
+    #expect(result?.focusedBlockID == document.blocks[1].id)
   }
 
   @Test func backspaceAtStartDeletesPreviousEmptyBlockOnly() {
