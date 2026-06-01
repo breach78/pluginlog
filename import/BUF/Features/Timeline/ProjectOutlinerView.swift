@@ -7,6 +7,7 @@ struct ProjectOutlinerView: View {
   let tasks: [TimelineProjectListWindowSnapshot.Task]
   let projectTitle: String
   let projectColor: Color
+  let showsCompletedTasks: Bool
   let pendingTaskBlockIDs: Set<UUID>
   let recurringCompletionCounts: [UUID: Int]
   let taskEditConfiguration: TimelineProjectListInlineEditorConfiguration?
@@ -66,6 +67,7 @@ struct ProjectOutlinerView: View {
                 } ?? 0,
                 taskEditConfiguration: taskEditConfiguration,
                 hasChildren: hasChildren(blockID: blockID),
+                isCollapsed: block.childrenCollapsed,
                 dropPlacement: dropIndicator?.targetID == blockID ? dropIndicator?.placement : nil,
                 measuredHeight: Binding(
                   get: { rowHeights[blockID] ?? 24 },
@@ -83,6 +85,9 @@ struct ProjectOutlinerView: View {
                 },
                 onZoomIn: {
                   zoomIn(blockID: blockID)
+                },
+                onToggleFold: {
+                  toggleFold(blockID: blockID)
                 },
                 onRenameTask: onRenameTask,
                 onToggleTaskCompletion: onToggleTaskCompletion,
@@ -127,11 +132,20 @@ struct ProjectOutlinerView: View {
   }
 
   private var visibleBlockIDs: [UUID] {
-    ProjectOutlineMutationEngine.visibleIndices(
+    visibleIndicesForDisplay().map { document.blocks[$0].id }
+  }
+
+  private func visibleIndicesForDisplay() -> [Int] {
+    ProjectOutlineVisibilityPolicy.visibleIndices(
       in: document,
-      focusRootID: zoomRootBlockID
+      focusRootID: zoomRootBlockID,
+      hiddenTaskIDs: hiddenTaskIDs
     )
-    .map { document.blocks[$0].id }
+  }
+
+  private var hiddenTaskIDs: Set<UUID> {
+    guard !showsCompletedTasks else { return [] }
+    return Set(tasks.filter(\.isCompleted).map(\.id))
   }
 
   private var selectedBlockIDs: Set<UUID> {
@@ -605,12 +619,14 @@ private struct ProjectOutlineRowView: View {
   let recurringCompletionCount: Int
   let taskEditConfiguration: TimelineProjectListInlineEditorConfiguration?
   let hasChildren: Bool
+  let isCollapsed: Bool
   let dropPlacement: ProjectOutlineDropPlacement?
   @Binding var measuredHeight: CGFloat
   let onCommand: (ProjectOutlineTextCommand) -> Void
   let onFocus: () -> Void
   let onDeleteBlock: () -> Void
   let onZoomIn: () -> Void
+  let onToggleFold: () -> Void
   let onRenameTask: (UUID, String) -> Void
   let onToggleTaskCompletion: (UUID, Bool) -> Void
   let onOpenTask: (UUID) -> Void
@@ -620,6 +636,7 @@ private struct ProjectOutlineRowView: View {
   @State private var taskTitleDraft = ""
   @State private var taskTitleDraftTaskID: UUID?
   @State private var scheduleMenuTaskID: UUID?
+  @State private var isHoveringMarker = false
 
   var body: some View {
     HStack(alignment: .top, spacing: 8) {
@@ -629,13 +646,16 @@ private struct ProjectOutlineRowView: View {
             .fill(Color.secondary.opacity(0.12))
             .frame(width: 1)
             .frame(maxHeight: .infinity)
-            .padding(.horizontal, projectOutlinerIndentGuideHorizontalPadding)
+            .padding(.leading, projectOutlinerIndentGuideLeadingPadding)
+            .padding(.trailing, projectOutlinerIndentGuideTrailingPadding)
         }
       }
-      .frame(height: max(24, measuredHeight))
+      .frame(height: max(30, measuredHeight + 6))
+      .offset(y: -3)
 
       if !hidesMarker {
         marker
+          .offset(y: 2)
       }
 
       if block.isTaskBlock {
@@ -691,39 +711,16 @@ private struct ProjectOutlineRowView: View {
         onDeleteBlock()
       }
     }
+    .onHover { isHoveringMarker = $0 }
   }
 
   private var marker: some View {
-    Group {
-      if block.isTaskBlock {
-        Button {
-          if let task {
-            onToggleTaskCompletion(task.id, task.isCompleted)
-          }
-        } label: {
-          Image(systemName: task?.isCompleted == true ? "checkmark.square.fill" : "square")
-            .font(.system(size: 14))
-            .foregroundStyle(task?.isCompleted == true ? projectColor : Color.secondary)
-            .frame(width: 18, height: 22)
-        }
-        .buttonStyle(.plain)
-        .disabled(task == nil || isCreatingTask)
-      } else {
-        Button {
-          if hasChildren {
-            onZoomIn()
-          } else {
-            onFocus()
-          }
-        } label: {
-          Circle()
-            .fill(hasChildren && !block.childrenCollapsed ? Color.clear : Color.secondary.opacity(0.28))
-            .overlay(Circle().stroke(Color.secondary.opacity(0.28), lineWidth: 1))
-            .frame(width: hasChildren ? 7 : 6, height: hasChildren ? 7 : 6)
-            .frame(width: projectOutlinerBulletHitSize, height: projectOutlinerBulletHitSize)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
+    ZStack(alignment: .leading) {
+      markerControl
+      if hasChildren {
+        foldHandle
+          .opacity(isHoveringMarker ? 1 : 0)
+          .offset(x: -16)
       }
     }
     .onDrag {
@@ -733,6 +730,60 @@ private struct ProjectOutlineRowView: View {
       Color.clear
         .frame(width: 1, height: 1)
     }
+  }
+
+  @ViewBuilder
+  private var markerControl: some View {
+    if block.isTaskBlock {
+      Button {
+        if let task {
+          onToggleTaskCompletion(task.id, task.isCompleted)
+        }
+      } label: {
+        Image(systemName: task?.isCompleted == true ? "checkmark.square.fill" : "square")
+          .font(.system(size: 14))
+          .foregroundStyle(task?.isCompleted == true ? projectColor : Color.secondary)
+          .frame(width: 18, height: 22)
+      }
+      .buttonStyle(.plain)
+      .disabled(task == nil || isCreatingTask)
+    } else {
+      Button {
+        if hasChildren {
+          onZoomIn()
+        } else {
+          onFocus()
+        }
+      } label: {
+        ZStack {
+          if hasChildren && isCollapsed {
+            Circle()
+              .fill(Color.secondary.opacity(0.10))
+              .frame(width: 20, height: 20)
+          }
+          Circle()
+            .fill(Color.secondary.opacity(isCollapsed ? 0.34 : 0.28))
+            .frame(width: hasChildren ? 7 : 6, height: hasChildren ? 7 : 6)
+        }
+        .frame(width: projectOutlinerBulletHitSize, height: projectOutlinerBulletHitSize)
+        .contentShape(Rectangle())
+      }
+      .buttonStyle(.plain)
+    }
+  }
+
+  private var foldHandle: some View {
+    Button {
+      onToggleFold()
+    } label: {
+      Image(systemName: isCollapsed ? "chevron.right" : "chevron.down")
+        .font(.system(size: 9, weight: .bold))
+        .foregroundStyle(Color.secondary.opacity(0.72))
+        .frame(width: 14, height: 18)
+        .contentShape(Rectangle())
+    }
+    .buttonStyle(.plain)
+    .help(isCollapsed ? "하위 항목 펼치기" : "하위 항목 접기")
   }
 
   private func taskContent(_ task: TimelineProjectListWindowSnapshot.Task?) -> some View {
@@ -979,7 +1030,9 @@ private let projectOutlinerFont = Font.custom("SansMonoCJKFinalDraft", size: 15)
 private let projectOutlinerChipFont = Font.custom("SansMonoCJKFinalDraft-Bold", size: 12)
 private let projectOutlinerBulletHitSize: CGFloat = 21
 private let projectOutlinerIndentWidth: CGFloat = 40
-private let projectOutlinerIndentGuideHorizontalPadding = (projectOutlinerIndentWidth - 1) / 2
+private let projectOutlinerIndentGuideLeadingPadding = (projectOutlinerIndentWidth - 1) / 2 - 2
+private let projectOutlinerIndentGuideTrailingPadding =
+  projectOutlinerIndentWidth - 1 - projectOutlinerIndentGuideLeadingPadding
 private let projectOutlinerDropIndicatorBaseLeading: CGFloat = 40
 
 @MainActor

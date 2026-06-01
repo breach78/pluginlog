@@ -233,6 +233,7 @@ struct TimelineProjectListContent: View {
         tasks: session.tasks,
         projectTitle: snapshot.title,
         projectColor: projectColor,
+        showsCompletedTasks: showsCompletedTasks,
         pendingTaskBlockIDs: pendingOutlineTaskBlockIDs,
         recurringCompletionCounts: recurringCompletionCounts,
         taskEditConfiguration: inlineEditorConfiguration,
