@@ -315,15 +315,42 @@ struct ProjectOutlinerView: View {
   }
 
   private func handleBackspaceAtStart(blockID: UUID) {
+    if removeTaskMarkerAtStart(blockID: blockID) {
+      return
+    }
     let visibleIDsBeforeMutation = visibleBlockIDs
     let previousID = visibleIDsBeforeMutation
       .firstIndex(of: blockID)
       .flatMap { index in index > 0 ? visibleIDsBeforeMutation[index - 1] : nil }
-    let didHandle = ProjectOutlineMutationEngine.backspaceAtStart(blockID: blockID, in: &document)
-    guard didHandle else { return }
-    if !document.blocks.contains(where: { $0.id == blockID }) {
-      requestFocus(previousID, placement: .end)
+    guard let result = ProjectOutlineMutationEngine.backspaceAtStartResult(
+      blockID: blockID,
+      in: &document
+    ) else {
+      return
     }
+    if !document.blocks.contains(where: { $0.id == blockID }) {
+      let focusedID = result.focusedBlockID ?? previousID
+      let placement = result.focusOffset.map(ProjectOutlineFocusPlacement.offset) ?? .end
+      requestFocus(focusedID, placement: placement)
+    } else if let focusedID = result.focusedBlockID {
+      let placement = result.focusOffset.map(ProjectOutlineFocusPlacement.offset) ?? .preserve
+      requestFocus(focusedID, placement: placement)
+    }
+  }
+
+  private func removeTaskMarkerAtStart(blockID: UUID) -> Bool {
+    guard let index = document.blocks.firstIndex(where: { $0.id == blockID }),
+      document.blocks[index].isTaskBlock
+    else {
+      return false
+    }
+    let taskTitle = document.blocks[index].taskBinding?.taskID
+      .flatMap { tasksByID[$0] }
+      .map(\.title)
+    document.blocks[index].text = taskTitle ?? document.blocks[index].text
+    document.blocks[index].taskBinding = nil
+    requestFocus(blockID, placement: .start)
+    return true
   }
 
   private func deleteBlock(blockID: UUID) {
@@ -716,7 +743,7 @@ private struct ProjectOutlineRowView: View {
     }
     .contentShape(Rectangle())
     .contextMenu {
-      if hasChildren {
+      if hasChildren || block.isTaskBlock {
         Button("줌인") {
           onZoomIn()
         }

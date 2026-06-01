@@ -55,6 +55,11 @@ struct ProjectOutlineInsertionResult: Equatable {
   let focusedBlockID: UUID
 }
 
+struct ProjectOutlineBackspaceResult: Equatable {
+  let focusedBlockID: UUID?
+  let focusOffset: Int?
+}
+
 enum ProjectOutlineDropPlacement: Equatable {
   case before
   case after

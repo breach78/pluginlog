@@ -317,6 +317,22 @@ struct ProjectOutlineMutationEngineTests {
     #expect(document.blocks.map(\.text) == ["first second"])
   }
 
+  @Test func backspaceAtStartReturnsMergeCaretBeforeAppendedText() throws {
+    let ids = Self.ids()
+    var document = ProjectOutlineDocument(blocks: [
+      ProjectOutlineBlock(id: ids[0], depth: 0, text: "앞"),
+      ProjectOutlineBlock(id: ids[1], depth: 0, text: "뒤"),
+    ])
+
+    let result = try #require(
+      ProjectOutlineMutationEngine.backspaceAtStartResult(blockID: ids[1], in: &document)
+    )
+
+    #expect(document.blocks.map(\.text) == ["앞뒤"])
+    #expect(result.focusedBlockID == ids[0])
+    #expect(result.focusOffset == "앞".utf16.count)
+  }
+
   @Test func backspaceAtStartDoesNotMergeBlockWithChildren() {
     let ids = Self.ids()
     var document = ProjectOutlineDocument(blocks: [

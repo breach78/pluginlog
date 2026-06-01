@@ -287,32 +287,48 @@ enum ProjectOutlineMutationEngine {
     blockID: UUID,
     in document: inout ProjectOutlineDocument
   ) -> Bool {
+    backspaceAtStartResult(blockID: blockID, in: &document) != nil
+  }
+
+  @discardableResult
+  static func backspaceAtStartResult(
+    blockID: UUID,
+    in document: inout ProjectOutlineDocument
+  ) -> ProjectOutlineBackspaceResult? {
     guard let index = document.blocks.firstIndex(where: { $0.id == blockID }) else {
-      return false
+      return nil
     }
     let visible = visibleIndices(in: document)
     guard let visiblePosition = visible.firstIndex(of: index), visiblePosition > 0 else {
       return outdentBlock(id: blockID, in: &document)
+        ? ProjectOutlineBackspaceResult(focusedBlockID: blockID, focusOffset: nil)
+        : nil
     }
 
     let previousIndex = visible[visiblePosition - 1]
     if document.blocks[previousIndex].text.isEmpty, !document.blocks[previousIndex].isTaskBlock {
-      guard !hasChildren(at: previousIndex, in: document) else { return false }
+      guard !hasChildren(at: previousIndex, in: document) else { return nil }
       document.blocks.remove(at: previousIndex)
-      return true
+      return ProjectOutlineBackspaceResult(focusedBlockID: blockID, focusOffset: nil)
     }
 
     guard !document.blocks[previousIndex].isTaskBlock,
       !document.blocks[index].isTaskBlock
     else {
       return outdentBlock(id: blockID, in: &document)
+        ? ProjectOutlineBackspaceResult(focusedBlockID: blockID, focusOffset: nil)
+        : nil
     }
-    guard !hasChildren(at: index, in: document) else { return false }
+    guard !hasChildren(at: index, in: document) else { return nil }
 
+    let mergeOffset = document.blocks[previousIndex].text.utf16.count
     let currentText = document.blocks[index].text
     document.blocks[previousIndex].text += currentText
     document.blocks.remove(at: index)
-    return true
+    return ProjectOutlineBackspaceResult(
+      focusedBlockID: document.blocks[previousIndex].id,
+      focusOffset: mergeOffset
+    )
   }
 
   @discardableResult

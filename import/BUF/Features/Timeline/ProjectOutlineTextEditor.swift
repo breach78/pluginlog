@@ -36,6 +36,7 @@ enum ProjectOutlineFocusPlacement {
   case preserve
   case start
   case end
+  case offset(Int)
 }
 
 enum ProjectOutlineAttachmentTextAction {
@@ -727,6 +728,9 @@ struct ProjectOutlineTextEditor: NSViewRepresentable {
         textView.setSelectedRange(NSRange(location: 0, length: 0))
       case .end:
         textView.setSelectedRange(NSRange(location: textView.string.utf16.count, length: 0))
+      case .offset(let offset):
+        let clampedOffset = max(0, min(offset, textView.string.utf16.count))
+        textView.setSelectedRange(NSRange(location: clampedOffset, length: 0))
       }
     }
   }

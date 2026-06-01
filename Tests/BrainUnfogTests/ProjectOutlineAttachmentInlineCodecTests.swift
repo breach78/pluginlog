@@ -105,8 +105,8 @@ struct ProjectOutlineAttachmentInlineCodecTests {
         as? ProjectOutlineAttachmentTextAttachment
     )
 
-    #expect(textAttachment.image?.size.height ?? 0 <= 21)
-    #expect(textAttachment.bounds.height <= 21)
+    #expect(textAttachment.image?.size.height ?? 0 <= 18)
+    #expect(textAttachment.bounds.height <= 18)
   }
 
   @Test func attachmentDragProviderCreatesFilePromiseWriter() {

@@ -237,27 +237,31 @@ enum ProjectOutlineAttachmentInlineCodec {
 private enum ProjectOutlineAttachmentChipRenderer {
   static func image(for attachment: ProjectOutlineInlineAttachment, font: NSFont) -> NSImage {
     let label = attachment.displayName as NSString
+    let chipFont = NSFontManager.shared.convert(
+      font,
+      toSize: max(1, font.pointSize - 1)
+    )
     let attributes: [NSAttributedString.Key: Any] = [
-      .font: font,
+      .font: chipFont,
       .foregroundColor: NSColor.labelColor,
     ]
     let textSize = label.size(withAttributes: attributes)
-    let height: CGFloat = max(18, ceil(textSize.height) + 1)
-    let width: CGFloat = min(240, ceil(textSize.width) + 24)
+    let height: CGFloat = max(16, ceil(textSize.height))
+    let width: CGFloat = min(216, ceil(textSize.width) + 21)
     let image = NSImage(size: NSSize(width: width, height: height))
     image.lockFocus()
     defer { image.unlockFocus() }
 
     let rect = NSRect(x: 0, y: 0, width: width, height: height)
-    NSColor(calibratedWhite: 0.8, alpha: 1).setFill()
+    NSColor(calibratedWhite: 0.9, alpha: 1).setFill()
     NSBezierPath(roundedRect: rect, xRadius: 4, yRadius: 4).fill()
 
     if let icon = NSImage(systemSymbolName: "paperclip", accessibilityDescription: nil) {
-      icon.size = NSSize(width: 11, height: 11)
-      icon.draw(in: NSRect(x: 6, y: (height - 11) / 2, width: 11, height: 11))
+      icon.size = NSSize(width: 10, height: 10)
+      icon.draw(in: NSRect(x: 5, y: (height - 10) / 2, width: 10, height: 10))
     }
     label.draw(
-      in: NSRect(x: 20, y: (height - textSize.height) / 2 - 1, width: width - 24, height: textSize.height + 2),
+      in: NSRect(x: 18, y: (height - textSize.height) / 2, width: width - 21, height: textSize.height),
       withAttributes: attributes
     )
     return image
