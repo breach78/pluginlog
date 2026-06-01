@@ -74,7 +74,7 @@ private struct ReminderSnapshot: @unchecked Sendable {
 @MainActor
 final class EventKitReminderGateway: ReminderGateway {
 #if DEBUG
-  static let dryRunDeletion = true
+  static let dryRunDeletion = false
 #else
   static let dryRunDeletion = false
 #endif

@@ -106,6 +106,7 @@ struct TimelineProjectListContent: View {
       sessionStore.applySnapshot(nextSnapshot)
       applyProjectNoteTextFromSnapshot(nextSnapshot.projectNoteText)
       pruneOutlineTaskBindings(knownTaskIDs: Set(nextSnapshot.tasks.map(\.id)))
+      appendMissingOutlineTaskBlocksIfNeeded(tasks: nextSnapshot.tasks)
       guard let expandedTaskID else { return }
       if !nextSnapshot.tasks.contains(where: { $0.id == expandedTaskID }) {
         self.expandedTaskID = nil
@@ -128,6 +129,9 @@ struct TimelineProjectListContent: View {
     }
     .onChange(of: projectOutlineDocument) { _, nextDocument in
       applyProjectOutlineDocumentChange(nextDocument)
+    }
+    .onAppear {
+      appendMissingOutlineTaskBlocksIfNeeded(tasks: session.tasks)
     }
     .onDisappear {
       flushProjectNoteOnDisappear()
@@ -1176,6 +1180,18 @@ struct TimelineProjectListContent: View {
     if projectNoteText != markdown {
       projectNoteText = markdown
     }
+  }
+
+  private func appendMissingOutlineTaskBlocksIfNeeded(
+    tasks: [TimelineProjectListWindowSnapshot.Task]
+  ) {
+    let didAppend = ProjectOutlineTaskListMigrationPolicy.appendMissingTaskBlocks(
+      to: &projectOutlineDocument,
+      taskIDs: tasks.map(\.id)
+    )
+    guard didAppend else { return }
+    applyProjectOutlineDocumentChange(projectOutlineDocument)
+    scheduleProjectNoteAutoSave()
   }
 
   private func startEditing(_ task: TimelineProjectListWindowSnapshot.Task) {
