@@ -108,4 +108,16 @@ struct ProjectOutlineAttachmentInlineCodecTests {
     #expect(textAttachment.image?.size.height ?? 0 <= 21)
     #expect(textAttachment.bounds.height <= 21)
   }
+
+  @Test func attachmentDragProviderCreatesFilePromiseWriter() {
+    let attachment = ProjectOutlineInlineAttachment(
+      displayName: "Report.pdf",
+      relativePath: "raw/assets/Report.pdf",
+      fileURL: URL(fileURLWithPath: "/tmp/vault/raw/assets/Report.pdf")
+    )
+
+    let writer = ProjectOutlineAttachmentDragProvider.pasteboardWriter(for: attachment)
+
+    #expect(writer is NSFilePromiseProvider)
+  }
 }

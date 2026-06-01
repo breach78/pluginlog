@@ -10,10 +10,12 @@ enum ProjectOutlineAttachmentDragProvider {
       sourceURL: attachment.fileURL,
       exportFilename: exportFilename
     )
-    return RetainedFilePromiseProvider(
+    let provider = NSFilePromiseProvider(
       fileType: fileType(for: attachment.fileURL),
       delegate: delegate
     )
+    provider.userInfo = delegate
+    return provider
   }
 
   private static func fileType(for url: URL) -> String {
@@ -21,15 +23,6 @@ enum ProjectOutlineAttachmentDragProvider {
       return type.identifier
     }
     return UTType.data.identifier
-  }
-}
-
-private final class RetainedFilePromiseProvider: NSFilePromiseProvider {
-  private let retainedDelegate: FilePromiseDelegate
-
-  init(fileType: String, delegate: FilePromiseDelegate) {
-    retainedDelegate = delegate
-    super.init(fileType: fileType, delegate: delegate)
   }
 }
 
@@ -55,11 +48,21 @@ private final class FilePromiseDelegate: NSObject, NSFilePromiseProviderDelegate
     completionHandler: @escaping ((any Error)?) -> Void
   ) {
     do {
-      try copySourceFile(to: uniqueDestination(in: url))
+      try copySourceFile(to: destinationURL(for: url))
       completionHandler(nil)
     } catch {
       completionHandler(error)
     }
+  }
+
+  private func destinationURL(for promisedURL: URL) -> URL {
+    if promisedURL.hasDirectoryPath {
+      return uniqueDestination(in: promisedURL)
+    }
+    if FileManager.default.fileExists(atPath: promisedURL.path) {
+      return uniqueDestination(in: promisedURL.deletingLastPathComponent())
+    }
+    return promisedURL
   }
 
   private func uniqueDestination(in directoryURL: URL) -> URL {
