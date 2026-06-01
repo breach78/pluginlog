@@ -36,6 +36,8 @@ struct TimelineProjectListContent: View {
   @State private var draftScrollRequestID = 0
   @State private var pendingOutlineTaskBlockIDs: Set<UUID> = []
   @State private var recurringCompletionCounts: [UUID: Int] = [:]
+  @State private var pendingOutlineAttachmentRename: ProjectOutlineInlineAttachment?
+  @State private var isRenamingOutlineAttachment = false
 
   init(
     snapshot: TimelineProjectListWindowSnapshot,
@@ -63,7 +65,10 @@ struct TimelineProjectListContent: View {
     _expandedTaskID = State(initialValue: inlineEditorConfiguration?.initialExpandedTaskID)
     _projectNoteText = State(initialValue: snapshot.projectNoteText)
     _projectOutlineDocument = State(
-      initialValue: Self.outlineDocument(from: snapshot.projectNoteText)
+      initialValue: Self.outlineDocument(
+        from: snapshot.projectNoteText,
+        knownTaskIDs: Set(snapshot.tasks.map(\.id))
+      )
     )
     _lastCommittedProjectNoteText = State(
       initialValue: TimelineProjectNoteAutoSavePolicy.normalized(snapshot.projectNoteText)
@@ -127,14 +132,32 @@ struct TimelineProjectListContent: View {
     .onChange(of: projectNoteText) { _, _ in
       scheduleProjectNoteAutoSave()
     }
-    .onChange(of: projectOutlineDocument) { _, nextDocument in
-      applyProjectOutlineDocumentChange(nextDocument)
+    .onChange(of: projectOutlineDocument) { oldDocument, nextDocument in
+      applyProjectOutlineDocumentChange(oldDocument: oldDocument, nextDocument)
     }
     .onAppear {
+      syncProjectOutlineDocumentAfterInitialPrune()
       appendMissingOutlineTaskBlocksIfNeeded(tasks: session.tasks)
     }
     .onDisappear {
       flushProjectNoteOnDisappear()
+    }
+    .sheet(item: $pendingOutlineAttachmentRename) { attachment in
+      WorkspaceRenameAttachmentSheetContent(
+        originalNameStem: TaskEditAttachmentService.editableFilenameStem(
+          for: attachment.taskEditAttachment
+        ),
+        fixedExtension: attachment.fileURL.pathExtension.isEmpty
+          ? nil
+          : attachment.fileURL.pathExtension,
+        isRenaming: isRenamingOutlineAttachment,
+        onSubmit: { name in
+          renameOutlineAttachment(attachment, rawStem: name)
+        },
+        onCancel: {
+          pendingOutlineAttachmentRename = nil
+        }
+      )
     }
   }
 
@@ -222,7 +245,7 @@ struct TimelineProjectListContent: View {
         .help("닫기")
       }
     }
-    .padding(.horizontal, 18)
+    .padding(.horizontal, 9)
     .padding(.vertical, 14)
   }
 
@@ -242,7 +265,13 @@ struct TimelineProjectListContent: View {
         onToggleTaskCompletion: toggleTaskCompletion,
         onDeleteTaskBlock: deleteOutlineTaskBlock,
         onOpenTask: openOutlineTask,
-        onOpenTaskSection: openOutlineTaskSection
+        onOpenTaskSection: openOutlineTaskSection,
+        onImportAttachmentFiles: importOutlineAttachmentFiles,
+        onOpenAttachment: openOutlineAttachment,
+        onRenameAttachment: { attachment in
+          pendingOutlineAttachmentRename = attachment
+        },
+        onDeleteAttachment: deleteOutlineAttachment
       )
       .timelineProjectNoteFieldBackground()
 
@@ -262,8 +291,6 @@ struct TimelineProjectListContent: View {
       ScrollView {
         VStack(alignment: .leading, spacing: 0) {
           projectNoteSection
-
-          Divider()
 
           lowerTaskListSection
 
@@ -1081,14 +1108,33 @@ struct TimelineProjectListContent: View {
     }
     let currentMarkdown = Self.markdown(from: projectOutlineDocument)
     if currentMarkdown != normalizedNextText {
-      projectOutlineDocument = Self.outlineDocument(from: normalizedNextText)
+      projectOutlineDocument = Self.outlineDocument(
+        from: normalizedNextText,
+        knownTaskIDs: Set(session.tasks.map(\.id))
+      )
     }
     lastCommittedProjectNoteText = normalizedNextText
     projectNoteErrorText = nil
   }
 
-  private func applyProjectOutlineDocumentChange(_ document: ProjectOutlineDocument) {
+  private func applyProjectOutlineDocumentChange(
+    oldDocument: ProjectOutlineDocument? = nil,
+    _ document: ProjectOutlineDocument
+  ) {
     let markdown = Self.markdown(from: document)
+    if let oldDocument {
+      deleteRemovedOutlineAttachmentFiles(
+        oldMarkdown: Self.markdown(from: oldDocument),
+        newMarkdown: markdown
+      )
+    }
+    if projectNoteText != markdown {
+      projectNoteText = markdown
+    }
+  }
+
+  private func syncProjectOutlineDocumentAfterInitialPrune() {
+    let markdown = Self.markdown(from: projectOutlineDocument)
     if projectNoteText != markdown {
       projectNoteText = markdown
     }
@@ -1245,6 +1291,123 @@ struct TimelineProjectListContent: View {
     }
   }
 
+  private func importOutlineAttachmentFiles(
+    blockID: UUID,
+    sourceURLs: [URL],
+    insertionOffset: Int
+  ) {
+    guard !sourceURLs.isEmpty else { return }
+    guard let vaultRootURL = inlineEditorConfiguration?.vaultRootURL else {
+      projectNoteErrorText = "첨부파일 저장 위치 없음"
+      return
+    }
+
+    Task { @MainActor in
+      do {
+        let importedAttachments = try await Task.detached {
+          try TaskEditAttachmentService.copyFilesToRawAssets(
+            sourceURLs: sourceURLs,
+            vaultRootURL: vaultRootURL
+          )
+        }.value
+        let insertion = importedAttachments
+          .map { ProjectOutlineAttachmentInlineCodec.markdownLink(for: ProjectOutlineInlineAttachment($0)) }
+          .joined(separator: " ")
+        guard !insertion.isEmpty,
+          let blockIndex = projectOutlineDocument.blocks.firstIndex(where: { $0.id == blockID })
+        else {
+          return
+        }
+        let currentText = projectOutlineDocument.blocks[blockIndex].text
+        projectOutlineDocument.blocks[blockIndex].text = ProjectOutlineTextInsertionPolicy.insert(
+          insertion,
+          into: currentText,
+          utf16Offset: insertionOffset
+        )
+        projectNoteErrorText = nil
+      } catch {
+        projectNoteErrorText = error.localizedDescription
+      }
+    }
+  }
+
+  private func openOutlineAttachment(_ attachment: ProjectOutlineInlineAttachment) {
+    NSWorkspace.shared.open(attachment.fileURL)
+  }
+
+  private func renameOutlineAttachment(
+    _ attachment: ProjectOutlineInlineAttachment,
+    rawStem: String
+  ) {
+    guard !isRenamingOutlineAttachment,
+      let displayName = TaskEditAttachmentService.renamedDisplayName(
+        for: attachment.taskEditAttachment,
+        rawStem: rawStem
+      )
+    else {
+      pendingOutlineAttachmentRename = nil
+      return
+    }
+    isRenamingOutlineAttachment = true
+    defer {
+      isRenamingOutlineAttachment = false
+      pendingOutlineAttachmentRename = nil
+    }
+    let replacement = ProjectOutlineInlineAttachment(
+      displayName: displayName,
+      relativePath: attachment.relativePath,
+      fileURL: attachment.fileURL
+    )
+    replaceOutlineAttachment(relativePath: attachment.relativePath, with: replacement)
+  }
+
+  private func deleteOutlineAttachment(_ attachment: ProjectOutlineInlineAttachment) {
+    replaceOutlineAttachment(relativePath: attachment.relativePath, with: nil)
+  }
+
+  private func replaceOutlineAttachment(
+    relativePath: String,
+    with replacement: ProjectOutlineInlineAttachment?
+  ) {
+    for blockIndex in projectOutlineDocument.blocks.indices {
+      let currentText = projectOutlineDocument.blocks[blockIndex].text
+      let nextText = ProjectOutlineAttachmentInlineCodec.markdownByReplacingAllAttachments(
+        in: currentText,
+        matching: relativePath,
+        with: replacement
+      )
+      if nextText != currentText {
+        projectOutlineDocument.blocks[blockIndex].text = nextText
+      }
+    }
+  }
+
+  private func deleteRemovedOutlineAttachmentFiles(
+    oldMarkdown: String,
+    newMarkdown: String
+  ) {
+    guard let vaultRootURL = inlineEditorConfiguration?.vaultRootURL else { return }
+    let removedAttachments = ProjectOutlineAttachmentCleanupPolicy.removedAttachments(
+      oldMarkdown: oldMarkdown,
+      newMarkdown: newMarkdown,
+      vaultRootURL: vaultRootURL
+    )
+    guard !removedAttachments.isEmpty else { return }
+
+    Task { @MainActor in
+      for attachment in removedAttachments {
+        do {
+          try TaskEditAttachmentService.deleteAttachment(
+            attachment.taskEditAttachment,
+            vaultRootURL: vaultRootURL
+          )
+        } catch {
+          projectNoteErrorText = error.localizedDescription
+        }
+      }
+    }
+  }
+
   private func renameOutlineTask(_ taskID: UUID, title: String) {
     guard !isRenamingTask else { return }
     isRenamingTask = true
@@ -1297,17 +1460,10 @@ struct TimelineProjectListContent: View {
   }
 
   private func pruneOutlineTaskBindings(knownTaskIDs: Set<UUID>) {
-    let orphanBlockIDs = projectOutlineDocument.blocks.compactMap { block -> UUID? in
-      guard let taskID = block.taskBinding?.taskID else { return nil }
-      return knownTaskIDs.contains(taskID) ? nil : block.id
-    }
-    guard !orphanBlockIDs.isEmpty else { return }
-    for blockID in orphanBlockIDs {
-      _ = ProjectOutlineMutationEngine.deleteBlockReattachingChildren(
-        id: blockID,
-        in: &projectOutlineDocument
-      )
-    }
+    ProjectOutlineTaskBindingPrunePolicy.pruneUnknownTaskBlocks(
+      in: &projectOutlineDocument,
+      knownTaskIDs: knownTaskIDs
+    )
   }
 
   private func openOutlineTask(_ taskID: UUID) {
@@ -1646,8 +1802,15 @@ struct TimelineProjectListContent: View {
     ColorHexCodec.color(from: snapshot.colorHex) ?? .accentColor
   }
 
-  private static func outlineDocument(from markdown: String) -> ProjectOutlineDocument {
-    let document = ProjectOutlineMarkdownCodec.document(from: markdown)
+  private static func outlineDocument(
+    from markdown: String,
+    knownTaskIDs: Set<UUID> = []
+  ) -> ProjectOutlineDocument {
+    var document = ProjectOutlineMarkdownCodec.document(from: markdown)
+    ProjectOutlineTaskBindingPrunePolicy.pruneUnknownTaskBlocks(
+      in: &document,
+      knownTaskIDs: knownTaskIDs
+    )
     if document.blocks.isEmpty {
       return ProjectOutlineDocument(blocks: [ProjectOutlineBlock(depth: 0, text: "")])
     }

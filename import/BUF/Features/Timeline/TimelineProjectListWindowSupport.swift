@@ -140,12 +140,8 @@ struct TimelineProjectListOutsideClickMonitor: NSViewRepresentable {
 private struct TimelineProjectNoteFieldBackground: ViewModifier {
   func body(content: Content) -> some View {
     content
-      .padding(.horizontal, 12)
+      .padding(.horizontal, 6)
       .padding(.vertical, 8)
-      .background(
-        RoundedRectangle(cornerRadius: 4, style: .continuous)
-          .fill(TimelineProjectNoteFieldStyle.backgroundColor)
-      )
   }
 }
 
@@ -157,12 +153,6 @@ enum TimelineProjectNoteAutoSavePolicy {
   static func isDirty(currentText: String, committedText: String) -> Bool {
     normalized(currentText) != normalized(committedText)
   }
-}
-
-private enum TimelineProjectNoteFieldStyle {
-  static let backgroundColor = Color(
-    nsColor: NSColor(calibratedWhite: 0.975, alpha: 1)
-  )
 }
 
 extension View {

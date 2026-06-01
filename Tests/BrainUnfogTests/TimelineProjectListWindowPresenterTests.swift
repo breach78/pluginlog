@@ -4,14 +4,14 @@ import XCTest
 
 @MainActor
 final class TimelineProjectListWindowPresenterTests: XCTestCase {
-  func testProjectListWindowUsesFloatingPanelBehavior() {
+  func testProjectListWindowStaysVisibleWhenAppDeactivates() {
     let window = NSPanel()
 
     TimelineProjectListWindowPresenter.configureWindowLevel(window)
 
     XCTAssertEqual(window.level, .floating)
     XCTAssertTrue(window.isFloatingPanel)
-    XCTAssertTrue(window.hidesOnDeactivate)
+    XCTAssertFalse(window.hidesOnDeactivate)
   }
 
   func testInitialFocusPolicyTargetsTextResponders() {

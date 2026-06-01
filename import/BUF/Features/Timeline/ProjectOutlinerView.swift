@@ -17,6 +17,10 @@ struct ProjectOutlinerView: View {
   let onDeleteTaskBlock: (UUID) -> Void
   let onOpenTask: (UUID) -> Void
   let onOpenTaskSection: (UUID, TaskEditAuxiliarySection) -> Void
+  let onImportAttachmentFiles: (UUID, [URL], Int) -> Void
+  let onOpenAttachment: (ProjectOutlineInlineAttachment) -> Void
+  let onRenameAttachment: (ProjectOutlineInlineAttachment) -> Void
+  let onDeleteAttachment: (ProjectOutlineInlineAttachment) -> Void
 
   @State private var focusedBlockID: UUID?
   @State private var focusRequestID: UInt64 = 0
@@ -43,7 +47,7 @@ struct ProjectOutlinerView: View {
             requestFocus(block.id)
           }
           .buttonStyle(.borderless)
-          .padding(.horizontal, 18)
+          .padding(.horizontal, 9)
           .padding(.vertical, 16)
         } else {
           ForEach(visibleBlockIDs, id: \.self) { blockID in
@@ -93,6 +97,12 @@ struct ProjectOutlinerView: View {
                 onToggleTaskCompletion: onToggleTaskCompletion,
                 onOpenTask: onOpenTask,
                 onOpenTaskSection: onOpenTaskSection,
+                onImportAttachmentFiles: { urls, offset in
+                  onImportAttachmentFiles(blockID, urls, offset)
+                },
+                onOpenAttachment: onOpenAttachment,
+                onRenameAttachment: onRenameAttachment,
+                onDeleteAttachment: onDeleteAttachment,
                 onBeginDrag: {
                   draggingBlockID = blockID
                 }
@@ -435,7 +445,7 @@ struct ProjectOutlinerView: View {
         }
       }
       .font(projectOutlinerChipFont)
-      .padding(.horizontal, 18)
+      .padding(.horizontal, 9)
       .padding(.bottom, 8)
     }
   }
@@ -631,6 +641,10 @@ private struct ProjectOutlineRowView: View {
   let onToggleTaskCompletion: (UUID, Bool) -> Void
   let onOpenTask: (UUID) -> Void
   let onOpenTaskSection: (UUID, TaskEditAuxiliarySection) -> Void
+  let onImportAttachmentFiles: ([URL], Int) -> Void
+  let onOpenAttachment: (ProjectOutlineInlineAttachment) -> Void
+  let onRenameAttachment: (ProjectOutlineInlineAttachment) -> Void
+  let onDeleteAttachment: (ProjectOutlineInlineAttachment) -> Void
   let onBeginDrag: () -> Void
 
   @State private var taskTitleDraft = ""
@@ -642,16 +656,17 @@ private struct ProjectOutlineRowView: View {
     HStack(alignment: .top, spacing: 8) {
       HStack(spacing: 0) {
         ForEach(0..<displayDepth, id: \.self) { _ in
-          Rectangle()
-            .fill(Color.secondary.opacity(0.12))
-            .frame(width: 1)
-            .frame(maxHeight: .infinity)
-            .padding(.leading, projectOutlinerIndentGuideLeadingPadding)
-            .padding(.trailing, projectOutlinerIndentGuideTrailingPadding)
+          Color.clear
+            .frame(width: projectOutlinerIndentWidth)
+            .overlay {
+              Rectangle()
+                .fill(Color.secondary.opacity(0.12))
+                .frame(width: 2, height: max(30, measuredHeight + 6))
+                .offset(x: -2)
+            }
         }
       }
-      .frame(height: max(30, measuredHeight + 6))
-      .offset(y: -3)
+      .frame(height: max(24, measuredHeight))
 
       if !hidesMarker {
         marker
@@ -664,19 +679,24 @@ private struct ProjectOutlineRowView: View {
         ProjectOutlineTextEditor(
           text: $block.text,
           measuredHeight: $measuredHeight,
+          vaultRootURL: taskEditConfiguration?.vaultRootURL,
           isFocused: isFocused,
           focusRequestID: focusRequestID,
           focusPlacement: focusPlacement,
           isBlockSelectionActive: isBlockSelectionActive,
           font: projectOutlinerNSFont,
           onCommand: onCommand,
+          onImportFiles: onImportAttachmentFiles,
+          onOpenAttachment: onOpenAttachment,
+          onRenameAttachment: onRenameAttachment,
+          onDeleteAttachment: onDeleteAttachment,
           onFocus: onFocus
         )
         .frame(minHeight: 24)
         .frame(height: measuredHeight)
       }
     }
-    .padding(.horizontal, 18)
+    .padding(.horizontal, 9)
     .padding(.vertical, 3)
     .frame(maxWidth: .infinity, alignment: .leading)
     .background(isBlockSelected ? Color.accentColor.opacity(0.12) : Color.clear)
@@ -793,6 +813,7 @@ private struct ProjectOutlineRowView: View {
           ProjectOutlineTextEditor(
             text: taskTitleBinding(for: task),
             measuredHeight: $measuredHeight,
+            vaultRootURL: nil,
             isFocused: isFocused,
             focusRequestID: focusRequestID,
             focusPlacement: focusPlacement,
@@ -818,6 +839,7 @@ private struct ProjectOutlineRowView: View {
             ProjectOutlineTextEditor(
               text: $block.text,
               measuredHeight: $measuredHeight,
+              vaultRootURL: nil,
               isFocused: isFocused,
               focusRequestID: focusRequestID,
               focusPlacement: focusPlacement,
@@ -1030,9 +1052,6 @@ private let projectOutlinerFont = Font.custom("SansMonoCJKFinalDraft", size: 15)
 private let projectOutlinerChipFont = Font.custom("SansMonoCJKFinalDraft-Bold", size: 12)
 private let projectOutlinerBulletHitSize: CGFloat = 21
 private let projectOutlinerIndentWidth: CGFloat = 40
-private let projectOutlinerIndentGuideLeadingPadding = (projectOutlinerIndentWidth - 1) / 2 - 2
-private let projectOutlinerIndentGuideTrailingPadding =
-  projectOutlinerIndentWidth - 1 - projectOutlinerIndentGuideLeadingPadding
 private let projectOutlinerDropIndicatorBaseLeading: CGFloat = 40
 
 @MainActor

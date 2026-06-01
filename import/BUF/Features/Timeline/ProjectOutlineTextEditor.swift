@@ -38,16 +38,27 @@ enum ProjectOutlineFocusPlacement {
   case end
 }
 
+enum ProjectOutlineAttachmentTextAction {
+  case open(ProjectOutlineInlineAttachment)
+  case rename(ProjectOutlineInlineAttachment)
+  case delete(ProjectOutlineInlineAttachment)
+}
+
 struct ProjectOutlineTextEditor: NSViewRepresentable {
   @Binding var text: String
   @Binding var measuredHeight: CGFloat
 
+  var vaultRootURL: URL? = nil
   let isFocused: Bool
   let focusRequestID: UInt64
   let focusPlacement: ProjectOutlineFocusPlacement
   let isBlockSelectionActive: Bool
   let font: NSFont
   let onCommand: (ProjectOutlineTextCommand) -> Void
+  var onImportFiles: ([URL], Int) -> Void = { _, _ in }
+  var onOpenAttachment: (ProjectOutlineInlineAttachment) -> Void = { _ in }
+  var onRenameAttachment: (ProjectOutlineInlineAttachment) -> Void = { _ in }
+  var onDeleteAttachment: (ProjectOutlineInlineAttachment) -> Void = { _ in }
   let onFocus: () -> Void
   var onBlur: () -> Void = {}
 
@@ -65,7 +76,17 @@ struct ProjectOutlineTextEditor: NSViewRepresentable {
     let textView = CommandTextView()
     textView.delegate = context.coordinator
     textView.commandHandler = { [weak coordinator = context.coordinator] command in
-      coordinator?.parent.onCommand(command)
+      coordinator?.handle(command)
+    }
+    textView.fileDropHandler = { [weak coordinator = context.coordinator] urls, displayOffset in
+      guard let coordinator else { return }
+      coordinator.parent.onImportFiles(
+        urls,
+        coordinator.storageOffset(forDisplayOffset: displayOffset)
+      )
+    }
+    textView.attachmentActionHandler = { [weak coordinator = context.coordinator] action in
+      coordinator?.handle(action)
     }
     textView.isBlockSelectionActiveProvider = { [weak coordinator = context.coordinator] in
       coordinator?.parent.isBlockSelectionActive ?? false
@@ -89,8 +110,9 @@ struct ProjectOutlineTextEditor: NSViewRepresentable {
     textView.frame = CGRect(x: 0, y: 0, width: 1, height: max(24, measuredHeight))
     textView.allowsUndo = true
     textView.font = font
-    textView.string = text
+    context.coordinator.applyMarkdown(text, to: textView, preserveSelection: false)
     textView.layoutManager?.delegate = context.coordinator
+    textView.registerForDraggedTypes([.fileURL])
 
     scrollView.documentView = textView
     context.coordinator.textView = textView
@@ -104,7 +126,17 @@ struct ProjectOutlineTextEditor: NSViewRepresentable {
     context.coordinator.parent = self
     guard let textView = scrollView.documentView as? CommandTextView else { return }
     textView.commandHandler = { [weak coordinator = context.coordinator] command in
-      coordinator?.parent.onCommand(command)
+      coordinator?.handle(command)
+    }
+    textView.fileDropHandler = { [weak coordinator = context.coordinator] urls, displayOffset in
+      guard let coordinator else { return }
+      coordinator.parent.onImportFiles(
+        urls,
+        coordinator.storageOffset(forDisplayOffset: displayOffset)
+      )
+    }
+    textView.attachmentActionHandler = { [weak coordinator = context.coordinator] action in
+      coordinator?.handle(action)
     }
     textView.isBlockSelectionActiveProvider = { [weak coordinator = context.coordinator] in
       coordinator?.parent.isBlockSelectionActive ?? false
@@ -121,9 +153,9 @@ struct ProjectOutlineTextEditor: NSViewRepresentable {
       textView.typingAttributes = [.font: font]
       needsHeightUpdate = true
     }
-    if textView.string != text {
+    if context.coordinator.currentMarkdown() != text {
       context.coordinator.isApplyingText = true
-      textView.string = text
+      context.coordinator.applyMarkdown(text, to: textView, preserveSelection: true)
       context.coordinator.isApplyingText = false
       needsHeightUpdate = true
     }
@@ -148,11 +180,81 @@ struct ProjectOutlineTextEditor: NSViewRepresentable {
     var focusHandler: (() -> Void)?
     var blurHandler: (() -> Void)?
     var isBlockSelectionActiveProvider: (() -> Bool)?
+    var fileDropHandler: (([URL], Int) -> Void)?
+    var attachmentActionHandler: ((ProjectOutlineAttachmentTextAction) -> Void)?
     private var lastSelectAllDate: Date?
+    private var contextAttachment: ProjectOutlineInlineAttachment?
 
     override func mouseDown(with event: NSEvent) {
       focusHandler?()
+      if let attachment = attachment(at: event) {
+        attachmentActionHandler?(.open(attachment))
+        return
+      }
       super.mouseDown(with: event)
+    }
+
+    override func menu(for event: NSEvent) -> NSMenu? {
+      guard let attachment = attachment(at: event) else {
+        return super.menu(for: event)
+      }
+      contextAttachment = attachment
+      let menu = NSMenu()
+      let openItem = menu.addItem(
+        withTitle: "열기",
+        action: #selector(openContextAttachment),
+        keyEquivalent: ""
+      )
+      openItem.target = self
+      let renameItem = menu.addItem(
+        withTitle: "이름 변경",
+        action: #selector(renameContextAttachment),
+        keyEquivalent: ""
+      )
+      renameItem.target = self
+      menu.addItem(.separator())
+      let deleteItem = menu.addItem(
+        withTitle: "삭제",
+        action: #selector(deleteContextAttachment),
+        keyEquivalent: ""
+      )
+      deleteItem.target = self
+      return menu
+    }
+
+    @objc private func openContextAttachment() {
+      guard let contextAttachment else { return }
+      attachmentActionHandler?(.open(contextAttachment))
+    }
+
+    @objc private func renameContextAttachment() {
+      guard let contextAttachment else { return }
+      attachmentActionHandler?(.rename(contextAttachment))
+    }
+
+    @objc private func deleteContextAttachment() {
+      guard let contextAttachment else { return }
+      attachmentActionHandler?(.delete(contextAttachment))
+    }
+
+    override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
+      guard fileURLs(from: sender.draggingPasteboard).isEmpty == false else {
+        return super.draggingEntered(sender)
+      }
+      return .copy
+    }
+
+    override func prepareForDragOperation(_ sender: NSDraggingInfo) -> Bool {
+      fileURLs(from: sender.draggingPasteboard).isEmpty == false
+    }
+
+    override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
+      let urls = fileURLs(from: sender.draggingPasteboard)
+      guard !urls.isEmpty else { return false }
+      let point = convert(sender.draggingLocation, from: nil)
+      let displayOffset = characterIndexForInsertion(at: point)
+      fileDropHandler?(urls, displayOffset)
+      return true
     }
 
     override func keyDown(with event: NSEvent) {
@@ -288,6 +390,46 @@ struct ProjectOutlineTextEditor: NSViewRepresentable {
       }
       commandHandler?(.enter(offset: selectedRange().location))
     }
+
+    private func attachment(at event: NSEvent) -> ProjectOutlineInlineAttachment? {
+      let point = convert(event.locationInWindow, from: nil)
+      let index = characterIndexForInsertion(at: point)
+      return attachment(near: index)
+    }
+
+    private func attachment(near index: Int) -> ProjectOutlineInlineAttachment? {
+      guard textStorage?.length ?? 0 > 0 else { return nil }
+      let length = textStorage?.length ?? 0
+      let candidates = [index, index - 1].filter { $0 >= 0 && $0 < length }
+      for candidate in candidates {
+        if let attachment = textStorage?.attribute(
+          ProjectOutlineAttachmentInlineCodec.attachmentAttribute,
+          at: candidate,
+          effectiveRange: nil
+        ) as? ProjectOutlineInlineAttachment {
+          return attachment
+        }
+      }
+      return nil
+    }
+
+    private func fileURLs(from pasteboard: NSPasteboard) -> [URL] {
+      let options: [NSPasteboard.ReadingOptionKey: Any] = [
+        .urlReadingFileURLsOnly: true
+      ]
+      return pasteboard
+        .readObjects(forClasses: [NSURL.self], options: options)?
+        .compactMap { object in
+          if let url = object as? URL {
+            return url
+          }
+          if let url = object as? NSURL {
+            return url as URL
+          }
+          return nil
+        }
+        ?? []
+    }
   }
 
   @MainActor
@@ -304,8 +446,75 @@ struct ProjectOutlineTextEditor: NSViewRepresentable {
 
     func textDidChange(_ notification: Notification) {
       guard !isApplyingText, let textView = notification.object as? NSTextView else { return }
-      parent.text = textView.string
+      parent.text = ProjectOutlineAttachmentInlineCodec.markdown(from: textView.attributedString())
       updateMeasuredHeight()
+    }
+
+    func handle(_ command: ProjectOutlineTextCommand) {
+      switch command {
+      case .enter(let offset):
+        parent.onCommand(.enter(offset: storageOffset(forDisplayOffset: offset)))
+      default:
+        parent.onCommand(command)
+      }
+    }
+
+    func handle(_ action: ProjectOutlineAttachmentTextAction) {
+      switch action {
+      case .open(let attachment):
+        parent.onOpenAttachment(attachment)
+      case .rename(let attachment):
+        parent.onRenameAttachment(attachment)
+      case .delete(let attachment):
+        parent.onDeleteAttachment(attachment)
+      }
+    }
+
+    func currentMarkdown() -> String {
+      guard let textView else { return parent.text }
+      return ProjectOutlineAttachmentInlineCodec.markdown(from: textView.attributedString())
+    }
+
+    func applyMarkdown(
+      _ markdown: String,
+      to textView: NSTextView,
+      preserveSelection: Bool
+    ) {
+      let selectedRange = textView.selectedRange()
+      let attributed = ProjectOutlineAttachmentInlineCodec.attributedString(
+        from: markdown,
+        vaultRootURL: parent.vaultRootURL,
+        font: parent.font
+      )
+      textView.textStorage?.setAttributedString(attributed)
+      textView.typingAttributes = [.font: parent.font, .foregroundColor: NSColor.labelColor]
+      guard preserveSelection else { return }
+      let clampedLocation = min(selectedRange.location, attributed.length)
+      let clampedLength = min(selectedRange.length, max(0, attributed.length - clampedLocation))
+      textView.setSelectedRange(NSRange(location: clampedLocation, length: clampedLength))
+    }
+
+    func storageOffset(forDisplayOffset displayOffset: Int) -> Int {
+      guard let textView else { return displayOffset }
+      let attributed = textView.attributedString()
+      let displayLimit = min(max(0, displayOffset), attributed.length)
+      var storageOffset = 0
+      var index = 0
+      while index < displayLimit {
+        if let attachment = attributed.attribute(
+          ProjectOutlineAttachmentInlineCodec.attachmentAttribute,
+          at: index,
+          effectiveRange: nil
+        ) as? ProjectOutlineInlineAttachment {
+          storageOffset += (ProjectOutlineAttachmentInlineCodec.markdownLink(for: attachment) as NSString)
+            .length
+        } else {
+          let value = attributed.attributedSubstring(from: NSRange(location: index, length: 1)).string
+          storageOffset += (value as NSString).length
+        }
+        index += 1
+      }
+      return storageOffset
     }
 
     func textDidBeginEditing(_ notification: Notification) {
