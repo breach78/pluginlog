@@ -335,9 +335,11 @@ struct ProjectOutlinerView: View {
     if !document.blocks.contains(where: { $0.id == blockID }) {
       let focusedID = result.focusedBlockID ?? previousID
       let placement = result.focusOffset.map(ProjectOutlineFocusPlacement.offset) ?? .end
+      invalidateMeasuredHeight(for: focusedID)
       requestFocus(focusedID, placement: placement)
     } else if let focusedID = result.focusedBlockID {
       let placement = result.focusOffset.map(ProjectOutlineFocusPlacement.offset) ?? .preserve
+      invalidateMeasuredHeight(for: focusedID)
       requestFocus(focusedID, placement: placement)
     }
   }
@@ -381,6 +383,7 @@ struct ProjectOutlinerView: View {
       onDeleteTask(currentTaskID)
     }
     document.blocks.remove(at: currentIndex)
+    invalidateMeasuredHeight(for: previousBlock.id)
     requestFocus(previousBlock.id, placement: .offset(focusOffset))
     return true
   }
@@ -585,6 +588,11 @@ struct ProjectOutlinerView: View {
     focusedBlockID = blockID
     focusPlacement = placement
     focusRequestID &+= 1
+  }
+
+  private func invalidateMeasuredHeight(for blockID: UUID?) {
+    guard let blockID else { return }
+    rowHeights[blockID] = 24
   }
 
   private func isDirectChildOfZoomRoot(_ blockID: UUID) -> Bool {

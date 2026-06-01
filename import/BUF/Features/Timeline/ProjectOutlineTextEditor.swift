@@ -116,7 +116,7 @@ struct ProjectOutlineTextEditor: NSViewRepresentable {
     textView.minSize = NSSize(width: 0, height: 24)
     textView.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
     textView.frame = CGRect(x: 0, y: 0, width: 1, height: max(24, measuredHeight))
-    textView.allowsUndo = true
+    textView.allowsUndo = false
     textView.font = font
     context.coordinator.applyMarkdown(text, to: textView, preserveSelection: false)
     textView.layoutManager?.delegate = context.coordinator
