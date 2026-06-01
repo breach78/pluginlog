@@ -24,9 +24,9 @@ final class TimelineProjectListWindowPresenter {
   }
 
   static func configureWindowLevel(_ window: NSWindow) {
-    window.level = .floating
+    window.level = .normal
     if let panel = window as? NSPanel {
-      panel.isFloatingPanel = true
+      panel.isFloatingPanel = false
       panel.hidesOnDeactivate = false
     }
   }

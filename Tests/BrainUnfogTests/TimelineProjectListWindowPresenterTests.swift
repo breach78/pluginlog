@@ -4,13 +4,13 @@ import XCTest
 
 @MainActor
 final class TimelineProjectListWindowPresenterTests: XCTestCase {
-  func testProjectListWindowStaysVisibleWhenAppDeactivates() {
+  func testProjectListWindowBehavesLikeNormalWindowWhenAppDeactivates() {
     let window = NSPanel()
 
     TimelineProjectListWindowPresenter.configureWindowLevel(window)
 
-    XCTAssertEqual(window.level, .floating)
-    XCTAssertTrue(window.isFloatingPanel)
+    XCTAssertEqual(window.level, .normal)
+    XCTAssertFalse(window.isFloatingPanel)
     XCTAssertFalse(window.hidesOnDeactivate)
   }
 
