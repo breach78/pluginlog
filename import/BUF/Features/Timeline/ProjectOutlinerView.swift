@@ -318,7 +318,7 @@ struct ProjectOutlinerView: View {
   }
 
   private func handleBackspaceAtStart(blockID: UUID) {
-    if removeTaskMarkerAtStart(blockID: blockID) {
+    if deleteTaskBlockAtStart(blockID: blockID) {
       return
     }
     let visibleIDsBeforeMutation = visibleBlockIDs
@@ -341,18 +341,18 @@ struct ProjectOutlinerView: View {
     }
   }
 
-  private func removeTaskMarkerAtStart(blockID: UUID) -> Bool {
-    guard let index = document.blocks.firstIndex(where: { $0.id == blockID }),
-      document.blocks[index].isTaskBlock
+  private func deleteTaskBlockAtStart(blockID: UUID) -> Bool {
+    guard let block = document.blocks.first(where: { $0.id == blockID }),
+      block.isTaskBlock
     else {
       return false
     }
-    let taskTitle = document.blocks[index].taskBinding?.taskID
-      .flatMap { tasksByID[$0] }
-      .map(\.title)
-    document.blocks[index].text = taskTitle ?? document.blocks[index].text
-    document.blocks[index].taskBinding = nil
-    requestFocus(blockID, placement: .start)
+    let visibleIDsBeforeMutation = visibleBlockIDs
+    let previousID = visibleIDsBeforeMutation
+      .firstIndex(of: blockID)
+      .flatMap { index in index > 0 ? visibleIDsBeforeMutation[index - 1] : nil }
+    deleteBlock(blockID: blockID)
+    requestFocus(previousID, placement: .end)
     return true
   }
 
