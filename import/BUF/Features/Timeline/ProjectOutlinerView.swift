@@ -1,6 +1,66 @@
 import SwiftUI
 import UniformTypeIdentifiers
 
+private struct ProjectOutlinerVisibleBlock: Identifiable {
+  let id: UUID
+  let block: ProjectOutlineBlock
+  let displayDepth: Int
+  let hasVisibleChildren: Bool
+}
+
+private struct ProjectOutlinerDisplayContext {
+  let blocks: [ProjectOutlinerVisibleBlock]
+  let visibleIDs: [UUID]
+  let visibleDepthsByID: [UUID: Int]
+  let selectedIDs: Set<UUID>
+
+  init(
+    document: ProjectOutlineDocument,
+    focusRootID: UUID?,
+    hiddenTaskIDs: Set<UUID>,
+    selection: ProjectOutlineBlockSelection?
+  ) {
+    let visibleIndices = ProjectOutlineVisibilityPolicy.visibleIndices(
+      in: document,
+      focusRootID: focusRootID,
+      hiddenTaskIDs: hiddenTaskIDs
+    )
+    let rootDepth = focusRootID
+      .flatMap { id in document.blocks.first(where: { $0.id == id })?.depth }
+      ?? 0
+    var visibleBlocks: [ProjectOutlinerVisibleBlock] = []
+    visibleBlocks.reserveCapacity(visibleIndices.count)
+
+    for position in visibleIndices.indices {
+      let index = visibleIndices[position]
+      let block = document.blocks[index]
+      let nextIndex = visibleIndices.index(after: position)
+      let hasVisibleChildren = visibleIndices.indices.contains(nextIndex)
+        && document.blocks[visibleIndices[nextIndex]].depth > block.depth
+      let displayDepth = focusRootID == nil ? block.depth : max(0, block.depth - rootDepth)
+      visibleBlocks.append(
+        ProjectOutlinerVisibleBlock(
+          id: block.id,
+          block: block,
+          displayDepth: displayDepth,
+          hasVisibleChildren: hasVisibleChildren
+        )
+      )
+    }
+
+    let visibleIDs = visibleBlocks.map(\.id)
+    let visibleDepthsByID = Dictionary(
+      uniqueKeysWithValues: visibleBlocks.map { ($0.id, $0.block.depth) }
+    )
+    self.blocks = visibleBlocks
+    self.visibleIDs = visibleIDs
+    self.visibleDepthsByID = visibleDepthsByID
+    self.selectedIDs = selection.map {
+      Set($0.selectedIDs(in: visibleIDs, depths: visibleDepthsByID))
+    } ?? []
+  }
+}
+
 struct ProjectOutlinerView: View {
   @Binding var document: ProjectOutlineDocument
 
@@ -46,8 +106,9 @@ struct ProjectOutlinerView: View {
   }
 
   var body: some View {
+    let displayContext = displayContext
     ScrollViewReader { proxy in
-      VStack(alignment: .leading, spacing: 0) {
+      LazyVStack(alignment: .leading, spacing: 0) {
         zoomBreadcrumb
         if document.blocks.isEmpty {
           Button("첫 불릿 추가", systemImage: "plus") {
@@ -59,31 +120,30 @@ struct ProjectOutlinerView: View {
           .padding(.horizontal, 9)
           .padding(.vertical, 16)
         } else {
-          ForEach(visibleBlockIDs, id: \.self) { blockID in
-            if let blockBinding = binding(for: blockID),
-              let block = document.blocks.first(where: { $0.id == blockID })
-            {
+          ForEach(displayContext.blocks) { visibleBlock in
+            let blockID = visibleBlock.id
+            if let blockBinding = binding(for: blockID) {
               ProjectOutlineRowView(
                 block: blockBinding,
-                task: block.taskBinding?.taskID.flatMap { tasksByID[$0] },
+                task: visibleBlock.block.taskBinding?.taskID.flatMap { tasksByID[$0] },
                 projectColor: projectColor,
                 isFocused: focusedBlockID == blockID,
                 focusRequestID: focusRequestID,
                 focusPlacement: focusedBlockID == blockID ? focusPlacement : .preserve,
                 isBlockSelectionActive: blockSelection != nil,
-                isBlockSelected: selectedBlockIDs.contains(blockID),
+                isBlockSelected: displayContext.selectedIDs.contains(blockID),
                 isHighlighted: highlightedBlockID == blockID,
-                displayDepth: displayDepth(for: block),
-                blockColorToken: block.colorToken,
+                displayDepth: visibleBlock.displayDepth,
+                blockColorToken: visibleBlock.block.colorToken,
                 hidesMarker: zoomRootBlockID == blockID,
                 isCreatingTask: pendingTaskBlockIDs.contains(blockID),
-                recurringCompletionCount: block.taskBinding?.taskID.flatMap {
+                recurringCompletionCount: visibleBlock.block.taskBinding?.taskID.flatMap {
                   recurringCompletionCounts[$0]
                 } ?? 0,
                 moveOptions: moveOptions,
                 taskEditConfiguration: taskEditConfiguration,
-                hasChildren: hasVisibleChildren(blockID: blockID),
-                isCollapsed: block.childrenCollapsed,
+                hasChildren: visibleBlock.hasVisibleChildren,
+                isCollapsed: visibleBlock.block.childrenCollapsed,
                 dropPlacement: dropIndicator?.targetID == blockID ? dropIndicator?.placement : nil,
                 measuredHeight: Binding(
                   get: { rowHeights[blockID] ?? 24 },
@@ -176,14 +236,15 @@ struct ProjectOutlinerView: View {
   }
 
   private var visibleBlockIDs: [UUID] {
-    visibleIndicesForDisplay().map { document.blocks[$0].id }
+    displayContext.visibleIDs
   }
 
-  private func visibleIndicesForDisplay() -> [Int] {
-    ProjectOutlineVisibilityPolicy.visibleIndices(
-      in: document,
+  private var displayContext: ProjectOutlinerDisplayContext {
+    ProjectOutlinerDisplayContext(
+      document: document,
       focusRootID: zoomRootBlockID,
-      hiddenTaskIDs: hiddenTaskIDs
+      hiddenTaskIDs: hiddenTaskIDs,
+      selection: blockSelection
     )
   }
 
@@ -197,17 +258,11 @@ struct ProjectOutlinerView: View {
   }
 
   private var selectedBlockIDs: Set<UUID> {
-    guard let blockSelection else { return [] }
-    return Set(
-      blockSelection.selectedIDs(
-        in: visibleBlockIDs,
-        depths: visibleDepthsByID
-      )
-    )
+    displayContext.selectedIDs
   }
 
   private var visibleDepthsByID: [UUID: Int] {
-    Dictionary(uniqueKeysWithValues: document.blocks.map { ($0.id, $0.depth) })
+    displayContext.visibleDepthsByID
   }
 
   private func binding(for blockID: UUID) -> Binding<ProjectOutlineBlock>? {
