@@ -28,6 +28,7 @@ struct TimelineProjectListContent: View {
   @State private var projectNoteText: String
   @State private var projectOutlineDocument: ProjectOutlineDocument
   @State private var lastCommittedProjectNoteText: String
+  @State private var projectOutlineNeedsSave = false
   @State private var projectNoteAutoSaveTask: Task<Void, Never>?
   @State private var isSavingProjectNote = false
   @State private var saveProjectNoteAgainAfterCurrent = false
@@ -131,9 +132,6 @@ struct TimelineProjectListContent: View {
     }
     .onChange(of: projectNoteText) { _, _ in
       scheduleProjectNoteAutoSave()
-    }
-    .onChange(of: projectOutlineDocument) { oldDocument, nextDocument in
-      applyProjectOutlineDocumentChange(oldDocument: oldDocument, nextDocument)
     }
     .onAppear {
       syncProjectOutlineDocumentAfterInitialPrune()
@@ -252,7 +250,7 @@ struct TimelineProjectListContent: View {
   private var projectNoteSection: some View {
     ZStack(alignment: .topTrailing) {
       ProjectOutlinerView(
-        document: $projectOutlineDocument,
+        document: projectOutlineDocumentBinding,
         tasks: session.tasks,
         projectTitle: snapshot.title,
         projectColor: projectColor,
@@ -285,6 +283,16 @@ struct TimelineProjectListContent: View {
     }
     .padding(.horizontal, 18)
     .padding(.vertical, 10)
+  }
+
+  private var projectOutlineDocumentBinding: Binding<ProjectOutlineDocument> {
+    Binding(
+      get: { projectOutlineDocument },
+      set: { nextDocument in
+        projectOutlineDocument = nextDocument
+        markProjectOutlineChanged()
+      }
+    )
   }
 
   private var scrollContent: some View {
@@ -1102,13 +1110,15 @@ struct TimelineProjectListContent: View {
       committedText: lastCommittedProjectNoteText
     ) else { return }
     let normalizedNextText = TimelineProjectNoteAutoSavePolicy.normalized(nextText)
+    let committedBeforeUpdate = lastCommittedProjectNoteText
     projectNoteAutoSaveTask?.cancel()
     projectNoteAutoSaveTask = nil
     if projectNoteText != normalizedNextText {
       projectNoteText = normalizedNextText
     }
-    let currentMarkdown = Self.markdown(from: projectOutlineDocument)
-    if currentMarkdown != normalizedNextText {
+    if !projectOutlineNeedsSave,
+      committedBeforeUpdate != normalizedNextText
+    {
       projectOutlineDocument = Self.outlineDocument(
         from: normalizedNextText,
         knownTaskIDs: Set(session.tasks.map(\.id))
@@ -1118,32 +1128,19 @@ struct TimelineProjectListContent: View {
     projectNoteErrorText = nil
   }
 
-  private func applyProjectOutlineDocumentChange(
-    oldDocument: ProjectOutlineDocument? = nil,
-    _ document: ProjectOutlineDocument
-  ) {
-    let markdown = Self.markdown(from: document)
-    if let oldDocument {
-      deleteRemovedOutlineAttachmentFiles(
-        oldMarkdown: Self.markdown(from: oldDocument),
-        newMarkdown: markdown
-      )
-    }
-    if projectNoteText != markdown {
-      projectNoteText = markdown
-    }
+  private func markProjectOutlineChanged() {
+    projectOutlineNeedsSave = true
+    scheduleProjectNoteAutoSave()
   }
 
   private func syncProjectOutlineDocumentAfterInitialPrune() {
-    let markdown = Self.markdown(from: projectOutlineDocument)
-    if projectNoteText != markdown {
-      projectNoteText = markdown
-    }
+    guard projectOutlineNeedsSave else { return }
+    scheduleProjectNoteAutoSave()
   }
 
   @MainActor
   private func scheduleProjectNoteAutoSave() {
-    guard TimelineProjectNoteAutoSavePolicy.isDirty(
+    guard projectOutlineNeedsSave || TimelineProjectNoteAutoSavePolicy.isDirty(
       currentText: projectNoteText,
       committedText: lastCommittedProjectNoteText
     ) else {
@@ -1165,7 +1162,7 @@ struct TimelineProjectListContent: View {
   }
 
   private func flushProjectNoteOnDisappear() {
-    guard isSavingProjectNote || TimelineProjectNoteAutoSavePolicy.isDirty(
+    guard isSavingProjectNote || projectOutlineNeedsSave || TimelineProjectNoteAutoSavePolicy.isDirty(
       currentText: projectNoteText,
       committedText: lastCommittedProjectNoteText
     ) else { return }
@@ -1186,12 +1183,18 @@ struct TimelineProjectListContent: View {
       }
       return true
     }
-    validateOutlineTaskBindingsBeforeSave()
+    if validateOutlineTaskBindingsBeforeSave() {
+      projectOutlineNeedsSave = true
+    }
+    if projectOutlineNeedsSave {
+      projectNoteText = Self.markdown(from: projectOutlineDocument)
+    }
     let noteText = TimelineProjectNoteAutoSavePolicy.normalized(projectNoteText)
     guard TimelineProjectNoteAutoSavePolicy.isDirty(
       currentText: noteText,
       committedText: lastCommittedProjectNoteText
     ) else {
+      projectOutlineNeedsSave = false
       projectNoteErrorText = nil
       return true
     }
@@ -1205,6 +1208,7 @@ struct TimelineProjectListContent: View {
     }
     let committedText = TimelineProjectNoteAutoSavePolicy.normalized(savedNoteText)
     lastCommittedProjectNoteText = committedText
+    projectOutlineNeedsSave = false
     if TimelineProjectNoteAutoSavePolicy.normalized(projectNoteText) == committedText {
       projectNoteText = committedText
     }
@@ -1222,12 +1226,8 @@ struct TimelineProjectListContent: View {
     return true
   }
 
-  private func validateOutlineTaskBindingsBeforeSave() {
-    pruneOutlineTaskBindings(knownTaskIDs: Set(session.tasks.map(\.id)))
-    let markdown = Self.markdown(from: projectOutlineDocument)
-    if projectNoteText != markdown {
-      projectNoteText = markdown
-    }
+  private func validateOutlineTaskBindingsBeforeSave() -> Bool {
+    pruneOutlineTaskBindings(knownTaskIDs: Set(session.tasks.map(\.id)), scheduleSave: false)
   }
 
   private func appendMissingOutlineTaskBlocksIfNeeded(
@@ -1239,8 +1239,7 @@ struct TimelineProjectListContent: View {
       taskIDs: appendableTasks.map(\.id)
     )
     guard didAppend else { return }
-    applyProjectOutlineDocumentChange(projectOutlineDocument)
-    scheduleProjectNoteAutoSave()
+    markProjectOutlineChanged()
   }
 
   private func startEditing(_ task: TimelineProjectListWindowSnapshot.Task) {
@@ -1288,6 +1287,7 @@ struct TimelineProjectListContent: View {
         taskID: createdTask.id,
         taskExternalIdentifier: nil
       )
+      markProjectOutlineChanged()
       projectNoteErrorText = nil
       enqueueTaskOrderSave(registerUndo: false)
     }
@@ -1326,6 +1326,7 @@ struct TimelineProjectListContent: View {
           into: currentText,
           utf16Offset: insertionOffset
         )
+        markProjectOutlineChanged()
         projectNoteErrorText = nil
       } catch {
         projectNoteErrorText = error.localizedDescription
@@ -1380,6 +1381,7 @@ struct TimelineProjectListContent: View {
       )
       if nextText != currentText {
         projectOutlineDocument.blocks[blockIndex].text = nextText
+        markProjectOutlineChanged()
       }
     }
   }
@@ -1432,6 +1434,7 @@ struct TimelineProjectListContent: View {
         id: blockID,
         in: &projectOutlineDocument
       )
+      markProjectOutlineChanged()
       return
     }
     guard !deletingTaskIDs.contains(taskID) else { return }
@@ -1444,6 +1447,7 @@ struct TimelineProjectListContent: View {
         id: blockID,
         in: &projectOutlineDocument
       )
+      markProjectOutlineChanged()
       removeTaskFromWindow(taskID)
       enqueueTaskOrderSave(registerUndo: false)
     }
@@ -1471,13 +1475,22 @@ struct TimelineProjectListContent: View {
       id: block.id,
       in: &projectOutlineDocument
     )
+    markProjectOutlineChanged()
   }
 
-  private func pruneOutlineTaskBindings(knownTaskIDs: Set<UUID>) {
-    ProjectOutlineTaskBindingPrunePolicy.pruneUnknownTaskBlocks(
+  @discardableResult
+  private func pruneOutlineTaskBindings(
+    knownTaskIDs: Set<UUID>,
+    scheduleSave: Bool = true
+  ) -> Bool {
+    let didPrune = ProjectOutlineTaskBindingPrunePolicy.pruneUnknownTaskBlocks(
       in: &projectOutlineDocument,
       knownTaskIDs: knownTaskIDs
     )
+    if didPrune, scheduleSave {
+      markProjectOutlineChanged()
+    }
+    return didPrune
   }
 
   private func openOutlineTask(_ taskID: UUID) {

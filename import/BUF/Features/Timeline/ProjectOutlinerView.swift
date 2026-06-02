@@ -176,7 +176,10 @@ struct ProjectOutlinerView: View {
   private func binding(for blockID: UUID) -> Binding<ProjectOutlineBlock>? {
     guard document.blocks.contains(where: { $0.id == blockID }) else { return nil }
     return Binding(
-      get: { document.blocks.first(where: { $0.id == blockID })! },
+      get: {
+        document.blocks.first(where: { $0.id == blockID })
+          ?? ProjectOutlineBlock(id: blockID, depth: 0, text: "")
+      },
       set: { nextBlock in
         guard let index = document.blocks.firstIndex(where: { $0.id == blockID }) else {
           return
@@ -208,12 +211,27 @@ struct ProjectOutlinerView: View {
     case .enter(let offset):
       handleEnter(blockID: blockID, offset: offset)
     case .tab:
-      _ = ProjectOutlineMutationEngine.indentBlock(id: blockID, in: &document)
+      if let blockSelection {
+        _ = ProjectOutlineMutationEngine.indentSelection(
+          ids: blockSelection.selectedIDs(in: visibleBlockIDs, depths: visibleDepthsByID),
+          in: &document
+        )
+      } else {
+        _ = ProjectOutlineMutationEngine.indentBlock(id: blockID, in: &document)
+      }
     case .shiftTab:
-      guard !isDirectChildOfZoomRoot(blockID) else { return }
-      _ = ProjectOutlineMutationEngine.outdentBlock(id: blockID, in: &document)
+      if let blockSelection {
+        let selectedIDs = blockSelection.selectedIDs(in: visibleBlockIDs, depths: visibleDepthsByID)
+        guard !selectedIDs.contains(where: isDirectChildOfZoomRoot) else { return }
+        _ = ProjectOutlineMutationEngine.outdentSelection(ids: selectedIDs, in: &document)
+      } else {
+        guard !isDirectChildOfZoomRoot(blockID) else { return }
+        _ = ProjectOutlineMutationEngine.outdentBlock(id: blockID, in: &document)
+      }
     case .backspaceAtStart:
-      handleBackspaceAtStart(blockID: blockID)
+      handleBackspaceAtStart(blockID: blockID, currentTextOverride: nil)
+    case .mergeBackspaceAtStart(let text):
+      handleBackspaceAtStart(blockID: blockID, currentTextOverride: text)
     case .deleteAtEnd:
       _ = ProjectOutlineMutationEngine.deleteAtEnd(blockID: blockID, in: &document)
     case .commandEnter:
@@ -248,6 +266,10 @@ struct ProjectOutlinerView: View {
       focusAdjacentBlock(from: blockID, offset: -1, placement: .end)
     case .focusNext:
       focusAdjacentBlock(from: blockID, offset: 1, placement: .start)
+    case .focusPreviousAt(let offset):
+      focusAdjacentBlock(from: blockID, offset: -1, placement: .offset(offset))
+    case .focusNextAt(let offset):
+      focusAdjacentBlock(from: blockID, offset: 1, placement: .offset(offset))
     case .extendBlockSelectionUp:
       extendBlockSelection(from: blockID, offset: -1)
     case .extendBlockSelectionDown:
@@ -277,10 +299,10 @@ struct ProjectOutlinerView: View {
       {
         onCreateTaskBlock(blockID)
       }
-      if let result = ProjectOutlineMutationEngine.insertSiblingAfterSubtree(
-        blockID: blockID,
-        in: &document
-      ) {
+      let result = hasVisibleChildren(blockID: blockID) && !block.childrenCollapsed
+        ? ProjectOutlineMutationEngine.insertFirstChild(blockID: blockID, in: &document)
+        : ProjectOutlineMutationEngine.insertSiblingAfterSubtree(blockID: blockID, in: &document)
+      if let result {
         requestFocus(result.focusedBlockID)
       }
       return
@@ -289,6 +311,7 @@ struct ProjectOutlinerView: View {
     if let result = ProjectOutlineMutationEngine.insertFromEnter(
       blockID: blockID,
       textOffset: offset,
+      hasExpandedChildrenOverride: hasVisibleChildren(blockID: blockID) && !block.childrenCollapsed,
       in: &document
     ) {
       requestFocus(result.focusedBlockID)
@@ -318,8 +341,14 @@ struct ProjectOutlinerView: View {
     }
   }
 
-  private func handleBackspaceAtStart(blockID: UUID) {
-    if mergeTaskBackspaceAtStart(blockID: blockID) {
+  private func handleBackspaceAtStart(
+    blockID: UUID,
+    currentTextOverride: String?
+  ) {
+    if mergeTaskBackspaceAtStart(
+      blockID: blockID,
+      currentTextOverride: currentTextOverride
+    ) {
       return
     }
     let visibleIDsBeforeMutation = visibleBlockIDs
@@ -344,7 +373,10 @@ struct ProjectOutlinerView: View {
     }
   }
 
-  private func mergeTaskBackspaceAtStart(blockID: UUID) -> Bool {
+  private func mergeTaskBackspaceAtStart(
+    blockID: UUID,
+    currentTextOverride: String?
+  ) -> Bool {
     guard let currentIndex = document.blocks.firstIndex(where: { $0.id == blockID }) else {
       return false
     }
@@ -366,7 +398,7 @@ struct ProjectOutlinerView: View {
     }
 
     let previousText = displayText(for: previousBlock)
-    let currentText = displayText(for: currentBlock)
+    let currentText = currentTextOverride ?? displayText(for: currentBlock)
     let focusOffset = previousText.utf16.count
     let mergedText = previousText + currentText
 
@@ -577,7 +609,10 @@ struct ProjectOutlinerView: View {
   ) {
     guard let currentPosition = visibleBlockIDs.firstIndex(of: blockID) else { return }
     let nextPosition = currentPosition + offset
-    guard visibleBlockIDs.indices.contains(nextPosition) else { return }
+    guard visibleBlockIDs.indices.contains(nextPosition) else {
+      requestFocus(blockID, placement: offset < 0 ? .start : .end)
+      return
+    }
     requestFocus(visibleBlockIDs[nextPosition], placement: placement)
   }
 
@@ -771,6 +806,9 @@ private struct ProjectOutlineRowView: View {
     .padding(.vertical, 3)
     .frame(maxWidth: .infinity, alignment: .leading)
     .background(isBlockSelected ? Color.accentColor.opacity(0.12) : Color.clear)
+    .onTapGesture {
+      onFocus()
+    }
     .overlay(alignment: dropPlacement == .before ? .topLeading : .bottomLeading) {
       if dropPlacement == .before || dropPlacement == .after {
         ProjectOutlineDropIndicatorLine()

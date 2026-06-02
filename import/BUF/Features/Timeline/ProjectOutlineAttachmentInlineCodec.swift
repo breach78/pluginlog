@@ -56,20 +56,20 @@ enum ProjectOutlineAttachmentInlineCodec {
   static let objectReplacement = "\u{fffc}"
 
   static func attributedString(
-    from markdown: String,
+    from storageText: String,
     vaultRootURL: URL?,
     font: NSFont
   ) -> NSAttributedString {
     let result = NSMutableAttributedString()
-    let nsMarkdown = markdown as NSString
+    let nsStorageText = storageText as NSString
     var cursor = 0
 
-    for match in attachmentMatches(in: markdown) {
+    for match in attachmentMatches(in: storageText) {
       guard match.range.location >= cursor else { continue }
       if match.range.location > cursor {
         result.append(
           NSAttributedString(
-            string: nsMarkdown.substring(with: NSRange(location: cursor, length: match.range.location - cursor)),
+            string: nsStorageText.substring(with: NSRange(location: cursor, length: match.range.location - cursor)),
             attributes: textAttributes(font: font)
           )
         )
@@ -78,10 +78,10 @@ enum ProjectOutlineAttachmentInlineCodec {
       cursor = match.range.location + match.range.length
     }
 
-    if cursor < nsMarkdown.length {
+    if cursor < nsStorageText.length {
       result.append(
         NSAttributedString(
-          string: nsMarkdown.substring(from: cursor),
+          string: nsStorageText.substring(from: cursor),
           attributes: textAttributes(font: font)
         )
       )
@@ -102,7 +102,10 @@ enum ProjectOutlineAttachmentInlineCodec {
     return chip
   }
 
-  static func markdown(from attributedString: NSAttributedString) -> String {
+  static func storageText(from attributedString: NSAttributedString) -> String {
+    guard containsAttachment(in: attributedString) else {
+      return attributedString.string
+    }
     var output = ""
     var index = 0
     while index < attributedString.length {
@@ -122,6 +125,24 @@ enum ProjectOutlineAttachmentInlineCodec {
       index += 1
     }
     return output
+  }
+
+  static func markdown(from attributedString: NSAttributedString) -> String {
+    storageText(from: attributedString)
+  }
+
+  static func containsAttachment(in attributedString: NSAttributedString) -> Bool {
+    var found = false
+    attributedString.enumerateAttribute(
+      attachmentAttribute,
+      in: NSRange(location: 0, length: attributedString.length)
+    ) { value, _, stop in
+      if value is ProjectOutlineInlineAttachment {
+        found = true
+        stop.pointee = true
+      }
+    }
+    return found
   }
 
   static func markdownLink(for attachment: ProjectOutlineInlineAttachment) -> String {

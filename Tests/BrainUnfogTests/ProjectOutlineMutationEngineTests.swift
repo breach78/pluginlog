@@ -44,6 +44,41 @@ struct ProjectOutlineMutationEngineTests {
     #expect(document.blocks.map(\.depth) == [0, 1])
   }
 
+  @Test func indentSelectionMovesContiguousRootSubtreesTogether() {
+    let ids = Self.ids()
+    var document = ProjectOutlineDocument(blocks: [
+      ProjectOutlineBlock(id: ids[0], depth: 0, text: "A"),
+      ProjectOutlineBlock(id: ids[1], depth: 0, text: "B"),
+      ProjectOutlineBlock(id: ids[2], depth: 1, text: "B.1"),
+      ProjectOutlineBlock(id: ids[3], depth: 0, text: "C"),
+    ])
+
+    let didIndent = ProjectOutlineMutationEngine.indentSelection(
+      ids: [ids[1], ids[2], ids[3]],
+      in: &document
+    )
+
+    #expect(didIndent)
+    #expect(document.blocks.map(\.depth) == [0, 1, 2, 1])
+  }
+
+  @Test func indentSelectionRejectsPartialSubtreeSelection() {
+    let ids = Self.ids()
+    var document = ProjectOutlineDocument(blocks: [
+      ProjectOutlineBlock(id: ids[0], depth: 0, text: "A"),
+      ProjectOutlineBlock(id: ids[1], depth: 0, text: "B"),
+      ProjectOutlineBlock(id: ids[2], depth: 1, text: "B.1"),
+    ])
+
+    let didIndent = ProjectOutlineMutationEngine.indentSelection(
+      ids: [ids[1]],
+      in: &document
+    )
+
+    #expect(!didIndent)
+    #expect(document.blocks.map(\.depth) == [0, 0, 1])
+  }
+
   @Test func outdentRootBlockIsNoOp() {
     let ids = Self.ids()
     var document = ProjectOutlineDocument(blocks: [
@@ -70,6 +105,26 @@ struct ProjectOutlineMutationEngineTests {
     #expect(didOutdent)
     #expect(document.blocks.map(\.text) == ["A", "B", "D", "C"])
     #expect(document.blocks.map(\.depth) == [0, 1, 1, 0])
+  }
+
+  @Test func outdentSelectionMovesContiguousRootSubtreesAfterParentSubtree() {
+    let ids = Self.ids()
+    var document = ProjectOutlineDocument(blocks: [
+      ProjectOutlineBlock(id: ids[0], depth: 0, text: "A"),
+      ProjectOutlineBlock(id: ids[1], depth: 1, text: "B"),
+      ProjectOutlineBlock(id: ids[2], depth: 1, text: "C"),
+      ProjectOutlineBlock(id: ids[3], depth: 1, text: "D"),
+      ProjectOutlineBlock(id: ids[4], depth: 0, text: "E"),
+    ])
+
+    let didOutdent = ProjectOutlineMutationEngine.outdentSelection(
+      ids: [ids[1], ids[2]],
+      in: &document
+    )
+
+    #expect(didOutdent)
+    #expect(document.blocks.map(\.text) == ["A", "D", "B", "C", "E"])
+    #expect(document.blocks.map(\.depth) == [0, 1, 0, 0, 0])
   }
 
   @Test func deletingTaskBlockAttachesChildrenToPreviousSiblingWhenAvailable() {
@@ -175,6 +230,26 @@ struct ProjectOutlineMutationEngineTests {
     #expect(document.blocks.map(\.depth) == [0, 1, 0])
   }
 
+  @Test func enterAtEndWithHiddenChildrenOverrideCreatesSiblingAfterSubtree() {
+    let ids = Self.ids()
+    var document = ProjectOutlineDocument(blocks: [
+      ProjectOutlineBlock(id: ids[0], depth: 0, text: "parent"),
+      ProjectOutlineBlock(id: ids[1], depth: 1, text: "hidden child"),
+      ProjectOutlineBlock(id: ids[2], depth: 0, text: "next"),
+    ])
+
+    let result = ProjectOutlineMutationEngine.insertFromEnter(
+      blockID: ids[0],
+      textOffset: 6,
+      hasExpandedChildrenOverride: false,
+      in: &document
+    )
+
+    #expect(result?.focusedBlockID == document.blocks[2].id)
+    #expect(document.blocks.map(\.text) == ["parent", "hidden child", "", "next"])
+    #expect(document.blocks.map(\.depth) == [0, 1, 0, 0])
+  }
+
   @Test func enterOnTaskBlockCreatesNormalSiblingAfterTaskSubtree() {
     let ids = Self.ids()
     var document = ProjectOutlineDocument(blocks: [
@@ -197,6 +272,26 @@ struct ProjectOutlineMutationEngineTests {
     #expect(document.blocks.map(\.text) == ["", "child", "", "next"])
     #expect(document.blocks.map(\.depth) == [0, 1, 0, 0])
     #expect(document.blocks[2].taskBinding == nil)
+  }
+
+  @Test func insertFirstChildCreatesNormalChildAfterTaskBlock() {
+    let ids = Self.ids()
+    var document = ProjectOutlineDocument(blocks: [
+      ProjectOutlineBlock(
+        id: ids[0],
+        depth: 0,
+        text: "",
+        taskBinding: .init(taskID: ids[0], taskExternalIdentifier: "task")
+      ),
+      ProjectOutlineBlock(id: ids[1], depth: 1, text: "child"),
+    ])
+
+    let result = ProjectOutlineMutationEngine.insertFirstChild(blockID: ids[0], in: &document)
+
+    #expect(result?.focusedBlockID == document.blocks[1].id)
+    #expect(document.blocks.map(\.text) == ["", "", "child"])
+    #expect(document.blocks.map(\.depth) == [0, 1, 1])
+    #expect(document.blocks[1].taskBinding == nil)
   }
 
   @Test func zoomVisibleIndicesTreatFocusRootAsTemporaryRoot() {

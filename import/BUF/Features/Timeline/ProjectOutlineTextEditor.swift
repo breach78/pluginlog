@@ -21,6 +21,8 @@ enum ProjectOutlineTextCommand {
   case zoomNextSibling
   case focusPrevious
   case focusNext
+  case focusPreviousAt(offset: Int)
+  case focusNextAt(offset: Int)
   case extendBlockSelectionUp
   case extendBlockSelectionDown
   case exitBlockSelectionUp
@@ -30,6 +32,7 @@ enum ProjectOutlineTextCommand {
   case clearBlockSelection
   case deleteBlockSelection
   case selectAllVisibleBlocks
+  case mergeBackspaceAtStart(text: String)
 }
 
 enum ProjectOutlineFocusPlacement {
@@ -106,6 +109,7 @@ struct ProjectOutlineTextEditor: NSViewRepresentable {
       coordinator?.parent.onBlur()
     }
     textView.drawsBackground = false
+    textView.isAutomaticLinkDetectionEnabled = false
     textView.textContainerInset = NSSize(width: 0, height: 1)
     textView.textContainer?.lineFragmentPadding = 0
     textView.textContainer?.widthTracksTextView = true
@@ -118,7 +122,7 @@ struct ProjectOutlineTextEditor: NSViewRepresentable {
     textView.frame = CGRect(x: 0, y: 0, width: 1, height: max(24, measuredHeight))
     textView.allowsUndo = false
     textView.font = font
-    context.coordinator.applyMarkdown(text, to: textView, preserveSelection: false)
+    context.coordinator.applyStorageText(text, to: textView, preserveSelection: false)
     textView.layoutManager?.delegate = context.coordinator
     textView.registerForDraggedTypes([.fileURL])
 
@@ -162,9 +166,9 @@ struct ProjectOutlineTextEditor: NSViewRepresentable {
       textView.typingAttributes = [.font: font]
       needsHeightUpdate = true
     }
-    if context.coordinator.currentMarkdown() != text {
+    if context.coordinator.displayedText != text {
       context.coordinator.isApplyingText = true
-      context.coordinator.applyMarkdown(text, to: textView, preserveSelection: true)
+      context.coordinator.applyStorageText(text, to: textView, preserveSelection: true)
       context.coordinator.isApplyingText = false
       needsHeightUpdate = true
     }
@@ -240,14 +244,14 @@ struct ProjectOutlineTextEditor: NSViewRepresentable {
     }
 
     override func copy(_ sender: Any?) {
-      guard writeSelectedMarkdownToPasteboard() else {
+      guard writeSelectedTextToPasteboard() else {
         super.copy(sender)
         return
       }
     }
 
     override func cut(_ sender: Any?) {
-      guard writeSelectedMarkdownToPasteboard() else {
+      guard writeSelectedTextToPasteboard() else {
         super.cut(sender)
         return
       }
@@ -369,6 +373,10 @@ struct ProjectOutlineTextEditor: NSViewRepresentable {
           commandHandler?(.exitBlockSelectionUp)
         case 125:
           commandHandler?(.exitBlockSelectionDown)
+        case 48 where isShift:
+          commandHandler?(.shiftTab)
+        case 48:
+          commandHandler?(.tab)
         case 123:
           commandHandler?(.exitBlockSelectionLeft)
         case 124:
@@ -457,10 +465,10 @@ struct ProjectOutlineTextEditor: NSViewRepresentable {
         commandHandler?(.commandUp)
       case 125 where isCommand:
         commandHandler?(.commandDown)
-      case 126 where selectedRange().location == 0 && selectedRange().length == 0:
-        commandHandler?(.focusPrevious)
-      case 125 where selectedRange().location == string.utf16.count && selectedRange().length == 0:
-        commandHandler?(.focusNext)
+      case 126 where !hasNavigationModifier:
+        commandHandler?(.focusPreviousAt(offset: selectedRange().location))
+      case 125 where !hasNavigationModifier:
+        commandHandler?(.focusNextAt(offset: selectedRange().location))
       case 53:
         commandHandler?(.escape)
       default:
@@ -523,16 +531,16 @@ struct ProjectOutlineTextEditor: NSViewRepresentable {
       return nil
     }
 
-    private func writeSelectedMarkdownToPasteboard() -> Bool {
+    private func writeSelectedTextToPasteboard() -> Bool {
       let selectedRange = selectedRange()
       guard selectedRange.length > 0,
         let selected = textStorage?.attributedSubstring(from: selectedRange)
       else {
         return false
       }
-      let markdown = ProjectOutlineAttachmentInlineCodec.markdown(from: selected)
+      let storageText = ProjectOutlineAttachmentInlineCodec.storageText(from: selected)
       NSPasteboard.general.clearContents()
-      NSPasteboard.general.setString(markdown, forType: .string)
+      NSPasteboard.general.setString(storageText, forType: .string)
       return true
     }
 
@@ -561,15 +569,28 @@ struct ProjectOutlineTextEditor: NSViewRepresentable {
     weak var textView: CommandTextView?
     var isApplyingText = false
     var lastFocusRequestID: UInt64 = 0
+    var displayedText: String
     private var isMeasuringHeight = false
+    private var lastLinkedText: String?
+    private var lastMeasuredText: String?
+    private var lastMeasuredContainerWidth: CGFloat = 0
 
     init(parent: ProjectOutlineTextEditor) {
       self.parent = parent
+      self.displayedText = parent.text
     }
 
     func textDidChange(_ notification: Notification) {
       guard !isApplyingText, let textView = notification.object as? NSTextView else { return }
-      parent.text = ProjectOutlineAttachmentInlineCodec.markdown(from: textView.attributedString())
+      let nextText: String
+      if ProjectOutlineAttachmentInlineCodec.containsAttachment(in: textView.attributedString()) {
+        nextText = ProjectOutlineAttachmentInlineCodec.storageText(from: textView.attributedString())
+      } else {
+        nextText = textView.string
+      }
+      displayedText = nextText
+      parent.text = nextText
+      applyLinkAttributes(to: textView)
       updateMeasuredHeight()
     }
 
@@ -577,6 +598,8 @@ struct ProjectOutlineTextEditor: NSViewRepresentable {
       switch command {
       case .enter(let offset):
         parent.onCommand(.enter(offset: storageOffset(forDisplayOffset: offset)))
+      case .backspaceAtStart:
+        parent.onCommand(.mergeBackspaceAtStart(text: currentStorageText()))
       default:
         parent.onCommand(command)
       }
@@ -593,24 +616,33 @@ struct ProjectOutlineTextEditor: NSViewRepresentable {
       }
     }
 
-    func currentMarkdown() -> String {
+    func currentStorageText() -> String {
       guard let textView else { return parent.text }
-      return ProjectOutlineAttachmentInlineCodec.markdown(from: textView.attributedString())
+      let storageText: String
+      if ProjectOutlineAttachmentInlineCodec.containsAttachment(in: textView.attributedString()) {
+        storageText = ProjectOutlineAttachmentInlineCodec.storageText(from: textView.attributedString())
+      } else {
+        storageText = textView.string
+      }
+      displayedText = storageText
+      return storageText
     }
 
-    func applyMarkdown(
-      _ markdown: String,
+    func applyStorageText(
+      _ storageText: String,
       to textView: NSTextView,
       preserveSelection: Bool
     ) {
       let selectedRange = textView.selectedRange()
       let attributed = ProjectOutlineAttachmentInlineCodec.attributedString(
-        from: markdown,
+        from: storageText,
         vaultRootURL: parent.vaultRootURL,
         font: parent.font
       )
       textView.textStorage?.setAttributedString(attributed)
       textView.typingAttributes = [.font: parent.font, .foregroundColor: NSColor.labelColor]
+      applyLinkAttributes(to: textView)
+      displayedText = storageText
       guard preserveSelection else { return }
       let clampedLocation = min(selectedRange.location, attributed.length)
       let clampedLength = min(selectedRange.length, max(0, attributed.length - clampedLocation))
@@ -644,6 +676,16 @@ struct ProjectOutlineTextEditor: NSViewRepresentable {
       parent.onFocus()
     }
 
+    func textView(
+      _ textView: NSTextView,
+      clickedOnLink link: Any,
+      at charIndex: Int
+    ) -> Bool {
+      guard let url = link as? URL else { return false }
+      NSWorkspace.shared.open(url)
+      return true
+    }
+
     func textDidEndEditing(_ notification: Notification) {
       parent.onBlur()
     }
@@ -662,13 +704,23 @@ struct ProjectOutlineTextEditor: NSViewRepresentable {
       guard let textView else { return }
       isMeasuringHeight = true
       defer { isMeasuringHeight = false }
-      _ = updateWrappingWidth(from: textView.enclosingScrollView)
+      let widthChanged = updateWrappingWidth(from: textView.enclosingScrollView)
       guard let textContainer = textView.textContainer else { return }
-      if ensureLayout {
+      let containerWidth = textContainer.containerSize.width
+      if !ensureLayout,
+        !widthChanged,
+        lastMeasuredText == textView.string,
+        abs(lastMeasuredContainerWidth - containerWidth) <= 0.5
+      {
+        return
+      }
+      if ensureLayout || widthChanged {
         textView.layoutManager?.ensureLayout(for: textContainer)
       }
       let usedRect = textView.layoutManager?.usedRect(for: textContainer) ?? .zero
       let height = max(24, ceil(usedRect.height + textView.textContainerInset.height * 2 + 2))
+      lastMeasuredText = textView.string
+      lastMeasuredContainerWidth = containerWidth
       syncTextViewFrame(height: height)
       if abs(parent.measuredHeight - height) > 0.5 {
         parent.measuredHeight = height
@@ -684,9 +736,13 @@ struct ProjectOutlineTextEditor: NSViewRepresentable {
     func syncTextViewFrame(height: CGFloat) {
       guard let textView else { return }
       let width = max(1, textView.enclosingScrollView?.contentSize.width ?? textView.frame.width)
-      if abs(textView.frame.width - width) > 0.5 || abs(textView.frame.height - height) > 0.5 {
-        textView.frame = CGRect(x: 0, y: 0, width: width, height: height)
-      }
+      let nextFrame = CGRect(x: 0, y: 0, width: width, height: height)
+      guard abs(textView.frame.origin.x - nextFrame.origin.x) > 0.5
+        || abs(textView.frame.origin.y - nextFrame.origin.y) > 0.5
+        || abs(textView.frame.width - nextFrame.width) > 0.5
+        || abs(textView.frame.height - nextFrame.height) > 0.5
+      else { return }
+      textView.frame = nextFrame
       textView.needsDisplay = true
       textView.enclosingScrollView?.needsDisplay = true
     }
@@ -699,11 +755,71 @@ struct ProjectOutlineTextEditor: NSViewRepresentable {
           width: width,
           height: CGFloat.greatestFiniteMagnitude
         )
-        textView.frame.size.width = width
+        if abs(textView.frame.width - width) > 0.5 {
+          textView.frame.size.width = width
+        }
         return true
       }
-      syncTextViewFrame(height: max(24, parent.measuredHeight))
       return false
+    }
+
+    private func applyLinkAttributes(to textView: NSTextView) {
+      guard let storage = textView.textStorage else { return }
+      let fullRange = NSRange(location: 0, length: storage.length)
+      guard fullRange.length > 0 else {
+        lastLinkedText = nil
+        return
+      }
+      let text = storage.string
+      guard text.contains("://") else {
+        guard lastLinkedText != nil else { return }
+        storage.beginEditing()
+        storage.removeAttribute(.link, range: fullRange)
+        storage.removeAttribute(.underlineStyle, range: fullRange)
+        storage.removeAttribute(.foregroundColor, range: fullRange)
+        storage.addAttributes(
+          [.font: parent.font, .foregroundColor: NSColor.labelColor],
+          range: fullRange
+        )
+        storage.endEditing()
+        lastLinkedText = nil
+        textView.typingAttributes = [.font: parent.font, .foregroundColor: NSColor.labelColor]
+        return
+      }
+      guard lastLinkedText != text else { return }
+      storage.beginEditing()
+      storage.removeAttribute(.link, range: fullRange)
+      storage.removeAttribute(.underlineStyle, range: fullRange)
+      storage.removeAttribute(.foregroundColor, range: fullRange)
+      storage.addAttributes(
+        [.font: parent.font, .foregroundColor: NSColor.labelColor],
+        range: fullRange
+      )
+      let plainText = storage.string as NSString
+      for match in Self.linkRegex.matches(in: text, range: fullRange) {
+        let matchedText = plainText.substring(with: match.range)
+        guard let url = Self.linkURL(from: matchedText) else { continue }
+        storage.addAttributes(
+          [
+            .link: url,
+            .foregroundColor: NSColor.linkColor,
+            .underlineStyle: NSUnderlineStyle.single.rawValue,
+          ],
+          range: match.range
+        )
+      }
+      storage.endEditing()
+      lastLinkedText = text
+      textView.typingAttributes = [.font: parent.font, .foregroundColor: NSColor.labelColor]
+    }
+
+    private static let linkRegex = try! NSRegularExpression(
+      pattern: #"\b[A-Za-z][A-Za-z0-9+.-]*://[^\s<>()]+"#
+    )
+
+    private static func linkURL(from rawText: String) -> URL? {
+      let trimmed = rawText.trimmingCharacters(in: CharacterSet(charactersIn: ".,;:!?)]}"))
+      return URL(string: trimmed)
     }
 
     func applyFocusIfNeeded() {

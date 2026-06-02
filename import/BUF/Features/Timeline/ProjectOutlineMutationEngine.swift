@@ -81,6 +81,19 @@ enum ProjectOutlineMutationEngine {
     return ProjectOutlineInsertionResult(insertedBlockID: inserted.id, focusedBlockID: inserted.id)
   }
 
+  @discardableResult
+  static func insertFirstChild(
+    blockID: UUID,
+    in document: inout ProjectOutlineDocument
+  ) -> ProjectOutlineInsertionResult? {
+    guard let index = document.blocks.firstIndex(where: { $0.id == blockID }) else {
+      return nil
+    }
+    let inserted = ProjectOutlineBlock(depth: document.blocks[index].depth + 1, text: "")
+    document.blocks.insert(inserted, at: index + 1)
+    return ProjectOutlineInsertionResult(insertedBlockID: inserted.id, focusedBlockID: inserted.id)
+  }
+
   static func hasChildren(at index: Int, in document: ProjectOutlineDocument) -> Bool {
     let next = index + 1
     guard document.blocks.indices.contains(index), document.blocks.indices.contains(next) else {
@@ -167,6 +180,41 @@ enum ProjectOutlineMutationEngine {
     document.blocks.removeSubrange(originalRange)
     let insertionIndex = parentRange.upperBound - originalRange.count
     document.blocks.insert(contentsOf: subtree, at: insertionIndex)
+    return true
+  }
+
+  @discardableResult
+  static func indentSelection(ids selectedIDs: [UUID], in document: inout ProjectOutlineDocument) -> Bool {
+    guard let selection = selectedRootRanges(for: selectedIDs, in: document),
+      let firstRoot = selection.rootIndices.first,
+      previousSiblingIndex(before: firstRoot, in: document) != nil
+    else {
+      return false
+    }
+
+    shiftDepths(in: selection.movingRange, by: 1, document: &document)
+    return true
+  }
+
+  @discardableResult
+  static func outdentSelection(ids selectedIDs: [UUID], in document: inout ProjectOutlineDocument) -> Bool {
+    guard let selection = selectedRootRanges(for: selectedIDs, in: document),
+      let firstRoot = selection.rootIndices.first,
+      document.blocks[firstRoot].depth > 0,
+      let parentIndex = parentIndex(for: firstRoot, in: document)
+    else {
+      return false
+    }
+
+    let parentRange = subtreeRange(at: parentIndex, in: document)
+    var movingSubtree = Array(document.blocks[selection.movingRange])
+    for index in movingSubtree.indices {
+      movingSubtree[index].depth = max(0, movingSubtree[index].depth - 1)
+    }
+
+    document.blocks.removeSubrange(selection.movingRange)
+    let insertionIndex = parentRange.upperBound - selection.movingRange.count
+    document.blocks.insert(contentsOf: movingSubtree, at: insertionIndex)
     return true
   }
 
@@ -364,6 +412,7 @@ enum ProjectOutlineMutationEngine {
   static func insertFromEnter(
     blockID: UUID,
     textOffset: Int,
+    hasExpandedChildrenOverride: Bool? = nil,
     in document: inout ProjectOutlineDocument
   ) -> ProjectOutlineInsertionResult? {
     guard let index = document.blocks.firstIndex(where: { $0.id == blockID }) else {
@@ -391,7 +440,9 @@ enum ProjectOutlineMutationEngine {
 
     let insertIndex: Int
     let insertDepth: Int
-    if hasChildren(at: index, in: document), !document.blocks[index].childrenCollapsed {
+    let hasExpandedChildren = hasExpandedChildrenOverride
+      ?? (hasChildren(at: index, in: document) && !document.blocks[index].childrenCollapsed)
+    if hasExpandedChildren {
       insertIndex = index + 1
       insertDepth = document.blocks[index].depth + 1
     } else {
@@ -412,6 +463,50 @@ enum ProjectOutlineMutationEngine {
     for index in range {
       document.blocks[index].depth = max(0, document.blocks[index].depth + delta)
     }
+  }
+
+  private static func selectedRootRanges(
+    for selectedIDs: [UUID],
+    in document: ProjectOutlineDocument
+  ) -> (rootIndices: [Int], movingRange: Range<Int>)? {
+    let selectedSet = Set(selectedIDs)
+    guard !selectedSet.isEmpty else { return nil }
+
+    let selectedIndices = document.blocks.indices.filter {
+      selectedSet.contains(document.blocks[$0].id)
+    }
+    guard let firstSelected = selectedIndices.first,
+      let lastSelected = selectedIndices.last
+    else {
+      return nil
+    }
+
+    let rootIndices = selectedIndices.filter { index in
+      guard let parentIndex = parentIndex(for: index, in: document) else { return true }
+      return !selectedSet.contains(document.blocks[parentIndex].id)
+    }
+    guard !rootIndices.isEmpty else { return nil }
+
+    let rootDepth = document.blocks[rootIndices[0]].depth
+    guard rootIndices.allSatisfy({ document.blocks[$0].depth == rootDepth }) else {
+      return nil
+    }
+
+    let firstRange = subtreeRange(at: rootIndices[0], in: document)
+    let lastRange = subtreeRange(at: rootIndices[rootIndices.count - 1], in: document)
+    let movingRange = firstRange.lowerBound..<lastRange.upperBound
+    guard movingRange.lowerBound == firstSelected,
+      movingRange.upperBound == lastSelected + 1
+    else {
+      return nil
+    }
+    guard movingRange.allSatisfy({ selectedSet.contains(document.blocks[$0].id) }) else {
+      return nil
+    }
+
+    let parentIDs = Set(rootIndices.map { parentIndex(for: $0, in: document).map { document.blocks[$0].id } })
+    guard parentIDs.count == 1 else { return nil }
+    return (rootIndices, movingRange)
   }
 
   private static func parentIndex(for index: Int, in document: ProjectOutlineDocument) -> Int? {
