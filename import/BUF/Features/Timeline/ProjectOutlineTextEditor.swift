@@ -476,9 +476,9 @@ struct ProjectOutlineTextEditor: NSViewRepresentable {
       case 125 where isCommand:
         commandHandler?(.commandDown)
       case 126 where !hasNavigationModifier:
-        commandHandler?(.focusPreviousAt(offset: selectedRange().location))
+        handleVerticalArrowKey(event, movingUp: true)
       case 125 where !hasNavigationModifier:
-        commandHandler?(.focusNextAt(offset: selectedRange().location))
+        handleVerticalArrowKey(event, movingUp: false)
       case 53:
         commandHandler?(.escape)
       default:
@@ -504,6 +504,19 @@ struct ProjectOutlineTextEditor: NSViewRepresentable {
       guard window?.firstResponder === self else { return }
       scrollRangeToVisible(selectedRange())
       revealHandler?()
+    }
+
+    private func handleVerticalArrowKey(_ event: NSEvent, movingUp: Bool) {
+      let beforeRange = selectedRange()
+      super.keyDown(with: event)
+      let afterRange = selectedRange()
+      if NSEqualRanges(beforeRange, afterRange) {
+        commandHandler?(movingUp
+          ? .focusPreviousAt(offset: beforeRange.location)
+          : .focusNextAt(offset: beforeRange.location))
+        return
+      }
+      revealCaretIfNeeded()
     }
 
     func attachmentHit(at point: NSPoint) -> ProjectOutlineAttachmentHit? {
