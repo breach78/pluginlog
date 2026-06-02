@@ -707,7 +707,7 @@ struct ProjectOutlinerView: View {
 
   private func invalidateMeasuredHeight(for blockID: UUID?) {
     guard let blockID else { return }
-    rowHeights.removeValue(forKey: blockID)
+    rowHeights[blockID] = 24
   }
 
   private func isDirectChildOfZoomRoot(_ blockID: UUID) -> Bool {
@@ -833,6 +833,7 @@ private struct ProjectOutlineRowView: View {
           onFocus: onFocus
         )
         .frame(minHeight: 24)
+        .frame(height: measuredHeight)
       }
     }
     .padding(.horizontal, 9)
@@ -1018,6 +1019,7 @@ private struct ProjectOutlineRowView: View {
             }
           )
           .frame(minHeight: 24)
+          .frame(height: measuredHeight)
           .opacity(task.isCompleted ? 0.55 : 1)
             .foregroundStyle(task.isCompleted ? Color.secondary : Color.primary)
             .strikethrough(task.isCompleted)
@@ -1040,6 +1042,7 @@ private struct ProjectOutlineRowView: View {
               onBlur: commitPendingTaskIfNeeded
             )
             .frame(minHeight: 24)
+            .frame(height: measuredHeight)
               .disabled(isCreatingTask)
           } else {
             Text("불러오는 중...")

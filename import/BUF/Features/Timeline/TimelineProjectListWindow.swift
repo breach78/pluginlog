@@ -211,6 +211,10 @@ struct TimelineProjectListContent: View {
 
       Spacer(minLength: 0)
 
+      Text("\(visibleTasks.count)")
+        .font(projectListCountFont)
+        .foregroundStyle(.secondary)
+
       Button {
         toggleCompletedTasks()
       } label: {
@@ -222,33 +226,6 @@ struct TimelineProjectListContent: View {
       .buttonStyle(.borderless)
       .help(showsCompletedTasks ? "완료항목 숨기기" : "완료항목 보기")
       .accessibilityLabel("완료항목 보기")
-
-      Button {
-        toggleTaskNotes()
-      } label: {
-        Image(systemName: "note.text")
-          .font(.system(size: 13, weight: .semibold))
-          .foregroundStyle(showsTaskNotes ? projectColor : Color.secondary)
-          .frame(width: 24, height: 24)
-      }
-      .buttonStyle(.borderless)
-      .help(showsTaskNotes ? "노트 미리보기 숨기기" : "노트 미리보기 보기")
-      .accessibilityLabel("노트 미리보기")
-
-      Text("\(visibleTasks.count)")
-        .font(projectListCountFont)
-        .foregroundStyle(.secondary)
-
-      Button {
-        startDraft(after: visibleTasks.last?.id)
-      } label: {
-        Image(systemName: "plus")
-          .font(.system(size: 13, weight: .semibold))
-          .frame(width: 24, height: 24)
-      }
-      .buttonStyle(.borderless)
-      .disabled(isCreatingTask)
-      .help("할일 추가")
 
       if let onClosePanel {
         Button {
@@ -325,12 +302,6 @@ struct TimelineProjectListContent: View {
       ScrollView {
         VStack(alignment: .leading, spacing: 0) {
           projectNoteSection
-
-          lowerTaskListSection
-
-          Color.clear
-            .frame(height: Self.taskListBottomScrollReserve)
-            .accessibilityHidden(true)
         }
       }
       .onChange(of: session.focusedDraftAnchor) { _, anchor in
