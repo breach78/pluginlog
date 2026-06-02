@@ -85,7 +85,7 @@ final class TimelineProjectListWindowPresenter {
     inlineEditorConfiguration: TimelineProjectListInlineEditorConfiguration? = nil
   ) {
     if let existingWindow = liveWindow(for: snapshot.projectID) {
-      refresh(snapshot: snapshot)
+      refresh(snapshot: snapshot, inlineEditorConfiguration: inlineEditorConfiguration)
       NSApp.activate(ignoringOtherApps: true)
       existingWindow.makeKeyAndOrderFront(nil)
       Self.clearInitialTextFocus(in: existingWindow)
@@ -132,7 +132,10 @@ final class TimelineProjectListWindowPresenter {
   }
 
   @discardableResult
-  func refresh(snapshot: TimelineProjectListWindowSnapshot) -> Int {
+  func refresh(
+    snapshot: TimelineProjectListWindowSnapshot,
+    inlineEditorConfiguration: TimelineProjectListInlineEditorConfiguration? = nil
+  ) -> Int {
     pruneClosedWindows()
     var refreshedCount = 0
     for record in windowRecords where Self.isLiveWindow(record.window) {
@@ -146,7 +149,10 @@ final class TimelineProjectListWindowPresenter {
       }
 
       record.window.title = snapshot.title
-      hostingController.rootView = hostingController.rootView.replacing(snapshot: snapshot)
+      hostingController.rootView = hostingController.rootView.replacing(
+        snapshot: snapshot,
+        inlineEditorConfiguration: inlineEditorConfiguration
+      )
       refreshedCount += 1
     }
     return refreshedCount

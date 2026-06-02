@@ -25,6 +25,8 @@ struct TimelineProjectListContent: View {
   @State private var pendingExpandedTaskIDAfterClose: UUID?
   @State private var taskEditFocusRequests: [UUID: Int] = [:]
   @State private var taskEditFocuses: [UUID: TimelineTaskEditInitialFocus] = [:]
+  @State private var highlightedOutlineTaskID: UUID?
+  @State private var outlineHighlightRequestID = 0
   @State private var expandedTaskAuxiliarySections: [UUID: Set<TaskEditAuxiliarySection>] = [:]
   @State private var projectNoteText: String
   @State private var projectOutlineDocument: ProjectOutlineDocument
@@ -65,7 +67,11 @@ struct TimelineProjectListContent: View {
     )
     _showsCompletedTasks = State(initialValue: displayPreferences.showsCompletedTasks)
     _showsTaskNotes = State(initialValue: displayPreferences.showsTaskNotes)
-    _expandedTaskID = State(initialValue: inlineEditorConfiguration?.initialExpandedTaskID)
+    _expandedTaskID = State(initialValue: nil)
+    _highlightedOutlineTaskID = State(initialValue: inlineEditorConfiguration?.initialExpandedTaskID)
+    _outlineHighlightRequestID = State(
+      initialValue: inlineEditorConfiguration?.initialFocusRequestID ?? 0
+    )
     _projectNoteText = State(initialValue: snapshot.projectNoteText)
     _projectOutlineDocument = State(
       initialValue: Self.outlineDocument(
@@ -78,7 +84,10 @@ struct TimelineProjectListContent: View {
     )
   }
 
-  func replacing(snapshot: TimelineProjectListWindowSnapshot) -> TimelineProjectListContent {
+  func replacing(
+    snapshot: TimelineProjectListWindowSnapshot,
+    inlineEditorConfiguration: TimelineProjectListInlineEditorConfiguration? = nil
+  ) -> TimelineProjectListContent {
     sessionStore.applySnapshot(snapshot)
     return TimelineProjectListContent(
       snapshot: snapshot,
@@ -86,7 +95,7 @@ struct TimelineProjectListContent: View {
       actions: actions,
       onOpenProjectWindow: onOpenProjectWindow,
       onClosePanel: onClosePanel,
-      inlineEditorConfiguration: inlineEditorConfiguration,
+      inlineEditorConfiguration: inlineEditorConfiguration ?? self.inlineEditorConfiguration,
       sessionStore: sessionStore
     )
   }
@@ -134,6 +143,12 @@ struct TimelineProjectListContent: View {
       temporarilyVisibleCompletedTaskIDs = temporarilyVisibleCompletedTaskIDs.filter { taskID in
         nextSnapshot.tasks.contains(where: { $0.id == taskID })
       }
+    }
+    .onChange(of: inlineEditorConfiguration?.initialFocusRequestID) { _, _ in
+      highlightInitialTaskIfNeeded()
+    }
+    .onChange(of: inlineEditorConfiguration?.initialExpandedTaskID) { _, _ in
+      highlightInitialTaskIfNeeded()
     }
     .onChange(of: projectNoteText) { _, _ in
       scheduleProjectNoteAutoSave()
@@ -263,6 +278,8 @@ struct TimelineProjectListContent: View {
         temporarilyVisibleCompletedTaskIDs: temporarilyVisibleCompletedTaskIDs,
         pendingTaskBlockIDs: pendingOutlineTaskBlockIDs,
         recurringCompletionCounts: recurringCompletionCounts,
+        highlightedTaskID: highlightedOutlineTaskID,
+        highlightRequestID: outlineHighlightRequestID,
         moveOptions: actions.moveOptions().filter { $0.id != snapshot.projectID },
         taskEditConfiguration: inlineEditorConfiguration,
         onCreateTaskBlock: createOutlineTaskBlock,
@@ -315,9 +332,6 @@ struct TimelineProjectListContent: View {
             .frame(height: Self.taskListBottomScrollReserve)
             .accessibilityHidden(true)
         }
-      }
-      .onAppear {
-        scrollInitialFocusedTaskIntoView(with: proxy)
       }
       .onChange(of: session.focusedDraftAnchor) { _, anchor in
         scrollFocusedDraftIntoView(anchor, with: proxy)
@@ -854,15 +868,7 @@ struct TimelineProjectListContent: View {
   ) {
     if inlineEditorConfiguration != nil {
       cancelDraftIfEmpty()
-      taskEditFocuses[task.id] = focus
-      taskEditFocusRequests[task.id, default: 0] &+= 1
-      if expandedTaskID == nil {
-        expandedTaskID = task.id
-      } else if expandedTaskID == task.id {
-        return
-      } else {
-        switchExpandedTaskEditor(to: task.id)
-      }
+      requestOutlineTaskHighlight(task.id)
       return
     }
     actions.onEditTask(task.id)
@@ -1601,6 +1607,18 @@ struct TimelineProjectListContent: View {
     openTask(task, focus: .none)
   }
 
+  private func requestOutlineTaskHighlight(_ taskID: UUID) {
+    highlightedOutlineTaskID = taskID
+    outlineHighlightRequestID &+= 1
+  }
+
+  private func highlightInitialTaskIfNeeded() {
+    guard let taskID = inlineEditorConfiguration?.initialExpandedTaskID else { return }
+    highlightedOutlineTaskID = taskID
+    outlineHighlightRequestID = inlineEditorConfiguration?.initialFocusRequestID
+      ?? outlineHighlightRequestID + 1
+  }
+
   private func submitInlineTitle(
     for task: TimelineProjectListWindowSnapshot.Task,
     createDraftBelow: Bool
@@ -1785,23 +1803,6 @@ struct TimelineProjectListContent: View {
         proxy.scrollTo(
           TimelineProjectListScrollTarget.draft(anchor),
           anchor: Self.focusedDraftScrollAnchor
-        )
-      }
-    }
-  }
-
-  private func scrollInitialFocusedTaskIntoView(with proxy: ScrollViewProxy) {
-    guard let taskID = inlineEditorConfiguration?.initialExpandedTaskID else {
-      return
-    }
-
-    DispatchQueue.main.async {
-      var transaction = Transaction()
-      transaction.disablesAnimations = true
-      withTransaction(transaction) {
-        proxy.scrollTo(
-          TimelineProjectListScrollTarget.task(taskID),
-          anchor: Self.focusedTaskScrollAnchor
         )
       }
     }

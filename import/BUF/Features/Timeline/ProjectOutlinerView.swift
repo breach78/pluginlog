@@ -11,6 +11,8 @@ struct ProjectOutlinerView: View {
   let temporarilyVisibleCompletedTaskIDs: Set<UUID>
   let pendingTaskBlockIDs: Set<UUID>
   let recurringCompletionCounts: [UUID: Int]
+  let highlightedTaskID: UUID?
+  let highlightRequestID: Int
   let moveOptions: [TimelineProjectMoveOption]
   let taskEditConfiguration: TimelineProjectListInlineEditorConfiguration?
   let onCreateTaskBlock: (UUID) -> Void
@@ -37,6 +39,7 @@ struct ProjectOutlinerView: View {
   @State private var dropIndicator: ProjectOutlineDropIndicator?
   @State private var blockToReveal: UUID?
   @State private var blockRevealRequestID: UInt64 = 0
+  @State private var highlightedBlockID: UUID?
 
   private var tasksByID: [UUID: TimelineProjectListWindowSnapshot.Task] {
     Dictionary(uniqueKeysWithValues: tasks.map { ($0.id, $0) })
@@ -69,6 +72,7 @@ struct ProjectOutlinerView: View {
                 focusPlacement: focusedBlockID == blockID ? focusPlacement : .preserve,
                 isBlockSelectionActive: blockSelection != nil,
                 isBlockSelected: selectedBlockIDs.contains(blockID),
+                isHighlighted: highlightedBlockID == blockID,
                 displayDepth: displayDepth(for: block),
                 blockColorToken: block.colorToken,
                 hidesMarker: zoomRootBlockID == blockID,
@@ -154,9 +158,18 @@ struct ProjectOutlinerView: View {
           proxy.scrollTo(blockToReveal)
         }
       }
+      .onAppear {
+        highlightRequestedTask()
+      }
+      .onChange(of: highlightRequestID) { _, _ in
+        highlightRequestedTask()
+      }
       .onChange(of: document.blocks) { _, blocks in
         if let zoomRootBlockID, !blocks.contains(where: { $0.id == zoomRootBlockID }) {
           self.zoomRootBlockID = nil
+        }
+        if highlightedBlockID == nil {
+          highlightRequestedTask()
         }
       }
     }
@@ -667,6 +680,22 @@ struct ProjectOutlinerView: View {
     blockRevealRequestID &+= 1
   }
 
+  private func highlightRequestedTask() {
+    guard let highlightedTaskID,
+      let blockID = document.blocks.first(where: { $0.taskBinding?.taskID == highlightedTaskID })?.id
+    else {
+      return
+    }
+    highlightedBlockID = blockID
+    requestReveal(blockID)
+    Task { @MainActor in
+      try? await Task.sleep(nanoseconds: 1_200_000_000)
+      if highlightedBlockID == blockID {
+        highlightedBlockID = nil
+      }
+    }
+  }
+
   private func invalidateMeasuredHeight(for blockID: UUID?) {
     guard let blockID else { return }
     rowHeights[blockID] = 24
@@ -771,6 +800,7 @@ private struct ProjectOutlineRowView: View {
   let focusPlacement: ProjectOutlineFocusPlacement
   let isBlockSelectionActive: Bool
   let isBlockSelected: Bool
+  let isHighlighted: Bool
   let displayDepth: Int
   let blockColorToken: ProjectOutlineBlockColor?
   let hidesMarker: Bool
@@ -856,7 +886,7 @@ private struct ProjectOutlineRowView: View {
     .frame(maxWidth: .infinity, alignment: .leading)
     .background {
       RoundedRectangle(cornerRadius: 5)
-        .fill(isBlockSelected ? Color.accentColor.opacity(0.12) : palette.backgroundColor)
+        .fill(rowBackgroundColor(palette: palette))
     }
     .onTapGesture {
       onFocus()
@@ -925,6 +955,16 @@ private struct ProjectOutlineRowView: View {
       }
     }
     .onHover { isHoveringMarker = $0 }
+  }
+
+  private func rowBackgroundColor(palette: ProjectOutlineBlockColorPalette.Style) -> Color {
+    if isBlockSelected {
+      return Color.accentColor.opacity(0.12)
+    }
+    if isHighlighted {
+      return Color.yellow.opacity(0.28)
+    }
+    return palette.backgroundColor
   }
 
   private var marker: some View {

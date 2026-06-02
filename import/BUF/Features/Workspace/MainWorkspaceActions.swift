@@ -248,7 +248,13 @@ extension MainWorkspaceView {
   }
 
   func openWorkspaceTaskProjectListWindow(for target: WorkspaceTaskEditPanelTarget) {
-    openWorkspaceProjectListWindow(projectID: target.projectID)
+    openWorkspaceProjectListWindow(
+      projectID: target.projectID,
+      initialExpandedTaskID: target.taskID,
+      initialFocus: target.initialFocus,
+      initialFocusRequestID: target.focusRequestID,
+      initialFields: target.initialFields
+    )
   }
 
   func workspaceProjectListInlineEditorConfiguration(
@@ -367,9 +373,31 @@ extension MainWorkspaceView {
     )
   }
 
-  func openWorkspaceProjectListWindow(projectID: UUID) {
+  func openWorkspaceProjectListWindow(
+    projectID: UUID,
+    initialExpandedTaskID: UUID? = nil,
+    initialFocus: TimelineTaskEditInitialFocus = .none,
+    initialFocusRequestID: Int = 0,
+    initialFields: RetainedTaskEditFields? = nil
+  ) {
     selectProjectContext(projectID)
     guard !TimelineProjectListWindowPresenter.shared.presentedProjectIDs.contains(projectID) else {
+      Task { @MainActor in
+        guard let snapshot = await workspaceProjectListWindowSnapshot(projectID: projectID) else {
+          return
+        }
+        TimelineProjectListWindowPresenter.shared.present(
+          snapshot: snapshot,
+          actions: workspaceProjectListActions(projectID: projectID),
+          inlineEditorConfiguration: workspaceProjectListInlineEditorConfiguration(
+            projectID: projectID,
+            initialExpandedTaskID: initialExpandedTaskID,
+            initialFocus: initialFocus,
+            initialFocusRequestID: initialFocusRequestID,
+            initialFields: initialFields
+          )
+        )
+      }
       return
     }
 
@@ -385,7 +413,11 @@ extension MainWorkspaceView {
         snapshot: snapshot,
         actions: workspaceProjectListActions(projectID: projectID),
         inlineEditorConfiguration: workspaceProjectListInlineEditorConfiguration(
-          projectID: projectID
+          projectID: projectID,
+          initialExpandedTaskID: initialExpandedTaskID,
+          initialFocus: initialFocus,
+          initialFocusRequestID: initialFocusRequestID,
+          initialFields: initialFields
         )
       )
     }
