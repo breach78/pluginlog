@@ -358,11 +358,21 @@ struct ProjectOutlinerView: View {
 
   private func handleCommandEnter(blockID: UUID) {
     guard let block = document.blocks.first(where: { $0.id == blockID }) else { return }
-    if let taskID = block.taskBinding?.taskID, let task = tasksByID[taskID] {
-      onToggleTaskCompletion(taskID, task.isCompleted)
-    } else {
-      onCreateTaskBlock(blockID)
+    if block.isTaskBlock {
+      convertTaskBlockToBullet(blockID: blockID, block: block)
+      return
     }
+    onCreateTaskBlock(blockID)
+  }
+
+  private func convertTaskBlockToBullet(blockID: UUID, block: ProjectOutlineBlock) {
+    guard let index = document.blocks.firstIndex(where: { $0.id == blockID }) else { return }
+    if let taskID = block.taskBinding?.taskID {
+      document.blocks[index].text = tasksByID[taskID]?.title ?? block.text
+      onDeleteTask(taskID)
+    }
+    document.blocks[index].taskBinding = nil
+    requestFocus(blockID)
   }
 
   private func handleBackspaceAtStart(

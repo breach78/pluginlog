@@ -370,7 +370,8 @@ struct ProjectOutlineTextEditor: NSViewRepresentable {
       let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
       let isCommand = modifiers.contains(.command)
       let isShift = modifiers.contains(.shift)
-      let hasNavigationModifier = isCommand || isShift || modifiers.contains(.option)
+      let isOption = modifiers.contains(.option)
+      let hasNavigationModifier = isCommand || isShift || isOption
         || modifiers.contains(.control)
       let key = event.charactersIgnoringModifiers
 
@@ -442,7 +443,7 @@ struct ProjectOutlineTextEditor: NSViewRepresentable {
       }
 
       switch event.keyCode {
-      case 36 where isCommand, 76 where isCommand:
+      case 36 where isCommand || isOption, 76 where isCommand || isOption:
         commandHandler?(.commandEnter)
       case 36 where !isShift, 76 where !isShift:
         commandHandler?(.enter(offset: selectedRange().location))
