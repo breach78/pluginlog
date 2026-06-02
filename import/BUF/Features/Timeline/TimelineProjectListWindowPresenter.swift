@@ -84,6 +84,14 @@ final class TimelineProjectListWindowPresenter {
     actions: TimelineProjectListActions,
     inlineEditorConfiguration: TimelineProjectListInlineEditorConfiguration? = nil
   ) {
+    if let existingWindow = liveWindow(for: snapshot.projectID) {
+      refresh(snapshot: snapshot)
+      NSApp.activate(ignoringOtherApps: true)
+      existingWindow.makeKeyAndOrderFront(nil)
+      Self.clearInitialTextFocus(in: existingWindow)
+      return
+    }
+
     let content = TimelineProjectListContent(
       snapshot: snapshot,
       presentation: .window,
@@ -104,7 +112,7 @@ final class TimelineProjectListWindowPresenter {
     window.contentViewController = hostingController
     window.isReleasedWhenClosed = false
     Self.configureWindowLevel(window)
-    window.setFrameAutosaveName("TimelineProjectListWindow")
+    window.setFrameAutosaveName(Self.frameAutosaveName(for: snapshot.projectID))
     positionNewWindow(window)
 
     let recordID = UUID()
@@ -167,6 +175,13 @@ final class TimelineProjectListWindowPresenter {
     windowRecords.removeAll { !Self.isLiveWindow($0.window) }
   }
 
+  private func liveWindow(for projectID: UUID) -> NSWindow? {
+    pruneClosedWindows()
+    return windowRecords.first { record in
+      Self.isLiveWindow(record.window) && Self.projectID(for: record.window) == projectID
+    }?.window
+  }
+
   private func removeWindowRecord(id: UUID) {
     windowRecords.removeAll { $0.id == id }
   }
@@ -183,6 +198,10 @@ final class TimelineProjectListWindowPresenter {
       return nil
     }
     return hostingController.rootView.snapshot.projectID
+  }
+
+  static func frameAutosaveName(for projectID: UUID) -> String {
+    "TimelineProjectListWindow-\(projectID.uuidString)"
   }
 
   private struct WindowRecord {

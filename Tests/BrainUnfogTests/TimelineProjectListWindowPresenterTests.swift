@@ -54,7 +54,7 @@ final class TimelineProjectListWindowPresenterTests: XCTestCase {
     XCTAssertEqual(Set(presenter.presentedProjectIDs), [firstProjectID, secondProjectID])
   }
 
-  func testRefreshUpdatesEveryOpenWindowForProject() {
+  func testPresentReusesExistingWindowForProject() {
     let presenter = TimelineProjectListWindowPresenter.shared
     presenter.closeAllWindows()
     defer { presenter.closeAllWindows() }
@@ -82,8 +82,23 @@ final class TimelineProjectListWindowPresenterTests: XCTestCase {
       onRenameProject: { _, _ in }
     )
 
-    XCTAssertEqual(presenter.refresh(snapshot: makeSnapshot(projectID: projectID, title: "After")), 2)
+    XCTAssertEqual(presenter.presentedProjectIDs, [projectID])
+    XCTAssertEqual(presenter.refresh(snapshot: makeSnapshot(projectID: projectID, title: "After")), 1)
     XCTAssertEqual(presenter.refresh(snapshot: makeSnapshot(projectID: projectID, title: "After")), 0)
+  }
+
+  func testFrameAutosaveNameIsProjectScoped() {
+    let firstProjectID = UUID()
+    let secondProjectID = UUID()
+
+    XCTAssertNotEqual(
+      TimelineProjectListWindowPresenter.frameAutosaveName(for: firstProjectID),
+      TimelineProjectListWindowPresenter.frameAutosaveName(for: secondProjectID)
+    )
+    XCTAssertTrue(
+      TimelineProjectListWindowPresenter.frameAutosaveName(for: firstProjectID)
+        .contains(firstProjectID.uuidString)
+    )
   }
 
   private func makeSnapshot(
