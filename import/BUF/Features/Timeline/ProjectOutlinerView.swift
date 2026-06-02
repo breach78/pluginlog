@@ -32,6 +32,8 @@ struct ProjectOutlinerView: View {
   @State private var rowHeights: [UUID: CGFloat] = [:]
   @State private var draggingBlockID: UUID?
   @State private var dropIndicator: ProjectOutlineDropIndicator?
+  @State private var blockToReveal: UUID?
+  @State private var blockRevealRequestID: UInt64 = 0
 
   private var tasksByID: [UUID: TimelineProjectListWindowSnapshot.Task] {
     Dictionary(uniqueKeysWithValues: tasks.map { ($0.id, $0) })
@@ -85,6 +87,9 @@ struct ProjectOutlinerView: View {
                   blockSelection = nil
                   requestFocus(blockID)
                 },
+                onReveal: {
+                  requestReveal(blockID)
+                },
                 onDeleteBlock: {
                   deleteBlock(blockID: blockID)
                 },
@@ -108,6 +113,7 @@ struct ProjectOutlinerView: View {
                   draggingBlockID = blockID
                 }
               )
+              .id(blockID)
               .onDrop(
                 of: [UTType.text.identifier],
                 delegate: ProjectOutlineBlockDropDelegate(
@@ -132,6 +138,12 @@ struct ProjectOutlinerView: View {
         DispatchQueue.main.async {
           proxy.scrollTo(blockID, anchor: .center)
           blockToRevealAfterZoomOut = nil
+        }
+      }
+      .onChange(of: blockRevealRequestID) { _, _ in
+        guard let blockToReveal else { return }
+        DispatchQueue.main.async {
+          proxy.scrollTo(blockToReveal)
         }
       }
       .onChange(of: document.blocks) { _, blocks in
@@ -623,6 +635,14 @@ struct ProjectOutlinerView: View {
     focusedBlockID = blockID
     focusPlacement = placement
     focusRequestID &+= 1
+    if let blockID {
+      requestReveal(blockID)
+    }
+  }
+
+  private func requestReveal(_ blockID: UUID) {
+    blockToReveal = blockID
+    blockRevealRequestID &+= 1
   }
 
   private func invalidateMeasuredHeight(for blockID: UUID?) {
@@ -740,6 +760,7 @@ private struct ProjectOutlineRowView: View {
   @Binding var measuredHeight: CGFloat
   let onCommand: (ProjectOutlineTextCommand) -> Void
   let onFocus: () -> Void
+  let onReveal: () -> Void
   let onDeleteBlock: () -> Void
   let onZoomIn: () -> Void
   let onToggleFold: () -> Void
@@ -792,6 +813,7 @@ private struct ProjectOutlineRowView: View {
           isBlockSelectionActive: isBlockSelectionActive,
           font: projectOutlinerNSFont,
           onCommand: onCommand,
+          onReveal: onReveal,
           onImportFiles: onImportAttachmentFiles,
           onOpenAttachment: onOpenAttachment,
           onRenameAttachment: onRenameAttachment,
@@ -932,6 +954,7 @@ private struct ProjectOutlineRowView: View {
               submitTaskTitle(task)
               onCommand(command)
             },
+            onReveal: onReveal,
             onFocus: onFocus,
             onBlur: {
               submitTaskTitle(task)
@@ -955,6 +978,7 @@ private struct ProjectOutlineRowView: View {
               isBlockSelectionActive: isBlockSelectionActive,
               font: projectOutlinerNSFont,
               onCommand: onCommand,
+              onReveal: onReveal,
               onFocus: onFocus,
               onBlur: commitPendingTaskIfNeeded
             )

@@ -65,6 +65,7 @@ struct ProjectOutlineTextEditor: NSViewRepresentable {
   let isBlockSelectionActive: Bool
   let font: NSFont
   let onCommand: (ProjectOutlineTextCommand) -> Void
+  var onReveal: () -> Void = {}
   var onImportFiles: ([URL], Int) -> Void = { _, _ in }
   var onOpenAttachment: (ProjectOutlineInlineAttachment) -> Void = { _ in }
   var onRenameAttachment: (ProjectOutlineInlineAttachment) -> Void = { _ in }
@@ -104,6 +105,9 @@ struct ProjectOutlineTextEditor: NSViewRepresentable {
     }
     textView.focusHandler = { [weak coordinator = context.coordinator] in
       coordinator?.parent.onFocus()
+    }
+    textView.revealHandler = { [weak coordinator = context.coordinator] in
+      coordinator?.parent.onReveal()
     }
     textView.blurHandler = { [weak coordinator = context.coordinator] in
       coordinator?.parent.onBlur()
@@ -157,6 +161,9 @@ struct ProjectOutlineTextEditor: NSViewRepresentable {
     textView.focusHandler = { [weak coordinator = context.coordinator] in
       coordinator?.parent.onFocus()
     }
+    textView.revealHandler = { [weak coordinator = context.coordinator] in
+      coordinator?.parent.onReveal()
+    }
     textView.blurHandler = { [weak coordinator = context.coordinator] in
       coordinator?.parent.onBlur()
     }
@@ -191,6 +198,7 @@ struct ProjectOutlineTextEditor: NSViewRepresentable {
   final class CommandTextView: NSTextView {
     var commandHandler: ((ProjectOutlineTextCommand) -> Void)?
     var focusHandler: (() -> Void)?
+    var revealHandler: (() -> Void)?
     var blurHandler: (() -> Void)?
     var isBlockSelectionActiveProvider: (() -> Bool)?
     var fileDropHandler: (([URL], Int) -> Void)?
@@ -349,6 +357,7 @@ struct ProjectOutlineTextEditor: NSViewRepresentable {
     override func keyDown(with event: NSEvent) {
       guard !hasMarkedText() else {
         super.keyDown(with: event)
+        revealCaretIfNeeded()
         return
       }
 
@@ -387,6 +396,7 @@ struct ProjectOutlineTextEditor: NSViewRepresentable {
           commandHandler?(.clearBlockSelection)
         default:
           super.keyDown(with: event)
+          revealCaretIfNeeded()
         }
         return
       }
@@ -473,6 +483,7 @@ struct ProjectOutlineTextEditor: NSViewRepresentable {
         commandHandler?(.escape)
       default:
         super.keyDown(with: event)
+        revealCaretIfNeeded()
       }
     }
 
@@ -487,6 +498,12 @@ struct ProjectOutlineTextEditor: NSViewRepresentable {
     func attachmentHit(at event: NSEvent) -> ProjectOutlineAttachmentHit? {
       let point = convert(event.locationInWindow, from: nil)
       return attachmentHit(at: point)
+    }
+
+    func revealCaretIfNeeded() {
+      guard window?.firstResponder === self else { return }
+      scrollRangeToVisible(selectedRange())
+      revealHandler?()
     }
 
     func attachmentHit(at point: NSPoint) -> ProjectOutlineAttachmentHit? {
@@ -592,6 +609,7 @@ struct ProjectOutlineTextEditor: NSViewRepresentable {
       parent.text = nextText
       applyLinkAttributes(to: textView)
       updateMeasuredHeight()
+      (textView as? CommandTextView)?.revealCaretIfNeeded()
     }
 
     func handle(_ command: ProjectOutlineTextCommand) {
@@ -834,6 +852,7 @@ struct ProjectOutlineTextEditor: NSViewRepresentable {
         window.makeFirstResponder(textView)
       }
       applyFocusPlacement(to: textView)
+      textView.revealCaretIfNeeded()
     }
 
     private func applyFocusPlacement(to textView: NSTextView) {
