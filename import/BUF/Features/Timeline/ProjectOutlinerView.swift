@@ -1,66 +1,6 @@
 import SwiftUI
 import UniformTypeIdentifiers
 
-private struct ProjectOutlinerVisibleBlock: Identifiable {
-  let id: UUID
-  let block: ProjectOutlineBlock
-  let displayDepth: Int
-  let hasVisibleChildren: Bool
-}
-
-private struct ProjectOutlinerDisplayContext {
-  let blocks: [ProjectOutlinerVisibleBlock]
-  let visibleIDs: [UUID]
-  let visibleDepthsByID: [UUID: Int]
-  let selectedIDs: Set<UUID>
-
-  init(
-    document: ProjectOutlineDocument,
-    focusRootID: UUID?,
-    hiddenTaskIDs: Set<UUID>,
-    selection: ProjectOutlineBlockSelection?
-  ) {
-    let visibleIndices = ProjectOutlineVisibilityPolicy.visibleIndices(
-      in: document,
-      focusRootID: focusRootID,
-      hiddenTaskIDs: hiddenTaskIDs
-    )
-    let rootDepth = focusRootID
-      .flatMap { id in document.blocks.first(where: { $0.id == id })?.depth }
-      ?? 0
-    var visibleBlocks: [ProjectOutlinerVisibleBlock] = []
-    visibleBlocks.reserveCapacity(visibleIndices.count)
-
-    for position in visibleIndices.indices {
-      let index = visibleIndices[position]
-      let block = document.blocks[index]
-      let nextIndex = visibleIndices.index(after: position)
-      let hasVisibleChildren = visibleIndices.indices.contains(nextIndex)
-        && document.blocks[visibleIndices[nextIndex]].depth > block.depth
-      let displayDepth = focusRootID == nil ? block.depth : max(0, block.depth - rootDepth)
-      visibleBlocks.append(
-        ProjectOutlinerVisibleBlock(
-          id: block.id,
-          block: block,
-          displayDepth: displayDepth,
-          hasVisibleChildren: hasVisibleChildren
-        )
-      )
-    }
-
-    let visibleIDs = visibleBlocks.map(\.id)
-    let visibleDepthsByID = Dictionary(
-      uniqueKeysWithValues: visibleBlocks.map { ($0.id, $0.block.depth) }
-    )
-    self.blocks = visibleBlocks
-    self.visibleIDs = visibleIDs
-    self.visibleDepthsByID = visibleDepthsByID
-    self.selectedIDs = selection.map {
-      Set($0.selectedIDs(in: visibleIDs, depths: visibleDepthsByID))
-    } ?? []
-  }
-}
-
 struct ProjectOutlinerView: View {
   @Binding var document: ProjectOutlineDocument
 
@@ -303,23 +243,9 @@ struct ProjectOutlinerView: View {
     case .enter(let offset):
       handleEnter(blockID: blockID, offset: offset)
     case .tab:
-      if let blockSelection {
-        _ = ProjectOutlineMutationEngine.indentSelection(
-          ids: blockSelection.selectedIDs(in: visibleBlockIDs, depths: visibleDepthsByID),
-          in: &document
-        )
-      } else {
-        _ = ProjectOutlineMutationEngine.indentBlock(id: blockID, in: &document)
-      }
+      indentFocusedBlockOrSelection(blockID: blockID)
     case .shiftTab:
-      if let blockSelection {
-        let selectedIDs = blockSelection.selectedIDs(in: visibleBlockIDs, depths: visibleDepthsByID)
-        guard !selectedIDs.contains(where: isDirectChildOfZoomRoot) else { return }
-        _ = ProjectOutlineMutationEngine.outdentSelection(ids: selectedIDs, in: &document)
-      } else {
-        guard !isDirectChildOfZoomRoot(blockID) else { return }
-        _ = ProjectOutlineMutationEngine.outdentBlock(id: blockID, in: &document)
-      }
+      outdentFocusedBlockOrSelection(blockID: blockID)
     case .backspaceAtStart:
       handleBackspaceAtStart(blockID: blockID, currentTextOverride: nil)
     case .mergeBackspaceAtStart(let text):
@@ -381,6 +307,28 @@ struct ProjectOutlinerView: View {
     case .selectAllVisibleBlocks:
       selectAllVisibleBlocks(anchor: blockID)
     }
+  }
+
+  private func indentFocusedBlockOrSelection(blockID: UUID) {
+    guard let blockSelection else {
+      _ = ProjectOutlineMutationEngine.indentBlock(id: blockID, in: &document)
+      return
+    }
+    _ = ProjectOutlineMutationEngine.indentSelection(
+      ids: blockSelection.selectedIDs(in: visibleBlockIDs, depths: visibleDepthsByID),
+      in: &document
+    )
+  }
+
+  private func outdentFocusedBlockOrSelection(blockID: UUID) {
+    guard let blockSelection else {
+      guard !isDirectChildOfZoomRoot(blockID) else { return }
+      _ = ProjectOutlineMutationEngine.outdentBlock(id: blockID, in: &document)
+      return
+    }
+    let selectedIDs = blockSelection.selectedIDs(in: visibleBlockIDs, depths: visibleDepthsByID)
+    guard !selectedIDs.contains(where: isDirectChildOfZoomRoot) else { return }
+    _ = ProjectOutlineMutationEngine.outdentSelection(ids: selectedIDs, in: &document)
   }
 
   private func handleEnter(blockID: UUID, offset: Int) {
@@ -790,60 +738,6 @@ struct ProjectOutlinerView: View {
     guard let lastChildIndex = visible.dropFirst().last else { return false }
     return document.blocks[rootIndex].depth + 1 == document.blocks[lastChildIndex].depth
       && document.blocks[lastChildIndex].id == blockID
-  }
-}
-
-struct ProjectOutlineBlockSelection {
-  let anchorID: UUID
-  let headID: UUID
-
-  func selectedIDs(in visibleIDs: [UUID], depths: [UUID: Int]) -> [UUID] {
-    guard let anchorIndex = visibleIDs.firstIndex(of: anchorID),
-      let headIndex = visibleIDs.firstIndex(of: headID)
-    else {
-      return []
-    }
-    let bounds = min(anchorIndex, headIndex)...max(anchorIndex, headIndex)
-    let baseIDs = Array(visibleIDs[bounds])
-    let expanded = Set(baseIDs.flatMap { subtreeVisibleIDs(for: $0, in: visibleIDs, depths: depths) })
-    return visibleIDs.filter { expanded.contains($0) }
-  }
-
-  func adjacentID(afterSelectionBy offset: Int, in visibleIDs: [UUID], depths: [UUID: Int]) -> UUID? {
-    let ids = selectedIDs(in: visibleIDs, depths: depths)
-    guard let first = ids.first,
-      let last = ids.last,
-      let firstIndex = visibleIDs.firstIndex(of: first),
-      let lastIndex = visibleIDs.firstIndex(of: last)
-    else {
-      return nil
-    }
-    let targetIndex = offset < 0 ? firstIndex - 1 : lastIndex + 1
-    guard visibleIDs.indices.contains(targetIndex) else {
-      return offset < 0 ? first : last
-    }
-    return visibleIDs[targetIndex]
-  }
-
-  private func subtreeVisibleIDs(
-    for blockID: UUID,
-    in visibleIDs: [UUID],
-    depths: [UUID: Int]
-  ) -> [UUID] {
-    guard let rootIndex = visibleIDs.firstIndex(of: blockID),
-      let rootDepth = depths[blockID]
-    else {
-      return []
-    }
-    var result = [blockID]
-    var index = rootIndex + 1
-    while visibleIDs.indices.contains(index) {
-      let id = visibleIDs[index]
-      guard let depth = depths[id], depth > rootDepth else { break }
-      result.append(id)
-      index += 1
-    }
-    return result
   }
 }
 
@@ -1277,136 +1171,4 @@ private struct ProjectOutlineRowView: View {
     }
     onCommand(.commandEnter)
   }
-}
-
-private struct ProjectOutlineDropIndicatorLine: View {
-  var body: some View {
-    Rectangle()
-      .fill(Color.accentColor)
-      .frame(height: 2)
-      .cornerRadius(1)
-      .allowsHitTesting(false)
-  }
-}
-
-private struct ProjectOutlineScheduleFallbackMenu: View {
-  let task: TimelineProjectListWindowSnapshot.Task
-  let recurringCompletionCount: Int
-  let projectColor: Color
-  let onSelect: (TaskEditAuxiliarySection) -> Void
-
-  var body: some View {
-    VStack(alignment: .leading, spacing: 4) {
-      Button {
-        onSelect(.schedule)
-      } label: {
-        menuRow(
-          systemImage: "calendar.badge.clock",
-          title: "날짜와 시간",
-          detail: task.dateText
-        )
-      }
-      .buttonStyle(.plain)
-
-      Button {
-        onSelect(.recurrence)
-      } label: {
-        menuRow(
-          systemImage: "repeat",
-          title: "반복",
-          detail: recurrenceDetail
-        )
-      }
-      .buttonStyle(.plain)
-    }
-    .padding(8)
-    .frame(width: 176, alignment: .leading)
-    .font(projectOutlinerChipFont)
-  }
-
-  private var recurrenceDetail: String? {
-    if recurringCompletionCount > 0 {
-      return "\(recurringCompletionCount)"
-    }
-    return task.metadataIndicators.isRecurring ? "설정됨" : nil
-  }
-
-  private func menuRow(systemImage: String, title: String, detail: String?) -> some View {
-    HStack(spacing: 8) {
-      Image(systemName: systemImage)
-        .foregroundStyle(projectColor.opacity(0.9))
-        .frame(width: 18)
-      Text(title)
-        .foregroundStyle(Color.primary)
-      Spacer(minLength: 8)
-      if let detail {
-        Text(detail)
-          .lineLimit(1)
-          .foregroundStyle(Color.secondary)
-      }
-    }
-    .padding(.horizontal, 6)
-    .padding(.vertical, 5)
-    .contentShape(Rectangle())
-  }
-}
-
-private enum ProjectOutlineBlockColorPalette {
-  struct Style {
-    let backgroundColor: Color
-    let nsTextColor: NSColor
-  }
-
-  static func name(for color: ProjectOutlineBlockColor) -> String {
-    switch color {
-    case .mist: "미스트"
-    case .sage: "세이지"
-    case .moss: "모스"
-    case .sand: "샌드"
-    case .clay: "클레이"
-    case .rose: "로즈"
-    case .dusk: "더스크"
-    case .slate: "슬레이트"
-    }
-  }
-
-  static func style(for color: ProjectOutlineBlockColor?) -> Style {
-    guard let color else {
-      return Style(backgroundColor: .clear, nsTextColor: .labelColor)
-    }
-    let rgb: (Double, Double, Double)
-    switch color {
-    case .mist: rgb = (0.78, 0.84, 0.87)
-    case .sage: rgb = (0.74, 0.82, 0.74)
-    case .moss: rgb = (0.55, 0.66, 0.53)
-    case .sand: rgb = (0.84, 0.78, 0.65)
-    case .clay: rgb = (0.72, 0.60, 0.53)
-    case .rose: rgb = (0.78, 0.64, 0.66)
-    case .dusk: rgb = (0.58, 0.58, 0.70)
-    case .slate: rgb = (0.39, 0.45, 0.50)
-    }
-    return Style(
-      backgroundColor: Color(red: rgb.0, green: rgb.1, blue: rgb.2).opacity(0.85),
-      nsTextColor: contrastTextColor(red: rgb.0, green: rgb.1, blue: rgb.2)
-    )
-  }
-
-  private static func contrastTextColor(red: Double, green: Double, blue: Double) -> NSColor {
-    let luminance = 0.2126 * red + 0.7152 * green + 0.0722 * blue
-    return luminance > 0.58 ? .black : .white
-  }
-}
-
-private let projectOutlinerFont = Font.custom("SansMonoCJKFinalDraft", size: 15)
-private let projectOutlinerChipFont = Font.custom("SansMonoCJKFinalDraft-Bold", size: 12)
-private let projectOutlinerBulletHitSize: CGFloat = 21
-private let projectOutlinerIndentWidth: CGFloat = 40
-private let projectOutlinerDropIndicatorBaseLeading: CGFloat = 40
-
-@MainActor
-private var projectOutlinerNSFont: NSFont {
-  guard let font = NSFont(name: "SansMonoCJKFinalDraft", size: 15) else {
-    fatalError("Missing font: SansMonoCJKFinalDraft")
-  }
-  return font
 }
