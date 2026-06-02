@@ -191,6 +191,22 @@ extension TimelineBoardView {
           projectID: projectID
         )
       },
+      moveOptions: {
+        self.timelineTaskMoveOptions(excluding: projectID)
+      },
+      onMoveTask: { sourceProjectID, taskID, targetProjectID in
+        await self.moveTimelineProjectListWindowTask(
+          taskID,
+          sourceProjectID: sourceProjectID,
+          targetProjectID: targetProjectID
+        )
+      },
+      onAppendProjectOutlineBlocks: { targetProjectID, blocks in
+        await self.appendProjectOutlineBlocksToTimelineProjectNote(
+          blocks,
+          projectID: targetProjectID
+        )
+      },
       inlineEditorConfiguration: timelineProjectListInlineEditorConfiguration(
         projectID: projectID
       )
@@ -611,6 +627,56 @@ extension TimelineBoardView {
     } catch {
       appState.reportError(error, logMessage: "saveTimelineProjectListWindowProjectNote failed")
       return nil
+    }
+  }
+
+  func appendProjectOutlineBlocksToTimelineProjectNote(
+    _ blocks: [ProjectOutlineBlock],
+    projectID: UUID
+  ) async -> Bool {
+    guard !blocks.isEmpty else { return false }
+    let noteText = workspaceTimelineProjectSnapshots[projectID]?.projectNoteMarkdown ?? ""
+    var document = ProjectOutlineMarkdownCodec.document(from: noteText)
+    ProjectOutlineMutationEngine.appendNormalizedSubtree(blocks, to: &document)
+    return await saveTimelineProjectListWindowProjectNote(
+      ProjectOutlineMarkdownCodec.markdown(from: document),
+      projectID: projectID
+    ) != nil
+  }
+
+  func moveTimelineProjectListWindowTask(
+    _ taskID: UUID,
+    sourceProjectID: UUID,
+    targetProjectID: UUID
+  ) async -> Bool {
+    guard sourceProjectID != targetProjectID else { return false }
+    guard allowTimelineRetainedWrite("move-task") else { return false }
+
+    do {
+      let result = try await RetainedTaskCommandFacade.moveTask(
+        vaultRootURL: appState.obsidianVaultRootURL,
+        taskID: taskID,
+        sourceProjectID: sourceProjectID,
+        targetProjectID: targetProjectID,
+        reminderProjectProvider: appState.reminderProjectProvider
+      )
+      appState.bumpWorkspaceTreeRevision()
+      await refreshTimelineProjectState(including: [sourceProjectID, targetProjectID])
+      retainedTimelineCalendarBridgeDecisionsByTaskID[taskID] = result.calendarBridgeDecision
+      retainedTimelineCalendarBridgeWriteMarkersByTaskID[taskID] = result.calendarWriteMarker
+      if activeTimelineTaskEditTarget == TimelineTaskEditTarget(
+        projectID: sourceProjectID,
+        taskID: taskID
+      ) {
+        activeTimelineTaskEditTarget = TimelineTaskEditTarget(
+          projectID: targetProjectID,
+          taskID: taskID
+        )
+      }
+      return true
+    } catch {
+      appState.reportError(error, logMessage: "timeline project list moveTask failed")
+      return false
     }
   }
 

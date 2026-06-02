@@ -36,6 +36,7 @@ struct TimelineProjectListContent: View {
   @State private var showsLowerTaskList = false
   @State private var draftScrollRequestID = 0
   @State private var pendingOutlineTaskBlockIDs: Set<UUID> = []
+  @State private var movingOutlineBlockIDs: Set<UUID> = []
   @State private var recurringCompletionCounts: [UUID: Int] = [:]
   @State private var pendingOutlineAttachmentRename: ProjectOutlineInlineAttachment?
   @State private var isRenamingOutlineAttachment = false
@@ -257,6 +258,7 @@ struct TimelineProjectListContent: View {
         showsCompletedTasks: showsCompletedTasks,
         pendingTaskBlockIDs: pendingOutlineTaskBlockIDs,
         recurringCompletionCounts: recurringCompletionCounts,
+        moveOptions: actions.moveOptions().filter { $0.id != snapshot.projectID },
         taskEditConfiguration: inlineEditorConfiguration,
         onCreateTaskBlock: createOutlineTaskBlock,
         onRenameTask: renameOutlineTask,
@@ -270,7 +272,8 @@ struct TimelineProjectListContent: View {
         onRenameAttachment: { attachment in
           pendingOutlineAttachmentRename = attachment
         },
-        onDeleteAttachment: deleteOutlineAttachment
+        onDeleteAttachment: deleteOutlineAttachment,
+        onMoveBlockToProject: moveOutlineBlockToProject
       )
       .timelineProjectNoteFieldBackground()
 
@@ -1076,6 +1079,74 @@ struct TimelineProjectListContent: View {
       removeTaskFromWindow(taskID)
       enqueueTaskOrderSave(registerUndo: false)
     }
+  }
+
+  private func moveOutlineBlockToProject(_ blockID: UUID, targetProjectID: UUID) {
+    guard targetProjectID != snapshot.projectID else { return }
+    guard !movingOutlineBlockIDs.contains(blockID) else { return }
+    guard let blocks = ProjectOutlineMutationEngine.normalizedSubtree(
+      blockID: blockID,
+      in: projectOutlineDocument
+    ) else {
+      return
+    }
+
+    let taskIDs = uniqueTaskIDs(in: blocks)
+    cancelInlineEditing()
+    cancelDraftIfEmpty()
+    movingOutlineBlockIDs.insert(blockID)
+
+    Task { @MainActor in
+      defer { movingOutlineBlockIDs.remove(blockID) }
+
+      guard ProjectOutlineMutationEngine.removeSubtree(
+        blockID: blockID,
+        from: &projectOutlineDocument
+      ) != nil else {
+        projectNoteErrorText = "이동 실패"
+        return
+      }
+      markProjectOutlineChanged()
+
+      guard await savePendingProjectNote() else {
+        ProjectOutlineMutationEngine.appendNormalizedSubtree(blocks, to: &projectOutlineDocument)
+        markProjectOutlineChanged()
+        projectNoteErrorText = "이동 실패"
+        return
+      }
+
+      for taskID in taskIDs {
+        let didMoveTask = await actions.onMoveTask(snapshot.projectID, taskID, targetProjectID)
+        guard didMoveTask else {
+          ProjectOutlineMutationEngine.appendNormalizedSubtree(blocks, to: &projectOutlineDocument)
+          markProjectOutlineChanged()
+          _ = await savePendingProjectNote()
+          projectNoteErrorText = "이동 실패"
+          return
+        }
+      }
+
+      let didAppend = await actions.onAppendProjectOutlineBlocks(targetProjectID, blocks)
+      guard didAppend else {
+        projectNoteErrorText = "이동 실패"
+        return
+      }
+
+      for taskID in taskIDs {
+        removeTaskFromWindow(taskID)
+      }
+      enqueueTaskOrderSave(registerUndo: false)
+      projectNoteErrorText = nil
+    }
+  }
+
+  private func uniqueTaskIDs(in blocks: [ProjectOutlineBlock]) -> [UUID] {
+    var seen = Set<UUID>()
+    var taskIDs: [UUID] = []
+    for taskID in blocks.compactMap({ $0.taskBinding?.taskID }) where seen.insert(taskID).inserted {
+      taskIDs.append(taskID)
+    }
+    return taskIDs
   }
 
   private func toggleCompletedTasks() {

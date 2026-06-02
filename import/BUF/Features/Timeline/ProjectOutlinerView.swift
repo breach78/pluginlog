@@ -10,6 +10,7 @@ struct ProjectOutlinerView: View {
   let showsCompletedTasks: Bool
   let pendingTaskBlockIDs: Set<UUID>
   let recurringCompletionCounts: [UUID: Int]
+  let moveOptions: [TimelineProjectMoveOption]
   let taskEditConfiguration: TimelineProjectListInlineEditorConfiguration?
   let onCreateTaskBlock: (UUID) -> Void
   let onRenameTask: (UUID, String) -> Void
@@ -22,6 +23,7 @@ struct ProjectOutlinerView: View {
   let onOpenAttachment: (ProjectOutlineInlineAttachment) -> Void
   let onRenameAttachment: (ProjectOutlineInlineAttachment) -> Void
   let onDeleteAttachment: (ProjectOutlineInlineAttachment) -> Void
+  let onMoveBlockToProject: (UUID, UUID) -> Void
 
   @State private var focusedBlockID: UUID?
   @State private var focusRequestID: UInt64 = 0
@@ -73,6 +75,7 @@ struct ProjectOutlinerView: View {
                 recurringCompletionCount: block.taskBinding?.taskID.flatMap {
                   recurringCompletionCounts[$0]
                 } ?? 0,
+                moveOptions: moveOptions,
                 taskEditConfiguration: taskEditConfiguration,
                 hasChildren: hasVisibleChildren(blockID: blockID),
                 isCollapsed: block.childrenCollapsed,
@@ -93,6 +96,9 @@ struct ProjectOutlinerView: View {
                 },
                 onDeleteBlock: {
                   deleteBlock(blockID: blockID)
+                },
+                onMoveToProject: { targetProjectID in
+                  onMoveBlockToProject(blockID, targetProjectID)
                 },
                 onZoomIn: {
                   zoomIn(blockID: blockID)
@@ -755,6 +761,7 @@ private struct ProjectOutlineRowView: View {
   let hidesMarker: Bool
   let isCreatingTask: Bool
   let recurringCompletionCount: Int
+  let moveOptions: [TimelineProjectMoveOption]
   let taskEditConfiguration: TimelineProjectListInlineEditorConfiguration?
   let hasChildren: Bool
   let isCollapsed: Bool
@@ -764,6 +771,7 @@ private struct ProjectOutlineRowView: View {
   let onFocus: () -> Void
   let onReveal: () -> Void
   let onDeleteBlock: () -> Void
+  let onMoveToProject: (UUID) -> Void
   let onZoomIn: () -> Void
   let onToggleFold: () -> Void
   let onRenameTask: (UUID, String) -> Void
@@ -864,6 +872,15 @@ private struct ProjectOutlineRowView: View {
           onOpenTask(task.id)
         }
         Divider()
+      }
+      if !moveOptions.isEmpty {
+        Menu("이동") {
+          ForEach(moveOptions) { option in
+            Button(option.title) {
+              onMoveToProject(option.id)
+            }
+          }
+        }
       }
       Button("블록 삭제", role: .destructive) {
         onDeleteBlock()

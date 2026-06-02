@@ -68,6 +68,49 @@ enum ProjectOutlineMutationEngine {
     return index..<end
   }
 
+  static func normalizedSubtree(
+    blockID: UUID,
+    in document: ProjectOutlineDocument
+  ) -> [ProjectOutlineBlock]? {
+    guard let index = document.blocks.firstIndex(where: { $0.id == blockID }) else {
+      return nil
+    }
+    return normalizedBlocks(Array(document.blocks[subtreeRange(at: index, in: document)]))
+  }
+
+  @discardableResult
+  static func removeSubtree(
+    blockID: UUID,
+    from document: inout ProjectOutlineDocument
+  ) -> [ProjectOutlineBlock]? {
+    guard let index = document.blocks.firstIndex(where: { $0.id == blockID }) else {
+      return nil
+    }
+    let range = subtreeRange(at: index, in: document)
+    let removed = Array(document.blocks[range])
+    document.blocks.removeSubrange(range)
+    return normalizedBlocks(removed)
+  }
+
+  static func appendNormalizedSubtree(
+    _ blocks: [ProjectOutlineBlock],
+    to document: inout ProjectOutlineDocument
+  ) {
+    let normalized = normalizedBlocks(blocks)
+    guard !normalized.isEmpty else { return }
+    if document.blocks.count == 1,
+      let block = document.blocks.first,
+      block.text.isEmpty,
+      block.taskBinding == nil,
+      !block.childrenCollapsed,
+      block.colorToken == nil
+    {
+      document.blocks = normalized
+    } else {
+      document.blocks.append(contentsOf: normalized)
+    }
+  }
+
   @discardableResult
   static func insertSiblingAfterSubtree(
     blockID: UUID,
@@ -462,6 +505,15 @@ enum ProjectOutlineMutationEngine {
   ) {
     for index in range {
       document.blocks[index].depth = max(0, document.blocks[index].depth + delta)
+    }
+  }
+
+  private static func normalizedBlocks(_ blocks: [ProjectOutlineBlock]) -> [ProjectOutlineBlock] {
+    guard let rootDepth = blocks.first?.depth else { return [] }
+    return blocks.map { block in
+      var next = block
+      next.depth = max(0, block.depth - rootDepth)
+      return next
     }
   }
 

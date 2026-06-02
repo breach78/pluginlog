@@ -357,6 +357,12 @@ extension MainWorkspaceView {
           sourceProjectID: sourceProjectID,
           targetProjectID: targetProjectID
         )
+      },
+      onAppendProjectOutlineBlocks: { targetProjectID, blocks in
+        await self.appendProjectOutlineBlocksToWorkspaceProjectNote(
+          blocks,
+          projectID: targetProjectID
+        )
       }
     )
   }
@@ -448,6 +454,22 @@ extension MainWorkspaceView {
       appState.reportError(error, logMessage: "saveWorkspaceProjectListWindowProjectNote failed")
       return nil
     }
+  }
+
+  func appendProjectOutlineBlocksToWorkspaceProjectNote(
+    _ blocks: [ProjectOutlineBlock],
+    projectID: UUID
+  ) async -> Bool {
+    guard !blocks.isEmpty,
+      let snapshot = await workspaceProjectListWindowSnapshot(projectID: projectID)
+    else {
+      return false
+    }
+
+    var document = ProjectOutlineMarkdownCodec.document(from: snapshot.projectNoteText)
+    ProjectOutlineMutationEngine.appendNormalizedSubtree(blocks, to: &document)
+    let noteText = ProjectOutlineMarkdownCodec.markdown(from: document)
+    return await saveWorkspaceProjectListWindowProjectNote(noteText, projectID: projectID) != nil
   }
 
   func createWorkspaceProjectListWindowTask(

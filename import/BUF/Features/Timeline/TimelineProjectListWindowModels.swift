@@ -107,6 +107,7 @@ struct TimelineProjectListActions {
   let onSaveProjectNote: (UUID, String) async -> String?
   let moveOptions: () -> [TimelineProjectMoveOption]
   let onMoveTask: (UUID, UUID, UUID) async -> Bool
+  let onAppendProjectOutlineBlocks: (UUID, [ProjectOutlineBlock]) async -> Bool
 
   init(
     onToggleTaskCompletion: @escaping (UUID, Bool) async -> Bool,
@@ -118,7 +119,10 @@ struct TimelineProjectListActions {
     onRenameProject: @escaping (UUID, String) -> Void,
     onSaveProjectNote: @escaping (UUID, String) async -> String? = { _, _ in nil },
     moveOptions: @escaping () -> [TimelineProjectMoveOption] = { [] },
-    onMoveTask: @escaping (UUID, UUID, UUID) async -> Bool = { _, _, _ in false }
+    onMoveTask: @escaping (UUID, UUID, UUID) async -> Bool = { _, _, _ in false },
+    onAppendProjectOutlineBlocks: @escaping (UUID, [ProjectOutlineBlock]) async -> Bool = { _, _ in
+      false
+    }
   ) {
     self.onToggleTaskCompletion = onToggleTaskCompletion
     self.onEditTask = onEditTask
@@ -130,6 +134,7 @@ struct TimelineProjectListActions {
     self.onSaveProjectNote = onSaveProjectNote
     self.moveOptions = moveOptions
     self.onMoveTask = onMoveTask
+    self.onAppendProjectOutlineBlocks = onAppendProjectOutlineBlocks
   }
 }
 

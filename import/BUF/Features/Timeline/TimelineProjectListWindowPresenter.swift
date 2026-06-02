@@ -53,6 +53,11 @@ final class TimelineProjectListWindowPresenter {
     onDeleteTask: @escaping (UUID, UUID) async -> Bool,
     onRenameProject: @escaping (UUID, String) -> Void,
     onSaveProjectNote: @escaping (UUID, String) async -> String? = { _, _ in nil },
+    moveOptions: @escaping () -> [TimelineProjectMoveOption] = { [] },
+    onMoveTask: @escaping (UUID, UUID, UUID) async -> Bool = { _, _, _ in false },
+    onAppendProjectOutlineBlocks: @escaping (UUID, [ProjectOutlineBlock]) async -> Bool = { _, _ in
+      false
+    },
     inlineEditorConfiguration: TimelineProjectListInlineEditorConfiguration? = nil
   ) {
     present(
@@ -65,7 +70,10 @@ final class TimelineProjectListWindowPresenter {
         onRenameTask: onRenameTask,
         onDeleteTask: onDeleteTask,
         onRenameProject: onRenameProject,
-        onSaveProjectNote: onSaveProjectNote
+        onSaveProjectNote: onSaveProjectNote,
+        moveOptions: moveOptions,
+        onMoveTask: onMoveTask,
+        onAppendProjectOutlineBlocks: onAppendProjectOutlineBlocks
       ),
       inlineEditorConfiguration: inlineEditorConfiguration
     )

@@ -555,6 +555,59 @@ struct ProjectOutlineMutationEngineTests {
     #expect(document.blocks.map(\.text) == ["A", "A.1", "B"])
   }
 
+  @Test func normalizedSubtreeUsesMovedRootAsDepthZero() throws {
+    let ids = Self.ids()
+    let document = ProjectOutlineDocument(blocks: [
+      ProjectOutlineBlock(id: ids[0], depth: 0, text: "A"),
+      ProjectOutlineBlock(id: ids[1], depth: 1, text: "B"),
+      ProjectOutlineBlock(id: ids[2], depth: 2, text: "B.1"),
+      ProjectOutlineBlock(id: ids[3], depth: 0, text: "C"),
+    ])
+
+    let subtree = try #require(ProjectOutlineMutationEngine.normalizedSubtree(
+      blockID: ids[1],
+      in: document
+    ))
+
+    #expect(subtree.map(\.text) == ["B", "B.1"])
+    #expect(subtree.map(\.depth) == [0, 1])
+  }
+
+  @Test func removeSubtreeReturnsNormalizedBlocksAndRemovesOriginalRange() throws {
+    let ids = Self.ids()
+    var document = ProjectOutlineDocument(blocks: [
+      ProjectOutlineBlock(id: ids[0], depth: 0, text: "A"),
+      ProjectOutlineBlock(id: ids[1], depth: 1, text: "B"),
+      ProjectOutlineBlock(id: ids[2], depth: 2, text: "B.1"),
+      ProjectOutlineBlock(id: ids[3], depth: 0, text: "C"),
+    ])
+
+    let removed = try #require(ProjectOutlineMutationEngine.removeSubtree(
+      blockID: ids[1],
+      from: &document
+    ))
+
+    #expect(removed.map(\.text) == ["B", "B.1"])
+    #expect(removed.map(\.depth) == [0, 1])
+    #expect(document.blocks.map(\.text) == ["A", "C"])
+  }
+
+  @Test func appendNormalizedSubtreeReplacesEmptyPlaceholder() {
+    let ids = Self.ids()
+    var document = ProjectOutlineDocument(blocks: [
+      ProjectOutlineBlock(id: ids[0], depth: 0, text: ""),
+    ])
+    let blocks = [
+      ProjectOutlineBlock(id: ids[1], depth: 2, text: "A"),
+      ProjectOutlineBlock(id: ids[2], depth: 3, text: "A.1"),
+    ]
+
+    ProjectOutlineMutationEngine.appendNormalizedSubtree(blocks, to: &document)
+
+    #expect(document.blocks.map(\.text) == ["A", "A.1"])
+    #expect(document.blocks.map(\.depth) == [0, 1])
+  }
+
   private static func ids() -> [UUID] {
     (0..<8).map { index in
       UUID(uuidString: "00000000-0000-0000-0000-\(String(format: "%012d", index + 1))")!
