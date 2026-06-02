@@ -273,8 +273,13 @@ struct TimelineProjectListSession {
     taskViewIDs[taskID] ?? taskID
   }
 
-  func visibleTasks(showsCompletedTasks: Bool) -> [Task] {
-    showsCompletedTasks ? tasks : tasks.filter { !$0.isCompleted }
+  func visibleTasks(
+    showsCompletedTasks: Bool,
+    temporarilyVisibleCompletedTaskIDs: Set<UUID> = []
+  ) -> [Task] {
+    showsCompletedTasks
+      ? tasks
+      : tasks.filter { !$0.isCompleted || temporarilyVisibleCompletedTaskIDs.contains($0.id) }
   }
 
   private mutating func insertTask(_ task: Task, after anchorID: UUID?) {

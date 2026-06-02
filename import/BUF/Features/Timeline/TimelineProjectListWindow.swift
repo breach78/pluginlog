@@ -14,6 +14,7 @@ struct TimelineProjectListContent: View {
   @State private var pendingCreateCount = 0
   @State private var isRenamingTask = false
   @State private var completingTaskIDs: Set<UUID> = []
+  @State private var temporarilyVisibleCompletedTaskIDs: Set<UUID> = []
   @State private var deletingTaskIDs: Set<UUID> = []
   @State private var movingTaskIDs: Set<UUID> = []
   @State private var showsCompletedTasks: Bool
@@ -128,6 +129,9 @@ struct TimelineProjectListContent: View {
         nextSnapshot.tasks.contains(where: { $0.id == taskID })
       }
       recurringCompletionCounts = recurringCompletionCounts.filter { taskID, _ in
+        nextSnapshot.tasks.contains(where: { $0.id == taskID })
+      }
+      temporarilyVisibleCompletedTaskIDs = temporarilyVisibleCompletedTaskIDs.filter { taskID in
         nextSnapshot.tasks.contains(where: { $0.id == taskID })
       }
     }
@@ -256,6 +260,7 @@ struct TimelineProjectListContent: View {
         projectTitle: snapshot.title,
         projectColor: projectColor,
         showsCompletedTasks: showsCompletedTasks,
+        temporarilyVisibleCompletedTaskIDs: temporarilyVisibleCompletedTaskIDs,
         pendingTaskBlockIDs: pendingOutlineTaskBlockIDs,
         recurringCompletionCounts: recurringCompletionCounts,
         moveOptions: actions.moveOptions().filter { $0.id != snapshot.projectID },
@@ -1041,6 +1046,7 @@ struct TimelineProjectListContent: View {
         currentIsCompleted: isCompleted
       )
       setTaskCompletion(taskID, isCompleted: nextIsCompleted)
+      updateTemporaryCompletedVisibility(taskID: taskID, isCompleted: nextIsCompleted)
       if wasRecurring && nextIsCompleted {
         Task { @MainActor in
           try? await Task.sleep(nanoseconds: 2_000_000_000)
@@ -1157,6 +1163,22 @@ struct TimelineProjectListContent: View {
       showsCompletedTasks,
       for: snapshot.projectID
     )
+  }
+
+  private func updateTemporaryCompletedVisibility(taskID: UUID, isCompleted: Bool) {
+    guard isCompleted, !showsCompletedTasks else {
+      temporarilyVisibleCompletedTaskIDs.remove(taskID)
+      return
+    }
+    temporarilyVisibleCompletedTaskIDs.insert(taskID)
+    Task { @MainActor in
+      try? await Task.sleep(nanoseconds: 1_000_000_000)
+      guard session.tasks.first(where: { $0.id == taskID })?.isCompleted == true else {
+        temporarilyVisibleCompletedTaskIDs.remove(taskID)
+        return
+      }
+      temporarilyVisibleCompletedTaskIDs.remove(taskID)
+    }
   }
 
   private func toggleTaskNotes() {
@@ -1992,7 +2014,10 @@ struct TimelineProjectListContent: View {
   }
 
   private var visibleTasks: [TimelineProjectListWindowSnapshot.Task] {
-    session.visibleTasks(showsCompletedTasks: showsCompletedTasks)
+    session.visibleTasks(
+      showsCompletedTasks: showsCompletedTasks,
+      temporarilyVisibleCompletedTaskIDs: temporarilyVisibleCompletedTaskIDs
+    )
   }
 
   private var visibleTaskRows: [TimelineProjectListTaskRow] {

@@ -28,6 +28,34 @@ final class TimelineProjectListSessionTests: XCTestCase {
     XCTAssertEqual(session.focusedDraftAnchor, .after(firstID))
   }
 
+  func testVisibleTasksCanTemporarilyKeepCompletedTaskVisible() {
+    let completedID = UUID()
+    let openID = UUID()
+    let session = TimelineProjectListSession(
+      snapshot: TimelineProjectListWindowSnapshot(
+        projectID: UUID(),
+        title: "Project",
+        colorHex: nil,
+        tasks: [
+          task(id: completedID, title: "Done", isCompleted: true),
+          task(id: openID, title: "Open", isCompleted: false),
+        ]
+      )
+    )
+
+    XCTAssertEqual(
+      session.visibleTasks(showsCompletedTasks: false).map(\.id),
+      [openID]
+    )
+    XCTAssertEqual(
+      session.visibleTasks(
+        showsCompletedTasks: false,
+        temporarilyVisibleCompletedTaskIDs: [completedID]
+      ).map(\.id),
+      [completedID, openID]
+    )
+  }
+
   func testApplySnapshotPreservesEditingFields() {
     let projectID = UUID()
     let taskID = UUID()

@@ -8,6 +8,7 @@ struct ProjectOutlinerView: View {
   let projectTitle: String
   let projectColor: Color
   let showsCompletedTasks: Bool
+  let temporarilyVisibleCompletedTaskIDs: Set<UUID>
   let pendingTaskBlockIDs: Set<UUID>
   let recurringCompletionCounts: [UUID: Int]
   let moveOptions: [TimelineProjectMoveOption]
@@ -175,7 +176,11 @@ struct ProjectOutlinerView: View {
 
   private var hiddenTaskIDs: Set<UUID> {
     guard !showsCompletedTasks else { return [] }
-    return Set(tasks.filter(\.isCompleted).map(\.id))
+    return Set(
+      tasks
+        .filter { $0.isCompleted && !temporarilyVisibleCompletedTaskIDs.contains($0.id) }
+        .map(\.id)
+    )
   }
 
   private var selectedBlockIDs: Set<UUID> {
