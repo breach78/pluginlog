@@ -345,13 +345,14 @@ struct ProjectOutlinerView: View {
       return
     }
 
+    let shouldFocusSplitStart = offset > 0 && offset < block.text.utf16.count
     if let result = ProjectOutlineMutationEngine.insertFromEnter(
       blockID: blockID,
       textOffset: offset,
       hasExpandedChildrenOverride: hasVisibleChildren(blockID: blockID) && !block.childrenCollapsed,
       in: &document
     ) {
-      requestFocus(result.focusedBlockID)
+      requestFocus(result.focusedBlockID, placement: shouldFocusSplitStart ? .start : .preserve)
     }
   }
 
