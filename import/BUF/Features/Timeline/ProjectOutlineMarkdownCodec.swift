@@ -35,6 +35,7 @@ enum ProjectOutlineMarkdownCodec {
         depth: depth,
         text: "",
         taskBinding: marker.binding,
+        childrenCollapsed: parsedContent.childrenCollapsed,
         colorToken: parsedContent.color
       )
     }
@@ -42,13 +43,17 @@ enum ProjectOutlineMarkdownCodec {
     return ProjectOutlineBlock(
       depth: depth,
       text: ProjectOutlineTextCodec.decoded(content),
+      childrenCollapsed: parsedContent.childrenCollapsed,
       colorToken: parsedContent.color
     )
   }
 
   private static func line(from block: ProjectOutlineBlock) -> String {
     let indent = String(repeating: "  ", count: max(0, block.depth))
-    let blockMarker = ProjectOutlineBlockMarkerCodec.marker(color: block.colorToken)
+    let blockMarker = ProjectOutlineBlockMarkerCodec.marker(
+      color: block.colorToken,
+      childrenCollapsed: block.childrenCollapsed
+    )
     if let binding = block.taskBinding, binding.taskID != nil {
       return indent + "- " + blockMarker + ProjectOutlineTaskMarkerCodec.marker(
         blockID: block.id,
@@ -92,12 +97,14 @@ enum ProjectOutlineBlockMarkerCodec {
   private static let prefix = "{{buf-block"
   private static let suffix = "}}"
 
-  static func parsePrefix(in text: String) -> (content: String, color: ProjectOutlineBlockColor?) {
+  static func parsePrefix(
+    in text: String
+  ) -> (content: String, color: ProjectOutlineBlockColor?, childrenCollapsed: Bool) {
     let trimmedLeading = text.trimmingCharacters(in: .whitespaces)
     guard trimmedLeading.hasPrefix(prefix),
       let markerEnd = trimmedLeading.range(of: suffix)
     else {
-      return (text, nil)
+      return (text, nil, false)
     }
 
     let markerText = String(trimmedLeading[..<markerEnd.upperBound])
@@ -105,12 +112,20 @@ enum ProjectOutlineBlockMarkerCodec {
       .trimmingCharacters(in: .whitespaces)
     let color = attributeValue(named: "color", in: markerText)
       .flatMap(ProjectOutlineBlockColor.init(rawValue:))
-    return (content, color)
+    let childrenCollapsed = attributeValue(named: "collapsed", in: markerText) == "true"
+    return (content, color, childrenCollapsed)
   }
 
-  static func marker(color: ProjectOutlineBlockColor?) -> String {
-    guard let color else { return "" }
-    return #"{{buf-block color="\#(color.rawValue)"}} "#
+  static func marker(color: ProjectOutlineBlockColor?, childrenCollapsed: Bool) -> String {
+    guard color != nil || childrenCollapsed else { return "" }
+    var attributes: [String] = []
+    if let color {
+      attributes.append(#"color="\#(color.rawValue)""#)
+    }
+    if childrenCollapsed {
+      attributes.append(#"collapsed="true""#)
+    }
+    return "{{buf-block \(attributes.joined(separator: " "))}} "
   }
 
   private static func attributeValue(named name: String, in text: String) -> String? {

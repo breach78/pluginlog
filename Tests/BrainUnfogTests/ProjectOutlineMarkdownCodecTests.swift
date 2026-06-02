@@ -72,6 +72,28 @@ struct ProjectOutlineMarkdownCodecTests {
     #expect(decoded.blocks[1].taskBinding?.taskID == taskID)
   }
 
+  @Test func collapsedStateRoundTripsForNormalAndTaskBlocks() throws {
+    let blockID = try #require(UUID(uuidString: "11111111-1111-1111-1111-111111111111"))
+    let taskID = try #require(UUID(uuidString: "22222222-2222-2222-2222-222222222222"))
+    let document = ProjectOutlineDocument(blocks: [
+      ProjectOutlineBlock(depth: 0, text: "닫힌 노트", childrenCollapsed: true),
+      ProjectOutlineBlock(
+        id: blockID,
+        depth: 0,
+        text: "",
+        taskBinding: ProjectOutlineTaskBinding(taskID: taskID, taskExternalIdentifier: nil),
+        childrenCollapsed: true
+      ),
+    ])
+
+    let markdown = ProjectOutlineMarkdownCodec.markdown(from: document)
+    let decoded = ProjectOutlineMarkdownCodec.document(from: markdown)
+
+    #expect(markdown.contains(#"collapsed="true""#))
+    #expect(decoded.blocks.map(\.childrenCollapsed) == [true, true])
+    #expect(decoded.blocks[1].taskBinding?.taskID == taskID)
+  }
+
   @Test func pendingTaskBlockWithoutReminderIDDoesNotPersistTaskMarker() {
     let document = ProjectOutlineDocument(blocks: [
       ProjectOutlineBlock(
