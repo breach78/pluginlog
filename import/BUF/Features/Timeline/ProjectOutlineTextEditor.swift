@@ -257,6 +257,16 @@ struct ProjectOutlineTextEditor: NSViewRepresentable {
       super.mouseUp(with: event)
     }
 
+    override func resignFirstResponder() -> Bool {
+      let didResign = super.resignFirstResponder()
+      guard didResign else { return false }
+      let range = selectedRange()
+      if range.length > 0 {
+        setSelectedRange(NSRange(location: range.location + range.length, length: 0))
+      }
+      return true
+    }
+
     override func drawInsertionPoint(
       in rect: NSRect,
       color: NSColor,

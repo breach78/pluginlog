@@ -40,6 +40,7 @@ struct ProjectOutlinerView: View {
   @State private var blockToReveal: UUID?
   @State private var blockRevealRequestID: UInt64 = 0
   @State private var highlightedBlockID: UUID?
+  @State private var handledHighlightRequestID: Int?
 
   private var tasksByID: [UUID: TimelineProjectListWindowSnapshot.Task] {
     Dictionary(uniqueKeysWithValues: tasks.map { ($0.id, $0) })
@@ -159,18 +160,20 @@ struct ProjectOutlinerView: View {
         }
       }
       .onAppear {
-        highlightRequestedTask()
+        highlightRequestedTaskIfNeeded()
       }
       .onChange(of: highlightRequestID) { _, _ in
-        highlightRequestedTask()
+        highlightRequestedTaskIfNeeded()
+      }
+      .onChange(of: highlightedTaskID) { _, _ in
+        handledHighlightRequestID = nil
+        highlightRequestedTaskIfNeeded()
       }
       .onChange(of: document.blocks) { _, blocks in
         if let zoomRootBlockID, !blocks.contains(where: { $0.id == zoomRootBlockID }) {
           self.zoomRootBlockID = nil
         }
-        if highlightedBlockID == nil {
-          highlightRequestedTask()
-        }
+        highlightRequestedTaskIfNeeded()
       }
     }
   }
@@ -684,12 +687,14 @@ struct ProjectOutlinerView: View {
     blockRevealRequestID &+= 1
   }
 
-  private func highlightRequestedTask() {
+  private func highlightRequestedTaskIfNeeded() {
+    guard handledHighlightRequestID != highlightRequestID else { return }
     guard let highlightedTaskID,
       let blockID = document.blocks.first(where: { $0.taskBinding?.taskID == highlightedTaskID })?.id
     else {
       return
     }
+    handledHighlightRequestID = highlightRequestID
     highlightedBlockID = blockID
     requestReveal(blockID)
     Task { @MainActor in
