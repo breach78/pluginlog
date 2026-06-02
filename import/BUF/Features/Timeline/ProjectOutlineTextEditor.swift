@@ -694,7 +694,12 @@ struct ProjectOutlineTextEditor: NSViewRepresentable {
         font: parent.font,
         textColor: parent.textColor
       )
+      invalidateMeasurementCache()
       textView.textStorage?.setAttributedString(attributed)
+      textView.layoutManager?.invalidateLayout(
+        forCharacterRange: NSRange(location: 0, length: attributed.length),
+        actualCharacterRange: nil
+      )
       textView.typingAttributes = [.font: parent.font, .foregroundColor: parent.textColor]
       appliedTextColor = parent.textColor
       applyLinkAttributes(to: textView)
@@ -817,6 +822,11 @@ struct ProjectOutlineTextEditor: NSViewRepresentable {
         return true
       }
       return false
+    }
+
+    private func invalidateMeasurementCache() {
+      lastMeasuredText = nil
+      lastMeasuredContainerWidth = 0
     }
 
     private func applyLinkAttributes(to textView: NSTextView) {
