@@ -213,6 +213,7 @@ struct ProjectOutlineTextEditor: NSViewRepresentable {
     private var lastSelectAllDate: Date?
     private var contextAttachment: ProjectOutlineInlineAttachment?
     private var pendingAttachmentMouseDown: (hit: ProjectOutlineAttachmentHit, event: NSEvent)?
+    private static let insertionPointWidth: CGFloat = 2
 
     override func mouseDown(with event: NSEvent) {
       focusHandler?()
@@ -264,6 +265,7 @@ struct ProjectOutlineTextEditor: NSViewRepresentable {
       if range.length > 0 {
         setSelectedRange(NSRange(location: range.location + range.length, length: 0))
       }
+      setNeedsDisplay(bounds)
       return true
     }
 
@@ -272,13 +274,17 @@ struct ProjectOutlineTextEditor: NSViewRepresentable {
       color: NSColor,
       turnedOn flag: Bool
     ) {
-      guard flag else { return }
+      guard flag, window?.firstResponder === self else { return }
       var insertionRect = rect
-      let scale = window?.backingScaleFactor ?? NSScreen.main?.backingScaleFactor ?? 2
-      insertionRect.origin.x = max(0, insertionRect.origin.x)
-      insertionRect.size.width = max(insertionRect.width, 2 / scale)
+      insertionRect.origin.x = max(0, rect.midX - Self.insertionPointWidth / 2)
+      insertionRect.size.width = Self.insertionPointWidth
       color.setFill()
       insertionRect.fill()
+    }
+
+    override func setNeedsDisplay(_ invalidRect: NSRect) {
+      let caretPadding = Self.insertionPointWidth
+      super.setNeedsDisplay(invalidRect.insetBy(dx: -caretPadding, dy: 0))
     }
 
     override func copy(_ sender: Any?) {
