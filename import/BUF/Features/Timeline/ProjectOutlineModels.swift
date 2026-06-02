@@ -14,24 +14,38 @@ struct ProjectOutlineBlock: Identifiable, Equatable {
   var text: String
   var taskBinding: ProjectOutlineTaskBinding?
   var childrenCollapsed: Bool
+  var colorToken: ProjectOutlineBlockColor?
 
   init(
     id: UUID = UUID(),
     depth: Int,
     text: String,
     taskBinding: ProjectOutlineTaskBinding? = nil,
-    childrenCollapsed: Bool = false
+    childrenCollapsed: Bool = false,
+    colorToken: ProjectOutlineBlockColor? = nil
   ) {
     self.id = id
     self.depth = max(0, depth)
     self.text = text
     self.taskBinding = taskBinding
     self.childrenCollapsed = childrenCollapsed
+    self.colorToken = colorToken
   }
 
   var isTaskBlock: Bool {
     taskBinding != nil
   }
+}
+
+enum ProjectOutlineBlockColor: String, CaseIterable, Equatable {
+  case mist
+  case sage
+  case moss
+  case sand
+  case clay
+  case rose
+  case dusk
+  case slate
 }
 
 struct ProjectOutlineTaskBinding: Equatable {

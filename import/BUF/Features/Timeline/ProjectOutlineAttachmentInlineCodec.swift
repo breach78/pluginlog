@@ -58,7 +58,8 @@ enum ProjectOutlineAttachmentInlineCodec {
   static func attributedString(
     from storageText: String,
     vaultRootURL: URL?,
-    font: NSFont
+    font: NSFont,
+    textColor: NSColor = .labelColor
   ) -> NSAttributedString {
     let result = NSMutableAttributedString()
     let nsStorageText = storageText as NSString
@@ -70,7 +71,7 @@ enum ProjectOutlineAttachmentInlineCodec {
         result.append(
           NSAttributedString(
             string: nsStorageText.substring(with: NSRange(location: cursor, length: match.range.location - cursor)),
-            attributes: textAttributes(font: font)
+            attributes: textAttributes(font: font, textColor: textColor)
           )
         )
       }
@@ -82,7 +83,7 @@ enum ProjectOutlineAttachmentInlineCodec {
       result.append(
         NSAttributedString(
           string: nsStorageText.substring(from: cursor),
-          attributes: textAttributes(font: font)
+          attributes: textAttributes(font: font, textColor: textColor)
         )
       )
     }
@@ -202,8 +203,11 @@ enum ProjectOutlineAttachmentInlineCodec {
     }
   }
 
-  private static func textAttributes(font: NSFont) -> [NSAttributedString.Key: Any] {
-    [.font: font, .foregroundColor: NSColor.labelColor]
+  private static func textAttributes(
+    font: NSFont,
+    textColor: NSColor
+  ) -> [NSAttributedString.Key: Any] {
+    [.font: font, .foregroundColor: textColor]
   }
 
   private static let attachmentRegex = try? NSRegularExpression(

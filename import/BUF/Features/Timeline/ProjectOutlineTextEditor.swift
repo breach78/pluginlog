@@ -64,6 +64,7 @@ struct ProjectOutlineTextEditor: NSViewRepresentable {
   let focusPlacement: ProjectOutlineFocusPlacement
   let isBlockSelectionActive: Bool
   let font: NSFont
+  var textColor: NSColor = .labelColor
   let onCommand: (ProjectOutlineTextCommand) -> Void
   var onReveal: () -> Void = {}
   var onImportFiles: ([URL], Int) -> Void = { _, _ in }
@@ -168,9 +169,14 @@ struct ProjectOutlineTextEditor: NSViewRepresentable {
       coordinator?.parent.onBlur()
     }
     var needsHeightUpdate = false
-    if textView.font != font {
+    if textView.font != font || !context.coordinator.appliedTextColor.isEqual(textColor) {
       textView.font = font
-      textView.typingAttributes = [.font: font]
+      textView.typingAttributes = [.font: font, .foregroundColor: textColor]
+      context.coordinator.applyStorageText(
+        context.coordinator.displayedText,
+        to: textView,
+        preserveSelection: true
+      )
       needsHeightUpdate = true
     }
     if context.coordinator.displayedText != text {
@@ -600,6 +606,7 @@ struct ProjectOutlineTextEditor: NSViewRepresentable {
     var isApplyingText = false
     var lastFocusRequestID: UInt64 = 0
     var displayedText: String
+    var appliedTextColor: NSColor
     private var isMeasuringHeight = false
     private var lastLinkedText: String?
     private var lastMeasuredText: String?
@@ -608,6 +615,7 @@ struct ProjectOutlineTextEditor: NSViewRepresentable {
     init(parent: ProjectOutlineTextEditor) {
       self.parent = parent
       self.displayedText = parent.text
+      self.appliedTextColor = parent.textColor
     }
 
     func textDidChange(_ notification: Notification) {
@@ -668,10 +676,12 @@ struct ProjectOutlineTextEditor: NSViewRepresentable {
       let attributed = ProjectOutlineAttachmentInlineCodec.attributedString(
         from: storageText,
         vaultRootURL: parent.vaultRootURL,
-        font: parent.font
+        font: parent.font,
+        textColor: parent.textColor
       )
       textView.textStorage?.setAttributedString(attributed)
-      textView.typingAttributes = [.font: parent.font, .foregroundColor: NSColor.labelColor]
+      textView.typingAttributes = [.font: parent.font, .foregroundColor: parent.textColor]
+      appliedTextColor = parent.textColor
       applyLinkAttributes(to: textView)
       displayedText = storageText
       guard preserveSelection else { return }
@@ -809,12 +819,12 @@ struct ProjectOutlineTextEditor: NSViewRepresentable {
         storage.removeAttribute(.underlineStyle, range: fullRange)
         storage.removeAttribute(.foregroundColor, range: fullRange)
         storage.addAttributes(
-          [.font: parent.font, .foregroundColor: NSColor.labelColor],
+          [.font: parent.font, .foregroundColor: parent.textColor],
           range: fullRange
         )
         storage.endEditing()
         lastLinkedText = nil
-        textView.typingAttributes = [.font: parent.font, .foregroundColor: NSColor.labelColor]
+        textView.typingAttributes = [.font: parent.font, .foregroundColor: parent.textColor]
         return
       }
       guard lastLinkedText != text else { return }
@@ -823,7 +833,7 @@ struct ProjectOutlineTextEditor: NSViewRepresentable {
       storage.removeAttribute(.underlineStyle, range: fullRange)
       storage.removeAttribute(.foregroundColor, range: fullRange)
       storage.addAttributes(
-        [.font: parent.font, .foregroundColor: NSColor.labelColor],
+        [.font: parent.font, .foregroundColor: parent.textColor],
         range: fullRange
       )
       let plainText = storage.string as NSString
@@ -841,7 +851,7 @@ struct ProjectOutlineTextEditor: NSViewRepresentable {
       }
       storage.endEditing()
       lastLinkedText = text
-      textView.typingAttributes = [.font: parent.font, .foregroundColor: NSColor.labelColor]
+      textView.typingAttributes = [.font: parent.font, .foregroundColor: parent.textColor]
     }
 
     private static let linkRegex = try! NSRegularExpression(

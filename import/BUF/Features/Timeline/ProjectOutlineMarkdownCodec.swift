@@ -25,28 +25,37 @@ enum ProjectOutlineMarkdownCodec {
     }
 
     let depth = leadingSpaces / 2
-    let content = String(trimmedLeading.dropFirst(2))
+    let parsedContent = ProjectOutlineBlockMarkerCodec.parsePrefix(
+      in: String(trimmedLeading.dropFirst(2))
+    )
+    let content = parsedContent.content
     if let marker = ProjectOutlineTaskMarkerCodec.marker(from: content) {
       return ProjectOutlineBlock(
         id: marker.blockID,
         depth: depth,
         text: "",
-        taskBinding: marker.binding
+        taskBinding: marker.binding,
+        colorToken: parsedContent.color
       )
     }
 
-    return ProjectOutlineBlock(depth: depth, text: ProjectOutlineTextCodec.decoded(content))
+    return ProjectOutlineBlock(
+      depth: depth,
+      text: ProjectOutlineTextCodec.decoded(content),
+      colorToken: parsedContent.color
+    )
   }
 
   private static func line(from block: ProjectOutlineBlock) -> String {
     let indent = String(repeating: "  ", count: max(0, block.depth))
+    let blockMarker = ProjectOutlineBlockMarkerCodec.marker(color: block.colorToken)
     if let binding = block.taskBinding, binding.taskID != nil {
-      return indent + "- " + ProjectOutlineTaskMarkerCodec.marker(
+      return indent + "- " + blockMarker + ProjectOutlineTaskMarkerCodec.marker(
         blockID: block.id,
         binding: binding
       )
     }
-    return indent + "- " + ProjectOutlineTextCodec.encoded(block.text)
+    return indent + "- " + blockMarker + ProjectOutlineTextCodec.encoded(block.text)
   }
 }
 
@@ -76,6 +85,46 @@ enum ProjectOutlineTextCodec {
       result.append("\\")
     }
     return result
+  }
+}
+
+enum ProjectOutlineBlockMarkerCodec {
+  private static let prefix = "{{buf-block"
+  private static let suffix = "}}"
+
+  static func parsePrefix(in text: String) -> (content: String, color: ProjectOutlineBlockColor?) {
+    let trimmedLeading = text.trimmingCharacters(in: .whitespaces)
+    guard trimmedLeading.hasPrefix(prefix),
+      let markerEnd = trimmedLeading.range(of: suffix)
+    else {
+      return (text, nil)
+    }
+
+    let markerText = String(trimmedLeading[..<markerEnd.upperBound])
+    let content = String(trimmedLeading[markerEnd.upperBound...])
+      .trimmingCharacters(in: .whitespaces)
+    let color = attributeValue(named: "color", in: markerText)
+      .flatMap(ProjectOutlineBlockColor.init(rawValue:))
+    return (content, color)
+  }
+
+  static func marker(color: ProjectOutlineBlockColor?) -> String {
+    guard let color else { return "" }
+    return #"{{buf-block color="\#(color.rawValue)"}} "#
+  }
+
+  private static func attributeValue(named name: String, in text: String) -> String? {
+    guard let regex = try? NSRegularExpression(pattern: #"\#(name)="([^"]*)""#) else {
+      return nil
+    }
+    let nsText = text as NSString
+    let range = NSRange(location: 0, length: nsText.length)
+    guard let match = regex.firstMatch(in: text, range: range),
+      match.numberOfRanges == 2
+    else {
+      return nil
+    }
+    return nsText.substring(with: match.range(at: 1))
   }
 }
 

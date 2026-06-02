@@ -67,6 +67,7 @@ struct ProjectOutlinerView: View {
                 isBlockSelectionActive: blockSelection != nil,
                 isBlockSelected: selectedBlockIDs.contains(blockID),
                 displayDepth: displayDepth(for: block),
+                blockColorToken: block.colorToken,
                 hidesMarker: zoomRootBlockID == blockID,
                 isCreatingTask: pendingTaskBlockIDs.contains(blockID),
                 recurringCompletionCount: block.taskBinding?.taskID.flatMap {
@@ -750,6 +751,7 @@ private struct ProjectOutlineRowView: View {
   let isBlockSelectionActive: Bool
   let isBlockSelected: Bool
   let displayDepth: Int
+  let blockColorToken: ProjectOutlineBlockColor?
   let hidesMarker: Bool
   let isCreatingTask: Bool
   let recurringCompletionCount: Int
@@ -780,6 +782,7 @@ private struct ProjectOutlineRowView: View {
   @State private var isHoveringMarker = false
 
   var body: some View {
+    let palette = ProjectOutlineBlockColorPalette.style(for: blockColorToken)
     HStack(alignment: .top, spacing: 8) {
       HStack(spacing: 0) {
         ForEach(0..<displayDepth, id: \.self) { _ in
@@ -812,6 +815,7 @@ private struct ProjectOutlineRowView: View {
           focusPlacement: focusPlacement,
           isBlockSelectionActive: isBlockSelectionActive,
           font: projectOutlinerNSFont,
+          textColor: palette.nsTextColor,
           onCommand: onCommand,
           onReveal: onReveal,
           onImportFiles: onImportAttachmentFiles,
@@ -827,7 +831,10 @@ private struct ProjectOutlineRowView: View {
     .padding(.horizontal, 9)
     .padding(.vertical, 3)
     .frame(maxWidth: .infinity, alignment: .leading)
-    .background(isBlockSelected ? Color.accentColor.opacity(0.12) : Color.clear)
+    .background {
+      RoundedRectangle(cornerRadius: 5)
+        .fill(isBlockSelected ? Color.accentColor.opacity(0.12) : palette.backgroundColor)
+    }
     .onTapGesture {
       onFocus()
     }
@@ -860,6 +867,29 @@ private struct ProjectOutlineRowView: View {
       }
       Button("블록 삭제", role: .destructive) {
         onDeleteBlock()
+      }
+      Divider()
+      Menu("노드 색") {
+        Button {
+          block.colorToken = nil
+        } label: {
+          Label("색 없음", systemImage: block.colorToken == nil ? "checkmark" : "circle")
+        }
+        ForEach(ProjectOutlineBlockColor.allCases, id: \.rawValue) { color in
+          Button {
+            block.colorToken = color
+          } label: {
+            HStack {
+              Circle()
+                .fill(ProjectOutlineBlockColorPalette.style(for: color).backgroundColor)
+                .frame(width: 12, height: 12)
+              Text(ProjectOutlineBlockColorPalette.name(for: color))
+              if block.colorToken == color {
+                Image(systemName: "checkmark")
+              }
+            }
+          }
+        }
       }
     }
     .onHover { isHoveringMarker = $0 }
@@ -950,6 +980,7 @@ private struct ProjectOutlineRowView: View {
             focusPlacement: focusPlacement,
             isBlockSelectionActive: isBlockSelectionActive,
             font: projectOutlinerNSFont,
+            textColor: ProjectOutlineBlockColorPalette.style(for: blockColorToken).nsTextColor,
             onCommand: { command in
               submitTaskTitle(task)
               onCommand(command)
@@ -977,6 +1008,7 @@ private struct ProjectOutlineRowView: View {
               focusPlacement: focusPlacement,
               isBlockSelectionActive: isBlockSelectionActive,
               font: projectOutlinerNSFont,
+              textColor: ProjectOutlineBlockColorPalette.style(for: blockColorToken).nsTextColor,
               onCommand: onCommand,
               onReveal: onReveal,
               onFocus: onFocus,
@@ -1188,6 +1220,52 @@ private struct ProjectOutlineScheduleFallbackMenu: View {
     .padding(.horizontal, 6)
     .padding(.vertical, 5)
     .contentShape(Rectangle())
+  }
+}
+
+private enum ProjectOutlineBlockColorPalette {
+  struct Style {
+    let backgroundColor: Color
+    let nsTextColor: NSColor
+  }
+
+  static func name(for color: ProjectOutlineBlockColor) -> String {
+    switch color {
+    case .mist: "미스트"
+    case .sage: "세이지"
+    case .moss: "모스"
+    case .sand: "샌드"
+    case .clay: "클레이"
+    case .rose: "로즈"
+    case .dusk: "더스크"
+    case .slate: "슬레이트"
+    }
+  }
+
+  static func style(for color: ProjectOutlineBlockColor?) -> Style {
+    guard let color else {
+      return Style(backgroundColor: .clear, nsTextColor: .labelColor)
+    }
+    let rgb: (Double, Double, Double)
+    switch color {
+    case .mist: rgb = (0.78, 0.84, 0.87)
+    case .sage: rgb = (0.74, 0.82, 0.74)
+    case .moss: rgb = (0.55, 0.66, 0.53)
+    case .sand: rgb = (0.84, 0.78, 0.65)
+    case .clay: rgb = (0.72, 0.60, 0.53)
+    case .rose: rgb = (0.78, 0.64, 0.66)
+    case .dusk: rgb = (0.58, 0.58, 0.70)
+    case .slate: rgb = (0.39, 0.45, 0.50)
+    }
+    return Style(
+      backgroundColor: Color(red: rgb.0, green: rgb.1, blue: rgb.2).opacity(0.85),
+      nsTextColor: contrastTextColor(red: rgb.0, green: rgb.1, blue: rgb.2)
+    )
+  }
+
+  private static func contrastTextColor(red: Double, green: Double, blue: Double) -> NSColor {
+    let luminance = 0.2126 * red + 0.7152 * green + 0.0722 * blue
+    return luminance > 0.58 ? .black : .white
   }
 }
 
