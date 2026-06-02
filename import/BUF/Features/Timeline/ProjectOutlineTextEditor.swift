@@ -257,6 +257,20 @@ struct ProjectOutlineTextEditor: NSViewRepresentable {
       super.mouseUp(with: event)
     }
 
+    override func drawInsertionPoint(
+      in rect: NSRect,
+      color: NSColor,
+      turnedOn flag: Bool
+    ) {
+      guard flag else { return }
+      var insertionRect = rect
+      let scale = window?.backingScaleFactor ?? NSScreen.main?.backingScaleFactor ?? 2
+      insertionRect.origin.x = max(0, insertionRect.origin.x)
+      insertionRect.size.width = max(insertionRect.width, 2 / scale)
+      color.setFill()
+      insertionRect.fill()
+    }
+
     override func copy(_ sender: Any?) {
       guard writeSelectedTextToPasteboard() else {
         super.copy(sender)
