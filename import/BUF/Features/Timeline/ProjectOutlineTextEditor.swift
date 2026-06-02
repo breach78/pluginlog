@@ -128,7 +128,6 @@ struct ProjectOutlineTextEditor: NSViewRepresentable {
     textView.allowsUndo = false
     textView.font = font
     context.coordinator.applyStorageText(text, to: textView, preserveSelection: false)
-    textView.layoutManager?.delegate = context.coordinator
     textView.registerForDraggedTypes([.fileURL])
 
     scrollView.documentView = textView
@@ -199,6 +198,19 @@ struct ProjectOutlineTextEditor: NSViewRepresentable {
       context.coordinator.applyFocusIfNeeded()
       context.coordinator.lastFocusRequestID = focusRequestID
     }
+  }
+
+  func sizeThatFits(
+    _ proposal: ProposedViewSize,
+    nsView scrollView: NSScrollView,
+    context: Context
+  ) -> CGSize? {
+    guard let textView = scrollView.documentView as? CommandTextView else { return nil }
+    context.coordinator.parent = self
+    context.coordinator.textView = textView
+    let width = max(1, proposal.width ?? scrollView.contentSize.width)
+    let height = context.coordinator.cachedContentHeight(forWidth: width)
+    return CGSize(width: width, height: height)
   }
 
   final class CommandTextView: NSTextView {
@@ -631,7 +643,7 @@ struct ProjectOutlineTextEditor: NSViewRepresentable {
   }
 
   @MainActor
-  final class Coordinator: NSObject, NSTextViewDelegate, @preconcurrency NSLayoutManagerDelegate {
+  final class Coordinator: NSObject, NSTextViewDelegate {
     var parent: ProjectOutlineTextEditor
     weak var textView: CommandTextView?
     var isApplyingText = false
@@ -642,6 +654,7 @@ struct ProjectOutlineTextEditor: NSViewRepresentable {
     private var lastLinkedText: String?
     private var lastMeasuredText: String?
     private var lastMeasuredContainerWidth: CGFloat = 0
+    private var lastMeasuredHeight: CGFloat?
 
     init(parent: ProjectOutlineTextEditor) {
       self.parent = parent
@@ -767,15 +780,6 @@ struct ProjectOutlineTextEditor: NSViewRepresentable {
       parent.onBlur()
     }
 
-    func layoutManager(
-      _ layoutManager: NSLayoutManager,
-      didCompleteLayoutFor textContainer: NSTextContainer?,
-      atEnd layoutFinishedFlag: Bool
-    ) {
-      guard layoutFinishedFlag else { return }
-      updateMeasuredHeight(ensureLayout: false)
-    }
-
     func updateMeasuredHeight(ensureLayout: Bool = true) {
       guard !isMeasuringHeight else { return }
       guard let textView else { return }
@@ -791,13 +795,13 @@ struct ProjectOutlineTextEditor: NSViewRepresentable {
       {
         return
       }
-      if ensureLayout || widthChanged {
-        textView.layoutManager?.ensureLayout(for: textContainer)
-      }
-      let usedRect = textView.layoutManager?.usedRect(for: textContainer) ?? .zero
-      let height = max(24, ceil(usedRect.height + textView.textContainerInset.height * 2 + 2))
+      let height = measuredContentHeight(
+        forWidth: containerWidth,
+        ensureLayout: ensureLayout || widthChanged
+      )
       lastMeasuredText = textView.string
       lastMeasuredContainerWidth = containerWidth
+      lastMeasuredHeight = height
       syncTextViewFrame(height: height)
       if abs(parent.measuredHeight - height) > 0.5 {
         parent.measuredHeight = height
@@ -808,6 +812,45 @@ struct ProjectOutlineTextEditor: NSViewRepresentable {
         scrollView.contentView.scroll(to: .zero)
         scrollView.reflectScrolledClipView(scrollView.contentView)
       }
+    }
+
+    func cachedContentHeight(forWidth width: CGFloat) -> CGFloat {
+      guard let textView else { return max(24, parent.measuredHeight) }
+      let width = max(1, width)
+      if lastMeasuredText == textView.string,
+        abs(lastMeasuredContainerWidth - width) <= 0.5,
+        let lastMeasuredHeight
+      {
+        return lastMeasuredHeight
+      }
+      let height = measuredContentHeight(forWidth: width)
+      lastMeasuredText = textView.string
+      lastMeasuredContainerWidth = width
+      lastMeasuredHeight = height
+      syncTextViewFrame(height: height)
+      return height
+    }
+
+    func measuredContentHeight(
+      forWidth width: CGFloat,
+      ensureLayout: Bool = true
+    ) -> CGFloat {
+      guard let textView, let textContainer = textView.textContainer else { return 24 }
+      let width = max(1, width)
+      if abs(textContainer.containerSize.width - width) > 0.5 {
+        textContainer.containerSize = NSSize(
+          width: width,
+          height: CGFloat.greatestFiniteMagnitude
+        )
+        if abs(textView.frame.width - width) > 0.5 {
+          textView.frame.size.width = width
+        }
+      }
+      if ensureLayout {
+        textView.layoutManager?.ensureLayout(for: textContainer)
+      }
+      let usedRect = textView.layoutManager?.usedRect(for: textContainer) ?? .zero
+      return max(24, ceil(usedRect.height + textView.textContainerInset.height * 2 + 2))
     }
 
     func syncTextViewFrame(height: CGFloat) {
@@ -843,6 +886,7 @@ struct ProjectOutlineTextEditor: NSViewRepresentable {
     private func invalidateMeasurementCache() {
       lastMeasuredText = nil
       lastMeasuredContainerWidth = 0
+      lastMeasuredHeight = nil
     }
 
     private func applyLinkAttributes(to textView: NSTextView) {
