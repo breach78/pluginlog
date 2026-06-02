@@ -41,140 +41,195 @@ struct ProjectOutlinerView: View {
   @State private var blockRevealRequestID: UInt64 = 0
   @State private var highlightedBlockID: UUID?
   @State private var handledHighlightRequestID: Int?
+  @State private var initialOutlineGlobalMinY: CGFloat?
+  @State private var outlineGlobalMinY: CGFloat = 0
+  @State private var outlineViewportHeight: CGFloat = 700
 
   private var tasksByID: [UUID: TimelineProjectListWindowSnapshot.Task] {
     Dictionary(uniqueKeysWithValues: tasks.map { ($0.id, $0) })
   }
 
   var body: some View {
-    let displayContext = displayContext
     ScrollViewReader { proxy in
-      LazyVStack(alignment: .leading, spacing: 0) {
-        zoomBreadcrumb
-        if document.blocks.isEmpty {
-          Button("첫 불릿 추가", systemImage: "plus") {
-            let block = ProjectOutlineBlock(depth: 0, text: "")
-            document.blocks = [block]
-            requestFocus(block.id)
-          }
-          .buttonStyle(.borderless)
-          .padding(.horizontal, 9)
-          .padding(.vertical, 16)
-        } else {
-          ForEach(displayContext.blocks) { visibleBlock in
-            let blockID = visibleBlock.id
-            if let blockBinding = binding(for: blockID) {
-              ProjectOutlineRowView(
-                block: blockBinding,
-                task: visibleBlock.block.taskBinding?.taskID.flatMap { tasksByID[$0] },
-                projectColor: projectColor,
-                isFocused: focusedBlockID == blockID,
-                focusRequestID: focusRequestID,
-                focusPlacement: focusedBlockID == blockID ? focusPlacement : .preserve,
-                isBlockSelectionActive: blockSelection != nil,
-                isBlockSelected: displayContext.selectedIDs.contains(blockID),
-                isHighlighted: highlightedBlockID == blockID,
-                displayDepth: visibleBlock.displayDepth,
-                blockColorToken: visibleBlock.block.colorToken,
-                hidesMarker: zoomRootBlockID == blockID,
-                isCreatingTask: pendingTaskBlockIDs.contains(blockID),
-                recurringCompletionCount: visibleBlock.block.taskBinding?.taskID.flatMap {
-                  recurringCompletionCounts[$0]
-                } ?? 0,
-                moveOptions: moveOptions,
-                taskEditConfiguration: taskEditConfiguration,
-                hasChildren: visibleBlock.hasVisibleChildren,
-                isCollapsed: visibleBlock.block.childrenCollapsed,
-                dropPlacement: dropIndicator?.targetID == blockID ? dropIndicator?.placement : nil,
-                measuredHeight: Binding(
-                  get: { rowHeights[blockID] ?? 24 },
-                  set: { rowHeights[blockID] = $0 }
-                ),
-                onCommand: { command in
-                  handle(command, blockID: blockID)
-                },
-                onFocus: {
-                  blockSelection = nil
-                  requestFocus(blockID)
-                },
-                onReveal: {
-                  requestReveal(blockID)
-                },
-                onDeleteBlock: {
-                  deleteBlock(blockID: blockID)
-                },
-                onMoveToProject: { targetProjectID in
-                  onMoveBlockToProject(blockID, targetProjectID)
-                },
-                onZoomIn: {
-                  zoomIn(blockID: blockID)
-                },
-                onToggleFold: {
-                  toggleFold(blockID: blockID)
-                },
-                onRenameTask: onRenameTask,
-                onToggleTaskCompletion: onToggleTaskCompletion,
-                onOpenTask: onOpenTask,
-                onOpenTaskSection: onOpenTaskSection,
-                onImportAttachmentFiles: { urls, offset in
-                  onImportAttachmentFiles(blockID, urls, offset)
-                },
-                onOpenAttachment: onOpenAttachment,
-                onRenameAttachment: onRenameAttachment,
-                onDeleteAttachment: onDeleteAttachment,
-                onBeginDrag: {
-                  draggingBlockID = blockID
-                }
-              )
-              .id(blockID)
-              .onDrop(
-                of: [UTType.text.identifier],
-                delegate: ProjectOutlineBlockDropDelegate(
-                  targetID: blockID,
-                  rowHeight: rowHeights[blockID] ?? 24,
-                  focusRootID: zoomRootBlockID,
-                  document: $document,
-                  draggingBlockID: $draggingBlockID,
-                  dropIndicator: $dropIndicator
-                )
-              )
-            }
-          }
+      outlinerContent(proxy: proxy)
+    }
+  }
+
+  @ViewBuilder
+  private func outlinerContent(proxy: ScrollViewProxy) -> some View {
+    let displayContext = displayContext
+    let virtualizedRange = virtualizedRange(for: displayContext)
+    LazyVStack(alignment: .leading, spacing: 0) {
+      zoomBreadcrumb
+      if document.blocks.isEmpty {
+        emptyDocumentButton
+      } else {
+        virtualizedRows(displayContext: displayContext, range: virtualizedRange)
+      }
+    }
+    .padding(.vertical, 12)
+    .background(outlinePositionReader)
+    .transaction { transaction in
+      transaction.animation = nil
+    }
+    .onChange(of: blockToRevealAfterZoomOut) { _, blockID in
+      guard let blockID else { return }
+      DispatchQueue.main.async {
+        proxy.scrollTo(blockID, anchor: .center)
+        blockToRevealAfterZoomOut = nil
+      }
+    }
+    .onChange(of: blockRevealRequestID) { _, _ in
+      guard let blockToReveal else { return }
+      DispatchQueue.main.async {
+        proxy.scrollTo(blockToReveal)
+      }
+    }
+    .onAppear {
+      highlightRequestedTaskIfNeeded()
+    }
+    .onChange(of: highlightRequestID) { _, _ in
+      highlightRequestedTaskIfNeeded()
+    }
+    .onChange(of: highlightedTaskID) { _, _ in
+      handledHighlightRequestID = nil
+      highlightRequestedTaskIfNeeded()
+    }
+    .onChange(of: document.blocks) { _, blocks in
+      if let zoomRootBlockID, !blocks.contains(where: { $0.id == zoomRootBlockID }) {
+        self.zoomRootBlockID = nil
+      }
+      highlightRequestedTaskIfNeeded()
+    }
+    .onPreferenceChange(ProjectOutlineGlobalMinYPreferenceKey.self) { minY in
+      if initialOutlineGlobalMinY == nil {
+        initialOutlineGlobalMinY = minY
+      }
+      outlineGlobalMinY = minY
+      outlineViewportHeight = currentOutlineViewportHeight()
+    }
+  }
+
+  private var emptyDocumentButton: some View {
+    Button("첫 불릿 추가", systemImage: "plus") {
+      let block = ProjectOutlineBlock(depth: 0, text: "")
+      document.blocks = [block]
+      requestFocus(block.id)
+    }
+    .buttonStyle(.borderless)
+    .padding(.horizontal, 9)
+    .padding(.vertical, 16)
+  }
+
+  private var outlinePositionReader: some View {
+    GeometryReader { proxy in
+      Color.clear
+        .preference(
+          key: ProjectOutlineGlobalMinYPreferenceKey.self,
+          value: proxy.frame(in: .global).minY
+        )
+    }
+  }
+
+  @ViewBuilder
+  private func virtualizedRows(
+    displayContext: ProjectOutlinerDisplayContext,
+    range: ProjectOutlineVirtualizedRange
+  ) -> some View {
+    Color.clear
+      .frame(height: range.topSpacerHeight)
+      .accessibilityHidden(true)
+
+    ForEach(Array(displayContext.blocks[range.indices])) { visibleBlock in
+      outlineRow(visibleBlock: visibleBlock, selectedIDs: displayContext.selectedIDs)
+    }
+
+    Color.clear
+      .frame(height: range.bottomSpacerHeight)
+      .accessibilityHidden(true)
+  }
+
+  @ViewBuilder
+  private func outlineRow(
+    visibleBlock: ProjectOutlinerVisibleBlock,
+    selectedIDs: Set<UUID>
+  ) -> some View {
+    let blockID = visibleBlock.id
+    if let blockBinding = binding(for: blockID) {
+      ProjectOutlineRowView(
+        block: blockBinding,
+        task: visibleBlock.block.taskBinding?.taskID.flatMap { tasksByID[$0] },
+        projectColor: projectColor,
+        isFocused: focusedBlockID == blockID,
+        focusRequestID: focusRequestID,
+        focusPlacement: focusedBlockID == blockID ? focusPlacement : .preserve,
+        isBlockSelectionActive: blockSelection != nil,
+        isBlockSelected: selectedIDs.contains(blockID),
+        isHighlighted: highlightedBlockID == blockID,
+        displayDepth: visibleBlock.displayDepth,
+        blockColorToken: visibleBlock.block.colorToken,
+        hidesMarker: zoomRootBlockID == blockID,
+        isCreatingTask: pendingTaskBlockIDs.contains(blockID),
+        recurringCompletionCount: visibleBlock.block.taskBinding?.taskID.flatMap {
+          recurringCompletionCounts[$0]
+        } ?? 0,
+        moveOptions: moveOptions,
+        taskEditConfiguration: taskEditConfiguration,
+        hasChildren: visibleBlock.hasVisibleChildren,
+        isCollapsed: visibleBlock.block.childrenCollapsed,
+        dropPlacement: dropIndicator?.targetID == blockID ? dropIndicator?.placement : nil,
+        measuredHeight: Binding(
+          get: { rowHeights[blockID] ?? 24 },
+          set: { rowHeights[blockID] = $0 }
+        ),
+        onCommand: { command in
+          handle(command, blockID: blockID)
+        },
+        onFocus: {
+          blockSelection = nil
+          requestFocus(blockID)
+        },
+        onReveal: {
+          requestReveal(blockID)
+        },
+        onDeleteBlock: {
+          deleteBlock(blockID: blockID)
+        },
+        onMoveToProject: { targetProjectID in
+          onMoveBlockToProject(blockID, targetProjectID)
+        },
+        onZoomIn: {
+          zoomIn(blockID: blockID)
+        },
+        onToggleFold: {
+          toggleFold(blockID: blockID)
+        },
+        onRenameTask: onRenameTask,
+        onToggleTaskCompletion: onToggleTaskCompletion,
+        onOpenTask: onOpenTask,
+        onOpenTaskSection: onOpenTaskSection,
+        onImportAttachmentFiles: { urls, offset in
+          onImportAttachmentFiles(blockID, urls, offset)
+        },
+        onOpenAttachment: onOpenAttachment,
+        onRenameAttachment: onRenameAttachment,
+        onDeleteAttachment: onDeleteAttachment,
+        onBeginDrag: {
+          draggingBlockID = blockID
         }
-      }
-      .padding(.vertical, 12)
-      .transaction { transaction in
-        transaction.animation = nil
-      }
-      .onChange(of: blockToRevealAfterZoomOut) { _, blockID in
-        guard let blockID else { return }
-        DispatchQueue.main.async {
-          proxy.scrollTo(blockID, anchor: .center)
-          blockToRevealAfterZoomOut = nil
-        }
-      }
-      .onChange(of: blockRevealRequestID) { _, _ in
-        guard let blockToReveal else { return }
-        DispatchQueue.main.async {
-          proxy.scrollTo(blockToReveal)
-        }
-      }
-      .onAppear {
-        highlightRequestedTaskIfNeeded()
-      }
-      .onChange(of: highlightRequestID) { _, _ in
-        highlightRequestedTaskIfNeeded()
-      }
-      .onChange(of: highlightedTaskID) { _, _ in
-        handledHighlightRequestID = nil
-        highlightRequestedTaskIfNeeded()
-      }
-      .onChange(of: document.blocks) { _, blocks in
-        if let zoomRootBlockID, !blocks.contains(where: { $0.id == zoomRootBlockID }) {
-          self.zoomRootBlockID = nil
-        }
-        highlightRequestedTaskIfNeeded()
-      }
+      )
+      .id(blockID)
+      .onDrop(
+        of: [UTType.text.identifier],
+        delegate: ProjectOutlineBlockDropDelegate(
+          targetID: blockID,
+          rowHeight: rowHeights[blockID] ?? 24,
+          focusRootID: zoomRootBlockID,
+          document: $document,
+          draggingBlockID: $draggingBlockID,
+          dropIndicator: $dropIndicator
+        )
+      )
     }
   }
 
@@ -206,6 +261,43 @@ struct ProjectOutlinerView: View {
 
   private var visibleDepthsByID: [UUID: Int] {
     displayContext.visibleDepthsByID
+  }
+
+  private func virtualizedRange(
+    for displayContext: ProjectOutlinerDisplayContext
+  ) -> ProjectOutlineVirtualizedRange {
+    ProjectOutlineVirtualizationPolicy.range(
+      itemIDs: displayContext.visibleIDs,
+      rowHeights: rowHeights,
+      scrollOffset: currentScrollOffset(),
+      viewportHeight: outlineViewportHeight,
+      pinnedIDs: pinnedVirtualizedBlockIDs
+    )
+  }
+
+  private var pinnedVirtualizedBlockIDs: Set<UUID> {
+    Set(
+      [
+        focusedBlockID,
+        highlightedBlockID,
+        dropIndicator?.targetID,
+        blockToReveal,
+        blockToRevealAfterZoomOut,
+      ].compactMap { $0 }
+    )
+  }
+
+  private func currentScrollOffset() -> CGFloat {
+    guard let initialOutlineGlobalMinY else { return 0 }
+    return max(0, initialOutlineGlobalMinY - outlineGlobalMinY)
+  }
+
+  private func currentOutlineViewportHeight() -> CGFloat {
+    guard let contentView = NSApplication.shared.keyWindow?.contentView else {
+      return outlineViewportHeight
+    }
+    let initialY = initialOutlineGlobalMinY ?? outlineGlobalMinY
+    return max(220, contentView.bounds.height - max(0, initialY))
   }
 
   private func binding(for blockID: UUID) -> Binding<ProjectOutlineBlock>? {
@@ -743,6 +835,14 @@ struct ProjectOutlinerView: View {
     guard let lastChildIndex = visible.dropFirst().last else { return false }
     return document.blocks[rootIndex].depth + 1 == document.blocks[lastChildIndex].depth
       && document.blocks[lastChildIndex].id == blockID
+  }
+}
+
+private struct ProjectOutlineGlobalMinYPreferenceKey: PreferenceKey {
+  static let defaultValue: CGFloat = 0
+
+  static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+    value = nextValue()
   }
 }
 
