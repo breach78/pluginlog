@@ -143,6 +143,22 @@ enum AppOwnedRetainedTaskCommandService {
         noteText: rawFields.noteText
       )?.modifiedAt ?? latestModifiedAt
     }
+    let recurrenceChanged = rawFields.updatesRecurrence
+      && recurrenceRuleRaw != normalized(task.recurrenceRuleRaw)
+    let shouldClearRecurrenceBeforeSchedule = recurrenceChanged
+      && recurrenceRuleRaw == nil
+      && dueDate == nil
+      && normalized(task.recurrenceRuleRaw) != nil
+    var didUpdateRecurrence = false
+
+    if shouldClearRecurrenceBeforeSchedule {
+      latestModifiedAt = try reminderProjectProvider.setTaskRecurrence(
+        for: reference,
+        recurrenceRuleRaw: nil
+      )?.modifiedAt ?? latestModifiedAt
+      didUpdateRecurrence = true
+    }
+
     if dueDate != task.dueDate || hasExplicitTime != task.hasExplicitTime {
       latestModifiedAt = try reminderProjectProvider.setTaskSchedule(
         for: reference,
@@ -150,7 +166,7 @@ enum AppOwnedRetainedTaskCommandService {
         hasExplicitTime: hasExplicitTime
       )?.modifiedAt ?? latestModifiedAt
     }
-    if rawFields.updatesRecurrence, recurrenceRuleRaw != normalized(task.recurrenceRuleRaw) {
+    if recurrenceChanged && !didUpdateRecurrence {
       latestModifiedAt = try reminderProjectProvider.setTaskRecurrence(
         for: reference,
         recurrenceRuleRaw: recurrenceRuleRaw

@@ -16,6 +16,7 @@ struct ProjectOutlineSchedulePopover: View {
   @State private var isSaving = false
   @State private var errorText: String?
   @State private var saveTask: Task<Void, Never>?
+  @State private var didLoadFields = false
 
   private let calendar = Calendar.autoupdatingCurrent
   private static let noTimeTag = -1
@@ -116,6 +117,9 @@ struct ProjectOutlineSchedulePopover: View {
     .padding(10)
     .frame(width: 320, alignment: .leading)
     .background(TaskEditFieldStyle.panelBackgroundColor)
+    .task(id: task.id) {
+      await loadLatestFieldsIfNeeded()
+    }
     .onDisappear {
       saveTask?.cancel()
       saveTask = nil
@@ -192,6 +196,25 @@ struct ProjectOutlineSchedulePopover: View {
     saveTask = Task { @MainActor in
       await saveCurrentSchedule()
     }
+  }
+
+  @MainActor
+  private func loadLatestFieldsIfNeeded() async {
+    guard !didLoadFields else { return }
+    didLoadFields = true
+    let fields = await loadFields()
+    guard !isSaving else { return }
+    apply(fields)
+  }
+
+  private func apply(_ fields: RetainedTaskEditFields) {
+    selectedDate = fields.day ?? .now
+    hasDate = fields.day != nil
+    selectedTimeMinutes = fields.timeMinutes ?? Self.noTimeTag
+    durationMinutes = TimelineTaskEditDurationPolicy.normalized(
+      fields.durationMinutes ?? Self.defaultDurationMinutes
+    )
+    recurrenceDescriptor = ReminderRecurrenceDescriptor.parse(fields.recurrenceRuleRaw)
   }
 
   @MainActor

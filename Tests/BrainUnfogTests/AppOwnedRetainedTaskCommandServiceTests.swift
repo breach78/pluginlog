@@ -282,6 +282,42 @@ final class AppOwnedRetainedTaskCommandServiceTests: XCTestCase {
   }
 
   @MainActor
+  func testAppOwnedTaskEditClearsRecurrenceBeforeRemovingDueDate() async throws {
+    let start = try XCTUnwrap(
+      Self.calendar.date(from: DateComponents(year: 2026, month: 5, day: 2, hour: 9, minute: 30))
+    )
+    let fixture = try await makeEnabledStoreFixture(
+      taskExternalIdentifier: "task-1",
+      dueDate: start,
+      scheduleHasExplicitTime: true,
+      recurrenceRuleRaw: "daily|1"
+    )
+    let provider = FakeAppOwnedReminderProjectProvider()
+    let taskID = ReminderProjectionIdentity.taskID(for: "task-1")
+
+    _ = try await RetainedTaskCommandFacade.updateTaskEditFields(
+      vaultRootURL: fixture.vaultRoot,
+      projectID: fixture.projectID,
+      taskID: taskID,
+      fields: RetainedTaskEditFields(
+        title: "Task",
+        noteText: "",
+        day: nil,
+        timeMinutes: nil,
+        durationMinutes: nil,
+        recurrenceRuleRaw: nil,
+        updatesRecurrence: true
+      ),
+      calendar: Self.calendar,
+      reminderProjectProvider: provider
+    )
+
+    XCTAssertEqual(provider.mutationCallOrder, ["recurrence", "schedule"])
+    XCTAssertEqual(provider.recurrenceUpdate?.1, nil)
+    XCTAssertEqual(provider.scheduleUpdate?.0, nil)
+  }
+
+  @MainActor
   func testAppOwnedTaskEditWithoutRecurrenceIntentPreservesExistingRecurrence() async throws {
     let start = try XCTUnwrap(
       Self.calendar.date(from: DateComponents(year: 2026, month: 5, day: 2, hour: 9, minute: 30))
@@ -1430,6 +1466,7 @@ private final class FakeAppOwnedReminderProjectProvider: ReminderProjectProvider
   var scheduleTaskReferences: [ReminderTaskReference] = []
   var scheduleMetadataResults: [ReminderTaskRemoteMetadata?]?
   var recurrenceUpdate: (String?, String?)?
+  var mutationCallOrder: [String] = []
   var removedTaskExternalIdentifiers: [String?] = []
   var removeTaskReminderResult = true
   var isDryRunDeletionEnabled = false
@@ -1519,6 +1556,7 @@ private final class FakeAppOwnedReminderProjectProvider: ReminderProjectProvider
     dueDate: Date?,
     hasExplicitTime: Bool
   ) throws -> ReminderTaskRemoteMetadata? {
+    mutationCallOrder.append("schedule")
     scheduleTaskReferences.append(task)
     scheduleUpdate = (dueDate, hasExplicitTime)
     let metadata: ReminderTaskRemoteMetadata?
@@ -1552,6 +1590,7 @@ private final class FakeAppOwnedReminderProjectProvider: ReminderProjectProvider
     for task: ReminderTaskReference,
     recurrenceRuleRaw: String?
   ) throws -> ReminderTaskRemoteMetadata? {
+    mutationCallOrder.append("recurrence")
     recurrenceUpdate = (task.reminderExternalIdentifier, recurrenceRuleRaw)
     return updateMetadata
   }
