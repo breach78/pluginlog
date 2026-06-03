@@ -340,6 +340,49 @@ enum ProjectOutlineMutationEngine {
   }
 
   @discardableResult
+  static func moveBlocks(
+    ids blockIDs: [UUID],
+    to targetID: UUID,
+    placement: ProjectOutlineDropPlacement,
+    in document: inout ProjectOutlineDocument
+  ) -> Bool {
+    guard let selection = selectedRootRangesForMove(for: blockIDs, in: document),
+      let targetIndex = document.blocks.firstIndex(where: { $0.id == targetID }),
+      !selection.movingRange.contains(targetIndex)
+    else {
+      return false
+    }
+
+    var movingSubtree = Array(document.blocks[selection.movingRange])
+    document.blocks.removeSubrange(selection.movingRange)
+
+    guard let adjustedTargetIndex = document.blocks.firstIndex(where: { $0.id == targetID }) else {
+      return false
+    }
+    let insertionIndex: Int
+    let targetDepth = document.blocks[adjustedTargetIndex].depth
+    let nextRootDepth: Int
+    switch placement {
+    case .before:
+      insertionIndex = adjustedTargetIndex
+      nextRootDepth = targetDepth
+    case .after:
+      insertionIndex = subtreeRange(at: adjustedTargetIndex, in: document).upperBound
+      nextRootDepth = targetDepth
+    case .child:
+      insertionIndex = subtreeRange(at: adjustedTargetIndex, in: document).upperBound
+      nextRootDepth = targetDepth + 1
+    }
+
+    let depthDelta = nextRootDepth - selection.rootDepth
+    for index in movingSubtree.indices {
+      movingSubtree[index].depth = max(0, movingSubtree[index].depth + depthDelta)
+    }
+    document.blocks.insert(contentsOf: movingSubtree, at: insertionIndex)
+    return true
+  }
+
+  @discardableResult
   static func deleteBlockReattachingChildren(
     id blockID: UUID,
     in document: inout ProjectOutlineDocument
@@ -559,6 +602,56 @@ enum ProjectOutlineMutationEngine {
     let parentIDs = Set(rootIndices.map { parentIndex(for: $0, in: document).map { document.blocks[$0].id } })
     guard parentIDs.count == 1 else { return nil }
     return (rootIndices, movingRange)
+  }
+
+  private static func selectedRootRangesForMove(
+    for selectedIDs: [UUID],
+    in document: ProjectOutlineDocument
+  ) -> (rootIndices: [Int], movingRange: Range<Int>, rootDepth: Int)? {
+    let selectedSet = Set(selectedIDs)
+    guard !selectedSet.isEmpty else { return nil }
+
+    let selectedIndices = document.blocks.indices.filter {
+      selectedSet.contains(document.blocks[$0].id)
+    }
+    guard let firstSelected = selectedIndices.first,
+      let lastSelected = selectedIndices.last
+    else {
+      return nil
+    }
+
+    let rootIndices = selectedIndices.filter { index in
+      guard let parentIndex = parentIndex(for: index, in: document) else { return true }
+      return !selectedSet.contains(document.blocks[parentIndex].id)
+    }
+    guard !rootIndices.isEmpty else { return nil }
+
+    let rootDepth = document.blocks[rootIndices[0]].depth
+    guard rootIndices.allSatisfy({ document.blocks[$0].depth == rootDepth }) else {
+      return nil
+    }
+
+    let firstRange = subtreeRange(at: rootIndices[0], in: document)
+    let lastRange = subtreeRange(at: rootIndices[rootIndices.count - 1], in: document)
+    let movingRange = firstRange.lowerBound..<lastRange.upperBound
+    guard movingRange.lowerBound == firstSelected,
+      movingRange.upperBound >= lastSelected + 1
+    else {
+      return nil
+    }
+
+    let selectedRootSet = Set(rootIndices)
+    let rootOrDescendantCovered = movingRange.allSatisfy { index in
+      selectedSet.contains(document.blocks[index].id)
+        || selectedRootSet.contains(where: { rootIndex in
+          subtreeRange(at: rootIndex, in: document).contains(index)
+        })
+    }
+    guard rootOrDescendantCovered else { return nil }
+
+    let parentIDs = Set(rootIndices.map { parentIndex(for: $0, in: document).map { document.blocks[$0].id } })
+    guard parentIDs.count == 1 else { return nil }
+    return (rootIndices, movingRange, rootDepth)
   }
 
   private static func parentIndex(for index: Int, in document: ProjectOutlineDocument) -> Int? {

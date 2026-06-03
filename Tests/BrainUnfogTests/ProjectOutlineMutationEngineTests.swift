@@ -555,6 +555,74 @@ struct ProjectOutlineMutationEngineTests {
     #expect(document.blocks.map(\.text) == ["A", "A.1", "B"])
   }
 
+  @Test func dropMoveSelectionCarriesContiguousRootSubtreesTogether() {
+    let ids = Self.ids()
+    var document = ProjectOutlineDocument(blocks: [
+      ProjectOutlineBlock(id: ids[0], depth: 0, text: "A"),
+      ProjectOutlineBlock(id: ids[1], depth: 0, text: "B"),
+      ProjectOutlineBlock(id: ids[2], depth: 1, text: "B.1"),
+      ProjectOutlineBlock(id: ids[3], depth: 0, text: "C"),
+      ProjectOutlineBlock(id: ids[4], depth: 0, text: "D"),
+    ])
+
+    let didMove = ProjectOutlineMutationEngine.moveBlocks(
+      ids: [ids[1], ids[2], ids[3]],
+      to: ids[4],
+      placement: .after,
+      in: &document
+    )
+
+    #expect(didMove)
+    #expect(document.blocks.map(\.text) == ["A", "D", "B", "B.1", "C"])
+    #expect(document.blocks.map(\.depth) == [0, 0, 0, 1, 0])
+  }
+
+  @Test func dropMoveSelectionPreservesTaskBlocks() {
+    let ids = Self.ids()
+    var document = ProjectOutlineDocument(blocks: [
+      ProjectOutlineBlock(id: ids[0], depth: 0, text: "A"),
+      ProjectOutlineBlock(
+        id: ids[1],
+        depth: 0,
+        text: "",
+        taskBinding: ProjectOutlineTaskBinding(taskID: ids[1], taskExternalIdentifier: "task-1")
+      ),
+      ProjectOutlineBlock(id: ids[2], depth: 0, text: "C"),
+    ])
+
+    let didMove = ProjectOutlineMutationEngine.moveBlocks(
+      ids: [ids[1], ids[2]],
+      to: ids[0],
+      placement: .child,
+      in: &document
+    )
+
+    #expect(didMove)
+    #expect(document.blocks.map(\.id) == [ids[0], ids[1], ids[2]])
+    #expect(document.blocks.map(\.depth) == [0, 1, 1])
+    #expect(document.blocks[1].taskBinding?.taskID == ids[1])
+  }
+
+  @Test func dropMoveSelectionRejectsTargetInsideSelection() {
+    let ids = Self.ids()
+    var document = ProjectOutlineDocument(blocks: [
+      ProjectOutlineBlock(id: ids[0], depth: 0, text: "A"),
+      ProjectOutlineBlock(id: ids[1], depth: 0, text: "B"),
+      ProjectOutlineBlock(id: ids[2], depth: 1, text: "B.1"),
+      ProjectOutlineBlock(id: ids[3], depth: 0, text: "C"),
+    ])
+
+    let didMove = ProjectOutlineMutationEngine.moveBlocks(
+      ids: [ids[1], ids[2]],
+      to: ids[2],
+      placement: .after,
+      in: &document
+    )
+
+    #expect(!didMove)
+    #expect(document.blocks.map(\.text) == ["A", "B", "B.1", "C"])
+  }
+
   @Test func normalizedSubtreeUsesMovedRootAsDepthZero() throws {
     let ids = Self.ids()
     let document = ProjectOutlineDocument(blocks: [

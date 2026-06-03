@@ -35,7 +35,7 @@ struct ProjectOutlinerView: View {
   @State private var zoomRootBlockID: UUID?
   @State private var blockToRevealAfterZoomOut: UUID?
   @State private var rowHeights: [UUID: CGFloat] = [:]
-  @State private var draggingBlockID: UUID?
+  @State private var draggingBlockIDs: [UUID] = []
   @State private var dropIndicator: ProjectOutlineDropIndicator?
   @State private var blockToReveal: UUID?
   @State private var blockRevealRequestID: UInt64 = 0
@@ -215,7 +215,7 @@ struct ProjectOutlinerView: View {
         onRenameAttachment: onRenameAttachment,
         onDeleteAttachment: onDeleteAttachment,
         onBeginDrag: {
-          draggingBlockID = blockID
+          draggingBlockIDs = draggingIDs(startingAt: blockID)
         }
       )
       .id(blockID)
@@ -226,7 +226,7 @@ struct ProjectOutlinerView: View {
           rowHeight: rowHeights[blockID] ?? 24,
           focusRootID: zoomRootBlockID,
           document: $document,
-          draggingBlockID: $draggingBlockID,
+          draggingBlockIDs: $draggingBlockIDs,
           dropIndicator: $dropIndicator
         )
       )
@@ -257,6 +257,14 @@ struct ProjectOutlinerView: View {
 
   private var selectedBlockIDs: Set<UUID> {
     displayContext.selectedIDs
+  }
+
+  private func draggingIDs(startingAt blockID: UUID) -> [UUID] {
+    let selectedIDs = blockSelection?.selectedIDs(
+      in: visibleBlockIDs,
+      depths: visibleDepthsByID
+    ) ?? []
+    return selectedIDs.contains(blockID) ? selectedIDs : [blockID]
   }
 
   private var visibleDepthsByID: [UUID: Int] {

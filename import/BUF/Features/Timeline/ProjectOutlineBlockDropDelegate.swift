@@ -6,20 +6,20 @@ struct ProjectOutlineBlockDropDelegate: DropDelegate {
   let rowHeight: CGFloat
   let focusRootID: UUID?
   @Binding var document: ProjectOutlineDocument
-  @Binding var draggingBlockID: UUID?
+  @Binding var draggingBlockIDs: [UUID]
   @Binding var dropIndicator: ProjectOutlineDropIndicator?
 
   func validateDrop(info: DropInfo) -> Bool {
-    guard let draggingBlockID,
-      isDropInsideFocusRoot(draggingBlockID: draggingBlockID)
+    guard !draggingBlockIDs.isEmpty,
+      isDropInsideFocusRoot(draggingBlockIDs: draggingBlockIDs)
     else { return false }
     return info.hasItemsConforming(to: [UTType.text.identifier])
   }
 
   func dropUpdated(info: DropInfo) -> DropProposal? {
-    guard let draggingBlockID,
-      draggingBlockID != targetID,
-      isDropInsideFocusRoot(draggingBlockID: draggingBlockID)
+    guard !draggingBlockIDs.isEmpty,
+      !draggingBlockIDs.contains(targetID),
+      isDropInsideFocusRoot(draggingBlockIDs: draggingBlockIDs)
     else {
       dropIndicator = nil
       return nil
@@ -44,13 +44,13 @@ struct ProjectOutlineBlockDropDelegate: DropDelegate {
       ? dropIndicator?.placement ?? placement(for: info)
       : placement(for: info)
     defer {
-      draggingBlockID = nil
+      draggingBlockIDs = []
       dropIndicator = nil
     }
-    guard let draggingBlockID else { return false }
+    guard !draggingBlockIDs.isEmpty else { return false }
     guard isValidPlacementInsideFocusRoot(placement) else { return false }
-    return ProjectOutlineMutationEngine.moveBlock(
-      id: draggingBlockID,
+    return ProjectOutlineMutationEngine.moveBlocks(
+      ids: draggingBlockIDs,
       to: targetID,
       placement: placement,
       in: &document
@@ -75,16 +75,20 @@ struct ProjectOutlineBlockDropDelegate: DropDelegate {
     return info.location.x >= childThreshold ? .child : .after
   }
 
-  private func isDropInsideFocusRoot(draggingBlockID: UUID) -> Bool {
+  private func isDropInsideFocusRoot(draggingBlockIDs: [UUID]) -> Bool {
     guard let focusRootID,
       let rootIndex = document.blocks.firstIndex(where: { $0.id == focusRootID }),
-      let draggingIndex = document.blocks.firstIndex(where: { $0.id == draggingBlockID }),
       let targetIndex = document.blocks.firstIndex(where: { $0.id == targetID })
     else {
       return true
     }
     let rootRange = ProjectOutlineMutationEngine.subtreeRange(at: rootIndex, in: document)
-    return rootRange.contains(draggingIndex) && rootRange.contains(targetIndex)
+    let draggingIndices = draggingBlockIDs.compactMap { draggingBlockID in
+      document.blocks.firstIndex(where: { $0.id == draggingBlockID })
+    }
+    return draggingIndices.count == draggingBlockIDs.count
+      && draggingIndices.allSatisfy(rootRange.contains)
+      && rootRange.contains(targetIndex)
   }
 
   private func isValidPlacementInsideFocusRoot(_ placement: ProjectOutlineDropPlacement) -> Bool {
