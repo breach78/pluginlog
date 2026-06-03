@@ -978,10 +978,17 @@ private struct ProjectOutlineRowView: View {
           onToggleTaskCompletion(task.id, task.isCompleted)
         }
       } label: {
-        Image(systemName: task?.isCompleted == true ? "checkmark.square.fill" : "square")
-          .font(.system(size: 14))
-          .foregroundStyle(task?.isCompleted == true ? projectColor : Color.secondary)
-          .frame(width: 18, height: 22)
+        ZStack {
+          if hasChildren && isCollapsed {
+            RoundedRectangle(cornerRadius: 4)
+              .stroke(Color.secondary.opacity(0.15), lineWidth: 2)
+              .frame(width: 18, height: 18)
+          }
+          Image(systemName: task?.isCompleted == true ? "checkmark.square.fill" : "square")
+            .font(.system(size: 14))
+            .foregroundStyle(task?.isCompleted == true ? projectColor : Color.secondary)
+        }
+        .frame(width: 18, height: 22)
       }
       .buttonStyle(.plain)
       .disabled(task == nil || isCreatingTask)
