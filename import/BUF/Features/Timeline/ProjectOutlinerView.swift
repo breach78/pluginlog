@@ -41,9 +41,6 @@ struct ProjectOutlinerView: View {
   @State private var blockRevealRequestID: UInt64 = 0
   @State private var highlightedBlockID: UUID?
   @State private var handledHighlightRequestID: Int?
-  @State private var initialOutlineGlobalMinY: CGFloat?
-  @State private var outlineGlobalMinY: CGFloat = 0
-  @State private var outlineViewportHeight: CGFloat = 700
 
   private var tasksByID: [UUID: TimelineProjectListWindowSnapshot.Task] {
     Dictionary(uniqueKeysWithValues: tasks.map { ($0.id, $0) })
@@ -58,17 +55,15 @@ struct ProjectOutlinerView: View {
   @ViewBuilder
   private func outlinerContent(proxy: ScrollViewProxy) -> some View {
     let displayContext = displayContext
-    let virtualizedRange = virtualizedRange(for: displayContext)
     LazyVStack(alignment: .leading, spacing: 0) {
       zoomBreadcrumb
       if document.blocks.isEmpty {
         emptyDocumentButton
       } else {
-        virtualizedRows(displayContext: displayContext, range: virtualizedRange)
+        visibleRows(displayContext: displayContext)
       }
     }
     .padding(.vertical, 12)
-    .background(outlinePositionReader)
     .transaction { transaction in
       transaction.animation = nil
     }
@@ -101,13 +96,6 @@ struct ProjectOutlinerView: View {
       }
       highlightRequestedTaskIfNeeded()
     }
-    .onPreferenceChange(ProjectOutlineGlobalMinYPreferenceKey.self) { minY in
-      if initialOutlineGlobalMinY == nil {
-        initialOutlineGlobalMinY = minY
-      }
-      outlineGlobalMinY = minY
-      outlineViewportHeight = currentOutlineViewportHeight()
-    }
   }
 
   private var emptyDocumentButton: some View {
@@ -121,32 +109,11 @@ struct ProjectOutlinerView: View {
     .padding(.vertical, 16)
   }
 
-  private var outlinePositionReader: some View {
-    GeometryReader { proxy in
-      Color.clear
-        .preference(
-          key: ProjectOutlineGlobalMinYPreferenceKey.self,
-          value: proxy.frame(in: .global).minY
-        )
-    }
-  }
-
   @ViewBuilder
-  private func virtualizedRows(
-    displayContext: ProjectOutlinerDisplayContext,
-    range: ProjectOutlineVirtualizedRange
-  ) -> some View {
-    Color.clear
-      .frame(height: range.topSpacerHeight)
-      .accessibilityHidden(true)
-
-    ForEach(Array(displayContext.blocks[range.indices])) { visibleBlock in
+  private func visibleRows(displayContext: ProjectOutlinerDisplayContext) -> some View {
+    ForEach(displayContext.blocks) { visibleBlock in
       outlineRow(visibleBlock: visibleBlock, selectedIDs: displayContext.selectedIDs)
     }
-
-    Color.clear
-      .frame(height: range.bottomSpacerHeight)
-      .accessibilityHidden(true)
   }
 
   @ViewBuilder
@@ -269,43 +236,6 @@ struct ProjectOutlinerView: View {
 
   private var visibleDepthsByID: [UUID: Int] {
     displayContext.visibleDepthsByID
-  }
-
-  private func virtualizedRange(
-    for displayContext: ProjectOutlinerDisplayContext
-  ) -> ProjectOutlineVirtualizedRange {
-    ProjectOutlineVirtualizationPolicy.range(
-      itemIDs: displayContext.visibleIDs,
-      rowHeights: rowHeights,
-      scrollOffset: currentScrollOffset(),
-      viewportHeight: outlineViewportHeight,
-      pinnedIDs: pinnedVirtualizedBlockIDs
-    )
-  }
-
-  private var pinnedVirtualizedBlockIDs: Set<UUID> {
-    Set(
-      [
-        focusedBlockID,
-        highlightedBlockID,
-        dropIndicator?.targetID,
-        blockToReveal,
-        blockToRevealAfterZoomOut,
-      ].compactMap { $0 }
-    )
-  }
-
-  private func currentScrollOffset() -> CGFloat {
-    guard let initialOutlineGlobalMinY else { return 0 }
-    return max(0, initialOutlineGlobalMinY - outlineGlobalMinY)
-  }
-
-  private func currentOutlineViewportHeight() -> CGFloat {
-    guard let contentView = NSApplication.shared.keyWindow?.contentView else {
-      return outlineViewportHeight
-    }
-    let initialY = initialOutlineGlobalMinY ?? outlineGlobalMinY
-    return max(220, contentView.bounds.height - max(0, initialY))
   }
 
   private func binding(for blockID: UUID) -> Binding<ProjectOutlineBlock>? {
@@ -843,14 +773,6 @@ struct ProjectOutlinerView: View {
     guard let lastChildIndex = visible.dropFirst().last else { return false }
     return document.blocks[rootIndex].depth + 1 == document.blocks[lastChildIndex].depth
       && document.blocks[lastChildIndex].id == blockID
-  }
-}
-
-private struct ProjectOutlineGlobalMinYPreferenceKey: PreferenceKey {
-  static let defaultValue: CGFloat = 0
-
-  static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
-    value = nextValue()
   }
 }
 
