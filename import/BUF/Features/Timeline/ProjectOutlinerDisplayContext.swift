@@ -33,9 +33,11 @@ struct ProjectOutlinerDisplayContext {
     for position in visibleIndices.indices {
       let index = visibleIndices[position]
       let block = document.blocks[index]
-      let nextIndex = visibleIndices.index(after: position)
-      let hasVisibleChildren = visibleIndices.indices.contains(nextIndex)
-        && document.blocks[visibleIndices[nextIndex]].depth > block.depth
+      let hasVisibleChildren = ProjectOutlineVisibilityPolicy.hasVisibleChildren(
+        blockID: block.id,
+        in: document,
+        hiddenTaskIDs: hiddenTaskIDs
+      )
       let displayDepth = focusRootID == nil ? block.depth : max(0, block.depth - rootDepth)
       visibleBlocks.append(
         ProjectOutlinerVisibleBlock(

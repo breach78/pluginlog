@@ -93,4 +93,33 @@ struct ProjectOutlineVisibilityPolicyTests {
 
     #expect(!hasChildren)
   }
+
+  @Test func displayContextKeepsCollapsedTaskChildMarker() throws {
+    let parentID = try #require(UUID(uuidString: "00000000-0000-0000-0000-000000000001"))
+    let taskID = try #require(UUID(uuidString: "11111111-1111-1111-1111-111111111111"))
+    let document = ProjectOutlineDocument(blocks: [
+      ProjectOutlineBlock(
+        id: parentID,
+        depth: 0,
+        text: "",
+        taskBinding: ProjectOutlineTaskBinding(
+          taskID: taskID,
+          taskExternalIdentifier: nil
+        ),
+        childrenCollapsed: true
+      ),
+      ProjectOutlineBlock(depth: 1, text: "자식"),
+      ProjectOutlineBlock(depth: 0, text: "다음"),
+    ])
+
+    let context = ProjectOutlinerDisplayContext(
+      document: document,
+      focusRootID: nil,
+      hiddenTaskIDs: [],
+      selection: nil
+    )
+
+    #expect(context.blocks.map { $0.id } == [parentID, document.blocks[2].id])
+    #expect(context.blocks.first?.hasVisibleChildren == true)
+  }
 }
