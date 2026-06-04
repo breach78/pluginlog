@@ -33,6 +33,7 @@ enum ProjectOutlineTextCommand {
   case deleteBlockSelection
   case selectAllVisibleBlocks
   case mergeBackspaceAtStart(text: String)
+  case pasteBlocks([ProjectOutlineBlock])
 }
 
 enum ProjectOutlineFocusPlacement {
@@ -304,9 +305,15 @@ struct ProjectOutlineTextEditor: NSViewRepresentable {
     }
 
     override func paste(_ sender: Any?) {
-      guard let string = NSPasteboard.general.string(forType: .string),
-        ProjectOutlineAttachmentInlineCodec.containsAttachment(in: string)
-      else {
+      guard let string = NSPasteboard.general.string(forType: .string) else {
+        super.paste(sender)
+        return
+      }
+      if let blocks = ProjectOutlineMarkdownPasteParser.blocks(from: string) {
+        commandHandler?(.pasteBlocks(blocks))
+        return
+      }
+      guard ProjectOutlineAttachmentInlineCodec.containsAttachment(in: string) else {
         super.paste(sender)
         return
       }
@@ -338,6 +345,12 @@ struct ProjectOutlineTextEditor: NSViewRepresentable {
         keyEquivalent: ""
       )
       revealItem.target = self
+      let copyPathItem = menu.addItem(
+        withTitle: "파일 경로 복사",
+        action: #selector(copyContextAttachmentPath),
+        keyEquivalent: ""
+      )
+      copyPathItem.target = self
       menu.addItem(.separator())
       let renameItem = menu.addItem(
         withTitle: "이름 변경",
@@ -362,6 +375,12 @@ struct ProjectOutlineTextEditor: NSViewRepresentable {
     @objc private func revealContextAttachmentInFinder() {
       guard let contextAttachment else { return }
       ApplePlatformDocumentOpener.shared.revealInFiles([contextAttachment.fileURL])
+    }
+
+    @objc private func copyContextAttachmentPath() {
+      guard let contextAttachment else { return }
+      NSPasteboard.general.clearContents()
+      NSPasteboard.general.setString(contextAttachment.fileURL.path, forType: .string)
     }
 
     @objc private func renameContextAttachment() {

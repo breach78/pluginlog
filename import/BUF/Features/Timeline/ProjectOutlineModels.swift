@@ -69,6 +69,11 @@ struct ProjectOutlineInsertionResult: Equatable {
   let focusedBlockID: UUID
 }
 
+struct ProjectOutlinePasteResult: Equatable {
+  let insertedBlockIDs: [UUID]
+  let focusedBlockID: UUID
+}
+
 struct ProjectOutlineBackspaceResult: Equatable {
   let focusedBlockID: UUID?
   let focusOffset: Int?

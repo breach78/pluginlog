@@ -1,0 +1,130 @@
+Processes: 611 total, 7 running, 604 sleeping, 3578 threads 
+2026/06/02 09:53:58
+Load Avg: 4.80, 4.98, 4.88 
+CPU usage: 39.40% user, 26.90% sys, 33.69% idle 
+SharedLibs: 639M resident, 119M data, 100M linkedit.
+MemRegions: 341387 total, 4285M resident, 267M private, 1685M shared.
+PhysMem: 15G used (2009M wired, 4614M compressor), 176M unused.
+VM: 259T vsize, 6144M framework vsize, 46565(0) swapins, 185092(0) swapouts.
+Networks: packets: 29802274/35G in, 10030222/3758M out.
+Disks: 33513241/593G read, 14766021/278G written.
+
+PID    %CPU MEM  #TH #PORTS TIME     COMMAND    
+64383  0.0  426M 6/1 619    00:35.27 Brain Unfog
+Processes: 612 total, 5 running, 607 sleeping, 3663 threads 
+2026/06/02 09:53:59
+Load Avg: 4.80, 4.98, 4.88 
+CPU usage: 27.89% user, 12.39% sys, 59.70% idle 
+SharedLibs: 639M resident, 119M data, 100M linkedit.
+MemRegions: 45 total, 1424K resident, 267M private, 1685M shared.
+PhysMem: 15G used (2008M wired, 4613M compressor), 177M unused.
+VM: 260T vsize, 6144M framework vsize, 46565(0) swapins, 185092(0) swapouts.
+Networks: packets: 29802422/35G in, 10030291/3758M out.
+Disks: 33513295/593G read, 14766496/278G written.
+
+PID    %CPU MEM   #TH #PORTS TIME     COMMAND    
+64383  43.7 425M- 6/1 627+   00:35.93 Brain Unfog
+Processes: 612 total, 33 running, 2 stuck, 577 sleeping, 3707 threads 
+2026/06/02 09:54:01
+Load Avg: 4.80, 4.98, 4.88 
+CPU usage: 26.76% user, 17.30% sys, 55.92% idle 
+SharedLibs: 639M resident, 119M data, 100M linkedit.
+MemRegions: 0 total, 0B resident, 267M private, 1685M shared.
+PhysMem: 15G used (3021M wired, 4854M compressor), 75M unused.
+VM: 260T vsize, 6144M framework vsize, 46565(0) swapins, 185092(0) swapouts.
+Networks: packets: 29802493/35G in, 10030319/3758M out.
+Disks: 33513829/593G read, 14767038/278G written.
+
+PID    %CPU MEM   #TH #PORTS TIME     COMMAND    
+64383  52.8 719M+ 7/3 624-   00:36.49 Brain Unfog
+Processes: 614 total, 3 running, 611 sleeping, 3752 threads 
+2026/06/02 09:54:02
+Load Avg: 4.80, 4.98, 4.88 
+CPU usage: 35.2% user, 20.62% sys, 44.35% idle 
+SharedLibs: 639M resident, 119M data, 100M linkedit.
+MemRegions: 86 total, 2816K resident, 267M private, 1685M shared.
+PhysMem: 15G used (2736M wired, 4836M compressor), 151M unused.
+VM: 260T vsize, 6144M framework vsize, 46565(0) swapins, 185092(0) swapouts.
+Networks: packets: 29802725/35G in, 10030463/3758M out.
+Disks: 33517354/593G read, 14767827/278G written.
+
+PID    %CPU MEM   #TH #PORTS TIME     COMMAND    
+64383  11.6 486M- 7   625+   00:36.64 Brain Unfog
+Processes: 614 total, 3 running, 611 sleeping, 3751 threads 
+2026/06/02 09:54:03
+Load Avg: 4.50, 4.91, 4.86 
+CPU usage: 12.48% user, 7.51% sys, 80.0% idle 
+SharedLibs: 639M resident, 119M data, 100M linkedit.
+MemRegions: 0 total, 0B resident, 267M private, 1685M shared.
+PhysMem: 15G used (2264M wired, 4829M compressor), 140M unused.
+VM: 260T vsize, 6144M framework vsize, 46565(0) swapins, 185092(0) swapouts.
+Networks: packets: 29802997/35G in, 10030727/3758M out.
+Disks: 33517416/593G read, 14768574/278G written.
+
+PID    %CPU MEM   #TH #PORTS TIME     COMMAND    
+64383  0.0  425M- 7   625    00:36.64 Brain Unfog
+Processes: 615 total, 5 running, 610 sleeping, 3740 threads 
+2026/06/02 09:54:04
+Load Avg: 4.50, 4.91, 4.86 
+CPU usage: 17.36% user, 9.32% sys, 73.31% idle 
+SharedLibs: 639M resident, 119M data, 100M linkedit.
+MemRegions: 38 total, 1408K resident, 267M private, 1686M shared.
+PhysMem: 15G used (2253M wired, 4827M compressor), 124M unused.
+VM: 261T vsize, 6144M framework vsize, 46565(0) swapins, 185092(0) swapouts.
+Networks: packets: 29803135/35G in, 10030813/3758M out.
+Disks: 33517424/593G read, 14768600/278G written.
+
+PID    %CPU MEM   #TH #PORTS TIME     COMMAND    
+64383  0.0  425M  7   625    00:36.64 Brain Unfog
+Processes: 614 total, 2 running, 612 sleeping, 3744 threads 
+2026/06/02 09:54:05
+Load Avg: 4.50, 4.91, 4.86 
+CPU usage: 24.24% user, 11.30% sys, 64.45% idle 
+SharedLibs: 639M resident, 119M data, 100M linkedit.
+MemRegions: 0 total, 0B resident, 267M private, 1686M shared.
+PhysMem: 15G used (2572M wired, 4813M compressor), 165M unused.
+VM: 260T vsize, 6144M framework vsize, 46569(4) swapins, 185092(0) swapouts.
+Networks: packets: 29803243/35G in, 10030858/3758M out.
+Disks: 33517544/593G read, 14769169/278G written.
+
+PID    %CPU MEM   #TH #PORTS TIME     COMMAND    
+64383  13.9 486M+ 7   647+   00:36.79 Brain Unfog
+Processes: 614 total, 3 running, 611 sleeping, 3716 threads 
+2026/06/02 09:54:06
+Load Avg: 4.50, 4.91, 4.86 
+CPU usage: 16.83% user, 6.11% sys, 77.4% idle 
+SharedLibs: 639M resident, 119M data, 100M linkedit.
+MemRegions: 0 total, 0B resident, 267M private, 1686M shared.
+PhysMem: 15G used (2433M wired, 4810M compressor), 243M unused.
+VM: 260T vsize, 6144M framework vsize, 46569(0) swapins, 185092(0) swapouts.
+Networks: packets: 29803333/35G in, 10030905/3758M out.
+Disks: 33517563/593G read, 14769271/278G written.
+
+PID    %CPU MEM   #TH #PORTS TIME     COMMAND    
+64383  53.4 426M- 7/1 639-   00:37.37 Brain Unfog
+Processes: 614 total, 4 running, 610 sleeping, 3714 threads 
+2026/06/02 09:54:07
+Load Avg: 4.50, 4.91, 4.86 
+CPU usage: 21.0% user, 8.75% sys, 70.24% idle 
+SharedLibs: 639M resident, 119M data, 100M linkedit.
+MemRegions: 0 total, 0B resident, 267M private, 1686M shared.
+PhysMem: 15G used (2033M wired, 4806M compressor), 240M unused.
+VM: 260T vsize, 6144M framework vsize, 46569(0) swapins, 185092(0) swapouts.
+Networks: packets: 29803507/35G in, 10031017/3758M out.
+Disks: 33517629/593G read, 14769274/278G written.
+
+PID    %CPU MEM   #TH #PORTS TIME     COMMAND    
+64383  59.7 425M- 7   646+   00:38.02 Brain Unfog
+Processes: 614 total, 5 running, 1 stuck, 608 sleeping, 3705 threads 
+2026/06/02 09:54:08
+Load Avg: 5.02, 5.01, 4.89 
+CPU usage: 25.41% user, 11.16% sys, 63.42% idle 
+SharedLibs: 639M resident, 119M data, 100M linkedit.
+MemRegions: 0 total, 0B resident, 267M private, 1686M shared.
+PhysMem: 15G used (2011M wired, 4805M compressor), 271M unused.
+VM: 260T vsize, 6144M framework vsize, 46569(0) swapins, 185092(0) swapouts.
+Networks: packets: 29803604/35G in, 10031053/3758M out.
+Disks: 33517696/593G read, 14769430/278G written.
+
+PID    %CPU MEM   #TH #PORTS TIME     COMMAND    
+64383  54.7 426M+ 7/1 646    00:38.61 Brain Unfog

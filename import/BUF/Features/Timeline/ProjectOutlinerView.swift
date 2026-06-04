@@ -341,7 +341,27 @@ struct ProjectOutlinerView: View {
       deleteSelectedBlocks()
     case .selectAllVisibleBlocks:
       selectAllVisibleBlocks(anchor: blockID)
+    case .pasteBlocks(let blocks):
+      pasteBlocks(blocks, afterOrReplacing: blockID)
     }
+  }
+
+  private func pasteBlocks(
+    _ blocks: [ProjectOutlineBlock],
+    afterOrReplacing blockID: UUID
+  ) {
+    guard let result = ProjectOutlineMutationEngine.pasteBlocks(
+      blocks,
+      afterOrReplacing: blockID,
+      in: &document
+    ) else {
+      return
+    }
+    for insertedBlockID in result.insertedBlockIDs
+    where document.blocks.first(where: { $0.id == insertedBlockID })?.isTaskBlock == true {
+      onCreateTaskBlock(insertedBlockID)
+    }
+    requestFocus(result.focusedBlockID, placement: .end)
   }
 
   private func indentFocusedBlockOrSelection(blockID: UUID) {

@@ -1325,7 +1325,7 @@ struct TimelineProjectListContent: View {
   }
 
   private func createOutlineTaskBlock(_ blockID: UUID) {
-    guard !isCreatingTask,
+    guard !pendingOutlineTaskBlockIDs.contains(blockID),
       let blockIndex = projectOutlineDocument.blocks.firstIndex(where: { $0.id == blockID })
     else {
       return

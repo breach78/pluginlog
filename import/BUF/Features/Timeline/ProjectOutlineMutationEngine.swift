@@ -137,6 +137,44 @@ enum ProjectOutlineMutationEngine {
     return ProjectOutlineInsertionResult(insertedBlockID: inserted.id, focusedBlockID: inserted.id)
   }
 
+  @discardableResult
+  static func pasteBlocks(
+    _ pastedBlocks: [ProjectOutlineBlock],
+    afterOrReplacing blockID: UUID,
+    in document: inout ProjectOutlineDocument
+  ) -> ProjectOutlinePasteResult? {
+    guard !pastedBlocks.isEmpty,
+      let index = document.blocks.firstIndex(where: { $0.id == blockID })
+    else {
+      return nil
+    }
+
+    let baseDepth = document.blocks[index].depth
+    let minimumDepth = pastedBlocks.map(\.depth).min() ?? 0
+    let adjusted = pastedBlocks.map { block in
+      var result = block
+      result.depth = baseDepth + max(0, block.depth - minimumDepth)
+      return result
+    }
+
+    let replacesEmptyLeaf = document.blocks[index].text.isEmpty
+      && !document.blocks[index].isTaskBlock
+      && !hasChildren(at: index, in: document)
+    if replacesEmptyLeaf {
+      document.blocks.replaceSubrange(index...index, with: adjusted)
+    } else {
+      document.blocks.insert(
+        contentsOf: adjusted,
+        at: subtreeRange(at: index, in: document).upperBound
+      )
+    }
+
+    return ProjectOutlinePasteResult(
+      insertedBlockIDs: adjusted.map(\.id),
+      focusedBlockID: adjusted.last!.id
+    )
+  }
+
   static func hasChildren(at index: Int, in document: ProjectOutlineDocument) -> Bool {
     let next = index + 1
     guard document.blocks.indices.contains(index), document.blocks.indices.contains(next) else {

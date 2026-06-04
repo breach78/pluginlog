@@ -3,6 +3,54 @@ import Testing
 @testable import BrainUnfog
 
 struct ProjectOutlineMutationEngineTests {
+  @Test func structuredPasteReplacesEmptyLeafAndOffsetsHierarchy() throws {
+    let targetID = UUID()
+    var document = ProjectOutlineDocument(blocks: [
+      ProjectOutlineBlock(depth: 0, text: "Parent"),
+      ProjectOutlineBlock(id: targetID, depth: 1, text: ""),
+    ])
+    let pasted = [
+      ProjectOutlineBlock(depth: 0, text: "Heading"),
+      ProjectOutlineBlock(
+        depth: 1,
+        text: "Task",
+        taskBinding: ProjectOutlineTaskBinding(taskID: nil, taskExternalIdentifier: nil)
+      ),
+    ]
+
+    let result = try #require(ProjectOutlineMutationEngine.pasteBlocks(
+      pasted,
+      afterOrReplacing: targetID,
+      in: &document
+    ))
+
+    #expect(document.blocks.map(\.text) == ["Parent", "Heading", "Task"])
+    #expect(document.blocks.map(\.depth) == [0, 1, 2])
+    #expect(document.blocks.last?.isTaskBlock == true)
+    #expect(result.insertedBlockIDs == pasted.map(\.id))
+    #expect(result.focusedBlockID == pasted.last?.id)
+  }
+
+  @Test func structuredPasteAfterPopulatedBlockDoesNotAlterExistingText() throws {
+    let targetID = UUID()
+    var document = ProjectOutlineDocument(blocks: [
+      ProjectOutlineBlock(id: targetID, depth: 1, text: "Existing"),
+    ])
+    let pasted = [
+      ProjectOutlineBlock(depth: 0, text: "Heading"),
+      ProjectOutlineBlock(depth: 1, text: "Child"),
+    ]
+
+    _ = try #require(ProjectOutlineMutationEngine.pasteBlocks(
+      pasted,
+      afterOrReplacing: targetID,
+      in: &document
+    ))
+
+    #expect(document.blocks.map(\.text) == ["Existing", "Heading", "Child"])
+    #expect(document.blocks.map(\.depth) == [1, 1, 2])
+  }
+
   @Test func visibleIndicesHideCollapsedDescendantsButKeepCollapsedParentVisible() {
     let ids = Self.ids()
     let document = ProjectOutlineDocument(blocks: [
