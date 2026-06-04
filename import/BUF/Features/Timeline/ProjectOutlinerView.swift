@@ -91,6 +91,8 @@ struct ProjectOutlinerView: View {
       highlightRequestedTaskIfNeeded()
     }
     .onChange(of: document.blocks) { _, blocks in
+      let liveIDs = Set(blocks.map(\.id))
+      rowHeights = rowHeights.filter { liveIDs.contains($0.key) }
       if let zoomRootBlockID, !blocks.contains(where: { $0.id == zoomRootBlockID }) {
         self.zoomRootBlockID = nil
       }
@@ -843,6 +845,8 @@ private struct ProjectOutlineRowView: View {
 
       if block.isTaskBlock {
         taskContent(task)
+      } else if usesPlainDisplayRow {
+        plainDisplayContent(palette: palette)
       } else {
         ProjectOutlineTextEditor(
           text: $block.text,
@@ -940,6 +944,29 @@ private struct ProjectOutlineRowView: View {
       }
     }
     .onHover { isHoveringMarker = $0 }
+  }
+
+  private var usesPlainDisplayRow: Bool {
+    ProjectOutlineDisplayRowPolicy.canUsePlainDisplay(
+      block: block,
+      isFocused: isFocused,
+      isBlockSelectionActive: isBlockSelectionActive,
+      isBlockSelected: isBlockSelected,
+      isHighlighted: isHighlighted,
+      dropPlacement: dropPlacement
+    )
+  }
+
+  private func plainDisplayContent(
+    palette: ProjectOutlineBlockColorPalette.Style
+  ) -> some View {
+    Text(block.text.isEmpty ? " " : block.text)
+      .font(projectOutlinerFont)
+      .foregroundStyle(Color(palette.nsTextColor))
+      .textSelection(.disabled)
+      .fixedSize(horizontal: false, vertical: true)
+      .frame(maxWidth: .infinity, minHeight: 24, alignment: .leading)
+      .contentShape(Rectangle())
   }
 
   private func rowBackgroundColor(palette: ProjectOutlineBlockColorPalette.Style) -> Color {

@@ -332,13 +332,19 @@ struct ProjectOutlineTextEditor: NSViewRepresentable {
         keyEquivalent: ""
       )
       openItem.target = self
+      let revealItem = menu.addItem(
+        withTitle: "Finder에서 보기",
+        action: #selector(revealContextAttachmentInFinder),
+        keyEquivalent: ""
+      )
+      revealItem.target = self
+      menu.addItem(.separator())
       let renameItem = menu.addItem(
         withTitle: "이름 변경",
         action: #selector(renameContextAttachment),
         keyEquivalent: ""
       )
       renameItem.target = self
-      menu.addItem(.separator())
       let deleteItem = menu.addItem(
         withTitle: "삭제",
         action: #selector(deleteContextAttachment),
@@ -351,6 +357,11 @@ struct ProjectOutlineTextEditor: NSViewRepresentable {
     @objc private func openContextAttachment() {
       guard let contextAttachment else { return }
       attachmentActionHandler?(.open(contextAttachment))
+    }
+
+    @objc private func revealContextAttachmentInFinder() {
+      guard let contextAttachment else { return }
+      ApplePlatformDocumentOpener.shared.revealInFiles([contextAttachment.fileURL])
     }
 
     @objc private func renameContextAttachment() {
